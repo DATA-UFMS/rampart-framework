@@ -66,5 +66,7 @@ build/
 
 # LaTeX source files (private)
 docs/paper_sbc.tex
+docs/sbc_reference.tex
+docs/references.bib
 
 /test_output
