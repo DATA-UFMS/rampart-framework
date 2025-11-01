@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+# Data and Outputs
+outputs/
+*.parquet
+*.csv
+*.db
+*.duckdb
+*.sqlite
+
+# Cache
+.cache/
+*.cache
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Documentation build
+docs/_build/
+build/
+
+# LaTeX artifacts
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.out
+*.toc
+*.lof
+*.lot
+*.bib.bak
+
+# LaTeX source files (private)
+docs/paper_sbc.tex
+
+/test_output

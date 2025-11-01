@@ -1,0 +1,116 @@
+# Guia de Uso do Framework Metodológico
+
+Este guia descreve como executar, verificar e adaptar o framework metodológico de avaliação de arquiteturas de dados em analytics educacional. O material complementa o artigo `docs/paper_sbc.tex` e o README principal.
+
+## 1. Visão Geral dos Protocolos
+
+1. **Validação temporal (QP1)** — Gera folds walk-forward com gaps anti-leak de 2 anos e registra as fronteiras em JSON.
+2. **Equivalência prática (QP2)** — Aplica SESOI + IC95% por bootstrap com estatísticas robustas (Wilcoxon, Hodges–Lehmann).
+3. **Benchmark arquitetural (QP3)** — Mede latência, throughput e recursos com múltiplas execuções e logging estruturado.
+4. **Reprodutibilidade integral** — Centraliza parâmetros científicos, seeds e caminhos em `scientific_config.py` e no pipeline principal.
+
+A demonstração embarcada compara DuckDB (schema-on-write) a Dask (schema-on-read); você pode reutilizar os mesmos protocolos para outras arquiteturas.
+
+## 2. Preparação do Ambiente
+
+Requisitos mínimos: Python 3.8+, 8 GB de RAM, 10 GB livres em disco.
+
+```bash
+git clone https://github.com/DATA-UFMS/dw-vs-dl-dropout-prediction-latam.git
+cd dw-vs-dl-dropout-prediction-latam
+python -m venv .venv
+source .venv/bin/activate        # Linux/macOS
+# .venv\Scripts\activate        # Windows
+pip install -r requirements.txt
+```
+
+## 3. Execução dos Protocolos
+
+1. **Pipeline completo** (recomendado)
+   ```bash
+   python pipeline.py
+   ```
+   Executa coleta \u2192 preparação \u2192 benchmark \u2192 análises estatísticas, preservando os parâmetros do `scientific_config.py`.
+
+2. **Componentes individuais** (quando precisar repetir apenas uma etapa)
+   ```bash
+   # Benchmark arquitetural
+   python src/benchmarking/architectural_benchmark.py --repetitions 5 --warmup 1
+
+   # Equivalência prática (gera JSON/LaTeX)
+   python src/statistical_validation/tost_baseline.py --latex
+
+   # Teste anti-leak dos folds
+   pytest tests/test_lag_anti_leak.py
+   ```
+
+3. **Pós-processamento das saídas**
+ ```bash
+  python src/benchmarking/derive_latency_percentiles.py
+  python src/benchmarking/derive_throughput_percentiles.py
+  python src/benchmarking/derive_resource_usage_table.py
+  python src/statistical_validation/bootstrap_sensitivity.py --latex
+  ```
+  Esses scripts convertem os CSV/JSON brutos em tabelas LaTeX prontas para publicação.
+
+## 4. Verificação dos Resultados
+
+Após a execução, valide os seguintes artefatos:
+
+- `outputs/ml_pipeline/architectures/<arch>/prep/temporal_folds_<arch>.json` — intervalos treino/validação/teste e gaps \u22652 anos.
+- `outputs/ml_pipeline/architectures/<arch>/prep/target_statistics.json` — estatísticas do target e checagens de consistência.
+- `outputs/statistics/equivalence_estimation.json` — decisão (equivalente/superior/inferior) + IC95% + Wilcoxon/Hodges-Lehmann.
+- `outputs/benchmarks/architectural_benchmark_results.csv` — latência por fase com identificador de execução.
+- `outputs/benchmarks/architectural_benchmark_resource_log.jsonl` — monitoramento de CPU/RAM/IO a cada amostra.
+- `outputs/statistics/architectural_scorecard.tex` — painel consolidado para o artigo.
+
+Compare os hashes/timestamps com os registrados nos cabeçalhos para garantir que a execução seja recente e coerente.
+
+## 5. Customização
+
+### 5.1 Ajustar Parâmetros Científicos
+
+Edite `src/core/scientific_config.py` para alterar:
+
+- `temporal_gap_years`, `folds_min_train_years`, `folds_step_years` (validação temporal).
+- `sesoi_thresholds` (limiares de equivalência).
+- `bootstrap_iters` (número de reamostragens).
+
+Sempre documente alterações no memo `tema4_metodologia_analysis.md` ou em um novo arquivo de decisão.
+
+### 5.2 Adicionar Nova Arquitetura
+
+1. Registre a arquitetura em `src/core/config.py` (via `register_architecture`).
+2. Crie uma subpasta em `src/architectures_ml/<nova_arquitetura>/` com as etapas `setup.py`, `models/`, etc., seguindo o contrato de `BaseArchitectureML`.
+3. Atualize o pipeline (ou invoque manualmente) para incluir a nova arquitetura nas comparações.
+
+### 5.3 Instrumentar Métricas Extras
+
+- Extenda `src/benchmarking` para coletar métricas adicionais (p.ex., energia, custo).
+- Adicione novos módulos em `src/statistical_validation` mantendo o padrão de entrada/saída JSON/LaTeX.
+- Registre scripts personalizados no README e nos memos de decisão.
+
+## 6. Boas Práticas e Sanity Checks
+
+- Execute `pytest tests/test_lag_anti_leak.py` depois de qualquer alteração em geração de folds.
+- Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre arquiteturas.
+- Utilize `fair_comparison_analysis.md` como checklist de vieses (materialização, escala de dados, paradigmas).
+- Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
+
+## 7. Integração com o Artigo
+
+- Tabelas LaTeX geradas automaticamente (`outputs/statistics/*.tex`) alimentam `docs/paper_sbc.tex`.
+- O memo `tema4_metodologia_analysis.md` documenta o racional metodológico e deve ser mantido atualizado para suporte a revisões.
+- Em submissões, inclua a checklist de reprodutibilidade (Seção 4) como material suplementar.
+
+## 8. Perguntas Frequentes
+
+**Os resultados devem bater exatamente?** Sim. Seeds, configuração científica e scripts determinísticos garantem replicabilidade. Divergências indicam ambiente diferente ou alteração não documentada.
+
+**Posso usar apenas parte do framework?** Pode, desde que explique no memo de decisão quais protocolos foram executados e quais foram omitidos.
+
+**Como adapto para outro domínio (ex.: saúde)?** Ajuste os limiares SESOI, redefine indicadores no coletor de dados e atualize a documentação contextual. Os protocolos permanecem idênticos.
+
+---
+
+Em caso de dúvidas, abra uma issue ou contate {eos.xavier, rosa.livia, vanessa.a.borges}@ufms.br.
