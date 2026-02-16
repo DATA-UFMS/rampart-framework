@@ -20,15 +20,9 @@ import os
 import sys
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
-from typing import Dict, List
+from typing import Dict
 import warnings
 warnings.filterwarnings('ignore')
-import random
-
-# Seeds para reprodutibilidade
-RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
-random.seed(RANDOM_SEED)
 
 # Adicionar path para configuração e módulos centralizados
 core_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'core')
@@ -36,8 +30,16 @@ core_path = os.path.abspath(core_path)
 if core_path not in sys.path:
     sys.path.append(core_path)
 
+project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
+project_root = os.path.abspath(project_root)
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 from config import get_absolute_output_path
 from models.baseline import BaselineModelFactory, BaselineEnsemble
+from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+
+setup_reproducibility()
 
 data_warehouse_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'collection', 'data_warehouse')
 data_warehouse_path = os.path.abspath(data_warehouse_path)

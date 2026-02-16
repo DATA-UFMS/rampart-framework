@@ -25,17 +25,14 @@ from sklearn.metrics import mean_squared_error, r2_score
 from typing import Dict
 import warnings
 warnings.filterwarnings('ignore')
-import random
-
-# Seeds para reprodutibilidade
-RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
-random.seed(RANDOM_SEED)
 
 # Adicionar path para configuração e módulos centralizados
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from src.core.config import get_absolute_output_path
 from src.core.models.baseline import BaselineModelFactory, BaselineEnsemble
+from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+
+setup_reproducibility()
 
 
 class BaselineModelAnalysisDataLake:

@@ -8,11 +8,20 @@ com suporte para diferentes backends (Dask vs Pandas) através do Strategy Patte
 
 import os
 import json
+import sys
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any, Union
 from datetime import datetime
 from abc import ABC, abstractmethod
+
+# Import centralized seed
+_baseline_dir = os.path.dirname(os.path.abspath(__file__))
+_core_dir = os.path.dirname(_baseline_dir)
+_project_root = os.path.dirname(os.path.dirname(_core_dir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+from src.core.scientific_config import RANDOM_SEED
 
 # Importações condicionais para modelos
 try:
