@@ -98,7 +98,7 @@ def paired_vectors_total(df: pd.DataFrame, exclude_phases: Optional[List[str]] =
 def bootstrap_ci(x: np.ndarray, y: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, rng: Optional[np.random.Generator] = None) -> Dict[str, Tuple[float, float]]:
     """Bootstrap 95% CI para diferença de médias (DL-DW) e speedup (DL_mean/DW_mean)."""
     if rng is None:
-        rng = np.random.default_rng(42)
+        rng = np.random.default_rng(SCIENTIFIC_CONFIG.get('random_seed', 42))
     n = len(x)
     diffs = np.empty(iters)
     ratios = np.empty(iters)

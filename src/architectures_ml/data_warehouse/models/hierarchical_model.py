@@ -24,6 +24,15 @@ warnings.filterwarnings('ignore')
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 sys.path.insert(0, project_root)
 
+# Also add the actual project root (one level above src/)
+_actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+if _actual_project_root not in sys.path:
+    sys.path.insert(0, _actual_project_root)
+
+from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+
+setup_reproducibility()
+
 try:
     from src.core.config import get_absolute_output_path
 except ImportError:
@@ -383,8 +392,8 @@ class HierarchicalModelSQLFirst:
             min_samples_split=15,
             min_samples_leaf=min_samples_leaf,
             max_features='sqrt',
-            random_state=42,
-            n_jobs=-1
+            random_state=RANDOM_SEED,
+            n_jobs=1
         )
         
         rf_model.fit(X_train_augmented, y_train)

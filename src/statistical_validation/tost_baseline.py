@@ -23,17 +23,17 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-DEFAULT_SEED = 42
-
 # Raiz do projeto para importar configuração científica
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 try:
-    from src.core.scientific_config import SCIENTIFIC_CONFIG  # type: ignore
+    from src.core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED  # type: ignore
     DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG.get('bootstrap_iters', 3000))
+    DEFAULT_SEED = RANDOM_SEED
 except Exception:
     DEFAULT_BOOTSTRAP_ITERS = 3000
+    DEFAULT_SEED = 42
 
 
 def _median_hodges_lehmann(deltas: np.ndarray) -> float:

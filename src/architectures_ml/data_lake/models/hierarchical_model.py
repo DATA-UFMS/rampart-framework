@@ -422,8 +422,8 @@ class HierarchicalModelDataLake:
             min_samples_split=15,
             min_samples_leaf=min_samples_leaf,
             max_features='sqrt',
-            random_state=42,
-            n_jobs=-1
+            random_state=RANDOM_SEED,
+            n_jobs=1
         )
         
         rf_model.fit(X_train_augmented, y_train)
