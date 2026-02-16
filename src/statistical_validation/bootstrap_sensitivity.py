@@ -24,8 +24,8 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__fi
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from src.core.scientific_config import SCIENTIFIC_CONFIG  # type: ignore
-from src.statistical_validation.tost_baseline import (  # type: ignore
+from src.core.scientific_config import SCIENTIFIC_CONFIG
+from src.statistical_validation.tost_baseline import (
     _bootstrap_ci,
     _decision_equivalence,
     _load_baseline_pairs,

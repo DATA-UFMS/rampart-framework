@@ -23,7 +23,7 @@ import sys
 from datetime import datetime, timezone
 
 try:
-    from src.core.scientific_config import SCIENTIFIC_CONFIG  # type: ignore
+    from src.core.scientific_config import SCIENTIFIC_CONFIG
 except Exception:
     SCIENTIFIC_CONFIG = {}
 

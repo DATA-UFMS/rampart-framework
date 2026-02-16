@@ -95,7 +95,7 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
 
     # Totais por execução (somando fases não-excluídas)
     totais = (
-        df_filt.groupby(["run_id", "architecture"])  # type: ignore
+        df_filt.groupby(["run_id", "architecture"])
         ["duration_s"].sum().reset_index()
     )
     por_arq_total: Dict[str, Dict[str, float | None]] = {}

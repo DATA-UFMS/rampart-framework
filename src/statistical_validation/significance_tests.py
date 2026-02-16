@@ -40,7 +40,7 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__fi
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 try:
-    from src.core.scientific_config import SCIENTIFIC_CONFIG  # type: ignore
+    from src.core.scientific_config import SCIENTIFIC_CONFIG
     DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG.get('bootstrap_iters', 3000))
 except Exception:
     DEFAULT_BOOTSTRAP_ITERS = 3000

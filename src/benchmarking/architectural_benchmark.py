@@ -58,41 +58,39 @@ PROJECT_ROOT = _project_root()
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from src.core.config import get_absolute_output_path, BENCHMARK_CONFIG  # type: ignore
+from src.core.config import get_absolute_output_path, BENCHMARK_CONFIG
 
 
 # Importações tardias dos componentes do pipeline (evitar custo no import inicial)
 def _import_modules():
     # Coleta
-    from src.collection.raw_data_collector import RawDataCollector  # type: ignore
+    from src.collection.raw_data_collector import RawDataCollector
 
     # Processamento
-    from src.collection.data_lake.processor import DataLakeProcessor  # type: ignore
-    from src.collection.data_warehouse.processor import DataWarehouseProcessor  # type: ignore
-
+    from src.collection.data_lake.processor import DataLakeProcessor
+    from src.collection.data_warehouse.processor import DataWarehouseProcessor
     # Setup - imports diretos dos módulos
-    import src.architectures_ml.data_lake.setup as dl_setup  # type: ignore
-    import src.architectures_ml.data_warehouse.setup as dw_setup  # type: ignore
-
+    import src.architectures_ml.data_lake.setup as dl_setup
+    import src.architectures_ml.data_warehouse.setup as dw_setup
     # Feature Engineering
-    from src.architectures_ml.data_lake.feature_engineering import (  # type: ignore
+    from src.architectures_ml.data_lake.feature_engineering import (
         ScientificFeatureEngineeringDataLake,
     )
 
     # DW não possui wrapper de feature engineering no pipeline original
     # Baseline
-    from src.architectures_ml.data_lake.models.baseline_analysis import (  # type: ignore
+    from src.architectures_ml.data_lake.models.baseline_analysis import (
         BaselineModelAnalysisDataLake,
     )
-    from src.architectures_ml.data_warehouse.models.baseline_analysis import (  # type: ignore
+    from src.architectures_ml.data_warehouse.models.baseline_analysis import (
         BaselineModelAnalysisDataWarehouse,
     )
 
     # Hierárquicos
-    from src.architectures_ml.data_lake.models.hierarchical_model import (  # type: ignore
+    from src.architectures_ml.data_lake.models.hierarchical_model import (
         HierarchicalModelDataLake,
     )
-    from src.architectures_ml.data_warehouse.models.hierarchical_model import (  # type: ignore
+    from src.architectures_ml.data_warehouse.models.hierarchical_model import (
         HierarchicalModelSQLFirst,
     )
 
@@ -365,7 +363,7 @@ class BenchmarkRunner:
     ) -> int:
         # evita dependência direta; usa connection_manager do DW
         try:
-            from src.collection.data_warehouse.connection_manager import DuckDBConnectionManager  # type: ignore
+            from src.collection.data_warehouse.connection_manager import DuckDBConnectionManager
         except Exception:
             return 0
         db = self._dw_db_path()
@@ -450,7 +448,7 @@ class BenchmarkRunner:
         if isinstance(res, dict) and res.get("status") == "success":
             # Contar observações diretamente no banco (analytics_wide)
             try:
-                from src.collection.data_warehouse.connection_manager import DuckDBConnectionManager  # type: ignore
+                from src.collection.data_warehouse.connection_manager import DuckDBConnectionManager
 
                 db = self._dw_db_path()
                 if os.path.exists(db):
@@ -745,7 +743,7 @@ class BenchmarkRunner:
         df.to_csv(csv_path, index=False)
 
         summary = (
-            df.groupby(["phase", "architecture"])  # type: ignore
+            df.groupby(["phase", "architecture"])
             .agg(
                 duration_s_mean=("duration_s", "mean"),
                 duration_s_std=("duration_s", "std"),
