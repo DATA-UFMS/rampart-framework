@@ -13,6 +13,8 @@ Fases:
   8) Testes estatísticos de validação
 """
 import argparse
+import hashlib
+import importlib.metadata
 import json
 import os
 import platform
@@ -24,6 +26,11 @@ try:
     from src.core.scientific_config import SCIENTIFIC_CONFIG  # type: ignore
 except Exception:
     SCIENTIFIC_CONFIG = {}
+
+try:
+    from src.core.config import get_execution_metadata  # type: ignore
+except Exception:
+    get_execution_metadata = None
 
 def print_conclusion(msg: str) -> None:
     print("\n" + "=" * 80)
@@ -69,6 +76,28 @@ def _snapshot_scientific_config(root: str) -> None:
         payload["git_commit"] = commit
     except Exception:
         payload["git_commit"] = "unavailable"
+
+    # Installed package versions
+    try:
+        payload["installed_packages"] = {
+            dist.metadata["Name"]: dist.version
+            for dist in importlib.metadata.distributions()
+        }
+    except Exception:
+        payload["installed_packages"] = "unavailable"
+
+    # Hardware info (reuse get_execution_metadata from config.py)
+    if get_execution_metadata is not None:
+        try:
+            payload["hardware"] = get_execution_metadata()
+        except Exception:
+            payload["hardware"] = "unavailable"
+
+    # Hash of requirements.txt for drift detection
+    req_path = os.path.join(root, "requirements.txt")
+    if os.path.exists(req_path):
+        with open(req_path, "rb") as f:
+            payload["requirements_txt_sha256"] = hashlib.sha256(f.read()).hexdigest()
 
     snapshot_path = os.path.join(snapshot_dir, "scientific_config_snapshot.json")
     with open(snapshot_path, "w", encoding="utf-8") as handler:

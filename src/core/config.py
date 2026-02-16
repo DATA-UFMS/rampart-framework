@@ -63,7 +63,7 @@ LOGGING_CONFIG = {
 # CONFIGURAÇÃO DE VALIDAÇÃO
 # ============================================================================
 VALIDATION_CONFIG = {
-    'tolerance_numeric': 1e-6,  # Tolerância para comparações numéricas
+    'tolerance_numeric': 1e-9,  # Tolerância para comparações numéricas (alinhado com SCIENTIFIC_CONFIG float_precision_tolerance)
     'tolerance_percentage': 0.01,  # Tolerância percentual
     'required_columns': [  # Colunas obrigatórias no resultado final
         'country_code', 'year', 'lower_secondary_completion_rate',

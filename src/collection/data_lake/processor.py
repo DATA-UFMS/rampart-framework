@@ -114,6 +114,7 @@ class DataLakeProcessor:
         print("[CONFIG] Arquitetura: Data Lake com Dask Distribuído")
         print("[CONFIG] Paradigma: Schema-on-read com lazy evaluation")
         
+        self.run_timestamp = datetime.now().isoformat()
         self.complete_data_path = get_absolute_output_path('collection/raw_data/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/data_lake')
         self.processed_dir = f"{self.output_dir}/processed"
@@ -449,7 +450,7 @@ class DataLakeProcessor:
         
         # === 2. Metadados de processamento (auditoria científica) ===
         partition['processing_method'] = 'dask_distributed'
-        partition['processed_timestamp'] = datetime.now().isoformat()
+        partition['processed_timestamp'] = self.run_timestamp
         partition['schema_validation_applied'] = 'true'  # String para compatibilidade schema
         
         # ID único de partição para debugging distribuído
