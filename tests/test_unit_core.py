@@ -43,7 +43,7 @@ class TestSymmetricLogTransform:
     def test_monotonic_increasing(self):
         xs = np.linspace(-100, 100, 500)
         ys = _symmetric_log(xs)
-assert np.all(np.diff(ys) >= 0), "Transformação deve ser monotonicamente crescente"
+        assert np.all(np.diff(ys) >= 0), "Transformação deve ser monotonicamente crescente"
 
     def test_vectorized(self):
         arr = np.array([-10, -1, 0, 1, 10])
