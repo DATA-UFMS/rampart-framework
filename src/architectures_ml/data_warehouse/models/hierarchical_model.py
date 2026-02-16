@@ -31,7 +31,6 @@ except ImportError:
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
         return os.path.join(project_root, 'outputs', relative_path)
 
-# Importar Connection Manager
 connection_manager_path = os.path.join(project_root, 'src', 'collection', 'data_warehouse')
 if connection_manager_path not in sys.path:
     sys.path.append(connection_manager_path)
@@ -633,7 +632,6 @@ class HierarchicalModelSQLFirst:
                 print(f"   ▣ Pattern: Direct view queries com Connection Manager")
                 print(f"   ▲ Versão: Corrigida com regularização científica")
             
-            # Salvar resultados
             results_file = f"{self.results_path}/hierarchical_analysis_data_warehouse_results.json"
             with open(results_file, 'w') as f:
                 json.dump(all_results, f, indent=2)

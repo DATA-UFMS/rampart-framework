@@ -1234,11 +1234,11 @@ class BaselineModelAnalysisDataWarehouse:
             else:
                 print(f"    🢱 Status:  🛈 Requer atenção em alguns critérios")
             
-            # Data Warehouse specific validations
+            # Validações específicas do Data Warehouse
             print(f"\n🗲 VALIDAÇÕES DATA WAREHOUSE:")
 
             
-            # Check if temporal views were used
+            # Verificar se views temporais foram usadas
             views_used = 0
             fallbacks_used = 0
             if hasattr(self, '_fold_data_cache'):
@@ -1296,7 +1296,7 @@ if __name__ == "__main__":
     try:
         analyzer = BaselineModelAnalysisDataWarehouse()
         results = analyzer.run_complete_analysis()
-        print(f"\n⚙ ML Data Warehouse Consumer analysis completed successfully!")
+        print(f"\n⚙ Análise ML Data Warehouse Consumer concluída com sucesso!")
     except Exception as e:
         print(f"\n✖ Erro na análise: {e}")
         if analyzer:

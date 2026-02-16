@@ -448,7 +448,6 @@ class DataWarehouseProcessor:
                 except SQLProcessingError:
                     pass  # Ignorar falhas em DROP (tabelas podem não existir)
             
-            # Criar tabelas respeitando ordem de dependência
             print("   [DDL] Criando tabelas com ordem de dependência")
             create_statements = [stmt for stmt in statements if stmt.upper().startswith('CREATE TABLE')]
             
@@ -479,7 +478,6 @@ class DataWarehouseProcessor:
             
             tables_created = 0
             
-            # Criar dimension tables
             print("   [DDL] Criando dimension tables")
             for table_name in dimension_tables:
                 if table_name in table_statements:
@@ -492,7 +490,6 @@ class DataWarehouseProcessor:
                         if "already exists" not in str(e).lower():
                             print(f"   [AVISO] Erro em dimension {table_name}: {e}")
             
-            # Criar fact tables
             print("   [DDL] Criando fact tables")
             for table_name in fact_tables:
                 if table_name in table_statements:
@@ -506,7 +503,6 @@ class DataWarehouseProcessor:
                             print(f"   [ERRO] Falha crítica em fact {table_name}: {e}")
                             raise SQLProcessingError(f"Fact table creation failed: {e}")
             
-            # Criar tabelas adicionais
             remaining_tables = set(table_statements.keys()) - set(dimension_tables) - set(fact_tables)
             if remaining_tables:
                 print(f"   [DDL] Criando tabelas adicionais: {remaining_tables}")
@@ -521,7 +517,6 @@ class DataWarehouseProcessor:
             
             print(f"   [RESULTADO] {tables_created} tabelas criadas")
             
-            # Verificar existência das tabelas críticas
             print("   [VALIDAÇÃO] Verificando tabelas críticas")
             expected_tables = ['dim_countries', 'analytics_wide']
             tables_verified = 0
@@ -544,7 +539,6 @@ class DataWarehouseProcessor:
             
             print(f"   [VALIDAÇÃO] {tables_verified}/{len(expected_tables)} tabelas confirmadas")
             
-            # Criar índices (não crítico)
             print("   [ÍNDICES] Criando índices")
             index_statements = [stmt for stmt in statements if stmt.upper().startswith('CREATE INDEX')]
             
@@ -559,7 +553,6 @@ class DataWarehouseProcessor:
             
             print(f"   [RESULTADO] {indexes_created} índices criados")
             
-            # Criar views (não crítico)
             print("   [VIEWS] Criando views")
             view_statements = [stmt for stmt in statements if 'CREATE OR REPLACE VIEW' in stmt.upper() or 'CREATE VIEW' in stmt.upper()]
             
@@ -811,7 +804,6 @@ class DataWarehouseProcessor:
             self.conn_manager.execute_sql_no_return(insert_query)
             print("   [SUCESSO] Dados carregados na fact table")
             
-            # Verificar contagem final
             final_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
             print(f"   [RESULTADO] {final_count} registros carregados com sucesso")
             

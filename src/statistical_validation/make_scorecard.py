@@ -103,7 +103,6 @@ def summarize_tost(name: str) -> Optional[str]:
         return None
     lo, hi = min(deltas), max(deltas)
     status = 'Sim' if all(flags) else 'Não'
-    # Use LaTeX math for delta/in and escape braces
     return f"{status} ($\\delta\\in\\{{{lo:.2f},{hi:.2f}\\}})"
 
 

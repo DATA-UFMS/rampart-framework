@@ -16,7 +16,6 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-# Importar configurações científicas centralizadas
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 
@@ -146,7 +145,6 @@ class BaseArchitectureML(ABC):
         # Delegar implementação específica
         data_with_target = self.create_target_implementation(data)
         
-        # Salvar estatísticas do target (comum)
         self._save_target_statistics(data_with_target)
         
         return data_with_target
@@ -492,7 +490,6 @@ class BaseArchitectureML(ABC):
             'selection_timestamp': datetime.now().isoformat()
         }
         
-        # Salvar seleção
         selection_path = f"{self.prep_dir}/feature_selection_{self.architecture_name}.json"
         with open(selection_path, 'w') as f:
             json.dump(selection_stats, f, indent=2)
@@ -850,7 +847,6 @@ class BaseArchitectureML(ABC):
             val_years = (val_data['year'].min(), val_data['year'].max())
             test_years = (test_data['year'].min(), test_data['year'].max())
             
-            # Chamar método original
             is_valid = self.validate_temporal_integrity_years(
                 train_years, val_years, test_years
             )
@@ -997,8 +993,6 @@ class BaseArchitectureML(ABC):
 
         print(f"\nValidando equivalência científica com {other_arch_results.get('architecture', 'outra arquitetura')}...")
         
-        # Carregar resultados próprios para comparação
-        # (Esta é uma simplificação. Na prática, os caminhos seriam passados)
         self_results = {
             'architecture': self.architecture_name,
             'output_base_path': self.output_base
@@ -1009,7 +1003,6 @@ class BaseArchitectureML(ABC):
         # Executar todas as validações
         equivalence_report = validator.validate_all()
 
-        # Salvar relatório
         report_path = f"{self.output_base}/scientific_equivalence_report.json"
         with open(report_path, 'w') as f:
             json.dump(equivalence_report, f, indent=2)

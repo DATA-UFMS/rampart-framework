@@ -579,7 +579,6 @@ class DataLakeProcessor:
         
         ddf_processed = ddf.map_partitions(
             self._add_distributed_processing_metadata
-            # Removendo meta explícito - Dask inferirá automaticamente
         )
         
         print("[FEATURES] Adicionadas: temporais (lag, trend), cross-section (stratum), metadados")
