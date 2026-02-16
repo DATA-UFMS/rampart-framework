@@ -39,7 +39,7 @@ BENCHMARKS_DIR = f'{BASE_DATA_DIR}/benchmarks'
 # CONFIGURAÇÃO DE PERFORMANCE
 # ============================================================================
 BENCHMARK_CONFIG = {
-    'repetitions': 10,  # Número de repetições por teste (para IC 95%)
+    'repetitions': 10,  # Número de repetições por teste
     'warmup_runs': 2,   # Execuções de aquecimento
     'timeout_seconds': 3600,  # Timeout por operação
     'memory_limit_gb': 16,  # Limite de memória
@@ -69,16 +69,13 @@ VALIDATION_CONFIG = {
         'country_code', 'year', 'lower_secondary_completion_rate',
         'enrollment_rate_secondary_net'
     ],
-    'validate_vif': True,  # Validar cálculos de VIF
+    'validate_collinearity': True,  # Validar filtragem de colinearidade
     'validate_correlations': True,  # Validar matriz de correlação
     'validate_imputation': True  # Validar qualidade da imputação
 }
 
 # ============================================================================
 # METADADOS DE EXECUÇÃO
-# ============================================================================
-# ============================================================================
-# PATHS ABSOLUTOS - SOLUÇÃO PARA WORKING DIRECTORY ISSUES
 # ============================================================================
 def get_project_root() -> str:
     """
