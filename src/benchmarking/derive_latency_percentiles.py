@@ -131,7 +131,7 @@ def para_latex(resumo: Dict) -> str:
     linhas.append("% P50/P95/P99 em segundos e speedups DW vs DL (P50)")
     linhas.append("\\begin{tabular}{lrrrrrrr}")
     linhas.append("\\hline")
-    linhas.append("Fase & DL P50 & DL P95 & DL P99 & DW P50 & DW P95 & DW P99 & Speedup DW (P50) \\ ")
+    linhas.append("Fase & DL P50 & DL P95 & DL P99 & DW P50 & DW P95 & DW P99 & Speedup DW (P50) \\\\")
     linhas.append("\\hline")
 
     por_fase = resumo.get("por_fase", {})
@@ -151,7 +151,7 @@ def para_latex(resumo: Dict) -> str:
             _fmt_segundos(dw.get("p99")),
             (f"{sp:.2f}×" if sp and np.isfinite(sp) else "—"),
         ]
-        linhas.append(" ".join([f"{col}" for col in row]).replace(" ", " & ") + " \\ ")
+        linhas.append(" ".join([f"{col}" for col in row]).replace(" ", " & ") + " \\\\")
 
     total = resumo.get("total", {})
     ta = total.get("arquiteturas", {})
@@ -163,7 +163,7 @@ def para_latex(resumo: Dict) -> str:
         ("Total" +
          f" & {_fmt_segundos(dl.get('p50'))} & {_fmt_segundos(dl.get('p95'))} & {_fmt_segundos(dl.get('p99'))}" +
          f" & {_fmt_segundos(dw.get('p50'))} & {_fmt_segundos(dw.get('p95'))} & {_fmt_segundos(dw.get('p99'))}" +
-         f" & {(f'{sp:.2f}×' if sp and np.isfinite(sp) else '—')} \\ ")
+         f" & {(f'{sp:.2f}×' if sp and np.isfinite(sp) else '—')} \\\\")
     )
     linhas.append("\\hline")
     linhas.append("\\end{tabular}")

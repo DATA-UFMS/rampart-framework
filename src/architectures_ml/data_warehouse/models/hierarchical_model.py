@@ -150,7 +150,7 @@ class HierarchicalModelSQLFirst:
             print(f"   ✓ Target válido: range [{target_min:.2f}%, {target_max:.2f}%]")
                 
         except SQLProcessingError as e:
-            raise RuntimeError(f"Erro ao carregar resumor via views: {e}")
+            raise RuntimeError(f"Erro ao carregar resumo via views: {e}")
     
     def _load_ml_fold_data(self, fold_id: int, split: str) -> pd.DataFrame:
         """Carregar dados do fold via queries diretas às views."""
@@ -290,7 +290,7 @@ class HierarchicalModelSQLFirst:
                         if mean_score > best_score:
                             best_score = mean_score
                             final_alpha = alpha_test
-                    except:
+                    except Exception:
                         continue
             
             residual_model = Ridge(alpha=final_alpha)
@@ -346,7 +346,7 @@ class HierarchicalModelSQLFirst:
                 'adaptive_alpha': float(final_alpha),
                 'shrinkage_applied': True,
                 'cv_optimization': samples_count > 30,
-                'residual_shrinkage': 0.8
+                'residual_shrinkage': float(residual_shrinkage)
             }
         }
     

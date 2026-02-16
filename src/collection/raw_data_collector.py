@@ -59,17 +59,12 @@ import numpy as np
 import pandas as pd
 import requests
 
-import random
-
-# Seed fixo para reprodutibilidade completa (Peng, 2011, Science)
-# Valor 42 escolhido por convenção em ML, sem significado estatístico
-RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
-random.seed(RANDOM_SEED)
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.core.config import COUNTRY_STRATA, get_absolute_output_path, START_YEAR, END_YEAR
 from src.core.indicators import ALL_INDICATORS
+from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+
+setup_reproducibility()
 
 
 class RawDataCollector:
