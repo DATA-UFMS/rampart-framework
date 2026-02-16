@@ -10,17 +10,13 @@ schema-on-write."""
 
 import os
 import sys
-import json
-import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from typing import List, Dict, Any
 
 # Adicionar caminho para módulos core
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from core.base_architecture import BaseArchitectureML
 from core.config import get_absolute_output_path
-from core.scientific_config import SCIENTIFIC_CONFIG
 
 from collection.data_warehouse.connection_manager import (
     DuckDBConnectionManager, 

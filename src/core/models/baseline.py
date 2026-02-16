@@ -37,7 +37,6 @@ except ImportError:
 # Suporte para Dask
 try:
     import dask.dataframe as dd
-    from dask_ml.model_selection import train_test_split as dask_train_test_split
     from dask_ml.wrappers import Incremental
     DASK_AVAILABLE = True
 except ImportError:

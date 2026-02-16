@@ -2,8 +2,6 @@
 """
 Testes de anti-leak para lags do target e gaps temporais por fold.
 """
-import json
-import os
 from pathlib import Path
 
 

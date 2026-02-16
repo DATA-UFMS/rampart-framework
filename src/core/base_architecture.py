@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 import os
 import sys
 import json
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 import numpy as np
 import pandas as pd

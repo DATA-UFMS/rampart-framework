@@ -3,7 +3,7 @@ Configurações compartilhadas entre arquiteturas
 """
 
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict
 
 # ============================================================================
 # CONFIGURAÇÃO TEMPORAL

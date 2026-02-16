@@ -8,7 +8,7 @@ duplicação entre arquiteturas, mantendo flexibilidade para customizações.
 
 import numpy as np
 import pandas as pd
-from typing import Union, List, Dict, Optional, Any
+from typing import Union, List, Dict, Optional
 from datetime import datetime
 
 # Suporte para Dask (opcional)

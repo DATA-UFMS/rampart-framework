@@ -53,13 +53,12 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict
 
 import numpy as np
 import pandas as pd
 import requests
-from scipy import stats
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+
 import random
 
 # Seed fixo para reprodutibilidade completa (Peng, 2011, Science)

@@ -22,7 +22,7 @@ import os
 import sys
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
-from typing import Dict, List
+from typing import Dict
 import warnings
 warnings.filterwarnings('ignore')
 import random

@@ -10,22 +10,18 @@ exploratória distribuída sem caches ou otimizações ocultas."""
 
 import os
 import sys
-import json
 import glob
 import shutil
 import numpy as np
 import pandas as pd
 import dask.dataframe as dd
 import dask
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import List, Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from core.base_architecture import BaseArchitectureML
-from core.features import FeatureEngineer
 from core.config import get_absolute_output_path
 from core.validation import TemporalValidator, DataIntegrityValidator
 from core.logging_config import get_logger, log_ml_pipeline
-from core.scientific_config import SCIENTIFIC_CONFIG
 
 
 class DataLakeArchitectureML(BaseArchitectureML):

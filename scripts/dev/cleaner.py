@@ -23,7 +23,6 @@ import os
 import shutil
 import glob
 import argparse
-from pathlib import Path
 import sys
 
 class RepositoryCleanup:
