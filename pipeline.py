@@ -18,7 +18,7 @@ import os
 import platform
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     from src.core.scientific_config import SCIENTIFIC_CONFIG  # type: ignore
@@ -51,16 +51,14 @@ def run(cmd: str) -> None:
     env = os.environ.copy()
     src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
     env["PYTHONPATH"] = src_dir + os.pathsep + env.get("PYTHONPATH", "")
-    result = subprocess.run(cmd, shell=True, check=True, env=env)
-    if result.returncode != 0:
-        raise RuntimeError(f"Comando falhou: {cmd}")
+    subprocess.run(cmd, shell=True, check=True, env=env)
 
 def _snapshot_scientific_config(root: str) -> None:
     """Salva snapshot da configuração científica e do ambiente."""
     snapshot_dir = os.path.join(root, "outputs")
     os.makedirs(snapshot_dir, exist_ok=True)
     payload = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "scientific_config": SCIENTIFIC_CONFIG,
         "python": sys.version,
         "platform": platform.platform(),
@@ -100,12 +98,12 @@ def main() -> None:
     # 2) Processamento arquitetural
     print_system("PROCESSADOR DATA LAKE")
     print_config("Arquitetura: Data Lake com Dask")
-    print_step("ETAPA 2/8: Processando Data Lake...")
+    print_step("ETAPA 2a/8: Processando Data Lake...")
     run(f"{py} {root}/src/collection/data_lake/processor.py")
-    
+
     print_system("PROCESSADOR DATA WAREHOUSE")
     print_config("Arquitetura: Data Warehouse com DuckDB")
-    print_step("ETAPA 2/8: Processando Data Warehouse...")
+    print_step("ETAPA 2b/8: Processando Data Warehouse...")
     run(f"{py} {root}/src/collection/data_warehouse/processor.py")
     print_success("ETAPA 2 CONCLUÍDA: Processamento arquitetural completo")
 
@@ -114,12 +112,12 @@ def main() -> None:
     # 3) Setup ML (gaps 2 anos em ambas arquiteturas)
     print_system("SETUP ML DATA LAKE")
     print_config("Arquitetura: Data Lake (schema-on-read)")
-    print_step("ETAPA 3/8: Configurando ML Data Lake...")
+    print_step("ETAPA 3a/8: Configurando ML Data Lake...")
     run(f"{py} {root}/src/architectures_ml/data_lake/setup.py")
-    
+
     print_system("SETUP ML DATA WAREHOUSE")
     print_config("Arquitetura: Data Warehouse (schema-on-write)")
-    print_step("ETAPA 3/8: Configurando ML Data Warehouse...")
+    print_step("ETAPA 3b/8: Configurando ML Data Warehouse...")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/setup.py")
     print_success("ETAPA 3 CONCLUÍDA: Setup ML completo")
 
@@ -140,12 +138,12 @@ def main() -> None:
     # 5) Baselines
     print_system("MODELOS BASELINE DATA LAKE")
     print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 5/8: Executando Baselines Data Lake...")
+    print_step("ETAPA 5a/8: Executando Baselines Data Lake...")
     run(f"{py} {root}/src/architectures_ml/data_lake/models/baseline_analysis.py")
-    
+
     print_system("MODELOS BASELINE DATA WAREHOUSE")
     print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 5/8: Executando Baselines Data Warehouse...")
+    print_step("ETAPA 5b/8: Executando Baselines Data Warehouse...")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/models/baseline_analysis.py")
     print_success("ETAPA 5 CONCLUÍDA: Modelos baseline executados")
 

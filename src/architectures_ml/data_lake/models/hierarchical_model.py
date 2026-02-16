@@ -16,7 +16,7 @@ import json
 import os
 import sys
 import warnings
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
@@ -31,6 +31,14 @@ if core_path not in sys.path:
     sys.path.append(core_path)
 
 from config import get_absolute_output_path
+
+project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
+project_root = os.path.abspath(project_root)
+if project_root not in sys.path:
+    sys.path.append(project_root)
+from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+
+setup_reproducibility()
 
 class HierarchicalModelDataLake:
     """
@@ -106,7 +114,8 @@ class HierarchicalModelDataLake:
         }
         computed_stats = dask.compute(stats_batch)[0]
         
-        print(f"Dados carregados: {len(self.ddf)} registros, {self.ddf.npartitions} partições")
+        n_records = self.ddf.shape[0].compute()
+        print(f"Dados carregados: {n_records} registros, {self.ddf.npartitions} partições")
         print(f"Período: {computed_stats['year_min']}-{computed_stats['year_max']}")
         print(f"Países: {computed_stats['n_countries']}")
         print(f"Target: {self.target_col}")
@@ -115,8 +124,7 @@ class HierarchicalModelDataLake:
         if self.target_col not in self.ddf.columns:
             raise ValueError(f"Target {self.target_col} não encontrado nos dados")
         
-        self.country_encoder = LabelEncoder()
-        self.country_encoder.fit(computed_stats['unique_countries'])
+
         
         # Alinhar features com seleção científica salva no setup
         selection_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/feature_selection_data_lake.json")
@@ -161,12 +169,10 @@ class HierarchicalModelDataLake:
             }
             computed_enhanced = dask.compute(enhanced_stats)[0]
             
-            print(f"Exemplo (fold 0): {len(sample_ddf)} registros, {sample_ddf.npartitions} partições")
+            n_sample = sample_ddf.shape[0].compute()
+            print(f"Exemplo (fold 0): {n_sample} registros, {sample_ddf.npartitions} partições")
             print(f"Período: {computed_enhanced['year_min']}-{computed_enhanced['year_max']}")
             print(f"Países: {computed_enhanced['n_countries']}")
-            
-            self.country_encoder = LabelEncoder()
-            self.country_encoder.fit(computed_enhanced['unique_countries'])
             
             self.available_features = [col for col in sample_ddf.columns
                                      if col not in ['country_code', 'year', self.target_col]]
@@ -180,7 +186,6 @@ class HierarchicalModelDataLake:
         else:
             print("Não foi possível carregar dados enhanced para configuração inicial")
             self.available_features = []
-            self.country_encoder = LabelEncoder()
     
     def _load_fold_enhanced_data(self, fold_id: int) -> Dict:
         """Carregar dados de um fold específico no modo enhanced."""
@@ -324,7 +329,7 @@ class HierarchicalModelDataLake:
                         if mean_score > best_score:
                             best_score = mean_score
                             final_alpha = alpha_test
-                    except:
+                    except Exception:
                         continue
             
             residual_model = Ridge(alpha=final_alpha)
@@ -494,7 +499,10 @@ class HierarchicalModelDataLake:
                 (self.ddf['year'] >= fold_info['test_start']) & 
                 (self.ddf['year'] <= fold_info['test_end'])
             ]
-            print(f"Dados Normais: Train={len(train_ddf)}, Val={len(val_ddf)}, Test={len(test_ddf)}")
+            n_train, n_val, n_test = dask.compute(
+                train_ddf.shape[0], val_ddf.shape[0], test_ddf.shape[0]
+            )
+            print(f"Dados Normais: Train={n_train}, Val={n_val}, Test={n_test}")
         
         if self.use_enhanced_features:
             X_train, y_train, countries_train = self._prepare_data(train_data, train_data)
@@ -585,7 +593,7 @@ class HierarchicalModelDataLake:
         print("Arquitetura: Data Lake para ML Hierárquico")
         print("Objetivo: Avaliar capacidade hierárquica arquitetural")
         print("Pattern: Data Lake com processamento flexível")
-        print("Configuração: Ridge α=50.0, Random Forest regularizado")
+        print("Configuração: Ridge adaptativo, Random Forest regularizado")
         
         all_results = {
             'architecture': 'data_lake',

@@ -142,8 +142,8 @@ class RandomForestStrategy(BaselineModelStrategy):
             'min_samples_split': 20,
             'min_samples_leaf': 10,
             'max_features': 'sqrt',
-            'random_state': 42,
-            'n_jobs': -1
+            'random_state': RANDOM_SEED,
+            'n_jobs': 1
         }
         default_params.update(self.params)
         self.params = default_params
@@ -242,8 +242,8 @@ class XGBoostStrategy(BaselineModelStrategy):
             'subsample': 0.8,
             'colsample_bytree': 0.8,
             'objective': 'reg:squarederror',
-            'random_state': 42,
-            'n_jobs': -1
+            'random_state': RANDOM_SEED,
+            'n_jobs': 1
         }
         default_params.update(self.params)
         self.params = default_params
@@ -370,8 +370,8 @@ class LightGBMStrategy(BaselineModelStrategy):
             'bagging_freq': 5,
             'objective': 'regression',
             'metric': 'rmse',
-            'random_state': 42,
-            'n_jobs': -1,
+            'random_state': RANDOM_SEED,
+            'n_jobs': 1,
             'verbose': -1
         }
         default_params.update(self.params)
@@ -551,7 +551,7 @@ class BaselineModelFactory:
                 'min_samples_split': 20,
                 'min_samples_leaf': 10,
                 'max_features': 'sqrt',
-                'random_state': 42
+                'random_state': RANDOM_SEED
             }
         elif model_type in ['xgb', 'xgboost']:
             return {
@@ -561,7 +561,7 @@ class BaselineModelFactory:
                 'subsample': 0.8,
                 'colsample_bytree': 0.8,
                 'objective': 'reg:squarederror',
-                'random_state': 42
+                'random_state': RANDOM_SEED
             }
         elif model_type in ['lgb', 'lightgbm', 'lgbm']:
             return {
@@ -572,7 +572,7 @@ class BaselineModelFactory:
                 'bagging_fraction': 0.8,
                 'objective': 'regression',
                 'metric': 'rmse',
-                'random_state': 42
+                'random_state': RANDOM_SEED
             }
         else:
             return {}
