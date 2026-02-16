@@ -115,7 +115,6 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, float]]:
     # Por fase
     p_values = []
     keys = []
-    tmp_stats = {}
     for p in phases:
         x, y = paired_vectors_for_phase(df, p)
         diff = x - y
@@ -145,7 +144,6 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, float]]:
         res[p] = rec
         p_values.append(float(t_p))
         keys.append(p)
-        tmp_stats[p] = rec
 
     # Total (exclui collection)
     x, y = paired_vectors_total(df, exclude_phases=["collection"])

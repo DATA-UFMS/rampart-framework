@@ -1118,31 +1118,25 @@ class RawDataCollector:
         df_wide['data_completeness_score'] = df_wide[numeric_cols].notna().mean(axis=1) * 100
         
         long_path = f"{self.output_dir}/raw_data_long.parquet"
-        try:
-            os.makedirs(os.path.dirname(long_path), exist_ok=True)
-            if os.path.exists(long_path):
-                if os.path.isdir(long_path):
-                    import shutil as _shutil
-                    _shutil.rmtree(long_path)
-                else:
-                    os.remove(long_path)
-            df_long.to_parquet(long_path, index=False)
-        except Exception:
-            raise
+        os.makedirs(os.path.dirname(long_path), exist_ok=True)
+        if os.path.exists(long_path):
+            if os.path.isdir(long_path):
+                import shutil as _shutil
+                _shutil.rmtree(long_path)
+            else:
+                os.remove(long_path)
+        df_long.to_parquet(long_path, index=False)
         print(f"[ARQUIVO] Dados formato long salvos: {long_path}")
         
         wide_path = f"{self.output_dir}/complete_data.parquet"
-        try:
-            os.makedirs(os.path.dirname(wide_path), exist_ok=True)
-            if os.path.exists(wide_path):
-                if os.path.isdir(wide_path):
-                    import shutil as _shutil
-                    _shutil.rmtree(wide_path)
-                else:
-                    os.remove(wide_path)
-            df_wide.to_parquet(wide_path, index=False)
-        except Exception:
-            raise
+        os.makedirs(os.path.dirname(wide_path), exist_ok=True)
+        if os.path.exists(wide_path):
+            if os.path.isdir(wide_path):
+                import shutil as _shutil
+                _shutil.rmtree(wide_path)
+            else:
+                os.remove(wide_path)
+        df_wide.to_parquet(wide_path, index=False)
         print(f"[ARQUIVO] Dados completos salvos: {wide_path}")
         
         if missingness_analysis:

@@ -55,16 +55,13 @@ class DataLakeArchitectureML(BaseArchitectureML):
             diretórios devido à natureza schema-on-read. Esta função garante
             escrita bem-sucedida independente do estado do filesystem.
         """
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            if os.path.exists(file_path):
-                if os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-                else:
-                    os.remove(file_path)
-            df.to_parquet(file_path, index=False)
-        except Exception as e:
-            raise
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        if os.path.exists(file_path):
+            if os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+            else:
+                os.remove(file_path)
+        df.to_parquet(file_path, index=False)
     
     def __init__(self):
         """Inicializa paths, validadores e logging para o pipeline Data Lake."""

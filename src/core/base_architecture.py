@@ -61,10 +61,6 @@ class BaseArchitectureML(ABC):
         self.target_column = f"dropout_rate_{architecture_name}"
         self.source_column = "lower_secondary_completion_rate"
         
-        # Cache para otimização
-        self._schema_cache = {}
-        self._cached_data = {}
-        
         self._create_directory_structure()
         
     def _create_directory_structure(self):

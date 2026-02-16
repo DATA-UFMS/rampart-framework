@@ -497,7 +497,7 @@ class BenchmarkRunner:
         start_ns = time.perf_counter_ns()
         Analyzer = self.modules["BaselineModelAnalysisDataLake"]
         analyzer = Analyzer()
-        results = analyzer.run_complete_analysis()
+        analyzer.run_complete_analysis()
         end_ns = time.perf_counter_ns()
 
         records = 0
@@ -521,7 +521,7 @@ class BenchmarkRunner:
         start_ns = time.perf_counter_ns()
         Analyzer = self.modules["BaselineModelAnalysisDataWarehouse"]
         analyzer = Analyzer()
-        results = analyzer.run_complete_analysis()
+        analyzer.run_complete_analysis()
         end_ns = time.perf_counter_ns()
 
         records = 0

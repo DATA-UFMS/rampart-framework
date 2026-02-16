@@ -125,7 +125,6 @@ class HierarchicalModelDataLake:
                 with open(selection_path, 'r') as f:
                     selection_data = json.load(f)
                 selected = selection_data.get('selected_features', [])
-                self.selection_path = selection_path
                 # Incluir lag do target se existir
                 if 'dropout_rate_lag_2' in self.ddf.columns and 'dropout_rate_lag_2' not in selected:
                     selected.append('dropout_rate_lag_2')
