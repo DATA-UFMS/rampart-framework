@@ -345,15 +345,13 @@ class DataWarehouseProcessor:
         """
         print("[EXPORTAÇÃO] SALVANDO DADOS PROCESSADOS")
         
+        # Estatísticas finais para metadados
         try:
-            final_record_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-            print(f"   [INFO] Exportando {final_record_count} registros")
+            total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
+            print(f"   [INFO] Exportando {total_records} registros")
         except SQLProcessingError as e:
             print(f"   [ERRO] Falha ao verificar dados: {e}")
             raise
-        
-        # Estatísticas finais para metadados
-        total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
         final_completeness_avg = self.conn_manager.execute_scalar("SELECT AVG(data_completeness_score) FROM analytics_wide")
         
         output_path = f"{self.output_dir}/final_dataset.parquet"

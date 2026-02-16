@@ -55,27 +55,16 @@ class ScientificFeatureEngineeringDataLake:
             group_by=['country_code']
         )
         
-        # Interações (específicas da arquitetura)
-        if self.architecture == 'data_lake':
-            # Data Lake: mais interações por capacidade distribuída
-            df = self.engineer.create_interaction_features(
-                df,
-                feature_pairs=[
-                    ('gdp_per_capita', 'education_expenditure'),
-                    ('population_0_14', 'school_enrollment_primary'),
-                    ('literacy_rate', 'internet_users')
-                ],
-                operations=['ratio', 'multiply']
-            )
-        else:
-            # Data Warehouse: interações seletivas via SQL
-            df = self.engineer.create_interaction_features(
-                df,
-                feature_pairs=[
-                    ('gdp_per_capita', 'education_expenditure')
-                ],
-                operations=['ratio']
-            )
+        # Data Lake: mais interações por capacidade distribuída
+        df = self.engineer.create_interaction_features(
+            df,
+            feature_pairs=[
+                ('gdp_per_capita', 'education_expenditure'),
+                ('population_0_14', 'school_enrollment_primary'),
+                ('literacy_rate', 'internet_users')
+            ],
+            operations=['ratio', 'multiply']
+        )
         
         return df
     

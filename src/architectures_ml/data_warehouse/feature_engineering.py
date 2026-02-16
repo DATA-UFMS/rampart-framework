@@ -11,7 +11,6 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from core.features import FeatureEngineer
-from architectures_ml.data_warehouse.setup import DataWarehouseArchitectureML
 
 
 class DataWarehouseFeatureEngineering:
@@ -24,7 +23,6 @@ class DataWarehouseFeatureEngineering:
     
     def __init__(self):
         """Inicializa com setup da arquitetura."""
-        self.setup = DataWarehouseArchitectureML()
         self.engineer = FeatureEngineer()
         self.architecture = 'data_warehouse'
     
@@ -57,27 +55,14 @@ class DataWarehouseFeatureEngineering:
             group_by=['country_code']
         )
         
-        # Interações (específicas da arquitetura)
-        if self.architecture == 'data_lake':
-            # Data Lake: mais interações por capacidade distribuída
-            df = self.engineer.create_interaction_features(
-                df,
-                feature_pairs=[
-                    ('gdp_per_capita', 'education_expenditure'),
-                    ('population_0_14', 'school_enrollment_primary'),
-                    ('literacy_rate', 'internet_users')
-                ],
-                operations=['ratio', 'multiply']
-            )
-        else:
-            # Data Warehouse: interações seletivas via SQL
-            df = self.engineer.create_interaction_features(
-                df,
-                feature_pairs=[
-                    ('gdp_per_capita', 'education_expenditure')
-                ],
-                operations=['ratio']
-            )
+        # Interações seletivas via SQL
+        df = self.engineer.create_interaction_features(
+            df,
+            feature_pairs=[
+                ('gdp_per_capita', 'education_expenditure')
+            ],
+            operations=['ratio']
+        )
         
         return df
     

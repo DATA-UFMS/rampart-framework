@@ -439,7 +439,6 @@ class DataLakeProcessor:
                           (partition['data_completeness_score'] > 100)
             
             if invalid_mask.any():
-                n_invalid = invalid_mask.sum()
                 # Truncagem científica: preserva monotonicidade
                 partition.loc[partition['data_completeness_score'] < 0, 'data_completeness_score'] = 0.0
                 partition.loc[partition['data_completeness_score'] > 100, 'data_completeness_score'] = 100.0
@@ -506,7 +505,7 @@ class DataLakeProcessor:
                         return 'declining'
                     else:
                         return 'stable'
-                except:
+                except Exception:
                     # Fallback para casos patológicos
                     return 'stable'
             
