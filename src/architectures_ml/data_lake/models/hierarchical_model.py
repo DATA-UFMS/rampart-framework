@@ -115,7 +115,6 @@ class HierarchicalModelDataLake:
         if self.target_col not in self.ddf.columns:
             raise ValueError(f"Target {self.target_col} não encontrado nos dados")
         
-        # Preparar encoder de países
         self.country_encoder = LabelEncoder()
         self.country_encoder.fit(computed_stats['unique_countries'])
         
@@ -223,7 +222,6 @@ class HierarchicalModelDataLake:
             except Exception:
                 means_batch[f"{feature}_mean"] = reference_ddf[feature].mean()
         
-        # Computar tudo de uma vez
         if medians_batch:
             computed_medians = dask.compute(medians_batch)[0]
         else:
@@ -234,7 +232,6 @@ class HierarchicalModelDataLake:
         else:
             computed_means = {}
         
-        # Processar resultados
         medians = {}
         for feature in self.available_features:
             if f"{feature}_median" in computed_medians:
@@ -246,7 +243,6 @@ class HierarchicalModelDataLake:
             else:
                 medians[feature] = 0.0
         
-        # Aplicar fillna
         X_ddf = data_ddf[self.available_features]
         for feature, median_val in medians.items():
             X_ddf = X_ddf.assign(**{feature: X_ddf[feature].fillna(median_val)})
@@ -437,7 +433,7 @@ class HierarchicalModelDataLake:
         mae = mean_absolute_error(y_test, predictions)
         r2 = r2_score(y_test, predictions)
         
-        # Feature importance
+        # Importância de features
         feature_names = list(X_train_augmented.columns)
         feature_importance = dict(zip(feature_names, rf_model.feature_importances_))
         
@@ -501,7 +497,6 @@ class HierarchicalModelDataLake:
             ]
             print(f"Dados Normais: Train={len(train_ddf)}, Val={len(val_ddf)}, Test={len(test_ddf)}")
         
-        # Preparar dados
         if self.use_enhanced_features:
             X_train, y_train, countries_train = self._prepare_data(train_data, train_data)
             X_val, y_val, countries_val = self._prepare_data(val_data, train_data)
@@ -511,7 +506,6 @@ class HierarchicalModelDataLake:
             X_val, y_val, countries_val = self._prepare_data(val_ddf, train_ddf)
             X_test, y_test, countries_test = self._prepare_data(test_ddf, train_ddf)
         
-        # Aplicar scaling
         scaler = StandardScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
@@ -609,7 +603,6 @@ class HierarchicalModelDataLake:
             'folds': []
         }
         
-        # Executar análise para cada fold
         valid_folds = 0
         for fold_info in self.folds:
             fold_results = self.run_fold_analysis(fold_info)
@@ -688,7 +681,6 @@ class HierarchicalModelDataLake:
                 print(f"   Melhor modelo: Simple Hierarchical")
                 print(f"   R² Teste: {simple_test:.3f}")
         
-        # Salvar resultados
         mode_suffix = "_enhanced" if self.use_enhanced_features else "_normal"
         results_file = f"{self.results_path}/hierarchical_analysis_data_lake_results{mode_suffix}.json"
         with open(results_file, 'w') as f:

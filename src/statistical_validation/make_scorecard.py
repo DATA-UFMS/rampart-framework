@@ -44,7 +44,7 @@ def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
     Retorna dict fase -> (speedup, lo, hi).
     """
     res: Dict[str, Tuple[float, float, float]] = {}
-    # Expect rows like: "Processing & 10.00 & 1.00 & 9.00 [8.00, 10.00] & 13.70 [10.32, 18.18] & ..."
+    # Linhas esperadas: "Processing & 10.00 & 1.00 & 9.00 [8.00, 10.00] & 13.70 [10.32, 18.18] & ..."
     for line in tex.splitlines():
         if not line or '&' not in line or line.startswith('%'):
             continue
@@ -52,7 +52,7 @@ def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
         if len(parts) < 6:
             continue
         phase = parts[0].lower()
-        # speedup field looks like: "7.10 [6.58, 7.67]"
+        # Campo speedup no formato: "7.10 [6.58, 7.67]"
         m = re.search(r"([0-9]+\.?[0-9]*)\s*\[\s*([0-9]+\.?[0-9]*),\s*([0-9]+\.?[0-9]*)\s*\]", parts[5])
         if m:
             val = float(m.group(1))
@@ -63,7 +63,6 @@ def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
 
 
 def get_speedups() -> Dict[str, Tuple[float, float, float]]:
-    # Prefer JSON if available
     j = load_json(BASE / 'significance_summary.json')
     if j:
         out: Dict[str, Tuple[float, float, float]] = {}
@@ -81,7 +80,6 @@ def get_speedups() -> Dict[str, Tuple[float, float, float]]:
     tex = read_text(BASE / 'significance_summary.tex')
     if tex:
         return parse_significance_tex(tex)
-    # Last resort: empty
     return {}
 
 
@@ -107,7 +105,7 @@ def summarize_tost(name: str) -> Optional[str]:
 
 
 def get_resources_processing() -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """Return (cpu_dl, cpu_dw, rss_dl, rss_dw) from resource_usage.tex for processing phase."""
+    """Retorna (cpu_dl, cpu_dw, rss_dl, rss_dw) de resource_usage.tex para fase de processamento."""
     tex = read_text(BASE / 'architectural_resource_usage.tex')
     if not tex:
         return (None, None, None, None)

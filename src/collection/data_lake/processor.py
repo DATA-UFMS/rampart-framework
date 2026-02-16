@@ -180,7 +180,6 @@ class DataLakeProcessor:
         scientific_indicators = [col for col in ddf.columns if col in indicator_names]
         
         if scientific_indicators:
-            # Batch computation para eficiência
             missing_count = ddf[scientific_indicators].isna().sum().sum().compute()
             total_cells = n_rows * len(scientific_indicators)
             missing_pct = (missing_count / total_cells) * 100
@@ -315,7 +314,6 @@ class DataLakeProcessor:
             print("  → Score de completude preservado (validação diferida)")
         else:
             print("  → Score de completude ausente - criando placeholder (valor 0.0)")
-            # Placeholder será recalculado se necessário durante export
             ddf = ddf.assign(data_completeness_score=0.0)
         
         print("[PARADIGMA] Schema-on-read: estrutura garantida, semântica diferida")
@@ -648,7 +646,6 @@ class DataLakeProcessor:
             'total_records': len(ddf)
         }
         
-        # Single compute call para eficiência
         computed_stats = dask.compute(stats_to_compute)[0]
         
         # Relatório de qualidade

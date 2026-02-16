@@ -53,11 +53,9 @@ class StructuredFormatter(logging.Formatter):
             'process_id': os.getpid(),
         }
         
-        # Adicionar contexto extra se disponível
         if hasattr(record, 'context'):
             log_obj['context'] = record.context
         
-        # Adicionar informações de erro se for exceção
         if record.exc_info:
             log_obj['exception'] = {
                 'type': record.exc_info[0].__name__,
@@ -65,13 +63,11 @@ class StructuredFormatter(logging.Formatter):
                 'traceback': traceback.format_exception(*record.exc_info)
             }
         
-        # Adicionar métricas de performance se disponível
         if hasattr(record, 'duration'):
             log_obj['performance'] = {
                 'duration_seconds': record.duration
             }
         
-        # Adicionar informações ML específicas se disponível
         if hasattr(record, 'ml_context'):
             log_obj['ml'] = record.ml_context
         
@@ -106,22 +102,18 @@ class ColoredConsoleFormatter(logging.Formatter):
         Returns:
             String formatada com cores ANSI
         """
-        # Adicionar cor baseada no nível
         levelname = record.levelname
         if levelname in self.COLORS:
             record.levelname = f"{self.COLORS[levelname]}{self.BOLD}{levelname}{self.RESET}"
         
-        # Formatar timestamp
         timestamp = datetime.fromtimestamp(record.created).strftime('%H:%M:%S')
         
-        # Construir mensagem
         if hasattr(record, 'context'):
             context_str = ' | '.join(f"{k}={v}" for k, v in record.context.items())
             message = f"[{timestamp}] {record.levelname} [{record.name}] {record.getMessage()} | {context_str}"
         else:
             message = f"[{timestamp}] {record.levelname} [{record.name}] {record.getMessage()}"
         
-        # Adicionar informações de erro se presente
         if record.exc_info:
             message += f"\n{self.COLORS.get('ERROR', '')}{self.formatException(record.exc_info)}{self.RESET}"
         
@@ -281,18 +273,14 @@ def setup_logging(
     Returns:
         Logger configurado
     """
-    # Criar diretório de logs se necessário
     if log_to_file:
         Path(log_dir).mkdir(parents=True, exist_ok=True)
     
-    # Configurar logger raiz
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper()))
     
-    # Remover handlers existentes
     root_logger.handlers.clear()
     
-    # Adicionar handler de console
     if log_to_console:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(getattr(logging, log_level.upper()))
@@ -337,7 +325,6 @@ def setup_logging(
         error_handler.setFormatter(StructuredFormatter())
         root_logger.addHandler(error_handler)
     
-    # Configurar níveis específicos para módulos
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('sklearn').setLevel(logging.WARNING)
@@ -385,7 +372,6 @@ def log_execution(func):
         start_time = time.time()
         
         try:
-            # Executar função
             result = func(*args, **kwargs)
             
             # Log sucesso
@@ -427,7 +413,6 @@ def log_ml_pipeline(phase: str):
         def wrapper(*args, **kwargs):
             logger = get_logger(func.__module__, with_ml_context=True)
             
-            # Configurar contexto ML
             logger.set_ml_context(
                 pipeline_phase=phase,
                 function=func.__name__
@@ -462,20 +447,16 @@ def init_default_logging():
 
 # Exemplo de uso
 if __name__ == "__main__":
-    # Configurar logging
     setup_logging(
         log_dir="test_logs",
         log_level="DEBUG",
         structured=True
     )
     
-    # Obter logger com contexto ML
     logger = get_logger(__name__, with_ml_context=True)
     
-    # Exemplos de uso
     logger.info("Sistema de logging inicializado")
     
-    # Log com contexto
     logger.set_context(
         experiment_id="exp_001",
         dataset="worldbank",

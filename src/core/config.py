@@ -42,10 +42,10 @@ BENCHMARK_CONFIG = {
     'repetitions': 10,  # Número de repetições por teste
     'warmup_runs': 2,   # Execuções de aquecimento
     'timeout_seconds': 3600,  # Timeout por operação
-    'memory_limit_gb': 16,  # Limite de memória
-    'profile_memory': True,  # Ativar profiling de memória
-    'profile_cpu': True,  # Ativar profiling de CPU
-    'save_intermediate': True  # Salvar resultados intermediários
+    'memory_limit_gb': 16,
+    'profile_memory': True,
+    'profile_cpu': True,
+    'save_intermediate': True
 }
 
 # ============================================================================

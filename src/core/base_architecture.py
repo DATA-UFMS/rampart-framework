@@ -65,7 +65,6 @@ class BaseArchitectureML(ABC):
         self._schema_cache = {}
         self._cached_data = {}
         
-        # Criar estrutura de diretórios
         self._create_directory_structure()
         
     def _create_directory_structure(self):
@@ -171,7 +170,6 @@ class BaseArchitectureML(ABC):
         """
         stats = self._compute_target_statistics(data)
         
-        # Adicionar metadados comuns
         stats.update({
             'architecture': self.architecture_name,
             'target_variable': self.target_column,
@@ -189,7 +187,6 @@ class BaseArchitectureML(ABC):
             print(f"   Aviso: Poucos dados válidos ({stats['valid_count']}) "
                   f"para ML robusto")
         
-        # Salvar estatísticas
         stats_path = f"{self.prep_dir}/target_statistics.json"
         with open(stats_path, 'w') as f:
             json.dump(stats, f, indent=2)
@@ -419,7 +416,7 @@ class BaseArchitectureML(ABC):
         if len(selected) < 5:
             selected = [
                 feat for feat, corr in correlations.items()
-                if corr >= min_corr * 0.67  # Relaxar para 0.1 se min_corr=0.15
+                if corr >= min_corr * 0.67  
             ]
             print(f"   Critério relaxado: {len(selected)} features")
         
@@ -461,7 +458,6 @@ class BaseArchitectureML(ABC):
         """
         print(f"\nFeature selection {self.architecture_name}...")
         
-        # Obter features candidatas
         exclude_cols = self.get_excluded_features()
         all_features = self.get_numeric_features(data)
         feature_cols = [col for col in all_features if col not in exclude_cols]
@@ -692,10 +688,8 @@ class BaseArchitectureML(ABC):
             # 4. Criar target
             data_with_target = self.create_target(data)
             
-            # 5. Feature selection
             selection_stats = self.run_feature_selection(data_with_target)
             
-            # 6. Feature engineering
             data_processed = self.prepare_features(
                 data_with_target, 
                 selection_stats['selected_features']
@@ -1000,7 +994,6 @@ class BaseArchitectureML(ABC):
 
         validator = BenchmarkValidator(self_results, other_arch_results)
         
-        # Executar todas as validações
         equivalence_report = validator.validate_all()
 
         report_path = f"{self.output_base}/scientific_equivalence_report.json"

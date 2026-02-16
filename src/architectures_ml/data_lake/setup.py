@@ -19,10 +19,7 @@ import dask.dataframe as dd
 import dask
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
-
-# Adicionar caminho para módulos core
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
 from core.base_architecture import BaseArchitectureML
 from core.features import FeatureEngineer
 from core.config import get_absolute_output_path
@@ -411,7 +408,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
         
         print("[STATUS] ✓ Target criado via Dask lazy evaluation")
         print("[EQUIVALÊNCIA] Transformação idêntica ao Data Warehouse (SQL)")
-        # Criar lag de 2 anos do target via join temporal (seguro entre partições)
         try:
             base = ddf_with_target[['country_code', 'year', self.target_column]].rename(
                 columns={self.target_column: 'dropout_rate_t'}
@@ -493,7 +489,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 for error in errors:
                     self.logger.warning(f"Fold {fold['fold_id']}: {error}")
             
-            # Computar estatísticas 
             train_filter = (
                 (ddf['year'] >= fold['train_start']) &
                 (ddf['year'] <= fold['train_end']) &
@@ -640,7 +635,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 continue
                 
             try:
-                # Correlação de Pearson com tratamento robusto
+                # Correlação de Pearson com tratamento 
                 corr = sample_df[feat].corr(sample_df[target_col])
                 
                 # Valor absoluto para ranking por força da associação
@@ -841,10 +836,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
         print("[PREPARAÇÃO] Criando cópia de trabalho...")
         ddf_work = ddf.copy()
 
-        # === Symmetric log transform: T(x) = sign(x) * ln(|x| + 1) ===
+        # === Transformação, log simétrico: T(x) = sign(x) * ln(|x| + 1) ===
         print("[TRANSFORMAÇÃO] Aplicando symmetric log transform a top-5 features")
         
-        # Critério científico: Limitar escopo por curse of dimensionality
+        # Critério: Limitar escopo por curse of dimensionality
         features_to_transform = selected_features[:5] if len(selected_features) > 5 else selected_features
         transformed_count = 0
         
@@ -945,7 +940,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
             print(f"   ↪ Processando fold {fold_id}...")
             
-            # Aplicar filtros temporais
             train_filter = (
                 (ddf['year'] >= fold['train_start']) &
                 (ddf['year'] <= fold['train_end']) &
@@ -963,7 +957,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
                   (ddf['year'] <= fold['val_gap_end']))
             )
             
-            # Criar subsets com filtros
             train_ddf = ddf[train_filter]
             val_ddf = ddf[val_filter]
             test_ddf = ddf[test_filter]
@@ -987,7 +980,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 print(f"   ✖ Erro ao salvar fold {fold_id}: {e}")
                 raise
             
-            # Salvar metadados
             fold_metadata = {
                 **fold,
                 'storage_method': 'parquet_files',

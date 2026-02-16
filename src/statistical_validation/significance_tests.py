@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-# Raiz do projeto para importar configuração científica
+# Raiz do projeto para importar configuração
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
@@ -191,9 +191,7 @@ def analyze(csv_path: str, bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS) -> Di
 def _format_markdown_table(rows: List[Dict[str, float]], cols: List[str]) -> str:
     """Cria uma tabela Markdown estável sem depender de tabulate."""
     headers = ['phase'] + cols
-    # Header
     out = ['|' + '|'.join(headers) + '|', '|' + '|'.join(['---'] * len(headers)) + '|']
-    # Rows
     for r in rows:
         line = [str(r.get('phase', ''))]
         for c in cols:
@@ -264,7 +262,6 @@ def write_outputs(results: Dict[str, Dict[str, float]]) -> None:
         fmd.write("# Resumo de Significância Estatística\n\n")
         fmd.write(_format_markdown_table(rows, md_cols))
 
-    # LaTeX table (uses pandas to_latex)
     try:
         df_latex = df[["phase"] + md_cols].copy()
         for c in df_latex.columns:

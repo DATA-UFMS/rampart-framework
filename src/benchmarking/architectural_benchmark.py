@@ -79,7 +79,7 @@ def _import_modules():
         ScientificFeatureEngineeringDataLake,
     )
 
-    # No DW feature engineering wrapper in original pipeline; skip
+    # DW não possui wrapper de feature engineering no pipeline original
     # Baseline
     from src.architectures_ml.data_lake.models.baseline_analysis import (  # type: ignore
         BaselineModelAnalysisDataLake,
@@ -201,7 +201,6 @@ class BenchmarkRunner:
             self._end_ts = None
 
         def __enter__(self):
-            # Inicializar contadores de CPU para cálculo percentual adequado
             try:
                 self._proc.cpu_percent(interval=None)
                 psutil.cpu_percent(interval=None)

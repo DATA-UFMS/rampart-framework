@@ -162,7 +162,6 @@ class RandomForestStrategy(BaselineModelStrategy):
                 X_val = X_val.compute()
                 y_val = y_val.compute()
         
-        # Criar e treinar modelo
         self.model = RandomForestRegressor(**self.params)
         
         if self.use_dask and DASK_AVAILABLE:

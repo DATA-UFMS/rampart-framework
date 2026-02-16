@@ -39,7 +39,6 @@ if core_path not in sys.path:
 from config import get_absolute_output_path
 from models.baseline import BaselineModelFactory, BaselineEnsemble
 
-# Importar SQL Connection Manager para padrão Data Warehouse Consumer
 data_warehouse_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'collection', 'data_warehouse')
 data_warehouse_path = os.path.abspath(data_warehouse_path)
 if data_warehouse_path not in sys.path:
@@ -272,7 +271,7 @@ class BaselineModelAnalysisDataWarehouse:
             if view_exists:
                 print(f"      Usando view temporal: {view_name}")
                 
-                # ✅ DESCOBERTA DINÂMICA DE FEATURES VIA SQL (SQL-FIRST PARADIGM)
+                # Descoberta dinâmica de features via SQL
                 try:
                     available_features_query = f"""
                         SELECT column_name
@@ -844,7 +843,6 @@ class BaselineModelAnalysisDataWarehouse:
         
         ml_results = {}
         
-        # Verificar modelos disponíveis
         available_models = BaselineModelFactory.get_available_models()
         print(f"Modelos disponíveis: {', '.join(available_models)}")
         
@@ -852,7 +850,6 @@ class BaselineModelAnalysisDataWarehouse:
             print(f"\nFold {fold_id}: ML Models Training via DW")
             
             try:
-                # Carregar dados via queries diretas
                 train_data = self._load_ml_fold_data(fold_id, 'train')
                 val_data = self._load_ml_fold_data(fold_id, 'val')
                 test_data = self._load_ml_fold_data(fold_id, 'test')
@@ -867,7 +864,6 @@ class BaselineModelAnalysisDataWarehouse:
                 feature_cols = [col for col in train_data.columns
                               if col not in [self.target_col, 'country_code', 'year']]
                 
-                # Preparar dados para treinamento
                 X_train = train_data[feature_cols]
                 y_train = train_data[self.target_col]
                 X_val = val_data[feature_cols] if len(val_data) > 0 else None
@@ -883,7 +879,6 @@ class BaselineModelAnalysisDataWarehouse:
                         try:
                             print(f"      Treinando {model_type}...")
                             
-                            # Criar modelo com factory (sem Dask para DW)
                             model = BaselineModelFactory.create_model(
                                 model_type=model_type,
                                 params=None,  # Usar parâmetros padrão
@@ -920,7 +915,6 @@ class BaselineModelAnalysisDataWarehouse:
                     try:
                         print(f"      Treinando Ensemble...")
                         
-                        # Criar ensemble com pesos iguais
                         ensemble_config = [(model_type, None, 1.0) for model_type in successful_models]
                         ensemble = BaselineEnsemble(ensemble_config, use_dask=False)
                         
@@ -1014,7 +1008,7 @@ class BaselineModelAnalysisDataWarehouse:
                     'gaps': gaps
                 }
         
-        # ANÁLISE CIENTÍFICA DETALHADA
+        # ANÁLISE DETALHADA
         print("   🖈  Performance out-of-sample (TEST SET) dos baselines científicos:")
         for baseline, stats in all_test_scores.items():
             val_stats = all_val_scores[baseline]
@@ -1033,7 +1027,7 @@ class BaselineModelAnalysisDataWarehouse:
             print(f"      ⚙ Performance Teste:     R² = {best_mean_test_r2:.3f}")
             print(f"       🢱 Gap Generalização:     {best_generalization_gap:+.3f}")
             
-            # DIAGNÓSTICO CIENTÍFICO DE PREDICTABILIDADE
+            # DIAGNÓSTICO DE PREDICTABILIDADE
             predictability_analysis = {
                 'architecture': 'data_warehouse',
                 'methodology': 'scientific_baselines_with_temporal_lags',
@@ -1053,7 +1047,7 @@ class BaselineModelAnalysisDataWarehouse:
                 }
             }
             
-            # CLASSIFICAÇÃO CIENTÍFICA DE PREDICTABILIDADE
+            # CLASSIFICAÇÃO DE PREDICTABILIDADE
             if best_mean_test_r2 < 0:
                 predictability_analysis['predictability_level'] = 'very_low'
                 print(f"   ✖ PREDICTABILIDADE MUITO BAIXA: R²_test < 0")
@@ -1075,7 +1069,7 @@ class BaselineModelAnalysisDataWarehouse:
                 print(f"   ✔ BOA PREDICTABILIDADE: R²_test = {best_mean_test_r2:.3f}")
                 print(f"       🢱 Interpretação: Bom poder preditivo")
             
-            # ANÁLISE DE ESTABILIDADE - mensagem mais informativa
+            # ANÁLISE DE ESTABILIDADE
             avg_generalization_gap = np.mean([gap_data['mean_gap'] for gap_data in generalization_gaps.values()])
             abs_avg_gap = abs(avg_generalization_gap)
             
@@ -1093,7 +1087,6 @@ class BaselineModelAnalysisDataWarehouse:
                 print(f"       🢱 Possível overfitting ou forte variação temporal")
                 stability_level = "low"
             
-            # ADEQUAÇÃO PARA PUBLICAÇÃO - critérios mais realistas
             publication_criteria = {
                 'temporal_leakage_prevented': predictability_analysis['scientific_validity']['temporal_leakage_prevented'],
                 'validation_used_correctly': predictability_analysis['scientific_validity']['validation_used_correctly'],
@@ -1266,8 +1259,7 @@ class BaselineModelAnalysisDataWarehouse:
                 print(f"   Temporal Views: ✖ NÃO USADAS (apenas fallback)")
                 print(f"   🖈  Data Warehouse Pattern: ✖ FALLBACK USADO")
                 print(f"   Execute setup.py primeiro para criar views temporais")
-            
-            # Alertas metodológicos  
+             
             if predictability_analysis.get('scientific_validity', {}).get('temporal_leakage_prevented', False):
                 print(f"   ⚙ Vazamento temporal: PREVENIDO (lag ≥2 anos)")
             else:

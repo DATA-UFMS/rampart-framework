@@ -52,15 +52,12 @@ class BenchmarkValidator:
         """Carrega os artefatos JSON de um pipeline para validação."""
         artifacts = {}
         try:
-            # Carregar estatísticas do target
             with open(f"{base_path}/prep/target_statistics.json", 'r') as f:
                 artifacts['target_stats'] = json.load(f)
             
-            # Carregar seleção de features
             with open(f"{base_path}/prep/feature_selection_{arch_name}.json", 'r') as f:
                 artifacts['feature_selection'] = json.load(f)
 
-            # Carregar configuração dos folds
             with open(f"{base_path}/prep/temporal_folds_{arch_name}.json", 'r') as f:
                 artifacts['folds_config'] = json.load(f)
 

@@ -137,7 +137,6 @@ def para_latex(resumo: Dict) -> str:
 
     por_fase = resumo.get("por_fase", {})
     
-    # Processar cada fase ordenadamente
     for fase in sorted(por_fase.keys()):
         item = por_fase[fase]
         arquiteturas = item.get("arquiteturas", {})

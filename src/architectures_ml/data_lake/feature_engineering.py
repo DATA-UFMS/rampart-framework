@@ -33,7 +33,6 @@ class ScientificFeatureEngineeringDataLake:
         Preserva 100% da lógica científica original através
         de parâmetros específicos da arquitetura.
         """
-        # Criar lags (preservando configuração original)
         df = self.engineer.create_lag_features(
             df, 
             columns=['gdp_per_capita', 'population_total'],
@@ -41,7 +40,6 @@ class ScientificFeatureEngineeringDataLake:
             group_by=['country_code']
         )
         
-        # Criar rolling statistics
         df = self.engineer.create_rolling_features(
             df,
             columns=['inflation_rate', 'unemployment_rate'],
@@ -50,7 +48,6 @@ class ScientificFeatureEngineeringDataLake:
             group_by=['country_code']
         )
         
-        # Features de tendência temporal
         df = self.engineer.create_temporal_trend_features(
             df,
             columns=['gdp_growth', 'education_expenditure'],

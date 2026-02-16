@@ -276,7 +276,6 @@ def main():
     
     args = parser.parse_args()
     
-    # Confirma se não é dry-run
     if not args.dry_run:
         print("  ATENÇÃO: Esta operação irá REMOVER arquivos permanentemente!")
         print("   Arquivos de dados, logs, cache e outputs serão deletados.")

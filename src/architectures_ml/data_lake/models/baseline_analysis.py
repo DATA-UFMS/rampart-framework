@@ -93,13 +93,11 @@ class BaselineModelAnalysisDataLake:
             'negative_target_count': (self.ddf[self.target_col] < 0).sum()
         }
         
-        # Verificar proporção de dados imputados
         imputed_cols = [col for col in self.ddf.columns if '_imputed' in col and col != f'{self.target_col}_imputed']
         if imputed_cols:
             total_imputed = self.ddf[imputed_cols].sum(axis=1)
             stats_tasks['imputed_count'] = (total_imputed > 0).sum()
         
-        # Computar valores em paralelo
         keys = list(stats_tasks.keys())
         values = list(stats_tasks.values())
         computed_values = dask.compute(*values)
@@ -291,7 +289,6 @@ class BaselineModelAnalysisDataLake:
                 train_clean_ddf[self.target_col].mean(),
             )
             
-            # Carregar DataFrames Pandas para escalas de MASE e WAPE
             try:
                 train_clean_pd = train_clean_ddf[['country_code','year', self.target_col]].compute()
                 val_clean_pd = val_clean_ddf[['country_code','year', self.target_col]].compute()
@@ -351,7 +348,7 @@ class BaselineModelAnalysisDataLake:
             X_val_time = X_val_time.values
             X_test_time = X_test_time.values
             
-            trend_model = LinearRegression()  # LinearRegression não aceita random_state
+            trend_model = LinearRegression()
             trend_model.fit(X_train_time, y_train)
             
             val_pred_trend = trend_model.predict(X_val_time)
@@ -411,9 +408,6 @@ class BaselineModelAnalysisDataLake:
             test_pred_naive = []
             combined_history_ddf = dd.concat([train_clean_ddf, val_clean_ddf], ignore_index=True)
             combined_mean = combined_history_ddf[self.target_col].mean().compute()
-            
-            # test_clean_pd já computado acima junto com val_clean_pd
-            
             test_unique_countries = test_clean_pd['country_code'].unique()
             test_country_values = {}
             
@@ -609,14 +603,12 @@ class BaselineModelAnalysisDataLake:
         
         ml_results = {}
         
-        # Verificar modelos disponíveis
         available_models = BaselineModelFactory.get_available_models()
         print(f"Modelos disponíveis: {', '.join(available_models)}")
         
         for fold_id, fold in enumerate(self.folds):
             print(f"\nFold {fold_id}: ML Models Training")
             
-            # Preparar dados do fold
             train_ddf = self.ddf[(self.ddf['year'] >= fold['train_start']) &
                                 (self.ddf['year'] <= fold['train_end'])]
             val_ddf = self.ddf[(self.ddf['year'] >= fold['val_start']) &
@@ -624,12 +616,10 @@ class BaselineModelAnalysisDataLake:
             test_ddf = self.ddf[(self.ddf['year'] >= fold['test_start']) &
                                (self.ddf['year'] <= fold['test_end'])]
             
-            # Limpar dados
             train_clean = train_ddf.dropna(subset=[self.target_col])
             val_clean = val_ddf.dropna(subset=[self.target_col])
             test_clean = test_ddf.dropna(subset=[self.target_col])
             
-            # Computar tamanhos
             train_size = int(train_clean.map_partitions(len).compute().sum())
             val_size = int(val_clean.map_partitions(len).compute().sum())
             test_size = int(test_clean.map_partitions(len).compute().sum())
@@ -644,7 +634,6 @@ class BaselineModelAnalysisDataLake:
             feature_cols = [col for col in train_clean.columns
                           if col not in [self.target_col, 'country_code', 'year']]
             
-            # Preparar dados para treinamento
             X_train = train_clean[feature_cols]
             y_train = train_clean[self.target_col]
             X_val = val_clean[feature_cols]
@@ -660,7 +649,6 @@ class BaselineModelAnalysisDataLake:
                     try:
                         print(f"      Treinando {model_type}...")
                         
-                        # Criar modelo com factory
                         model = BaselineModelFactory.create_model(
                             model_type=model_type,
                             params=None,  # Usar parâmetros padrão
@@ -697,7 +685,6 @@ class BaselineModelAnalysisDataLake:
                 try:
                     print(f"      Treinando Ensemble...")
                     
-                    # Criar ensemble com pesos iguais
                     ensemble_config = [(model_type, None, 1.0) for model_type in successful_models]
                     ensemble = BaselineEnsemble(ensemble_config, use_dask=True)
                     

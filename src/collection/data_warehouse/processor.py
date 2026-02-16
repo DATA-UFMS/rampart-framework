@@ -440,7 +440,6 @@ class DataWarehouseProcessor:
         print(f"   [INFO] {len(statements)} statements SQL encontrados")
         
         try:
-            # Executar DROPs para garantir idempotência
             drop_statements = [stmt for stmt in statements if stmt.upper().startswith('DROP TABLE') or stmt.upper().startswith('DROP VIEW')]
             for stmt in drop_statements:
                 try:

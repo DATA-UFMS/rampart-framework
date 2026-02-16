@@ -905,7 +905,6 @@ class RawDataCollector:
             true_values = df_validation.loc[test_indices, indicator].copy()
             df_validation.loc[test_indices, indicator] = np.nan
             
-            # Aplicar imputação simplificada
             category_config = self.get_indicator_category_config(indicator)
             is_zero_centered = self.is_zero_centered_indicator(indicator)
             use_robust = category_config['use_robust_imputation']
@@ -1119,7 +1118,6 @@ class RawDataCollector:
         numeric_cols = df_wide.select_dtypes(include=[np.number]).columns
         df_wide['data_completeness_score'] = df_wide[numeric_cols].notna().mean(axis=1) * 100
         
-        # Salvar dados
         long_path = f"{self.output_dir}/raw_data_long.parquet"
         try:
             os.makedirs(os.path.dirname(long_path), exist_ok=True)
@@ -1148,7 +1146,6 @@ class RawDataCollector:
             raise
         print(f"[ARQUIVO] Dados completos salvos: {wide_path}")
         
-        # Salvar análises
         if missingness_analysis:
             missingness_path = f"{self.output_dir}/scientific_missingness_analysis.json"
             with open(missingness_path, 'w') as f:
@@ -1173,7 +1170,6 @@ class RawDataCollector:
                 json.dump(validation_results, f, indent=2)
             print(f"[ARQUIVO] Validação cruzada salva: {validation_path}")
         
-        # Salvar metadados expandidos
         metadata = {
             'collection_timestamp': datetime.now().isoformat(),
             'total_records_long': len(df_long),

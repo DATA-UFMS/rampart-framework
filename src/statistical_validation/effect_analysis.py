@@ -81,13 +81,13 @@ def cohens_dz(diff: np.ndarray) -> float:
 def hedges_g(d: float, n: int) -> float:
     if not math.isfinite(d):
         return d
-    # small sample correction
+    # Correção para amostras pequenas
     J = 1 - (3 / (4 * (n - 1) - 1)) if n > 2 else 1.0
     return d * J
 
 
 def eta_squared_from_t(t_stat: float, n: int) -> float:
-    # paired t: df = n-1
+    # t pareado: df = n-1
     if not math.isfinite(t_stat) or n <= 1:
         return float("nan")
     df = n - 1
@@ -100,7 +100,7 @@ def benjamini_hochberg(pvals: List[float], alpha: float = 0.05) -> List[float]:
     ranked = np.empty(m)
     for rank, idx in enumerate(order, start=1):
         ranked[idx] = pvals[idx] * m / rank
-    # monotonicity (non-decreasing)
+    # Monotonicidade (não-decrescente)
     for i in range(m - 2, -1, -1):
         ranked[i] = min(ranked[i], ranked[i + 1])
     return ranked.tolist()

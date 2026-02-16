@@ -65,20 +65,17 @@ class HierarchicalModelSQLFirst:
         else:
             print("▣ PATTERN: ML Data Warehouse Consumer com views básicas do setup")
         
-        # Configurar caminhos
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json")
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/models/hierarchical_results")
         self.db_path = get_absolute_output_path('collection/data_warehouse/worldbank_data.duckdb')
         
         os.makedirs(self.results_path, exist_ok=True)
         
-        # Verificar arquivos necessários
         if not os.path.exists(self.folds_path):
             raise FileNotFoundError(f"Folds Data Warehouse não encontrados: {self.folds_path}")
         if not os.path.exists(self.db_path):
             raise FileNotFoundError(f"DuckDB Data Warehouse não encontrado: {self.db_path}")
         
-        # Inicializar Connection Manager
         print("◆ Inicializando Connection Manager para ML workloads...")
         try:
             self.conn_manager = DuckDBConnectionManager(
@@ -90,13 +87,12 @@ class HierarchicalModelSQLFirst:
         except Exception as e:
             raise RuntimeError(f"✗ Falha ao inicializar Connection Manager: {e}")
         
-        # Carregar configuração dos folds
+
         print("🖈  Carregando configuração dos folds...")
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
         
-        # Verificar views e carregar resumo
         self._verify_views()
         self._load_data_summary()
     
@@ -133,7 +129,6 @@ class HierarchicalModelSQLFirst:
             print(f"   ⚙ Target: {self.target_col}")
             print(f"   ↪ Folds: {len(self.folds)}")
             
-            # Verificar se target existe
             target_exists = self.conn_manager.execute_scalar(f"""
                 SELECT COUNT(*) > 0 
                 FROM information_schema.columns 
@@ -215,7 +210,6 @@ class HierarchicalModelSQLFirst:
         if 'dropout_rate_lag_3' in train_clean.columns and 'dropout_rate_lag_3' not in available_features:
             available_features.append('dropout_rate_lag_3')
 
-        # Verificar se features existem nos dados
         all_columns = list(train_clean.columns)
         available_features = [feat for feat in available_features if feat in all_columns]
 
@@ -402,7 +396,7 @@ class HierarchicalModelSQLFirst:
         mae = mean_absolute_error(y_test, predictions)
         r2 = r2_score(y_test, predictions)
         
-        # Feature importance
+        # Importância de features
         feature_names = list(X_train_augmented.columns)
         feature_importance = dict(zip(feature_names, rf_model.feature_importances_))
         
@@ -425,7 +419,6 @@ class HierarchicalModelSQLFirst:
         print(f"\n↪ ANALISANDO FOLD {fold_id} VIA DATA WAREHOUSE: Train({fold_info['train_start']}-{fold_info['train_end']}) → Val({fold_info['val_start']}-{fold_info['val_end']}) → Test({fold_info['test_start']}-{fold_info['test_end']})")
         
         try:
-            # Carregar dados das views
             train_data = self._load_ml_fold_data(fold_id, 'train')
             val_data = self._load_ml_fold_data(fold_id, 'val')
             test_data = self._load_ml_fold_data(fold_id, 'test')
@@ -446,10 +439,8 @@ class HierarchicalModelSQLFirst:
             print(f"   Fold {fold_id}: Dados insuficientes")
             return {}
         
-        # Preparar features e dados
         available_features = self._prepare_features(train_data)
 
-        # Registrar features usadas para auditoria
         try:
             used = {
                 'architecture': 'data_warehouse',
@@ -468,7 +459,6 @@ class HierarchicalModelSQLFirst:
         X_val, y_val, countries_val = self._prepare_data(val_data, train_data, available_features)
         X_test, y_test, countries_test = self._prepare_data(test_data, train_data, available_features)
         
-        # Aplicar scaling
         scaler = StandardScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
@@ -573,7 +563,6 @@ class HierarchicalModelSQLFirst:
                 'folds': []
             }
             
-            # Executar análise para cada fold
             for fold_info in self.folds_config['folds']:
                 fold_results = self.run_fold_analysis(fold_info)
                 if fold_results:

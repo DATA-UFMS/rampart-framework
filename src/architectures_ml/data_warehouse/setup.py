@@ -23,7 +23,6 @@ from core.config import get_absolute_output_path
 from core.scientific_config import SCIENTIFIC_CONFIG
 
 from collection.data_warehouse.connection_manager import (
-from collection.data_warehouse.connection_manager import (
     DuckDBConnectionManager, 
     SQLProcessingError
 )
@@ -72,8 +71,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         # Inicialização com parâmetros científicamente justificados
         self.conn_manager = DuckDBConnectionManager(
             self.db_path,
-            max_retries=3,      # Robustez baseada em literatura
-            retry_delay=1.0     # Backoff conservador
+            max_retries=3,      
+            retry_delay=1.0
         )
         
         print("   ✓ Connection Manager configurado com robustez científica")
@@ -103,7 +102,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         print("\n[CARREGAMENTO] Iniciando análise de dados via SQL nativo")
         print("━" * 50)
         
-        # Batch query para eficiência - single database roundtrip
         stats_query = """
             SELECT
                 COUNT(*) as total_records,
@@ -403,7 +401,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         Complexidade: O(n) single-pass sobre dataset completo
         """
-        # Query otimizada com todas estatísticas em single roundtrip
         comprehensive_stats_query = f"""
             WITH target_stats AS (
                 SELECT
@@ -595,7 +592,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             val_end = fold['val_end']
             test_start = fold['test_start']
             
-            # Verificar gaps anti-leakage (anos efetivamente pulados entre janelas)
             train_val_gap = val_start - train_end - 1
             val_test_gap = test_start - val_end - 1
             
@@ -638,7 +634,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             print(f"   ↪ Criando temporal views para fold {fold_id}...")
             
             try:
-                # Criar view de treino com gaps a partir da view de features selecionadas
                 train_view_query = f"""
                     CREATE OR REPLACE VIEW vw_fold_{fold_id}_train AS
                     SELECT * FROM vw_selected_features 
@@ -648,7 +643,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 """
                 self.conn_manager.execute_sql_no_return(train_view_query)
                 
-                # Criar view de validação a partir da view de features selecionadas
                 val_view_query = f"""
                     CREATE OR REPLACE VIEW vw_fold_{fold_id}_val AS
                     SELECT * FROM vw_selected_features 
@@ -657,7 +651,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 """
                 self.conn_manager.execute_sql_no_return(val_view_query)
                 
-                # Criar view de teste com gaps a partir da view de features selecionadas
                 test_view_query = f"""
                     CREATE OR REPLACE VIEW vw_fold_{fold_id}_test AS
                     SELECT * FROM vw_selected_features 
@@ -669,7 +662,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 
                 print(f"   ✔ Views criadas: vw_fold_{fold_id}_{{train,val,test}}")
                 
-                # Verificar criação
                 train_count = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM vw_fold_{fold_id}_train")
                 val_count = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM vw_fold_{fold_id}_val")
                 test_count = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM vw_fold_{fold_id}_test")
@@ -680,7 +672,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 print(f"   ✖ ERRO: Criação de views falhou para fold {fold_id}: {e}")
                 raise
             
-            # Salvar metadados
             fold_metadata = {
                 **fold,
                 'storage_method': 'duckdb_temporal_views',
@@ -692,7 +683,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             }
             self.save_fold_metadata(fold_metadata, fold_dir)
         
-        # Criar view master
         try:
             master_view_query = """
                 CREATE OR REPLACE VIEW vw_master_data AS
@@ -706,7 +696,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             print(f"   ✖ ERRO: Criação de master view falhou: {e}")
             raise
         
-        # Salvar configuração
         total_obs = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
         total_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
         min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM analytics_wide")
@@ -818,7 +807,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         frac = float(self.config.get('correlation_sample_fraction', 0.1))
         base_table = 'analytics_wide'
 
-        # Criar view amostrada reprodutível se aplicável
         sample_view_name = 'vw_corr_sample'
         try:
             total_rows = int(self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide"))
@@ -1092,7 +1080,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                             max_correlation = corr_value
                             worst_correlated_feature = selected_feat
                 
-                # Aplicar critério de colinearidade
                 if max_correlation < threshold:
                     selected_features.append(feature)
                 else:
@@ -1128,7 +1115,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             try:
                 self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
             except:
-                pass  # View temporária, falha na limpeza não é crítica
+                pass
     
     def prepare_features(self, data: Any, selected_features: List[str]) -> None:
         """
@@ -1160,17 +1147,17 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         print(f"[FEATURES] Preparando view final com {len(selected_features)} features selecionadas")
         print("━" * 50)
 
-        # === Symmetric log transform: T(x) = sign(x) * ln(|x| + 1) ===
+        # === Tranformação, log simétrico: T(x) = sign(x) * ln(|x| + 1) ===
         print("[TRANSFORMAÇÃO] Aplicando symmetric log transform a top-5 features")
         
-        # Critério científico: Limitar a top-5 features mais promissoras
+        # Critério: Limitar a top-5 features mais promissoras
         features_to_transform = selected_features[:5]
         transformed_features_sql = []
         
         print(f"[ESCOPO] Transformando {len(features_to_transform)} features para normalização:")
         
         for feat in features_to_transform:
-            # Symmetric log transform: sign(x) * ln(|x| + 1)
+            # Tranformação, log simétrico: sign(x) * ln(|x| + 1)
             transformation_sql = f"""
                 CASE
                     WHEN {feat} IS NULL THEN NULL
@@ -1327,7 +1314,7 @@ def main():
             
         print(f"\n[DETALHES] Resultados completos:")
         for key, value in results.items():
-            if key not in ['success', 'error']:  # Já reportados acima
+            if key not in ['success', 'error']: 
                 print(f"  → {key}: {value}")
                 
     except Exception as e:
