@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Statistical Significance Tests for Architectural Benchmark
+Testes de Significância Estatística para Benchmark Arquitetural
 
 Executa testes estatísticos pareados entre Data Lake e Data Warehouse usando
 os tempos do benchmark. Para cada fase e para o total arquitetural, o script
@@ -243,7 +243,7 @@ def write_outputs(results: Dict[str, Dict[str, float]]) -> None:
     df = pd.DataFrame(rows)
     df.to_csv(csv_path, index=False)
 
-    # Markdown (columns curated and rounded)
+    # Markdown (colunas selecionadas e arredondadas)
     md_cols = [
         "n",
         "mean_dl_s",
@@ -261,13 +261,12 @@ def write_outputs(results: Dict[str, Dict[str, float]]) -> None:
         "shapiro_p",
     ]
     with open(md_path, "w") as fmd:
-        fmd.write("# Statistical Significance Summary\n\n")
+        fmd.write("# Resumo de Significância Estatística\n\n")
         fmd.write(_format_markdown_table(rows, md_cols))
 
     # LaTeX table (uses pandas to_latex)
     try:
         df_latex = df[["phase"] + md_cols].copy()
-        # Round selected float columns for readability
         for c in df_latex.columns:
             if c != "phase" and pd.api.types.is_numeric_dtype(df_latex[c]):
                 df_latex[c] = df_latex[c].astype(float).round(4)
@@ -275,12 +274,11 @@ def write_outputs(results: Dict[str, Dict[str, float]]) -> None:
         with open(tex_path, "w") as ftx:
             ftx.write(latex)
     except Exception:
-        # Silent fallback if LaTeX export is not possible
         pass
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Statistical significance tests for architectural benchmark")
+    p = argparse.ArgumentParser(description="Testes de significância estatística para benchmark arquitetural")
     p.add_argument(
         "--csv",
         default=os.path.join(

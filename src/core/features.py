@@ -399,7 +399,6 @@ class FeatureEngineer:
             norm_col = f"{col}_normalized"
             
             if method == 'standard':
-                # Z-score normalization
                 if group_by:
                     if is_dask:
                         mean = df.groupby(group_by)[col].transform('mean')
@@ -414,7 +413,6 @@ class FeatureEngineer:
                 df[norm_col] = (df[col] - mean) / std.replace(0, 1)
                 
             elif method == 'minmax':
-                # Min-Max normalization [0, 1]
                 if group_by:
                     if is_dask:
                         min_val = df.groupby(group_by)[col].transform('min')
@@ -433,7 +431,6 @@ class FeatureEngineer:
                     df[norm_col] = (df[col] - min_val) / range_val.replace(0, 1) if isinstance(range_val, pd.Series) else (df[col] - min_val) / (range_val if range_val != 0 else 1)
                     
             elif method == 'robust':
-                # Robust normalization using median and IQR
                 if group_by:
                     if is_dask:
                         median = df.groupby(group_by)[col].transform('median')

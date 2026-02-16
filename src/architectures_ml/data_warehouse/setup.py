@@ -21,9 +21,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from core.base_architecture import BaseArchitectureML
 from core.config import get_absolute_output_path
 from core.scientific_config import SCIENTIFIC_CONFIG
-# Cache removido para comparação pura entre arquiteturas
 
-# Importar connection manager
+from collection.data_warehouse.connection_manager import (
 from collection.data_warehouse.connection_manager import (
     DuckDBConnectionManager, 
     SQLProcessingError
@@ -174,8 +173,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         target_source_col = self.source_column
         
-        # === 1. Schema Validation ===
-        print("[1/4] Schema validation")
+        # === 1. Validação de Schema ===
+        print("[1/4] Validação de schema")
         column_exists = self.conn_manager.execute_scalar(f"""
             SELECT COUNT(*) > 0
             FROM information_schema.columns
@@ -213,8 +212,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                     "Verifique se dados foram processados corretamente."
                 )
         
-        # === 2. Data Coverage Analysis ===
-        print("[2/4] Data coverage analysis")
+        # === 2. Análise de Cobertura ===
+        print("[2/4] Análise de cobertura")
         coverage_stats = self.conn_manager.execute_sql(f"""
             SELECT
                 COUNT(*) as total_records,
@@ -243,8 +242,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             print(f"  ⚠ AVISO: Cobertura baixa ({target_coverage:.1f}%<20%)")
             print("    → Risco de viés de seleção em predições")
         
-        # === 3. Temporal Consistency ===
-        print("[3/4] Temporal consistency check")
+        # === 3. Consistência Temporal ===
+        print("[3/4] Consistência temporal")
         temporal_stats = self.conn_manager.execute_sql("""
             SELECT
                 COUNT(DISTINCT year) as unique_years,
@@ -264,8 +263,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         if temporal_completeness < 80:
             print("  ⚠ AVISO: Gaps temporais significativos podem afetar validação walk-forward")
         
-        # === 4. Geographic Coverage ===
-        print("[4/4] Geographic representativeness")
+        # === 4. Cobertura Geográfica ===
+        print("[4/4] Representatividade geográfica")
         unique_countries = int(temporal_stats['unique_countries'])
         obs_per_country = total_records / unique_countries if unique_countries > 0 else 0
         
@@ -275,7 +274,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         if unique_countries < 10:
             print("  ⚠ AVISO: Poucos países podem limitar generalização geográfica")
         
-        # === 5. Required Columns Validation ===
+        # === 5. Validação de Colunas Obrigatórias ===
         required_cols = ['country_code', 'year']
         missing_cols = []
         
@@ -630,8 +629,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             folds: Lista de folds
         """
         print("\n🖧  CRIANDO TEMPORAL VIEWS DATA WAREHOUSE...")
-        
-        # Cache removido - processamento direto
         
         for fold in folds:
             fold_id = fold['fold_id']

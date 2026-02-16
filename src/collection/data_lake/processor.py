@@ -575,9 +575,6 @@ class DataLakeProcessor:
         # Aplicação paralela de feature engineering
         print(f"[PARALELIZAÇÃO] Processando {ddf.npartitions} partições independentemente")
         
-        # map_partitions garante processamento embarrassingly parallel
-        # Simplificar usando schema inference - deixa Dask detectar tipos automaticamente
-        # Isso evita incompatibilidades de tipo entre declared vs actual
         print("[SCHEMA] Usando inferência automática para novas colunas (schema-on-read)")
         
         ddf_processed = ddf.map_partitions(

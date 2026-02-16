@@ -287,7 +287,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         if not is_valid:
             warnings = validation_report.get('warnings', [])
             self.logger.warning(f"Problemas de integridade detectados: {len(warnings)} warnings")
-            for warning in warnings[:3]:  # Log primeiros 3 warnings
+            for warning in warnings[:3]:
                 print(f"  ⚠ {warning}")
         
         # === Schema validation com fallback inteligente ===
@@ -858,10 +858,8 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
             transform_col = f"{feat}_log_transform"
             
-            # Symmetric log transform via Dask apply
             print(f"  → {feat} → {transform_col}")
             
-            # Função lambda científica preservando NaN
             ddf_work[transform_col] = ddf_work[feat].apply(
                 lambda x: np.sign(x) * np.log(np.abs(x) + 1) if pd.notna(x) else np.nan,
                 meta=(transform_col, 'f8')  # Metadados Float64 para Dask
@@ -912,10 +910,8 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
             # Cálculo de estatísticas de qualidade
             if hasattr(result_ddf, 'compute'):
-                # DataFrame Dask - usar head para amostra
                 sample_stats = result_ddf.head(sample_size, npartitions=result_ddf.npartitions)
             else:
-                # DataFrame Pandas (improvável aqui)
                 sample_stats = result_ddf.head(sample_size)
             
             # Proporção de valores faltantes
@@ -974,12 +970,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
             # Converter para Pandas e salvar
             try:
-                # Compute direto sem reset_index
                 train_df = train_ddf.compute()
                 val_df = val_ddf.compute()
                 test_df = test_ddf.compute()
                 
-                # Reset index apenas uma vez no final
                 train_df = train_df.reset_index(drop=True)
                 val_df = val_df.reset_index(drop=True)
                 test_df = test_df.reset_index(drop=True)
@@ -988,8 +982,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_lake.parquet')
                 
                 print(f"   ✔ Fold {fold_id} salvo: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
-                
-                # Cache removido - processamento direto sem armazenamento em memória
                 
             except Exception as e:
                 print(f"   ✖ Erro ao salvar fold {fold_id}: {e}")
@@ -1010,8 +1002,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
             master_df = ddf.compute().reset_index(drop=True)
             self._safe_write_parquet_file(master_df, master_path)
             print(f"   ✔ Master data salvo: {len(master_df)} registros")
-            
-            # Cache removido - processamento direto
             
         except Exception as e:
             print(f"   ✖ Erro ao salvar master data: {e}")
@@ -1035,7 +1025,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
         if not parquet_files:
             raise FileNotFoundError("Nenhum arquivo parquet encontrado")
         
-        # Cache removido - carregamento direto
         ddf = dd.read_parquet(self.fallback_path, engine='pyarrow')
         
         # Conversão para formato wide se necessário
@@ -1050,8 +1039,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
         try:
             print("    Aplicando pivotagem para formato wide...")
             
-            # Para pivotagem complexa, usar Pandas é mais confiável
-            # Isso é aceitável pois é uma operação única no início
             df = ddf.compute()
             
             index_cols = ['country_code', 'country_name', 'year']
@@ -1068,7 +1055,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
             df_wide.columns.name = None
             
-            # Converter de volta para Dask
             ddf_wide = dd.from_pandas(df_wide, npartitions=max(1, len(df_wide) // 10000))
             
             print(f"   ✔ Conversão concluída: {len(ddf_wide.columns)} colunas")

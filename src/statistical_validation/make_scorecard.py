@@ -40,8 +40,8 @@ def load_json(p: Path) -> Optional[dict]:
 
 
 def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
-    """Parse speedup and 95% CI from significance_summary.tex.
-    Returns dict phase -> (speedup, lo, hi).
+    """Extrai speedup e IC 95% de significance_summary.tex.
+    Retorna dict fase -> (speedup, lo, hi).
     """
     res: Dict[str, Tuple[float, float, float]] = {}
     # Expect rows like: "Processing & 10.00 & 1.00 & 9.00 [8.00, 10.00] & 13.70 [10.32, 18.18] & ..."
@@ -78,7 +78,6 @@ def get_speedups() -> Dict[str, Tuple[float, float, float]]:
                 )
         if out:
             return out
-    # Fallback to .tex parsed
     tex = read_text(BASE / 'significance_summary.tex')
     if tex:
         return parse_significance_tex(tex)
@@ -136,7 +135,6 @@ def get_resources_processing() -> Tuple[Optional[float], Optional[float], Option
 
 def build_scorecard() -> str:
     sp = get_speedups()
-    # Map expected keys to labels
     def row(k: str) -> Optional[str]:
         v = sp.get(k)
         if not v:

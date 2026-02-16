@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Bootstrap sensitivity analysis for SESOI and iteration counts.
+"""Análise de sensibilidade bootstrap para SESOI e contagens de iterações.
 
-This utility reuses the paired-delta extraction implemented in
-`tost_baseline.py` to recompute point estimates, confidence intervals and
-decisions under alternative SESOI values and bootstrap iteration counts.
+Este utilitário reutiliza a extração de deltas pareados implementada em
+`tost_baseline.py` para recomputar estimativas pontuais, intervalos de confiança
+e decisões sob valores alternativos de SESOI e contagens de iterações bootstrap.
 
-Outputs:
-- JSON summary stored in outputs/statistics/bootstrap_sensitivity.json
-- Optional LaTeX table (when --latex is supplied)
+Saídas:
+- Resumo JSON armazenado em outputs/statistics/bootstrap_sensitivity.json
+- Tabela LaTeX opcional (quando --latex é fornecido)
 """
 
 import argparse
@@ -56,7 +56,7 @@ def _sensitivity_grid(
     bootstrap_iters: List[int],
     seed: int,
 ) -> List[Dict[str, object]]:
-    """Compute sensitivity summary for all combinations."""
+    """Computa resumo de sensibilidade para todas as combinações."""
 
     base_deltas: MetricConfig = {
         "r2": {"delta": float(SCIENTIFIC_CONFIG.get("sesoi_r2", 0.01))},

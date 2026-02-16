@@ -71,7 +71,6 @@ GOVERNANCE_INDICATORS = {
 # PREDICTORS - Variáveis Econômicas Complementares
 # ============================================================================
 ECONOMIC_INDICATORS = {
-    # Economic indicators section now empty - keeping structure for future additions
 }
 
 # ============================================================================

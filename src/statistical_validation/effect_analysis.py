@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Effect Sizes and Multiple Comparisons for Architectural Benchmark
+Tamanhos de Efeito e Comparações Múltiplas para Benchmark Arquitetural
 
 Calcula tamanhos de efeito e correções de múltiplas comparações para as
 diferenças pareadas Data Lake (DL) vs Data Warehouse (DW), por fase e total.
@@ -212,7 +212,7 @@ def main() -> None:
     # Gera resumo interpretativo mínimo em Markdown
     md_path = os.path.join(STATS_DIR, 'effect_sizes_interpretation.md')
     lines = [
-        "# Effect Sizes Interpretation (paired DL vs DW)",
+        "# Interpretação de Tamanhos de Efeito (DL vs DW pareado)",
         "",
     ]
     for phase, m in results.items():
