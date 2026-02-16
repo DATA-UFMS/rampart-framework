@@ -60,9 +60,9 @@ psutil==5.9.8
 # Requisições HTTP para APIs
 requests==2.31.0
 
-pyarrow
+pyarrow==18.1.0
 
-pytest
+pytest==8.3.4
 
 # ============================================================================
 # NOTAS DE COMPATIBILIDADE

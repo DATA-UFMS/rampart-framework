@@ -32,8 +32,8 @@ pip install -r requirements.txt
 # 1. Executar pipeline completo (coleta → validação → benchmark → artefatos)
 python pipeline.py
 
-# 2. Rodar testes de sanidade adicionais (opcional)
-pytest tests/test_lag_anti_leak.py
+# 2. Rodar testes unitários e de sanidade (opcional)
+pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
 
 # 3. (Re)gerar tabelas LaTeX a partir das saídas do benchmark
 python src/benchmarking/derive_latency_percentiles.py
@@ -77,11 +77,7 @@ Cada arquivo possui cabeçalho com metadados (timestamp, versão do protocolo, s
 ## 5. Extender o Framework
 
 1. **Adicionar nova arquitetura**
-   ```python
-   from core.config import register_architecture
-   register_architecture('lakehouse_delta', {...})
-   ```
-   Implemente uma subclasse de `BaseArchitectureML` em `src/architectures_ml/` replicando o padrão `data_lake`/`data_warehouse`.
+   Implemente uma subclasse de `BaseArchitectureML` em `src/architectures_ml/` replicando o padrão `data_lake`/`data_warehouse`. Registre a nova arquitetura no pipeline principal (`pipeline.py`).
 
 2. **Ajustar parâmetros científicos**
    Atualize `SCIENTIFIC_CONFIG` com novos gaps, SESOI (`sesoi_r2`, `sesoi_nrmse`, `sesoi_mase`) ou número de iterações de bootstrap. Para inspecionar a sensibilidade das decisões sem reexecutar todo o pipeline, rode `python src/statistical_validation/bootstrap_sensitivity.py --latex`, que gera resumos em `outputs/statistics/bootstrap_sensitivity.*`.
