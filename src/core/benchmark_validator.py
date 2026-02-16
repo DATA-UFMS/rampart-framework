@@ -168,9 +168,16 @@ class BenchmarkValidator:
         max_diff_pct = self.config['fold_sizes_max_diff_pct']
         is_equivalent = True
 
-        for i in range(len(dw_folds)):
-            dw_fold = dw_folds[i]
-            dl_fold = dl_folds[i]
+        if len(dw_folds) != len(dl_folds):
+            self.report['critical_divergences'].append({
+                'metric': 'fold_count',
+                'dw_value': len(dw_folds),
+                'dl_value': len(dl_folds),
+                'message': f'Fold count mismatch: DW={len(dw_folds)} vs DL={len(dl_folds)}'
+            })
+            return False
+
+        for i, (dw_fold, dl_fold) in enumerate(zip(dw_folds, dl_folds)):
             
             for split in ['train_count', 'val_count', 'test_count']:
                 dw_count = dw_fold.get(split, 0)

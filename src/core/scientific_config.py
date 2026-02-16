@@ -13,6 +13,8 @@ Parâmetros definidos aqui governam:
 - Transformações de features
 """
 
+import random
+
 import numpy as np
 
 # Seed global para garantir reprodutibilidade em todas as operações
@@ -28,7 +30,6 @@ SCIENTIFIC_CONFIG = {
     # Seleção de Features
     'collinearity_threshold': 0.8,
     'correlation_precision': 1e-3, # MAE máximo permitido entre correlações
-    'min_correlation_sample_size': 5000,
     'correlation_sample_fraction': 0.1,
     # Amostragem de correlação (para alinhar DL e DW)
     'correlation_sampling': True,
@@ -58,8 +59,7 @@ SCIENTIFIC_CONFIG = {
     'features_overlap_min_pct': 0.85,   # 85%
     'correlations_max_mae': 0.001,
     'fold_sizes_max_diff_pct': 0.05,    # 5%
-    'float_precision_tolerance': 1e-9
-    ,
+    'float_precision_tolerance': 1e-9,
     # Parâmetros estatísticos
     # Número padrão de iterações de bootstrap para ICs
     'bootstrap_iters': 3000,
@@ -73,12 +73,14 @@ def setup_reproducibility():
     Função auxiliar para configurar a seed em bibliotecas relevantes.
     Deve ser chamada no início de cada script de pipeline.
     """
+    random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
-    
+
     try:
         import dask
-        dask.config.set({'array.random.seed': RANDOM_SEED})
+        # Nota: Dask não possui config nativa de seed global.
+        # A reprodutibilidade é garantida pela seed do numpy.
     except ImportError:
-        pass 
+        pass
 
     print(f"🌱 Reprodutibilidade configurada com RANDOM_SEED={RANDOM_SEED}")

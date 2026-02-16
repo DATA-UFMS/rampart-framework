@@ -577,28 +577,28 @@ class BaseArchitectureML(ABC):
         # Implementação básica compartilhada
         return {}
     
+    @staticmethod
+    def _convert_numpy_types(obj):
+        """Converte tipos numpy para tipos Python nativos para serialização JSON."""
+        if hasattr(obj, 'item'):  # numpy scalars
+            return obj.item()
+        elif isinstance(obj, dict):
+            return {k: BaseArchitectureML._convert_numpy_types(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [BaseArchitectureML._convert_numpy_types(v) for v in obj]
+        else:
+            return obj
+
     def save_fold_metadata(self, fold: Dict, fold_dir: str) -> None:
         """
         Salva metadados de um fold de forma padronizada.
-        
+
         Args:
             fold: Configuração do fold
             fold_dir: Diretório do fold
         """
-        # Função para converter tipos numpy para tipos Python nativos
-        def convert_numpy_types(obj):
-            """Converte tipos numpy para tipos Python nativos."""
-            if hasattr(obj, 'item'):  # numpy scalars
-                return obj.item()
-            elif isinstance(obj, dict):
-                return {k: convert_numpy_types(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_numpy_types(v) for v in obj]
-            else:
-                return obj
-        
         fold_metadata = {
-            **convert_numpy_types(fold),
+            **self._convert_numpy_types(fold),
             'data_source': self.architecture_name,
             'target_variable': self.target_column,
             'temporal_boundaries_preserved': True,
@@ -623,18 +623,6 @@ class BaseArchitectureML(ABC):
         Returns:
             Caminho do arquivo de configuração salvo
         """
-        # Converter tipos numpy para tipos Python nativos para serialização JSON
-        def convert_numpy_types(obj):
-            """Converte tipos numpy para tipos Python nativos."""
-            if hasattr(obj, 'item'):  # numpy scalars
-                return obj.item()
-            elif isinstance(obj, dict):
-                return {k: convert_numpy_types(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_numpy_types(v) for v in obj]
-            else:
-                return obj
-        
         folds_config = {
             'architecture': self.architecture_name,
             'creation_timestamp': datetime.now().isoformat(),
@@ -642,7 +630,7 @@ class BaseArchitectureML(ABC):
             'total_countries': int(total_countries),
             'year_range': [int(year_range[0]), int(year_range[1])],
             'target_variable': self.target_column,
-            'folds': convert_numpy_types(folds)
+            'folds': self._convert_numpy_types(folds)
         }
         
         folds_path = f"{self.prep_dir}/temporal_folds_{self.architecture_name}.json"
@@ -881,7 +869,7 @@ class BaseArchitectureML(ABC):
         train_val_gap = val_years[0] - train_years[1] - 1
         val_test_gap = test_years[0] - val_years[1] - 1
         
-        MIN_GAP = 2  # Gap mínimo de 2 anos
+        MIN_GAP = self.config.get('temporal_gap_years', 2)
         
         if train_val_gap < MIN_GAP:
             print(f"   ERRO: Gap train-val insuficiente: {train_val_gap} < {MIN_GAP}")
@@ -891,14 +879,7 @@ class BaseArchitectureML(ABC):
             print(f"   ERRO: Gap val-test insuficiente: {val_test_gap} < {MIN_GAP}")
             return False
         
-        # Verificar não-sobreposição
-        if train_years[1] >= val_years[0]:
-            print(f"   ERRO: Sobreposição entre train e val")
-            return False
-            
-        if val_years[1] >= test_years[0]:
-            print(f"   ERRO: Sobreposição entre val e test")
-            return False
+        # Nota: sobreposição já detectada pelas verificações de gap acima
         
         print(f"   ✓ Integridade temporal validada")
         print(f"   Gaps: train-val={train_val_gap}yr, val-test={val_test_gap}yr")
@@ -919,7 +900,8 @@ class BaseArchitectureML(ABC):
         if hasattr(model, 'feature_importances_'):
             importances = model.feature_importances_
             # Normalizar para somar 1
-            importances_norm = importances / importances.sum()
+            total = importances.sum()
+            importances_norm = importances / total if total != 0 else importances
             
             return {
                 feature: float(importance)

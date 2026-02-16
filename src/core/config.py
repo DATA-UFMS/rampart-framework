@@ -91,9 +91,9 @@ def get_project_root() -> str:
             if os.path.exists(os.path.join(current_dir, 'README.md')):
                 return current_dir
             current_dir = os.path.dirname(current_dir)
-    except:
+    except Exception:
         pass
-    
+
     # Fallback: tentar a partir do working directory atual
     current_dir = os.path.abspath(os.getcwd())
     while current_dir != '/' and current_dir != os.path.dirname(current_dir):
