@@ -944,52 +944,41 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         return correlations
     
-    def apply_vif_selection(self, data: Any, features: List[str],
-                          threshold: float = 0.8) -> List[str]:
+    def apply_collinearity_filter(self, data: Any, features: List[str],
+                                   threshold: float = 0.8) -> List[str]:
         """
-        Aplica seleção de features baseada em Variance Inflation Factor via SQL científico.
-        
+        Remove multicolinearidade via filtragem greedy de correlação pairwise (SQL).
+
+        Para cada feature candidata, calcula a correlação absoluta máxima com
+        as features já selecionadas e rejeita se max |r| >= threshold.
+
         Args:
             data: Ignorado - análise executada no Data Warehouse
             features: Lista de features candidatas para análise de multicolinearidade
-            threshold: Limiar de correlação para detectar multicolinearidade (padrão 0.8)
-            
+            threshold: Limiar de correlação pairwise (padrão 0.8)
+
         Returns:
             Lista de features filtradas com multicolinearidade reduzida
-            
-        Metodologia VIF:
-            Variance Inflation Factor detecta multicolinearidade através da análise
-            de regressão: VIF_i = 1/(1-R²_i), onde R²_i é coeficiente de determinação
-            da regressão de X_i contra todas outras features.
-            
-            Simplificação implementada: Usa correlação par-a-par como proxy eficiente
-            para VIF completo, mantendo interpretabilidade (Hair et al., 2019).
-            
-        Critérios científicos:
-            - Threshold 0.8: Literatura econométrica (Hair et al., 2019) para
-              multicolinearidade severa (VIF > 5 ≈ |r| > 0.8)
-            - Amostragem estratégica: Mínimo 1000 obs ou 10% do dataset
-            - Seed reprodutível: Garante determinismo entre execuções
-            - Algoritmo greedy: Preserva ordem de importância por correlação
-            
+
+        Algoritmo greedy:
+            1. Primeira feature sempre aceita (baseline)
+            2. Features subsequentes aceitas se max |r| < threshold
+            3. Ordem preservada para determinismo científico
+
         Amostragem justificada:
             Para datasets >10k observações, matriz de correlação completa
             pode ser computacionalmente custosa O(n²). Amostragem reduz a
             O(s²) onde s << n, mantendo precisão estatística adequada.
-            
-        Limitações:
-            - Correlação linear apenas (ignora dependências não-lineares)
-            - Algoritmo greedy não garante solução ótima global
-            - Threshold fixo pode ser subótimo para diferentes domínios
-            
+
         Referências:
-            Hair, J. F., et al. (2019). Multivariate data analysis (8th ed.).
+            Dormann, C. F., et al. (2013). Collinearity: a review of methods
+            to deal with it and a simulation study evaluating their performance.
         """
         if len(features) < 2:
-            print("[VIF] Menos de 2 features - análise VIF desnecessária")
+            print("[COLLINEARITY] Menos de 2 features - análise desnecessária")
             return features
         
-        print(f"[VIF] Executando análise de multicolinearidade para {len(features)} features")
+        print(f"[COLLINEARITY] Executando análise de multicolinearidade para {len(features)} features")
         print("━" * 50)
         print(f"[THRESHOLD] Correlação máxima permitida: {threshold}")
         
@@ -997,8 +986,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         total_rows = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
         
         # Critérios padronizados baseados em literatura estatística
-        min_sample_absolute = self.config.get('min_vif_sample_size', 1000)  # Mínimo absoluto
-        sample_fraction = self.config.get('vif_sample_fraction', 0.1)       # 10% do dataset
+        min_sample_absolute = self.config.get('min_correlation_sample_size', 1000)
+        sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
         
         optimal_sample_size = max(
             min_sample_absolute,
@@ -1015,7 +1004,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         print(f"[JUSTIFICATIVA] Balanceamento precisão vs eficiência computacional")
         
         # === Criação de view amostrada reprodutível ===
-        sample_view_name = "vw_vif_correlation_sample"
+        sample_view_name = "vw_collinearity_sample"
         
         try:
             # Configuração de seed para reprodutibilidade científica
@@ -1080,7 +1069,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             
             print(f"[MATRIZ] {correlation_pairs_computed}/{total_pairs} pares analisados")
             
-            # === Algoritmo VIF Greedy ===
+            # === Algoritmo Greedy Pairwise ===
             print(f"[SELEÇÃO] Aplicando algoritmo greedy com threshold {threshold}")
             
             selected_features = []
@@ -1106,7 +1095,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                             max_correlation = corr_value
                             worst_correlated_feature = selected_feat
                 
-                # Aplicar critério VIF
+                # Aplicar critério de colinearidade
                 if max_correlation < threshold:
                     selected_features.append(feature)
                 else:
@@ -1119,7 +1108,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             # === Relatório científico ===
             reduction_rate = ((len(features) - len(selected_features)) / len(features)) * 100
             
-            print(f"\n[RESULTADO VIF] Análise de multicolinearidade concluída:")
+            print(f"\n[RESULTADO] Filtragem de colinearidade concluída:")
             print(f"  → Features originais: {len(features)}")
             print(f"  → Features selecionadas: {len(selected_features)}")
             print(f"  → Features removidas: {len(rejected_features)} ({reduction_rate:.1f}%)")
@@ -1133,7 +1122,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             return selected_features
             
         except Exception as e:
-            print(f"[ERRO] Falha na análise VIF: {e}")
+            print(f"[ERRO] Falha na filtragem de colinearidade: {e}")
             print(f"[FALLBACK] Retornando primeiras 10 features como segurança")
             return features[:10]
             
@@ -1150,46 +1139,32 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         Args:
             data: Ignorado - processamento executado via SQL no Data Warehouse
-            selected_features: Features pós-seleção VIF para transformação
+            selected_features: Features pós-filtragem de colinearidade para transformação
             
         Returns:
             None: View vw_selected_features criada persistentemente no banco
             
         Engenharia de Features Científica:
-            Aplica transformação Yeo-Johnson simplificada às top-5 features mais
+            Aplica symmetric log transform às top-5 features mais
             correlacionadas para normalização de distribuições assimétricas:
-            
-            T(x) = sign(x) × ln(|x| + 1)
-            
-        Justificativas:
-            1. Yeo-Johnson (2000): Família de transformações que preserva zeros
-               e funciona com valores negativos, superior a Box-Cox para dados
-               educacionais que podem incluir déficits/declínios
-            
-            2. Top-5 limite: Baseado em literatura sobre curse of dimensionality
-               (Bellman, 1961) e overfitting em pequenas amostras
-               
-            3. Ordem temporal: ORDER BY (country_code, year) preserva estrutura
-               de painel necessária para validação walk-forward
-        
+
+            T(x) = sign(x) * ln(|x| + 1)
+
+            Preserva zeros e funciona com valores negativos, adequada para
+            dados educacionais que podem incluir déficits/declínios.
+
+            Top-5 limite baseado em curse of dimensionality (Bellman, 1961).
+
         Schema da view resultante:
             - Metadados: country_code, year, {target_column}
-            - Features originais: selected_features (pós-VIF)
+            - Features originais: selected_features (pós-filtragem de colinearidade)
             - Features transformadas: {feature}_log_transform para top-5
-            
-        Performance:
-            View materializada vs query nested: 10-100x speedup para
-            múltiplas consultas ML subsequentes (índices preservados).
-            
-        Referências:
-            Bellman, R. (1961). Adaptive control processes: a guided tour.
-            Yeo, I. K., & Johnson, R. A. (2000). A new family of power transformations.
         """
         print(f"[FEATURES] Preparando view final com {len(selected_features)} features selecionadas")
         print("━" * 50)
-        
-        # === Engenharia de Features com Fundamentação Científica ===
-        print("[TRANSFORMAÇÃO] Aplicando Yeo-Johnson simplificado a top-5 features")
+
+        # === Symmetric log transform: T(x) = sign(x) * ln(|x| + 1) ===
+        print("[TRANSFORMAÇÃO] Aplicando symmetric log transform a top-5 features")
         
         # Critério científico: Limitar a top-5 features mais promissoras
         features_to_transform = selected_features[:5]
@@ -1198,23 +1173,23 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         print(f"[ESCOPO] Transformando {len(features_to_transform)} features para normalização:")
         
         for feat in features_to_transform:
-            # Transformação Yeo-Johnson simplificada robusta
+            # Symmetric log transform: sign(x) * ln(|x| + 1)
             transformation_sql = f"""
                 CASE
                     WHEN {feat} IS NULL THEN NULL
                     WHEN {feat} = 0 THEN 0.0
                     ELSE SIGN({feat}) * LN(ABS({feat}) + 1)
-                END AS {feat}_yj_transform
+                END AS {feat}_log_transform
             """
             transformed_features_sql.append(transformation_sql)
-            print(f"  → {feat} → {feat}_yj_transform")
+            print(f"  → {feat} → {feat}_log_transform")
         
         # === Construção da Query de View ===
         # Combinar features originais e transformadas
         all_features_sql = selected_features.copy()
         
         if transformed_features_sql:
-            print(f"[ENGENHARIA] {len(transformed_features_sql)} transformações Yeo-Johnson aplicadas")
+            print(f"[ENGENHARIA] {len(transformed_features_sql)} symmetric log transforms aplicadas")
         
         # Query SQL para view final cientificamente estruturada
         feature_view_query = f"""
@@ -1228,10 +1203,10 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 LAG({self.target_column}, 2) OVER (PARTITION BY country_code ORDER BY year) AS dropout_rate_lag_2,
                 LAG({self.target_column}, 3) OVER (PARTITION BY country_code ORDER BY year) AS dropout_rate_lag_3,
                 
-                -- Features originais pós-seleção VIF
+                -- Features originais pós-filtragem de colinearidade
                 {', '.join(all_features_sql)}
                 
-                {', -- Features transformadas (Yeo-Johnson)' if transformed_features_sql else ''}
+                {', -- Features transformadas (symmetric log)' if transformed_features_sql else ''}
                 {', '.join(transformed_features_sql) if transformed_features_sql else ''}
                 
             FROM analytics_wide
@@ -1289,9 +1264,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             raise RuntimeError(f"Impossível criar view de features: {e}")
         
         print("[STATUS] ✓ Pipeline de features concluído - dados prontos para modelagem ML")
-        
-        # Cache removido - processamento direto
-        
         # Paradigma Data Warehouse: dados permanecem no banco para eficiência
         return None
 
@@ -1304,7 +1276,7 @@ def main():
     1. Setup e validação de ambiente
     2. Carregamento e validação de dados
     3. Construção de variável target
-    4. Seleção de features com análise VIF
+    4. Seleção de features com filtragem de colinearidade pairwise
     5. Criação de folds temporais walk-forward
     6. Preparação final para modelagem
     
