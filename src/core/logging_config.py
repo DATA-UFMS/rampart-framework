@@ -43,7 +43,7 @@ class StructuredFormatter(logging.Formatter):
             String JSON formatada
         """
         log_obj = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now().astimezone().isoformat(),
             'level': record.levelname,
             'logger': record.name,
             'module': record.module,

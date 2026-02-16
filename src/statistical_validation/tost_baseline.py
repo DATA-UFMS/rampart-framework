@@ -286,7 +286,7 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             ci = r.get('ci95', [float('nan'), float('nan')])
             d = r.get('delta', float('nan'))
             dec = r.get('decision', '')
-            lines.append(f"{m} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & {dec} \\")
+            lines.append(f"{m} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & {dec} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',
@@ -309,7 +309,7 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             ci = r.get('ci95_lr', [float('nan'), float('nan')])
             d_pct = r.get('delta_pct', float('nan')) * 100.0
             dec = r.get('decision', '')
-            lines.append(f"{phase} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d_pct:.1f} & {dec} \\")
+            lines.append(f"{phase} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d_pct:.1f} & {dec} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',

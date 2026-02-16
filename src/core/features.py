@@ -348,7 +348,7 @@ class FeatureEngineer:
                     slope, intercept, r_value, _, _ = stats.linregress(x, y)
                     trend = slope * group[year_col] + intercept
                     return pd.Series(trend, index=group.index)
-                except:
+                except Exception:
                     return pd.Series([np.nan] * len(group), index=group.index)
             
             for col in columns:
@@ -483,21 +483,15 @@ class FeatureEngineer:
                 
             if method == 'forward_fill':
                 if group_by:
-                    if is_dask:
-                        df[col] = df.groupby(group_by)[col].fillna(method='ffill', limit=limit)
-                    else:
-                        df[col] = df.groupby(group_by)[col].fillna(method='ffill', limit=limit)
+                    df[col] = df.groupby(group_by)[col].ffill(limit=limit)
                 else:
-                    df[col] = df[col].fillna(method='ffill', limit=limit)
-                    
+                    df[col] = df[col].ffill(limit=limit)
+
             elif method == 'backward_fill':
                 if group_by:
-                    if is_dask:
-                        df[col] = df.groupby(group_by)[col].fillna(method='bfill', limit=limit)
-                    else:
-                        df[col] = df.groupby(group_by)[col].fillna(method='bfill', limit=limit)
+                    df[col] = df.groupby(group_by)[col].bfill(limit=limit)
                 else:
-                    df[col] = df[col].fillna(method='bfill', limit=limit)
+                    df[col] = df[col].bfill(limit=limit)
                     
             elif method == 'interpolate':
                 if not is_dask:
