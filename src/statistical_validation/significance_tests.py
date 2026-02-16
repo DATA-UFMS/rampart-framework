@@ -253,8 +253,6 @@ def write_outputs(results: Dict[str, Dict[str, float]]) -> None:
         "speedup_ci95_hi",
         "t_stat",
         "t_p",
-        "p_bonferroni",
-        "p_fdr_bh",
         "shapiro_p",
     ]
     with open(md_path, "w") as fmd:

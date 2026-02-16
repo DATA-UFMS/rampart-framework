@@ -218,7 +218,7 @@ def main() -> None:
         eta2 = m.get('eta_squared')
         interp = (
             'negligible' if not isinstance(d, float) or not math.isfinite(d) else
-            ('small' if abs(d) < 0.2 else 'medium' if abs(d) < 0.5 else 'large' if abs(d) < 0.8 else 'very_large')
+            ('negligible' if abs(d) < 0.2 else 'small' if abs(d) < 0.5 else 'medium' if abs(d) < 0.8 else 'large')
         )
         lines.append(f"## {phase}")
         lines.append(f"- Cohen's d_z: {d:.4f} ({interp})")
