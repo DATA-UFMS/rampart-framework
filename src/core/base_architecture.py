@@ -9,6 +9,7 @@ Preserva 100% da lógica científica original de cada arquitetura.
 
 from abc import ABC, abstractmethod
 import os
+import sys
 import json
 from typing import List, Dict, Any, Tuple, Optional, Union
 from datetime import datetime
@@ -427,16 +428,19 @@ class BaseArchitectureML(ABC):
         return selected
     
     @abstractmethod
-    def apply_vif_selection(self, data: Any, features: List[str], 
-                           threshold: float = 0.8) -> List[str]:
+    def apply_collinearity_filter(self, data: Any, features: List[str],
+                                  threshold: float = 0.8) -> List[str]:
         """
-        Aplica seleção VIF para remover multicolinearidade.
-        
+        Remove multicolinearidade via filtragem greedy de correlação pairwise.
+
+        Para cada feature candidata, calcula a correlação absoluta máxima com
+        as features já selecionadas. Rejeita se max |r| >= threshold.
+
         Args:
             data: Dados para análise
             features: Features candidatas
-            threshold: Threshold de correlação para remoção
-            
+            threshold: Threshold de correlação pairwise para remoção
+
         Returns:
             Lista de features após remoção de multicolinearidade
         """
@@ -449,7 +453,7 @@ class BaseArchitectureML(ABC):
         Pipeline padronizado:
         1. Remove features com vazamento/metadados
         2. Seleciona por correlação moderada com target
-        3. Remove multicolinearidade via VIF
+        3. Remove multicolinearidade via filtragem pairwise de correlação
         
         Args:
             data: Dados para seleção
@@ -471,15 +475,15 @@ class BaseArchitectureML(ABC):
         correlations = self.compute_feature_correlations(data, feature_cols)
         selected_by_corr = self.select_features_by_correlation(correlations)
         
-        # Análise VIF
-        final_features = self.apply_vif_selection(data, selected_by_corr)
+        # Filtragem de colinearidade pairwise
+        final_features = self.apply_collinearity_filter(data, selected_by_corr)
         
         # Estatísticas de seleção
         selection_stats = {
             'architecture': self.architecture_name,
             'total_features_analyzed': len(feature_cols),
             'features_selected': len(final_features),
-            'selection_method': 'correlation_vif',
+            'selection_method': 'correlation_pairwise_filter',
             'selected_features': final_features,
             'target_correlations': {
                 feat: float(correlations.get(feat, 0))
