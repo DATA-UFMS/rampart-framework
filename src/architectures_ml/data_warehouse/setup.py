@@ -967,7 +967,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         total_rows = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
         
         # Critérios padronizados baseados em literatura estatística
-        min_sample_absolute = self.config.get('min_correlation_sample_size', 1000)
+        min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
         sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
         
         optimal_sample_size = max(
@@ -1110,7 +1110,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             # Limpeza de recursos temporários
             try:
                 self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
-            except:
+            except Exception:
                 pass
     
     def prepare_features(self, data: Any, selected_features: List[str]) -> None:

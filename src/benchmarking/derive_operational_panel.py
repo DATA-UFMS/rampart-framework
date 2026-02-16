@@ -61,7 +61,7 @@ def main() -> None:
     lines.append("% Painel operacional compacto (P50 e recursos médios)")
     lines.append("\\begin{tabular}{lrrrrrrr}")
     lines.append("\\hline")
-    lines.append("Fase & DL P50 & DW P50 & Speedup P50 & CPU(p) DL & CPU(p) DW & RSS DL & RSS DW \\")
+    lines.append("Fase & DL P50 & DW P50 & Speedup P50 & CPU(p) DL & CPU(p) DW & RSS DL & RSS DW \\\\")
     lines.append("\\hline")
 
     def row_for_phase(ph: str) -> str:
@@ -80,19 +80,21 @@ def main() -> None:
         sp_s = f"{float(sp):.2f}×" if (sp is not None and np.isfinite(sp)) else "—"
         return (
             f"{ph} & {_fmt_s(dl_p50)} & {_fmt_s(dw_p50)} & {sp_s} & "
-            f"{_fmt_pct(cpu_dl)} & {_fmt_pct(cpu_dw)} & {_fmt_mb(rss_dl)} & {_fmt_mb(rss_dw)} \\"
+            f"{_fmt_pct(cpu_dl)} & {_fmt_pct(cpu_dw)} & {_fmt_mb(rss_dl)} & {_fmt_mb(rss_dw)} \\\\"
         )
 
     for ph in phases:
         lines.append(row_for_phase(ph))
 
     # total
-    t_dl = lat.get("total", {}).get("architectures", {}).get("data_lake", {}).get("p50")
-    t_dw = lat.get("total", {}).get("architectures", {}).get("data_warehouse", {}).get("p50")
-    t_sp = lat.get("total", {}).get("speedup_dw_vs_dl_p50")
+    t_total = lat.get("total", {})
+    t_arch_key = "architectures" if "architectures" in t_total else "arquiteturas"
+    t_dl = t_total.get(t_arch_key, {}).get("data_lake", {}).get("p50")
+    t_dw = t_total.get(t_arch_key, {}).get("data_warehouse", {}).get("p50")
+    t_sp = t_total.get("speedup_dw_vs_dl_p50")
     t_sp_s = f"{float(t_sp):.2f}×" if (t_sp is not None and np.isfinite(t_sp)) else "—"
     lines.append("\\hline")
-    lines.append(f"Total & {_fmt_s(t_dl)} & {_fmt_s(t_dw)} & {t_sp_s} & — & — & — & — \\")
+    lines.append(f"Total & {_fmt_s(t_dl)} & {_fmt_s(t_dw)} & {t_sp_s} & — & — & — & — \\\\")
     lines.append("\\hline")
     lines.append("\\end{tabular}")
 
