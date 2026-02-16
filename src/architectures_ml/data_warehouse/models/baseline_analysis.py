@@ -230,7 +230,7 @@ class BaselineModelAnalysisDataWarehouse:
         Carregar dados do fold via padrão ML Data Warehouse Consumer com Query Dinâmica SQL-First.
         
         Implementa padrão ML Data Warehouse Consumer:
-        - Queries diretas às views temporais pós-VIF
+        - Queries diretas às views temporais pós-filtragem de colinearidade
         - Descoberta dinâmica de features via information_schema (100% SQL)
         - Connection pooling para performance em workloads ML
         - Mantém paradigma SQL-first do Data Warehouse
@@ -240,7 +240,7 @@ class BaselineModelAnalysisDataWarehouse:
             split: 'train', 'val', ou 'test'
             
         Returns:
-            DataFrame com features ML disponíveis pós-seleção VIF
+            DataFrame com features ML disponíveis pós-filtragem de colinearidade
         """
         cache_key = f"fold_{fold_id}_{split}"
         if not hasattr(self, '_fold_data_cache'):
