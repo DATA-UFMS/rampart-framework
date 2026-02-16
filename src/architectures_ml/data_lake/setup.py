@@ -111,7 +111,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             4. Worker limits: Prevenção de OOM em datasets grandes
             
         Justificativa dos parâmetros:
-            - memory.target=0.8: 80% RAM antes de spill (Dask best practices)
+            - memory.target=0.8: 80% RAM antes de spill (melhores práticas Dask)
             - memory.spill=0.9: 90% RAM antes de kill worker (failsafe)
             - query-planning=True: Otimização de graphs para datasets >1GB
             
@@ -120,7 +120,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             - Dask: Garante determinismo em operações array distribuídas
             
         Referência:
-            Rocklin, M. (2015). Dask: Parallel computation with blocked algorithms.
+            Rocklin, M. (2015). Dask: Computação paralela com algoritmos em bloco.
         """
         print("[AMBIENTE] Configurando Dask para processamento científico distribuído")
         
@@ -204,7 +204,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # === Análise de adequação científica ===
         print("[ANÁLISE] Computando estatísticas para adequação ML temporal")
         
-        # Batch computation para eficiência (single Dask compute call)
+        # Computação em lote para eficiência (única chamada Dask compute)
         stats_to_compute = {
             'year_min': ddf['year'].min(),
             'year_max': ddf['year'].max(),
@@ -267,7 +267,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         
         # === Amostragem adaptativa para validação eficiente ===
         total_rows = int(ddf.index.size.compute())
-        sample_size = min(1000, total_rows)  # Balance precisão vs eficiência
+        sample_size = min(1000, total_rows)  # Balanceia precisão vs eficiência
         
         print(f"[AMOSTRAGEM] {sample_size:,}/{total_rows:,} observações ({sample_size/total_rows:.1%})")
         
@@ -309,7 +309,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # === Análise de qualidade distribuída ===
         print("[QUALIDADE] Computando estatísticas de adequação ML...")
         
-        # Batch computation otimizado (single Dask call)
+        # Computação em lote otimizada (única chamada Dask)
         validation_stats = {
             'target_data': (~ddf[self.source_column].isna()).sum(),
             'target_min': ddf[self.source_column].min(),
@@ -405,7 +405,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         ddf_with_target = ddf.assign(
             **{self.target_column: ddf[self.source_column].apply(
                 create_dropout_rate,
-                meta=(self.target_column, 'f8')  # Float64 type specification
+                meta=(self.target_column, 'f8')  # Especificação de tipo Float64
             )}
         )
         
@@ -446,7 +446,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             - Completude: contagem válida vs missing para análise de qualidade
             
         Otimização distribuída:
-            Single dask.compute() call para minimizar materialização do
+            Única chamada dask.compute() para minimizar materialização do
             grafo computacional, crítico para datasets >10GB que não
             cabem em memória (Rocklin, 2015).
             
@@ -456,7 +456,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
         Complexidade: O(n/p) onde p = número de partições Dask
         """
-        # Batch computation otimizado para eficiência distribuída
+        # Computação em lote otimizada para eficiência distribuída
         stats_batch = {
             'mean': ddf[self.target_column].mean(),
             'std': ddf[self.target_column].std(),
@@ -466,7 +466,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             'valid_count': (~ddf[self.target_column].isna()).sum()
         }
         
-        # Single compute call para máxima eficiência
+        # Única chamada compute para máxima eficiência
         computed = dask.compute(stats_batch)[0]
         
         # Conversão para float64 para consistência científica
@@ -672,169 +672,155 @@ class DataLakeArchitectureML(BaseArchitectureML):
         
         return correlations
     
-    def apply_vif_selection(self, ddf: dd.DataFrame, features: List[str],
-                          threshold: float = 0.8) -> List[str]:
+
+    def apply_collinearity_filter(self, ddf: dd.DataFrame, features: List[str],
+                                   threshold: float = 0.8) -> List[str]:
         """
-        Aplica seleção VIF (Variance Inflation Factor) via amostragem Dask-Pandas híbrida.
-        
+        Remove multicolinearidade via filtragem greedy de correlação pairwise.
+
+        Para cada feature candidata, calcula a correlação absoluta máxima com
+        as features já selecionadas e rejeita se max |r| >= threshold.
+
         Args:
             ddf: DataFrame Dask com features candidatas
             features: Lista de features para análise de multicolinearidade
-            threshold: Limiar de correlação para detectar multicolinearidade (0.8)
-            
+            threshold: Limiar de correlação pairwise (padrão 0.8)
+
         Returns:
             Lista filtrada de features com multicolinearidade reduzida
-            
-        Metodologia VIF científica:
-            Variance Inflation Factor detecta multicolinearidade via R² da regressão
-            de cada feature contra demais: VIF_i = 1/(1-R²_i). Aproximação usada:
-            correlação par-a-par como proxy eficiente mantendo interpretabilidade
-            (Hair et al., 2019).
-            
+
         Algoritmo greedy:
             1. Primeira feature sempre aceita (baseline)
-            2. Features subsequentes aceitas se max_correlation < threshold
+            2. Features subsequentes aceitas se max |r| < threshold
             3. Ordem preservada para determinismo científico
-            
+
         Amostragem híbrida Dask-Pandas:
             - Dask: Amostragem distribuída eficiente para datasets >10GB
             - Pandas: Matriz de correlação precisa após materialização
             - Equivalência: Resultados idênticos ao Data Warehouse SQL
-            
-        Cache científico:
-            TTL=12h permite análises iterativas sem reprocessamento,
-            balanceando performance vs freshness crítico para experimentos ML.
-            
-        Critérios de qualidade:
-            - Amostra mínima: max(config, 10% dataset) baseado em poder estatístico
-            - Fallback robusto: Top-10 features se análise falha
-            - Threshold 0.8: Literatura econométrica para multicolinearidade severa
-            
+
         Referências:
-            Hair, J. F., et al. (2019). Multivariate data analysis (8th ed.).
+            Dormann, C. F., et al. (2013). Collinearity: a review of methods
+            to deal with it and a simulation study evaluating their performance.
         """
         if len(features) <= 1:
-            print("[VIF] Menos de 2 features - análise desnecessária")
+            print("[COLLINEARITY] Menos de 2 features - análise desnecessária")
             return features
-        
-        print(f"[VIF] Executando análise de multicolinearidade para {len(features)} features")
+
+        print(f"[COLLINEARITY] Executando análise de multicolinearidade para {len(features)} features")
         print("━" * 50)
-        
+
         # === Configuração de amostragem científica ===
         total_rows = float(ddf.index.size.compute())
-        
+
         # Critérios baseados em configuração científica
-        min_sample_absolute = self.config.get('min_vif_sample_size', 1000)
-        sample_fraction = self.config.get('vif_sample_fraction', 0.1)
-        
+        min_sample_absolute = self.config.get('min_correlation_sample_size', 1000)
+        sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
+
         min_sample_size = max(min_sample_absolute, int(total_rows * sample_fraction))
         sample_frac = min(min_sample_size / total_rows, 1.0)
-        
+
         print(f"[AMOSTRAGEM] {min_sample_size:,} registros ({sample_frac:.1%})")
         print(f"[CRITÉRIO] max(config={min_sample_absolute}, {sample_fraction:.0%}×dataset)")
-        
+
         try:
             # === Amostragem distribuída Dask ===
             print("[DASK] Executando amostragem distribuída...")
-            vif_sample_ddf = ddf[features].sample(
+            corr_sample_ddf = ddf[features].sample(
                 frac=sample_frac,
                 random_state=self.config['random_seed']
             )
-            
+
             # === Materialização Pandas para correlação precisa ===
             print("[PANDAS] Materializando amostra para análise de correlação...")
-            vif_data = vif_sample_ddf.compute().dropna()
-            
-            actual_sample_size = len(vif_data)
+            corr_data = corr_sample_ddf.compute().dropna()
+
+            actual_sample_size = len(corr_data)
             print(f"[CONFIRMAÇÃO] {actual_sample_size:,} observações válidas pós-dropna")
-            
+
             if actual_sample_size > 10:  # Mínimo estatístico
                 # === Construção de matriz de correlação ===
                 print("[MATRIZ] Computando correlações par-a-par...")
-                corr_matrix = vif_data.corr().abs()
-                
-                # === Algoritmo VIF greedy (equivalente Data Warehouse) ===
+                corr_matrix = corr_data.corr().abs()
+
+                # === Algoritmo greedy pairwise (equivalente Data Warehouse) ===
                 print(f"[ALGORITMO] Aplicando seleção greedy com threshold {threshold}")
-                
+
                 selected = []
                 rejected_count = 0
-                
+
                 for feature in features:
                     if feature not in corr_matrix.columns:
-                        # Feature ausente na amostra (raro, mas possível)
                         continue
-                        
+
                     if not selected:
-                        # Primeira feature sempre aceita
                         selected.append(feature)
                     else:
-                        # Calcular correlação máxima com features já selecionadas
                         max_corr = 0.0
                         worst_pair = None
-                        
+
                         for sel_feat in selected:
                             if sel_feat in corr_matrix.columns:
                                 corr_val = corr_matrix.loc[feature, sel_feat]
                                 if corr_val > max_corr:
                                     max_corr = corr_val
                                     worst_pair = sel_feat
-                        
-                        # Aplicar critério VIF
+
                         if max_corr < threshold:
                             selected.append(feature)
                         else:
                             rejected_count += 1
-                            if rejected_count <= 3:  # Log principais rejeições
+                            if rejected_count <= 3:
                                 print(f"  → Rejeitado {feature}: r={max_corr:.3f} com {worst_pair}")
-                
+
                 # === Relatório científico ===
                 reduction_rate = ((len(features) - len(selected)) / len(features)) * 100
-                print(f"\n[RESULTADO VIF] Análise concluída:")
+                print(f"\n[RESULTADO] Filtragem de colinearidade concluída:")
                 print(f"  → Features originais: {len(features)}")
                 print(f"  → Features selecionadas: {len(selected)}")
                 print(f"  → Redução: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
                 print(f"  → Equivalência: Algoritmo idêntico ao Data Warehouse SQL")
-                
+
                 return selected
-                
+
             else:
                 print(f"[FALLBACK] Amostra inadequada ({actual_sample_size}≤10) - retornando top-10")
                 return features[:10]
-                
+
         except Exception as e:
-            self.logger.error(f"Erro na análise VIF: {e}")
-            print(f"[ERRO] Análise VIF falhou: {e}")
+            self.logger.error(f"Erro na filtragem de colinearidade: {e}")
+            print(f"[ERRO] Filtragem de colinearidade falhou: {e}")
             print("[FALLBACK] Retornando top-10 features como segurança")
             return features[:10]
     
     @log_ml_pipeline('feature_engineering')
     def prepare_features(self, ddf: dd.DataFrame, selected_features: List[str]) -> dd.DataFrame:
         """
-        Executa feature engineering científico com transformação Yeo-Johnson distribuída.
+        Executa feature engineering científico com symmetric log transform distribuída.
         
         Args:
-            ddf: DataFrame Dask com features selecionadas via VIF
+            ddf: DataFrame Dask com features selecionadas via filtragem de colinearidade
             selected_features: Features pós-seleção para transformação
             
         Returns:
             DataFrame Dask enriquecido com features originais + transformadas
             
         Engenharia de Features Científica:
-            Aplica transformação Yeo-Johnson simplificada: T(x) = sign(x) × ln(|x| + 1)
+            Aplica symmetric log transform: T(x) = sign(x) * ln(|x| + 1)
             às top-5 features para normalização de distribuições assimétricas comuns
-            em dados socioeconômicos (Yeo & Johnson, 2000).
-            
+            em dados socioeconômicos.
+
         Justificativas metodológicas:
             1. Top-5 limite: Baseado em curse of dimensionality (Bellman, 1961)
                e overfitting em pequenas amostras educacionais
-            2. Yeo-Johnson: Superior a Box-Cox para dados com zeros/negativos
-               frequentes em indicadores educacionais
+            2. Symmetric log: Trata zeros e negativos naturalmente, adequada para
+               indicadores educacionais com déficits/declínios
             3. Lazy evaluation: Transformações aplicadas via .apply() Dask
                para otimização de memória
                
         Estrutura final:
             - Metadados: country_code, year, target (essenciais ML temporal)
-            - Features originais: selected_features (pós-VIF)
+            - Features originais: selected_features (pós-filtragem de colinearidade)
             - Features transformadas: {feature}_log_transform (top-5)
             
         Equivalência arquitetural:
@@ -847,7 +833,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
         Referências:
             Bellman, R. (1961). Adaptive control processes. Princeton.
-            Yeo, I. K., & Johnson, R. A. (2000). A new family of power transformations.
         """
         print("\n[FEATURE ENGINEERING] Executando transformações científicas distribuídas")
         print("━" * 70)
@@ -856,8 +841,8 @@ class DataLakeArchitectureML(BaseArchitectureML):
         print("[PREPARAÇÃO] Criando cópia de trabalho...")
         ddf_work = ddf.copy()
 
-        # === Transformações Yeo-Johnson científicas ===
-        print("[TRANSFORMAÇÃO] Aplicando Yeo-Johnson simplificado a top-5 features")
+        # === Symmetric log transform: T(x) = sign(x) * ln(|x| + 1) ===
+        print("[TRANSFORMAÇÃO] Aplicando symmetric log transform a top-5 features")
         
         # Critério científico: Limitar escopo por curse of dimensionality
         features_to_transform = selected_features[:5] if len(selected_features) > 5 else selected_features
@@ -873,17 +858,17 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
             transform_col = f"{feat}_log_transform"
             
-            # Transformação Yeo-Johnson robusta via Dask apply
+            # Symmetric log transform via Dask apply
             print(f"  → {feat} → {transform_col}")
             
             # Função lambda científica preservando NaN
             ddf_work[transform_col] = ddf_work[feat].apply(
                 lambda x: np.sign(x) * np.log(np.abs(x) + 1) if pd.notna(x) else np.nan,
-                meta=(transform_col, 'f8')  # Float64 metadata para Dask
+                meta=(transform_col, 'f8')  # Metadados Float64 para Dask
             )
             transformed_count += 1
         
-        print(f"[RESULTADO] {transformed_count} transformações Yeo-Johnson aplicadas")
+        print(f"[RESULTADO] {transformed_count} symmetric log transforms aplicadas")
         
         # === Construção de dataset ML final ===
         print("[ASSEMBLY] Construindo dataset final para modelagem...")
@@ -891,7 +876,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # Metadados essenciais para ML temporal
         ml_features = ['country_code', 'year', self.target_column]
         
-        # Features originais pós-seleção VIF
+        # Features originais pós-filtragem de colinearidade
         ml_features.extend(selected_features)
         
         # Features transformadas (apenas as que foram criadas)
