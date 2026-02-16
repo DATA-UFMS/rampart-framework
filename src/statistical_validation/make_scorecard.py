@@ -5,9 +5,7 @@ artefatos já produzidos pelo pipeline.
 
 Entradas (melhor esforço, com fallbacks):
  - outputs/statistics/significance_summary.json ou .tex (speedups + IC95 por fase)
- - outputs/statistics/tost_baseline.json (equivalência em R^2, faixa de δ)
- - outputs/statistics/tost_baseline_mase.json (opcional)
- - outputs/statistics/tost_baseline_nrmse.json (opcional)
+ - outputs/statistics/equivalence_estimation.json (equivalência por estimativa SESOI+IC)
  - outputs/statistics/architectural_resource_usage.tex (CPU(proc) média e RSS para processing)
 
 Saída:
@@ -82,25 +80,20 @@ def get_speedups() -> Dict[str, Tuple[float, float, float]]:
     return {}
 
 
-def summarize_tost(name: str) -> Optional[str]:
-    p = BASE / f'tost_baseline{name}.json' if name else BASE / 'tost_baseline.json'
-    data = load_json(p)
+def summarize_equivalence(metric: str) -> Optional[str]:
+    """Lê equivalence_estimation.json e retorna resumo para a métrica dada."""
+    data = load_json(BASE / 'equivalence_estimation.json')
     if not data:
         return None
-    deltas = []
-    flags = []
-    for k, v in data.items():
-        try:
-            d = float(k.split('_')[1])
-        except Exception:
-            continue
-        deltas.append(d)
-        flags.append(bool(v.get('equivalent', False)))
-    if not deltas:
+    pred = data.get('predictive', {})
+    entry = pred.get(metric)
+    if not entry or not isinstance(entry, dict):
         return None
-    lo, hi = min(deltas), max(deltas)
-    status = 'Sim' if all(flags) else 'Não'
-    return f"{status} ($\\delta\\in\\{{{lo:.2f},{hi:.2f}\\}})"
+    decision = entry.get('decision', '?')
+    delta = entry.get('delta', float('nan'))
+    ci = entry.get('ci95', [float('nan'), float('nan')])
+    status = 'Sim' if 'equivalen' in decision.lower() else 'Não'
+    return f"{status} ($\\delta={delta:.3f}$, IC=[{ci[0]:.3f},{ci[1]:.3f}])"
 
 
 def get_resources_processing() -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
@@ -112,18 +105,20 @@ def get_resources_processing() -> Tuple[Optional[float], Optional[float], Option
     for line in tex.splitlines():
         if line.startswith('%'):
             continue
-        if 'processing & data_lake' in line:
-            parts = [p.strip() for p in line.split('&')]
+        # Normalizar underscores escapados do LaTeX para comparação
+        norm = line.replace('\\_', '_')
+        if 'processing & data_lake' in norm:
+            parts = [p.strip() for p in norm.split('&')]
             try:
-                cpu_dl = float(parts[2].rstrip('% '))
-                rss_dl = float(parts[4])
+                cpu_dl = float(re.sub(r'[\\%\s]', '', parts[2]))
+                rss_dl = float(re.sub(r'[\\%\s]', '', parts[4]))
             except Exception:
                 pass
-        if 'processing & data_warehouse' in line:
-            parts = [p.strip() for p in line.split('&')]
+        if 'processing & data_warehouse' in norm:
+            parts = [p.strip() for p in norm.split('&')]
             try:
-                cpu_dw = float(parts[2].rstrip('% '))
-                rss_dw = float(parts[4])
+                cpu_dw = float(re.sub(r'[\\%\s]', '', parts[2]))
+                rss_dw = float(re.sub(r'[\\%\s]', '', parts[4]))
             except Exception:
                 pass
     return (cpu_dl, cpu_dw, rss_dl, rss_dw)
@@ -146,9 +141,9 @@ def build_scorecard() -> str:
     if total:
         total_s = f"{total[0]:.2f}$\\times$ [{total[1]:.2f},\\,{total[2]:.2f}]"
 
-    r2 = summarize_tost('') or '—'
-    mase = summarize_tost('_mase') or '—'
-    nrmse = summarize_tost('_nrmse') or '—'
+    r2 = summarize_equivalence('r2') or '—'
+    mase = summarize_equivalence('mase') or '—'
+    nrmse = summarize_equivalence('nrmse') or '—'
 
     cpu_dl, cpu_dw, rss_dl, rss_dw = get_resources_processing()
     cpu_s = '—'
@@ -173,7 +168,7 @@ def build_scorecard() -> str:
     if hierarchical: speed_lines.append(f"Hierarchical: {hierarchical}")
     if total_s: speed_lines.append(f"Total: {total_s}")
     parts.append('\\textbf{Speedup por fase} & ' + '; '.join(speed_lines) + '. \\\\ ')
-    parts.append('\\textbf{Equivalência (TOST)} & ' + f"R$^2$: {r2}; MASE: {mase}; nRMSE: {nrmse}. Notas: quando diferenças por fold são numericamente nulas, $p$-valores podem aparecer como $<10^{{-12}}$ e ICs estreitos." + ' \\\\ ')
+    parts.append('\\textbf{Equivalência (SESOI+IC)} & ' + f"R$^2$: {r2}; MASE: {mase}; nRMSE: {nrmse}." + ' \\\\ ')
     parts.append('\\textbf{Recursos (processing)} & ' + f"{cpu_s}; {rss_s}." + ' \\\\ ')
     parts.append('\\bottomrule')
     parts.append('\\end{tabular}')

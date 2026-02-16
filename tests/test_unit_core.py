@@ -266,6 +266,9 @@ class TestScientificConfig:
         required = [
             'random_seed', 'collinearity_threshold', 'temporal_gap_years',
             'feature_transform', 'bootstrap_iters',
+            'temporal_range_start', 'temporal_range_end',
+            'folds_min_train_years', 'folds_val_len_years', 'folds_test_len_years',
+            'sesoi_r2', 'sesoi_nrmse', 'sesoi_mase',
         ]
         for key in required:
             assert key in config, f"Missing key: {key}"
