@@ -46,8 +46,12 @@ def print_error(msg: str) -> None:
     print(f"[ERRO] {msg}")
 
 def run(cmd: str) -> None:
+    """Executa um subprocesso com PYTHONPATH configurado para src/ para imports consistentes."""
     print(f"\n$ {cmd}")
-    result = subprocess.run(cmd, shell=True, check=True)
+    env = os.environ.copy()
+    src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+    env["PYTHONPATH"] = src_dir + os.pathsep + env.get("PYTHONPATH", "")
+    result = subprocess.run(cmd, shell=True, check=True, env=env)
     if result.returncode != 0:
         raise RuntimeError(f"Comando falhou: {cmd}")
 
@@ -159,7 +163,7 @@ def main() -> None:
     print_system("PROTOCOLO 3/4 — BENCHMARK ARQUITETURAL (QP3)")
     print_config("Comparação demonstrativa: schema-on-write vs schema-on-read")
     print_step("ETAPA 7/8: Executando Benchmark Arquitetural...")
-    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 3 --warmup 1")
+    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 5 --warmup 1")
     print_success("ETAPA 7 CONCLUÍDA: Benchmark arquitetural executado")
 
     # 8) Testes estatísticos de validação
