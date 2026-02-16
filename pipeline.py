@@ -28,7 +28,7 @@ except Exception:
     SCIENTIFIC_CONFIG = {}
 
 try:
-    from src.core.config import get_execution_metadata  # type: ignore
+    from src.core.config import get_execution_metadata
 except Exception:
     get_execution_metadata = None
 

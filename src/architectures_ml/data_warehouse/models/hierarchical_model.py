@@ -24,7 +24,6 @@ warnings.filterwarnings('ignore')
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 sys.path.insert(0, project_root)
 
-# Also add the actual project root (one level above src/)
 _actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
