@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import dask.dataframe as dd
 import dask
-from typing import List, Dict
+from typing import Any, List, Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from core.base_architecture import BaseArchitectureML
 from core.config import get_absolute_output_path
@@ -125,9 +125,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # Seeds para reprodutibilidade científica completa
         random_seed = self.config['random_seed']
         np.random.seed(random_seed)
-        dask.config.set({'array.random.seed': random_seed})
-        
-        print(f"   ✓ Reprodutibilidade: Seed {random_seed} configurado (NumPy + Dask)")
+        # Nota: Dask não possui config nativa de seed global.
+        # A reprodutibilidade é garantida pela seed do numpy.
+
+        print(f"   ✓ Reprodutibilidade: Seed {random_seed} configurado (NumPy)")
         print("[STATUS] Ambiente Dask cientificamente configurado")
     
     def load_data(self) -> dd.DataFrame:
@@ -702,7 +703,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         total_rows = float(ddf.index.size.compute())
 
         # Critérios baseados em configuração científica
-        min_sample_absolute = self.config.get('min_correlation_sample_size', 1000)
+        min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
         sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
 
         min_sample_size = max(min_sample_absolute, int(total_rows * sample_fraction))
