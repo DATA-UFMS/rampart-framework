@@ -8,7 +8,7 @@ benchmark cientificamente válido.
 
 Parâmetros definidos aqui governam:
 - Reprodutibilidade (seeds)
-- Lógica de seleção de features (VIF, correlações)
+- Lógica de seleção de features (correlações pairwise)
 - Validação temporal
 - Transformações de features
 """
@@ -26,14 +26,13 @@ SCIENTIFIC_CONFIG = {
     'random_seed': RANDOM_SEED,
 
     # Seleção de Features
-    'vif_threshold': 0.8,
+    'collinearity_threshold': 0.8,
     'correlation_precision': 1e-3, # MAE máximo permitido entre correlações
-    'min_vif_sample_size': 5000,
-    'vif_sample_fraction': 0.1,
+    'min_correlation_sample_size': 5000,
+    'correlation_sample_fraction': 0.1,
     # Amostragem de correlação (para alinhar DL e DW)
     'correlation_sampling': True,
     'correlation_min_sample_size': 5000,
-    'correlation_sample_fraction': 0.1,
 
     # Validação Temporal
     'temporal_gap_years': 2,
@@ -48,11 +47,11 @@ SCIENTIFIC_CONFIG = {
     'folds_max': None,
 
     # Transformação de Features
-    # Define o método de transformação para normalização.
-    # 'yeo_johnson_equivalent' é implementado com:
-    # SQL: LN(ABS(x) + 1) * SIGN(x)
-    # Python: np.sign(x) * np.log(np.abs(x) + 1)
-    'feature_transform': 'yeo_johnson_equivalent',
+    # Symmetric log transform: T(x) = sign(x) * ln(|x| + 1)
+    # Implementações equivalentes:
+    #   SQL:    SIGN(x) * LN(ABS(x) + 1)
+    #   Python: np.sign(x) * np.log(np.abs(x) + 1)
+    'feature_transform': 'symmetric_log',
 
     # Validação de Equivalência
     'target_stats_max_diff': 0.01,      # 1%
