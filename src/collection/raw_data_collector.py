@@ -243,7 +243,7 @@ class RawDataCollector:
         
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, params=params, timeout=30)
+                response = requests.get(url, params=params, timeout=60)
                 response.raise_for_status()
                 
                 data = response.json()
