@@ -45,7 +45,7 @@ MetricConfig = Dict[str, Dict[str, float]]
 def _collect_deltas() -> Dict[str, np.ndarray]:
     pairs = _load_baseline_pairs()
     metrics = {}
-    for metric in ("r2", "nrmse", "mase"):
+    for metric in ("r2", "wape", "mase"):
         metrics[metric] = _paired_deltas_for_metric(pairs, metric)
     return metrics
 
@@ -60,7 +60,7 @@ def _sensitivity_grid(
 
     base_deltas: MetricConfig = {
         "r2": {"delta": float(SCIENTIFIC_CONFIG.get("sesoi_r2", 0.01))},
-        "nrmse": {"delta": float(SCIENTIFIC_CONFIG.get("sesoi_nrmse", 0.05))},
+        "wape": {"delta": float(SCIENTIFIC_CONFIG.get("sesoi_wape", 0.05))},
         "mase": {"delta": float(SCIENTIFIC_CONFIG.get("sesoi_mase", 0.05))},
     }
 
