@@ -143,7 +143,7 @@ def build_scorecard() -> str:
 
     r2 = summarize_equivalence('r2') or '—'
     mase = summarize_equivalence('mase') or '—'
-    nrmse = summarize_equivalence('nrmse') or '—'
+    wape = summarize_equivalence('wape') or '—'
 
     cpu_dl, cpu_dw, rss_dl, rss_dw = get_resources_processing()
     cpu_s = '—'
@@ -168,7 +168,7 @@ def build_scorecard() -> str:
     if hierarchical: speed_lines.append(f"Hierarchical: {hierarchical}")
     if total_s: speed_lines.append(f"Total: {total_s}")
     parts.append('\\textbf{Speedup por fase} & ' + '; '.join(speed_lines) + '. \\\\ ')
-    parts.append('\\textbf{Equivalência (SESOI+IC)} & ' + f"R$^2$: {r2}; MASE: {mase}; nRMSE: {nrmse}." + ' \\\\ ')
+    parts.append('\\textbf{Equivalência (SESOI+IC)} & ' + f"R$^2$: {r2}; MASE: {mase}; WAPE: {wape}." + ' \\\\ ')
     parts.append('\\textbf{Recursos (processing)} & ' + f"{cpu_s}; {rss_s}." + ' \\\\ ')
     parts.append('\\bottomrule')
     parts.append('\\end{tabular}')

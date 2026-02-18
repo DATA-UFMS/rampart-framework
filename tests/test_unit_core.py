@@ -268,7 +268,7 @@ class TestScientificConfig:
             'feature_transform', 'bootstrap_iters',
             'temporal_range_start', 'temporal_range_end',
             'folds_min_train_years', 'folds_val_len_years', 'folds_test_len_years',
-            'sesoi_r2', 'sesoi_nrmse', 'sesoi_mase',
+            'sesoi_r2', 'sesoi_wape', 'sesoi_mase',
         ]
         for key in required:
             assert key in config, f"Missing key: {key}"
@@ -293,7 +293,7 @@ class TestScientificConfig:
         assert config['feature_transform'] == 'symmetric_log'
 
     def test_sesoi_positive(self, config):
-        for key in ['sesoi_r2', 'sesoi_nrmse', 'sesoi_mase']:
+        for key in ['sesoi_r2', 'sesoi_wape', 'sesoi_mase']:
             assert config[key] > 0, f"{key} must be positive"
 
 
