@@ -122,8 +122,24 @@ class TemporalValidator:
                     break
         
         report['all_valid'] = report['invalid_folds'] == 0
-        
+
         return report['all_valid'], report
+
+    def enforce_walk_forward(self, folds: List[Dict]) -> None:
+        """
+        Valida estrutura walk-forward e interrompe execução em caso de violação.
+
+        Raises:
+            ValueError: Se qualquer fold violar integridade temporal
+        """
+        all_valid, report = self.validate_walk_forward(folds)
+        if not all_valid:
+            errors = report.get('fold_errors', {})
+            raise ValueError(
+                f"Anti-leakage violation: {report['invalid_folds']} of "
+                f"{report['total_folds']} folds failed temporal integrity. "
+                f"Errors: {errors}"
+            )
     
     def validate_gap(self, start_year: int, end_year: int) -> bool:
         """
@@ -631,12 +647,12 @@ def validate_temporal_splits(train_years: Tuple[int, int],
     }
     
     is_valid, errors = validator.validate_fold_integrity(fold)
-    
+
     if not is_valid:
-        print("Erros encontrados na validação temporal:")
-        for error in errors:
-            print(f"  - {error}")
-    
+        raise ValueError(
+            f"Anti-leakage violation in temporal split: {errors}"
+        )
+
     return is_valid
 
 
