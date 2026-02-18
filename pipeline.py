@@ -32,6 +32,11 @@ try:
 except Exception:
     get_execution_metadata = None
 
+try:
+    from src.core.validation import TemporalValidator
+except Exception:
+    TemporalValidator = None
+
 def print_conclusion(msg: str) -> None:
     print("\n" + "=" * 80)
     print(msg)
@@ -53,7 +58,7 @@ def print_error(msg: str) -> None:
     print(f"[ERRO] {msg}")
 
 def run(cmd: str) -> None:
-    """Executa um subprocesso com PYTHONPATH configurado para src/ para imports consistentes."""
+    """Executa um subprocesso com PYTHONPATH configurado para src/."""
     print(f"\n$ {cmd}")
     env = os.environ.copy()
     src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
@@ -77,7 +82,7 @@ def _snapshot_scientific_config(root: str) -> None:
     except Exception:
         payload["git_commit"] = "unavailable"
 
-    # Installed package versions
+    # Versões dos pacotes instalados
     try:
         payload["installed_packages"] = {
             dist.metadata["Name"]: dist.version
@@ -86,14 +91,14 @@ def _snapshot_scientific_config(root: str) -> None:
     except Exception:
         payload["installed_packages"] = "unavailable"
 
-    # Hardware info (reuse get_execution_metadata from config.py)
+    # Informações de hardware
     if get_execution_metadata is not None:
         try:
             payload["hardware"] = get_execution_metadata()
         except Exception:
             payload["hardware"] = "unavailable"
 
-    # Hash of requirements.txt for drift detection
+    # Hash do requirements.txt para detecção de alterações
     req_path = os.path.join(root, "requirements.txt")
     if os.path.exists(req_path):
         with open(req_path, "rb") as f:
@@ -105,8 +110,31 @@ def _snapshot_scientific_config(root: str) -> None:
     print_system(f"Snapshot científico registrado em {snapshot_path}")
 
 
+def _validate_anti_leakage_gate(root: str) -> None:
+    """Valida integridade temporal de todos os folds antes de prosseguir ao benchmark."""
+    if TemporalValidator is None:
+        raise RuntimeError("TemporalValidator não disponível — validação anti-leakage impossível")
+
+    gap = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
+    validator = TemporalValidator(min_gap_years=gap)
+
+    for arch in ['data_lake', 'data_warehouse']:
+        folds_path = os.path.join(
+            root, 'outputs', 'ml_pipeline', 'architectures', arch, 'prep',
+            f'temporal_folds_{arch}.json'
+        )
+        if not os.path.exists(folds_path):
+            raise FileNotFoundError(f"Folds não encontrados: {folds_path}")
+
+        with open(folds_path, 'r') as f:
+            folds_config = json.load(f)
+
+        folds = folds_config.get('folds', [])
+        validator.enforce_walk_forward(folds)
+        print_config(f"  {arch}: {len(folds)} folds — integridade temporal verificada")
+
+
 def main() -> None:
-    # CLI básica (sem modos de folds; geração é sempre automática via config científica)
     parser = argparse.ArgumentParser(description="Pipeline de pesquisa - DW vs DL")
     _ = parser.parse_args()
     root = os.path.abspath(os.path.dirname(__file__))
@@ -117,14 +145,14 @@ def main() -> None:
     print_system("PROTOCOLO 4/4 — REPRODUTIBILIDADE ATIVADA")
     print_config("Snapshot de configuração e ambiente salvo em outputs/scientific_config_snapshot.json")
 
-    # 1) Coleta
+    # Coleta
     print_system("PROCESSADOR DE DADOS BRUTOS")
     print_config("Fonte: Banco Mundial (World Bank)")
     print_step("ETAPA 1/8: Coletando dados brutos...")
     run(f"{py} {root}/src/collection/raw_data_collector.py")
     print_success("ETAPA 1 CONCLUÍDA: Dados brutos coletados")
 
-    # 2) Processamento arquitetural
+    # Processamento arquitetural
     print_system("PROCESSADOR DATA LAKE")
     print_config("Arquitetura: Data Lake com Dask")
     print_step("ETAPA 2a/8: Processando Data Lake...")
@@ -138,7 +166,7 @@ def main() -> None:
 
     print_system("PROTOCOLO 1/4 — VALIDAÇÃO TEMPORAL (QP1)")
     print_config("Gaps temporais: 2 anos (anti-leak)")
-    # 3) Setup ML (gaps 2 anos em ambas arquiteturas)
+    # Setup ML
     print_system("SETUP ML DATA LAKE")
     print_config("Arquitetura: Data Lake (schema-on-read)")
     print_step("ETAPA 3a/8: Configurando ML Data Lake...")
@@ -150,7 +178,13 @@ def main() -> None:
     run(f"{py} {root}/src/architectures_ml/data_warehouse/setup.py")
     print_success("ETAPA 3 CONCLUÍDA: Setup ML completo")
 
-    # 4) Feature engineering (opcional); não interromper se falhar
+    # Validação de integridade temporal
+    print_system("GATE ANTI-LEAKAGE")
+    print_step("Verificando integridade temporal de todos os folds...")
+    _validate_anti_leakage_gate(root)
+    print_success("GATE ANTI-LEAKAGE: Todos os folds passaram na validação")
+
+    # Feature engineering
     print_system("FEATURE ENGINEERING")
     print_config("Modo: Opcional (pode falhar)")
     print_step("ETAPA 4/8: Executando Feature Engineering...")
@@ -164,7 +198,7 @@ def main() -> None:
         print_error(f"Feature engineering DW opcional falhou: {e}")
     print_success("ETAPA 4 CONCLUÍDA: Feature engineering executado")
 
-    # 5) Baselines
+    # Baselines
     print_system("MODELOS BASELINE DATA LAKE")
     print_config("Modelos: Média, Tendência, Naive, Cross-Country")
     print_step("ETAPA 5a/8: Executando Baselines Data Lake...")
@@ -176,7 +210,7 @@ def main() -> None:
     run(f"{py} {root}/src/architectures_ml/data_warehouse/models/baseline_analysis.py")
     print_success("ETAPA 5 CONCLUÍDA: Modelos baseline executados")
 
-    # 6) Hierárquicos (modo básico)
+    # Hierárquicos
     print_system("MODELOS HIERÁRQUICOS")
     print_config("Modo: Básico (sem features enhanced)")
     print_step("ETAPA 6/8: Executando Modelos Hierárquicos...")
@@ -186,19 +220,18 @@ def main() -> None:
     run(f"{py} {root}/src/architectures_ml/data_warehouse/models/hierarchical_model.py")
     print_success("ETAPA 6 CONCLUÍDA: Modelos hierárquicos executados")
 
-    # 7) Benchmark arquitetural
+    # Benchmark arquitetural
     print_system("PROTOCOLO 3/4 — BENCHMARK ARQUITETURAL (QP3)")
     print_config("Comparação demonstrativa: schema-on-write vs schema-on-read")
     print_step("ETAPA 7/8: Executando Benchmark Arquitetural...")
-    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 5 --warmup 1")
+    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
     print_success("ETAPA 7 CONCLUÍDA: Benchmark arquitetural executado")
 
-    # 8) Testes estatísticos de validação
+    # Testes estatísticos de validação
     print_system("PROTOCOLO 2/4 — EQUIVALÊNCIA PRÁTICA (QP2)")
     print_config("Validação: SESOI + IC95% com bootstrap e estatísticas robustas")
     print_step("ETAPA 8/8: Executando Testes Estatísticos...")
     
-    # 8a) Testes de significância com bootstrap (se dados de benchmark existirem)
     benchmark_csv = f"{root}/outputs/benchmarks/architectural_benchmark_results.csv"
     if os.path.exists(benchmark_csv):
         print_step("ETAPA 8a/8: Testes de significância (bootstrap)...")
@@ -206,7 +239,6 @@ def main() -> None:
     else:
         print_error("Arquivo de benchmark não encontrado, pulando testes de significância")
     
-    # 8b) Equivalência por estimativa (SESOI + IC) (sempre executa para gerar estrutura)
     print_step("ETAPA 8b/8: Equivalência por estimativa (SESOI + IC)...")
     run(f"{py} {root}/src/statistical_validation/tost_baseline.py --latex")
     
