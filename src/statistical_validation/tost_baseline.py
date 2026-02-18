@@ -23,7 +23,6 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-# Raiz do projeto para importar configuração científica
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
@@ -86,59 +85,52 @@ def _load_json(path: str) -> Optional[Dict]:
 
 
 def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
+    """Extrai métricas de teste por fold do JSON de resultados de baseline.
+    
+    Usa o modelo 'best_baseline' quando disponível, recorrendo a 'naive_with_lag'.
+    Extrai test_r2, test_mase, test_wape explicitamente por nome de chave.
+    """
     out: Dict[int, Dict[str, float]] = {}
-    candidates = []
-    if isinstance(d, dict):
-        candidates.append(d)
-        for _, v in d.items():
-            if isinstance(v, dict):
-                candidates.append(v)
-    for obj in candidates:
-        if not isinstance(obj, dict):
+    # Folds ficam em 'baseline_model_results' ou diretamente no dict
+    folds_container = d.get('baseline_model_results', d)
+    if not isinstance(folds_container, dict):
+        return out
+    for k, v in folds_container.items():
+        if not (isinstance(k, str) and k.startswith('fold_') and isinstance(v, dict)):
             continue
-        for k, v in obj.items():
-            if not (isinstance(k, str) and k.startswith('fold_') and isinstance(v, dict)):
-                continue
-            try:
-                fid = int(k.split('_')[1])
-            except Exception:
-                continue
-            metrics = {}
-            for model_key in ['naive_with_lag', 'naive', 'baseline', 'global_mean', 'summary', 'test_metrics']:
-                if model_key in v and isinstance(v[model_key], dict):
-                    leaf = v[model_key]
-                    if 'test_metrics' in leaf and isinstance(leaf['test_metrics'], dict):
-                        leaf = leaf['test_metrics']
-                    for key, val in leaf.items():
-                        if not isinstance(val, (int, float)):
-                            continue
-                        lk = key.lower()
-                        if 'r2' in lk:
-                            metrics['r2'] = float(val)
-                        elif 'nrmse' in lk:
-                            metrics['nrmse'] = float(val)
-                        elif 'mase' in lk:
-                            metrics['mase'] = float(val)
-            if not metrics:
-                for key, val in v.items():
-                    if not isinstance(val, (int, float)):
-                        continue
-                    lk = str(key).lower()
-                    if 'r2' in lk:
-                        metrics['r2'] = float(val)
-                    elif 'nrmse' in lk:
-                        metrics['nrmse'] = float(val)
-                    elif 'mase' in lk:
-                        metrics['mase'] = float(val)
-            if metrics:
-                out[fid] = metrics
+        try:
+            fid = int(k.split('_')[1])
+        except Exception:
+            continue
+        # Segue a referência best_baseline para o modelo real, recorre a naive_with_lag
+        best = v.get('best_baseline', {})
+        best_name = best.get('model', '') if isinstance(best, dict) else ''
+        model = v.get(best_name) if best_name else None
+        if not isinstance(model, dict):
+            model = v.get('naive_with_lag')
+        if not isinstance(model, dict):
+            for sub in v.values():
+                if isinstance(sub, dict) and 'test_r2' in sub:
+                    model = sub
+                    break
+        if not isinstance(model, dict):
+            continue
+        metrics = {}
+        if 'test_r2' in model:
+            metrics['r2'] = float(model['test_r2'])
+        if 'test_mase' in model:
+            metrics['mase'] = float(model['test_mase'])
+        if 'test_wape' in model:
+            metrics['wape'] = float(model['test_wape'])
+        if metrics:
+            out[fid] = metrics
     return out
 
 
 def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
     paths = {
         'dw': 'outputs/ml_pipeline/architectures/data_warehouse/models/baseline_analysis_data_warehouse_consumer_results.json',
-        'dl': 'outputs/ml_pipeline/architectures/data_lake/models/baseline_analysis_data_lake_results.json',
+        'dl': 'outputs/ml_pipeline/architectures/data_lake/models/baseline_results/baseline_analysis_data_lake_results.json',
     }
     out = {}
     for arch, p in paths.items():
@@ -163,7 +155,7 @@ def _paired_deltas_for_metric(pairs: Dict[str, Dict[int, Dict[str, float]]], met
 def _analyze_predictive_metrics(args) -> Dict:
     pairs = _load_baseline_pairs()
     results = {}
-    cfg = {'r2': args.r2_delta, 'nrmse': args.nrmse_delta, 'mase': args.mase_delta}
+    cfg = {'r2': args.r2_delta, 'mase': args.mase_delta, 'wape': args.wape_delta}
     for metric, delta in cfg.items():
         deltas = _paired_deltas_for_metric(pairs, metric)
         point, (lo, hi) = _bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
@@ -339,8 +331,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--bootstrap', type=int, default=DEFAULT_BOOTSTRAP_ITERS, help=f'Iterações de bootstrap (default: {DEFAULT_BOOTSTRAP_ITERS})')
     p.add_argument('--seed', type=int, default=DEFAULT_SEED, help='Seed (default: 42)')
     p.add_argument('--r2-delta', type=float, default=0.01, help='SESOI δ para R² (default: 0.01)')
-    p.add_argument('--nrmse-delta', type=float, default=0.05, help='SESOI δ para nRMSE (default: 0.05)')
     p.add_argument('--mase-delta', type=float, default=0.05, help='SESOI δ para MASE (default: 0.05)')
+    p.add_argument('--wape-delta', type=float, default=0.05, help='SESOI δ para WAPE (default: 0.05)')
     p.add_argument('--latency-delta', type=float, default=0.10, help='SESOI δ para latência TOTAL (default: 0.10)')
     p.add_argument('--latency-delta-profile', type=str, default='setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10',
                    help='Perfil de δ por fase (ex.: setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10)')
