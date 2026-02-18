@@ -68,7 +68,7 @@ pytest==8.3.4
 # NOTAS DE COMPATIBILIDADE
 # ============================================================================
 #
-# Python: Requer Python 3.8+
+# Python: Requer Python 3.10+ (numpy 2.x exige 3.10+)
 # 
 # Dask: A versão [distributed] inclui capacidades de computação distribuída
 # 
