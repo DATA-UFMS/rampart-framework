@@ -15,7 +15,7 @@ graph TB
     classDef validationClass fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
     classDef outputClass fill:#ffe0b2,stroke:#e65100,stroke-width:2px
 
-    %% Configuração Científica (QP3 - Reprodutibilidade)
+    %% Configuração Científica (RQ3 - Reprodutibilidade)
     CONFIG[/"<b>scientific_config.py</b><br/>⚙️ Configuração Centralizada<br/>• Seeds (reprodutibilidade)<br/>• Gaps temporais (2 anos)<br/>• Limiares estatísticos<br/>• Parâmetros de benchmark"/]:::configClass
 
     %% Snapshot
@@ -56,23 +56,23 @@ graph TB
     RAWDATA --> DL_PROC
     RAWDATA --> DW_PROC
 
-    %% FASE 3: Setup ML com Validação Temporal (QP1)
-    subgraph MLSETUP ["<b>FASE 3: Setup ML - Validação Temporal (QP1)</b>"]
+    %% FASE 3: Setup ML com Validação Temporal (RQ1)
+    subgraph MLSETUP ["<b>FASE 3: Setup ML - Validação Temporal (RQ1)</b>"]
         direction LR
 
         %% Base Architecture
-        BASE["<b>BaseArchitectureML</b><br/>🏗️ Classe Abstrata<br/>• 7 métodos abstratos<br/>• Walk-forward automático<br/>• Testes anti-leak<br/>• Seleção de features"]:::configClass
+        BASE["<b>BaseArchitectureML</b><br/>🏗️ Classe Abstrata<br/>• 11 métodos abstratos<br/>• Walk-forward automático<br/>• Enforcement anti-leakage<br/>• Seleção de features"]:::configClass
 
         subgraph DL_ML ["<b>ML Data Lake</b>"]
             direction TB
-            DL_SETUP["<b>setup.py</b><br/>📊 Dask ML Pipeline<br/>• 9 folds walk-forward<br/>• Gap: 2 anos<br/>• Seleção VIF/correlação"]:::dlClass
+            DL_SETUP["<b>setup.py</b><br/>📊 Dask ML Pipeline<br/>• 9 folds walk-forward<br/>• Gap: 2 anos<br/>• Seleção por correlação"]:::dlClass
             DL_FOLDS[("📁 folds/<br/>temporal_folds_data_lake.json<br/>feature_selection.json")]:::dlClass
             DL_SETUP --> DL_FOLDS
         end
 
         subgraph DW_ML ["<b>ML Data Warehouse</b>"]
             direction TB
-            DW_SETUP["<b>setup.py</b><br/>📊 DuckDB ML Pipeline<br/>• 9 folds walk-forward<br/>• Gap: 2 anos<br/>• Seleção VIF/correlação"]:::dwClass
+            DW_SETUP["<b>setup.py</b><br/>📊 DuckDB ML Pipeline<br/>• 9 folds walk-forward<br/>• Gap: 2 anos<br/>• Seleção por correlação"]:::dwClass
             DW_FOLDS[("📁 folds/<br/>temporal_folds_data_warehouse.json<br/>feature_selection.json")]:::dwClass
             DW_SETUP --> DW_FOLDS
         end
@@ -85,6 +85,12 @@ graph TB
     DW_DATA --> DW_SETUP
     CONFIG --> BASE
 
+    %% GATE ANTI-LEAKAGE (entre Fase 3 e Fase 4)
+    GATE{"<b>🛡️ GATE ANTI-LEAKAGE</b><br/>TemporalValidator.enforce_walk_forward()<br/>• P1: Ordenação temporal<br/>• P2: Gap mínimo (2 anos)<br/>• P3: Separação de features<br/>❌ raise ValueError se violado"}:::validationClass
+
+    DL_FOLDS --> GATE
+    DW_FOLDS --> GATE
+
     %% FASE 4: Feature Engineering (Opcional)
     subgraph FEAT ["<b>FASE 4: Feature Engineering (Opcional)</b>"]
         direction LR
@@ -94,8 +100,8 @@ graph TB
         DW_FEAT["<b>feature_engineering.py</b><br/>🔧 Data Warehouse<br/>• Features agregadas<br/>• Transformações temporais"]:::dwClass
     end
 
-    DL_FOLDS --> DL_FEAT
-    DW_FOLDS --> DW_FEAT
+    GATE --> DL_FEAT
+    GATE --> DW_FEAT
 
     %% FASE 5: Modelos Baseline
     subgraph BASELINE ["<b>FASE 5: Modelos Baseline</b>"]
@@ -121,8 +127,8 @@ graph TB
     DL_BASE --> DL_HIER
     DW_BASE --> DW_HIER
 
-    %% FASE 7: Benchmark Arquitetural (QP2)
-    BENCH["<b>FASE 7: Benchmark Arquitetural (QP2)</b><br/>⚡ architectural_benchmark.py<br/>• Instrumentação psutil<br/>• Latência (nanosegundos)<br/>• CPU/RAM/I/O<br/>• Throughput percentis<br/>• 10 repetições"]:::benchClass
+    %% FASE 7: Benchmark Arquitetural (RQ2)
+    BENCH["<b>FASE 7: Benchmark Arquitetural (RQ2)</b><br/>⚡ architectural_benchmark.py<br/>• Instrumentação psutil<br/>• Latência (nanosegundos)<br/>• CPU/RAM/I/O<br/>• Throughput percentis<br/>• 30 repetições"]:::benchClass
 
     DL_HIER --> BENCH
     DW_HIER --> BENCH
@@ -138,25 +144,20 @@ graph TB
 
         EFFECT["<b>effect_analysis.py</b><br/>📊 Análise de Efeito<br/>• Cohen's d<br/>• Interpretação prática"]:::validationClass
 
-        SIGNIF["<b>significance_tests.py</b><br/>📊 Testes de Significância<br/>• Mann-Whitney U<br/>• Wilcoxon<br/>• Equivalência TOST"]:::validationClass
+        SIGNIF["<b>significance_tests.py</b><br/>📊 Testes de Significância<br/>• Mann-Whitney U<br/>• Wilcoxon<br/>• Bootstrap CI"]:::validationClass
 
         BOOT["<b>bootstrap_sensitivity.py</b><br/>📊 Bootstrap<br/>• IC 95%<br/>• Sensibilidade n=9"]:::validationClass
 
-        REPORT["<b>make_report.py</b><br/>📝 Relatório Final<br/>• Recomendação automática<br/>• Heurísticas configuráveis"]:::validationClass
-
         SCORE["<b>make_scorecard.py</b><br/>📋 Scorecard<br/>• Tabelas LaTeX<br/>• Métricas comparativas"]:::validationClass
 
-        EFFECT --> REPORT
-        SIGNIF --> REPORT
-        BOOT --> REPORT
-        REPORT --> SCORE
+        EFFECT --> SCORE
+        SIGNIF --> SCORE
+        BOOT --> SCORE
     end
 
     BENCH_OUT --> EFFECT
     BENCH_OUT --> SIGNIF
     BENCH_OUT --> BOOT
-    CONFIG --> REPORT
-
     %% Outputs Finais
     FINAL_OUT[("<b>📁 outputs/statistics/</b><br/>• effect_sizes_summary.csv/json<br/>• significance_summary.csv/json/md<br/>• bootstrap_sensitivity.json<br/>• architectural_scorecard.tex<br/>• resource_usage.tex<br/>• throughput_percentiles.tex<br/><br/><b>📁 outputs/review/</b><br/>• IMPROVEMENTS_REPORT.md<br/>• ACTION_PLAN.md<br/>• FINAL_SUMMARY.md")]:::outputClass
 
@@ -169,28 +170,28 @@ graph TB
     DW_FOLDS --> VALIDATOR
     VALIDATOR --> FINAL_OUT
 
-    %% QP Labels
-    QP1["<b>QP1: Extensibilidade</b><br/>• -37.5% esforço<br/>• 380 LOC novo paradigma<br/>• Reutilização >1200 LOC"]:::configClass
+    %% RQ Labels
+    RQ1["<b>RQ1: Extensibilidade</b><br/>• 11 métodos abstratos<br/>• 18% SLOC overhead<br/>• 53% infra compartilhada<br/>• Anti-leakage herdado"]:::configClass
 
-    QP2["<b>QP2: Seleção Automática</b><br/>• DuckDB: 3.18s<br/>• Dask: 249.50s<br/>• Ratio 78×"]:::configClass
+    RQ2["<b>RQ2: Recomendação Automática</b><br/>• DuckDB: 3.18s<br/>• Dask: 249.50s<br/>• SESOI + IC95%"]:::configClass
 
-    QP3["<b>QP3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 15+ testes<br/>• Snapshots completos"]:::configClass
+    RQ3["<b>RQ3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 42 testes automatizados<br/>• Snapshots completos<br/>• Seeds centralizadas"]:::configClass
 
-    BASE -.-> QP1
-    BENCH -.-> QP2
-    VALIDATOR -.-> QP3
+    BASE -.-> RQ1
+    BENCH -.-> RQ2
+    VALIDATOR -.-> RQ3
 ```
 
 ## Legenda
 
 ### 🎨 Código de Cores
 
-- **Azul Claro**: Configuração e Reprodutibilidade (QP3)
+- **Azul Claro**: Configuração e Reprodutibilidade (RQ3)
 - **Amarelo**: Coleta de Dados Brutos
 - **Verde**: Pipeline Data Lake (Dask)
 - **Azul**: Pipeline Data Warehouse (DuckDB)
-- **Laranja**: Benchmarking e Instrumentação (QP2)
-- **Roxo**: Validação Estatística
+- **Laranja**: Benchmarking e Instrumentação (RQ2)
+- **Roxo**: Validação Estatística e Anti-leakage
 - **Laranja Escuro**: Outputs Finais
 
 ### 📊 Métricas Principais
@@ -213,9 +214,9 @@ graph TB
 
 ### 🎯 Questões de Pesquisa Respondidas
 
-1. **QP1 (Extensibilidade)**: BaseArchitectureML permite adicionar novo paradigma com apenas 380 LOC e redução de 37.5% no esforço
-2. **QP2 (Seleção Automática)**: Heurísticas recomendam DuckDB para datasets <1GB em single-node (78× mais eficiente)
-3. **QP3 (Reprodutibilidade)**: Snapshot científico + validação bit-a-bit + 15+ testes automatizados
+1. **RQ1 (Extensibilidade)**: BaseArchitectureML com 11 métodos abstratos permite adicionar novo paradigma com 18% SLOC overhead, reutilizando 53% da infraestrutura compartilhada. Enforcement anti-leakage é herdado automaticamente.
+2. **RQ2 (Recomendação Automática)**: Instrumentação com SESOI + IC95% gera recomendação automática de paradigma (DuckDB mais eficiente para datasets <1GB single-node).
+3. **RQ3 (Reprodutibilidade)**: Snapshot científico + seeds centralizadas + `n_jobs=1` + 42 testes automatizados + gate anti-leakage no pipeline.
 
 ### 📁 Estrutura de Outputs
 
