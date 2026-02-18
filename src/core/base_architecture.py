@@ -211,14 +211,18 @@ class BaseArchitectureML(ABC):
         gap = int(self.config.get('temporal_gap_years', 2))
         print(f"Metodologia: Walk-forward automático com gaps de {gap} anos")
         folds = self._generate_walkforward_folds_auto()
-        
+
+        # Impor anti-leakage: interromper em caso de violação
+        from core.validation import TemporalValidator
+        validator = TemporalValidator(min_gap_years=gap)
+        validator.enforce_walk_forward(folds)
+
         # Validar folds se dados fornecidos
         if data is not None:
-            # Resetar índice do DataFrame para evitar duplicatas (se for um DataFrame)
             if hasattr(data, 'reset_index'):
                 data = data.reset_index(drop=True)
             self._validate_temporal_folds(data, folds)
-        
+
         return folds
 
     def _generate_walkforward_folds_auto(self) -> List[Dict]:
@@ -467,7 +471,15 @@ class BaseArchitectureML(ABC):
         
         # Filtragem de colinearidade pairwise
         final_features = self.apply_collinearity_filter(data, selected_by_corr)
-        
+
+        # P3: Impor que nenhuma feature excluída/derivada do target esteja na seleção final
+        leaked = set(final_features) & set(exclude_cols)
+        if leaked:
+            raise ValueError(
+                f"Anti-leakage violation (P3 data separation): "
+                f"excluded features found in final selection: {leaked}"
+            )
+
         # Estatísticas de seleção
         selection_stats = {
             'architecture': self.architecture_name,
@@ -580,7 +592,7 @@ class BaseArchitectureML(ABC):
     @staticmethod
     def _convert_numpy_types(obj):
         """Converte tipos numpy para tipos Python nativos para serialização JSON."""
-        if hasattr(obj, 'item'):  # numpy scalars
+        if hasattr(obj, 'item'):  # escalares numpy
             return obj.item()
         elif isinstance(obj, dict):
             return {k: BaseArchitectureML._convert_numpy_types(v) for k, v in obj.items()}
@@ -660,16 +672,16 @@ class BaseArchitectureML(ABC):
         print("=" * 60)
         
         try:
-            # 1. Setup do ambiente específico
+            # Setup do ambiente específico
             self.setup_environment()
             
-            # 2. Carregar dados
+            # Carregar dados
             data = self.load_data()
             
-            # 3. Validar dados
+            # Validar dados
             self.validate_data(data)
             
-            # 4. Criar target
+            # Criar target
             data_with_target = self.create_target(data)
             
             selection_stats = self.run_feature_selection(data_with_target)
@@ -679,10 +691,10 @@ class BaseArchitectureML(ABC):
                 selection_stats['selected_features']
             )
             
-            # 7. Criar folds temporais
+            # Criar folds temporais
             folds = self.create_temporal_folds(data_processed)
             
-            # 8. Salvar folds
+            # Salvar folds
             self.save_folds(data_processed, folds)
             
             print(f"\nSetup {self.architecture_name} concluído!")
@@ -834,7 +846,9 @@ class BaseArchitectureML(ABC):
             else:
                 return False, "Violação de integridade temporal detectada"
         
-        return True, "Não foi possível validar integridade temporal"
+        raise ValueError(
+            "Anti-leakage violation: column 'year' not found, cannot verify temporal integrity"
+        )
     
     def validate_temporal_integrity_years(self, train_years: Tuple[int, int],
                                    val_years: Tuple[int, int],
@@ -859,31 +873,34 @@ class BaseArchitectureML(ABC):
             Requer gap mínimo de 2 anos entre splits para prevenir
             vazamento temporal em dados educacionais.
         """
-        # Verificar ordem temporal
+        # P1: Verificar ordem temporal
         if not (train_years[1] < val_years[0] < val_years[1] < test_years[0]):
-            print(f"   ERRO: Ordem temporal violada")
-            print(f"   Train: {train_years}, Val: {val_years}, Test: {test_years}")
-            return False
-        
-        # Calcular gaps
+            raise ValueError(
+                f"Anti-leakage violation (P1 temporal ordering): "
+                f"Train: {train_years}, Val: {val_years}, Test: {test_years}"
+            )
+
+        # P2: Verificar gaps
         train_val_gap = val_years[0] - train_years[1] - 1
         val_test_gap = test_years[0] - val_years[1] - 1
-        
+
         MIN_GAP = self.config.get('temporal_gap_years', 2)
-        
+
         if train_val_gap < MIN_GAP:
-            print(f"   ERRO: Gap train-val insuficiente: {train_val_gap} < {MIN_GAP}")
-            return False
-        
+            raise ValueError(
+                f"Anti-leakage violation (P2 gap sufficiency): "
+                f"train-val gap={train_val_gap} < {MIN_GAP}"
+            )
+
         if val_test_gap < MIN_GAP:
-            print(f"   ERRO: Gap val-test insuficiente: {val_test_gap} < {MIN_GAP}")
-            return False
-        
-        # Nota: sobreposição já detectada pelas verificações de gap acima
-        
+            raise ValueError(
+                f"Anti-leakage violation (P2 gap sufficiency): "
+                f"val-test gap={val_test_gap} < {MIN_GAP}"
+            )
+
         print(f"   ✓ Integridade temporal validada")
         print(f"   Gaps: train-val={train_val_gap}yr, val-test={val_test_gap}yr")
-        
+
         return True
     
     def calculate_feature_importance(self, model: Any, feature_names: List[str]) -> Dict[str, float]:
