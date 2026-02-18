@@ -64,8 +64,8 @@ SCIENTIFIC_CONFIG = {
     # Número padrão de iterações de bootstrap para ICs
     'bootstrap_iters': 3000,
     'sesoi_r2': 0.01,
-    'sesoi_nrmse': 0.05,
-    'sesoi_mase': 0.05
+    'sesoi_mase': 0.05,
+    'sesoi_wape': 0.05
 }
 
 def setup_reproducibility():
