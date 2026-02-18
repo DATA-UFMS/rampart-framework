@@ -855,12 +855,6 @@ if __name__ == "__main__":
             ],
             check=False,
         )
-        # Relatórios LaTeX opcionais
-        mr = os.path.join(
-            PROJECT_ROOT, "src", "statistical_validation", "make_report.py"
-        )
-        if os.path.exists(mr):
-            run([sys.executable, mr], check=False)
         # Scorecard consolidado (gera outputs/statistics/architectural_scorecard.tex)
         ms = os.path.join(
             PROJECT_ROOT, "src", "statistical_validation", "make_scorecard.py"
