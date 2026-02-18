@@ -91,20 +91,8 @@ graph TB
     DL_FOLDS --> GATE
     DW_FOLDS --> GATE
 
-    %% FASE 4: Feature Engineering (Opcional)
-    subgraph FEAT ["<b>FASE 4: Feature Engineering (Opcional)</b>"]
-        direction LR
-
-        DL_FEAT["<b>feature_engineering.py</b><br/>🔧 Data Lake<br/>• Features agregadas<br/>• Transformações temporais"]:::dlClass
-
-        DW_FEAT["<b>feature_engineering.py</b><br/>🔧 Data Warehouse<br/>• Features agregadas<br/>• Transformações temporais"]:::dwClass
-    end
-
-    GATE --> DL_FEAT
-    GATE --> DW_FEAT
-
-    %% FASE 5: Modelos Baseline
-    subgraph BASELINE ["<b>FASE 5: Modelos Baseline</b>"]
+    %% FASE 4: Modelos Baseline
+    subgraph BASELINE ["<b>FASE 4: Modelos Baseline</b>"]
         direction LR
 
         DL_BASE["<b>baseline_analysis.py</b><br/>📈 Data Lake<br/>• Média histórica<br/>• Tendência linear<br/>• Naive<br/>• Cross-country"]:::dlClass
@@ -112,11 +100,11 @@ graph TB
         DW_BASE["<b>baseline_analysis.py</b><br/>📈 Data Warehouse<br/>• Média histórica<br/>• Tendência linear<br/>• Naive<br/>• Cross-country"]:::dwClass
     end
 
-    DL_FEAT --> DL_BASE
-    DW_FEAT --> DW_BASE
+    GATE --> DL_BASE
+    GATE --> DW_BASE
 
-    %% FASE 6: Modelos Hierárquicos
-    subgraph HIER ["<b>FASE 6: Modelos Hierárquicos</b>"]
+    %% FASE 5: Modelos Hierárquicos
+    subgraph HIER ["<b>FASE 5: Modelos Hierárquicos</b>"]
         direction LR
 
         DL_HIER["<b>hierarchical_models.py</b><br/>🌳 Data Lake<br/>• XGBoost<br/>• LightGBM<br/>• CatBoost<br/>• Cross-validation"]:::dlClass
@@ -127,8 +115,8 @@ graph TB
     DL_BASE --> DL_HIER
     DW_BASE --> DW_HIER
 
-    %% FASE 7: Benchmark Arquitetural (RQ2)
-    BENCH["<b>FASE 7: Benchmark Arquitetural (RQ2)</b><br/>⚡ architectural_benchmark.py<br/>• Instrumentação psutil<br/>• Latência (nanosegundos)<br/>• CPU/RAM/I/O<br/>• Throughput percentis<br/>• 30 repetições"]:::benchClass
+    %% FASE 6: Benchmark Arquitetural (RQ2)
+    BENCH["<b>FASE 6: Benchmark Arquitetural (RQ2)</b><br/>⚡ architectural_benchmark.py<br/>• Instrumentação psutil<br/>• Latência (nanosegundos)<br/>• CPU/RAM/I/O<br/>• Throughput percentis<br/>• 30 repetições"]:::benchClass
 
     DL_HIER --> BENCH
     DW_HIER --> BENCH
@@ -138,8 +126,8 @@ graph TB
 
     BENCH --> BENCH_OUT
 
-    %% FASE 8: Validação Estatística
-    subgraph STATS ["<b>FASE 8: Validação Estatística</b>"]
+    %% FASE 7: Validação Estatística
+    subgraph STATS ["<b>FASE 7: Validação Estatística</b>"]
         direction TB
 
         EFFECT["<b>effect_analysis.py</b><br/>📊 Análise de Efeito<br/>• Cohen's d<br/>• Interpretação prática"]:::validationClass
@@ -171,7 +159,7 @@ graph TB
     VALIDATOR --> FINAL_OUT
 
     %% RQ Labels
-    RQ1["<b>RQ1: Extensibilidade</b><br/>• 11 métodos abstratos<br/>• 18% SLOC overhead<br/>• 53% infra compartilhada<br/>• Anti-leakage herdado"]:::configClass
+    RQ1["<b>RQ1: Extensibilidade</b><br/>• 11 métodos abstratos<br/>• 18% SLOC overhead<br/>• 55% infra compartilhada<br/>• Anti-leakage herdado"]:::configClass
 
     RQ2["<b>RQ2: Recomendação Automática</b><br/>• DuckDB: 3.18s<br/>• Dask: 249.50s<br/>• SESOI + IC95%"]:::configClass
 
