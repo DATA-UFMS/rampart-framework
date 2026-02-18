@@ -10,7 +10,7 @@ Fases suportadas:
     - collection: Coleta bruta com imputação hierárquica
     - processing: Processamento arquitetural (DL e DW)
     - setup: Preparação de dados para ML (DL e DW)
-    - feature_engineering: FE opcional (DL e DW)
+
     - baseline: Modelos baseline (DL e DW)
     - hierarchical: Modelos hierárquicos (DL e DW)
 
@@ -72,12 +72,6 @@ def _import_modules():
     # Setup - imports diretos dos módulos
     import src.architectures_ml.data_lake.setup as dl_setup
     import src.architectures_ml.data_warehouse.setup as dw_setup
-    # Feature Engineering
-    from src.architectures_ml.data_lake.feature_engineering import (
-        ScientificFeatureEngineeringDataLake,
-    )
-
-    # DW não possui wrapper de feature engineering no pipeline original
     # Baseline
     from src.architectures_ml.data_lake.models.baseline_analysis import (
         BaselineModelAnalysisDataLake,
@@ -100,7 +94,6 @@ def _import_modules():
         "DataWarehouseProcessor": DataWarehouseProcessor,
         "dl_setup_module": dl_setup,
         "dw_setup_module": dw_setup,
-        "ScientificFeatureEngineeringDataLake": ScientificFeatureEngineeringDataLake,
         "BaselineModelAnalysisDataLake": BaselineModelAnalysisDataLake,
         "BaselineModelAnalysisDataWarehouse": BaselineModelAnalysisDataWarehouse,
         "HierarchicalModelDataLake": HierarchicalModelDataLake,
@@ -155,7 +148,6 @@ class BenchmarkRunner:
             "collection",
             "processing",
             "setup",
-            "feature_engineering",
             "baseline",
             "hierarchical",
         ]
@@ -466,30 +458,6 @@ class BenchmarkRunner:
                 rows = None
         return t1 - t0, rows
 
-    def _phase_fe_dl(self) -> Tuple[int, Optional[int]]:
-        FE = self.modules["ScientificFeatureEngineeringDataLake"]
-        fe = FE()
-        t0 = time.perf_counter_ns()
-        meta = fe.run_incremental_feature_engineering_distributed()
-        t1 = time.perf_counter_ns()
-        rows = 0
-        try:
-            folds = meta.get("enhanced_folds_data", {})
-            for f in folds.values():
-                # soma apenas splits salvos (train/val/test)
-                # shapes no metadata são pares (rows, cols)
-                for key in ("train_shape", "val_shape", "test_shape"):
-                    shape = f.get(key)
-                    if isinstance(shape, list) and len(shape) == 2:
-                        rows += int(shape[0])
-        except Exception:
-            rows = None
-        return t1 - t0, rows
-
-    def _phase_fe_dw(self) -> Tuple[int, Optional[int]]:
-        # DW não possui FE no pipeline original; retornar None sem medir
-        return 0, None
-
     def _phase_baseline_dl(self) -> Tuple[int, Optional[int]]:
         # estimar registros usados pelos folds via master + folds
         start_ns = time.perf_counter_ns()
@@ -668,25 +636,6 @@ class BenchmarkRunner:
                     if r2:
                         results.append(r2)
 
-            if "feature_engineering" in self.phases:
-                r1 = measure(
-                    self._phase_fe_dl,
-                    "feature_engineering",
-                    "data_lake",
-                    "feature_engineering",
-                )
-                r2 = measure(
-                    self._phase_fe_dw,
-                    "feature_engineering",
-                    "data_warehouse",
-                    "feature_engineering",
-                )
-                if not is_warmup:
-                    if r1:
-                        results.append(r1)
-                    if r2:
-                        results.append(r2)
-
             if "baseline" in self.phases:
                 r1 = measure(
                     self._phase_baseline_dl, "baseline", "data_lake", "baseline_models"
@@ -803,7 +752,7 @@ def _parse_args() -> argparse.Namespace:
         "--phases",
         type=str,
         default=None,
-        help="Fases separadas por vírgula (collection,processing,setup,feature_engineering,baseline,hierarchical)",
+        help="Fases separadas por vírgula (collection,processing,setup,baseline,hierarchical)",
     )
     return p.parse_args()
 

@@ -149,19 +149,19 @@ def main() -> None:
     # Coleta
     print_system("PROCESSADOR DE DADOS BRUTOS")
     print_config("Fonte: Banco Mundial (World Bank)")
-    print_step("ETAPA 1/8: Coletando dados brutos...")
+    print_step("ETAPA 1/7: Coletando dados brutos...")
     run(f"{py} {root}/src/collection/raw_data_collector.py")
     print_success("ETAPA 1 CONCLUÍDA: Dados brutos coletados")
 
     # Processamento arquitetural
     print_system("PROCESSADOR DATA LAKE")
     print_config("Arquitetura: Data Lake com Dask")
-    print_step("ETAPA 2a/8: Processando Data Lake...")
+    print_step("ETAPA 2a/7: Processando Data Lake...")
     run(f"{py} {root}/src/collection/data_lake/processor.py")
 
     print_system("PROCESSADOR DATA WAREHOUSE")
     print_config("Arquitetura: Data Warehouse com DuckDB")
-    print_step("ETAPA 2b/8: Processando Data Warehouse...")
+    print_step("ETAPA 2b/7: Processando Data Warehouse...")
     run(f"{py} {root}/src/collection/data_warehouse/processor.py")
     print_success("ETAPA 2 CONCLUÍDA: Processamento arquitetural completo")
 
@@ -170,12 +170,12 @@ def main() -> None:
     # Setup ML (gaps 2 anos em ambas arquiteturas)
     print_system("SETUP ML DATA LAKE")
     print_config("Arquitetura: Data Lake (schema-on-read)")
-    print_step("ETAPA 3a/8: Configurando ML Data Lake...")
+    print_step("ETAPA 3a/7: Configurando ML Data Lake...")
     run(f"{py} {root}/src/architectures_ml/data_lake/setup.py")
 
     print_system("SETUP ML DATA WAREHOUSE")
     print_config("Arquitetura: Data Warehouse (schema-on-write)")
-    print_step("ETAPA 3b/8: Configurando ML Data Warehouse...")
+    print_step("ETAPA 3b/7: Configurando ML Data Warehouse...")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/setup.py")
     print_success("ETAPA 3 CONCLUÍDA: Setup ML completo")
 
@@ -185,67 +185,50 @@ def main() -> None:
     _validate_anti_leakage_gate(root)
     print_success("GATE ANTI-LEAKAGE: Todos os folds passaram na validação")
 
-    # Feature engineering (opcional); não interromper se falhar
-    print_system("FEATURE ENGINEERING")
-    print_config("Modo: Opcional (pode falhar)")
-    print_step("ETAPA 4/8: Executando Feature Engineering...")
-    try:
-        run(f"{py} {root}/src/architectures_ml/data_lake/feature_engineering.py")
-    except Exception as e:
-        print_error(f"Feature engineering DL opcional falhou: {e}")
-    try:
-        run(f"{py} {root}/src/architectures_ml/data_warehouse/feature_engineering.py")
-    except Exception as e:
-        print_error(f"Feature engineering DW opcional falhou: {e}")
-    print_success("ETAPA 4 CONCLUÍDA: Feature engineering executado")
-
     # Baselines
     print_system("MODELOS BASELINE DATA LAKE")
     print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 5a/8: Executando Baselines Data Lake...")
+    print_step("ETAPA 4a/7: Executando Baselines Data Lake...")
     run(f"{py} {root}/src/architectures_ml/data_lake/models/baseline_analysis.py")
 
     print_system("MODELOS BASELINE DATA WAREHOUSE")
     print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 5b/8: Executando Baselines Data Warehouse...")
+    print_step("ETAPA 4b/7: Executando Baselines Data Warehouse...")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/models/baseline_analysis.py")
-    print_success("ETAPA 5 CONCLUÍDA: Modelos baseline executados")
+    print_success("ETAPA 4 CONCLUÍDA: Modelos baseline executados")
 
-    # Hierárquicos (modo básico)
+    # Hierárquicos
     print_system("MODELOS HIERÁRQUICOS")
-    print_config("Modo: Básico (sem features enhanced)")
-    print_step("ETAPA 6/8: Executando Modelos Hierárquicos...")
-    print("Para usar features enhanced do feature engineering, execute manualmente:")
-    print("   python src/.../hierarchical_model.py --enhanced")
+    print_step("ETAPA 5/7: Executando Modelos Hierárquicos...")
     run(f"{py} {root}/src/architectures_ml/data_lake/models/hierarchical_model.py")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/models/hierarchical_model.py")
-    print_success("ETAPA 6 CONCLUÍDA: Modelos hierárquicos executados")
+    print_success("ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados")
 
     # Benchmark arquitetural
     print_system("PROTOCOLO 3/4 — BENCHMARK ARQUITETURAL (QP3)")
     print_config("Comparação demonstrativa: schema-on-write vs schema-on-read")
-    print_step("ETAPA 7/8: Executando Benchmark Arquitetural...")
+    print_step("ETAPA 6/7: Executando Benchmark Arquitetural...")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
-    print_success("ETAPA 7 CONCLUÍDA: Benchmark arquitetural executado")
+    print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado")
 
     # Testes estatísticos de validação
     print_system("PROTOCOLO 2/4 — EQUIVALÊNCIA PRÁTICA (QP2)")
     print_config("Validação: SESOI + IC95% com bootstrap e estatísticas robustas")
-    print_step("ETAPA 8/8: Executando Testes Estatísticos...")
+    print_step("ETAPA 7/7: Executando Testes Estatísticos...")
     
     # Testes de significância com bootstrap (se dados de benchmark existirem)
     benchmark_csv = f"{root}/outputs/benchmarks/architectural_benchmark_results.csv"
     if os.path.exists(benchmark_csv):
-        print_step("ETAPA 8a/8: Testes de significância (bootstrap)...")
+        print_step("ETAPA 7a/7: Testes de significância (bootstrap)...")
         run(f"{py} {root}/src/statistical_validation/significance_tests.py")
     else:
         print_error("Arquivo de benchmark não encontrado, pulando testes de significância")
     
     # Equivalência por estimativa (SESOI + IC) (sempre executa para gerar estrutura)
-    print_step("ETAPA 8b/8: Equivalência por estimativa (SESOI + IC)...")
+    print_step("ETAPA 7b/7: Equivalência por estimativa (SESOI + IC)...")
     run(f"{py} {root}/src/statistical_validation/tost_baseline.py --latex")
     
-    print_success("ETAPA 8 CONCLUÍDA: Testes estatísticos executados")
+    print_success("ETAPA 7 CONCLUÍDA: Testes estatísticos executados")
 
     print_conclusion("PIPELINE METODOLÓGICO EXECUTADO COM SUCESSO")
     print("Resultados disponíveis em: outputs/ (ver checklist no README.md)")
