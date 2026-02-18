@@ -83,6 +83,14 @@ class BenchmarkValidator:
         self.report['validation_summary'] = summary
         
         print(f"   -> Status Final: {summary['overall_status']}")
+
+        if self.report['critical_divergences']:
+            raise ValueError(
+                f"Cross-architecture validation FAILED: "
+                f"{len(self.report['critical_divergences'])} critical divergences. "
+                f"Details: {self.report['critical_divergences']}"
+            )
+
         return self.report
 
     def validate_target_statistics(self) -> bool:
