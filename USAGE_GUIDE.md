@@ -4,16 +4,16 @@ Este guia descreve como executar, verificar e adaptar o framework metodológico 
 
 ## 1. Visão Geral dos Protocolos
 
-1. **Validação temporal (QP1)** — Gera folds walk-forward com gaps anti-leak de 2 anos e registra as fronteiras em JSON.
-2. **Equivalência prática (QP2)** — Aplica SESOI + IC95% por bootstrap com estatísticas robustas (Wilcoxon, Hodges–Lehmann).
-3. **Benchmark arquitetural (QP3)** — Mede latência, throughput e recursos com múltiplas execuções e logging estruturado.
-4. **Reprodutibilidade integral** — Centraliza parâmetros científicos, seeds e caminhos em `scientific_config.py` e no pipeline principal.
+1. **Extensibilidade (RQ1)** — Arquitetura modular via Template Method com 11 métodos abstratos; novas arquiteturas herdam enforcement anti-leakage automaticamente.
+2. **Recomendação automática (RQ2)** — Benchmark arquitetural com SESOI + IC95% por bootstrap e estatísticas robustas (Wilcoxon, Hodges–Lehmann), gerando recomendação automática de paradigma.
+3. **Reprodutibilidade integral (RQ3)** — Seeds centralizadas, `n_jobs=1`, snapshot completo de ambiente (packages, hardware, git commit) e gate anti-leakage no pipeline.
+4. **Validação anti-leakage** — Enforcement automático: `raise ValueError` em violações de ordenação temporal, gap mínimo e separação de features. Gate no pipeline bloqueia execução se integridade temporal falhar.
 
 A demonstração embarcada compara DuckDB (schema-on-write) a Dask (schema-on-read); você pode reutilizar os mesmos protocolos para outras arquiteturas.
 
 ## 2. Preparação do Ambiente
 
-Requisitos mínimos: Python 3.8+, 8 GB de RAM, 10 GB livres em disco.
+Requisitos mínimos: Python 3.10+, 8 GB de RAM, 10 GB livres em disco.
 
 ```bash
 git clone https://github.com/DATA-UFMS/dw-vs-dl-dropout-prediction-latam.git
@@ -30,7 +30,7 @@ pip install -r requirements.txt
    ```bash
    python pipeline.py
    ```
-   Executa coleta \u2192 preparação \u2192 benchmark \u2192 análises estatísticas, preservando os parâmetros do `scientific_config.py`.
+   Executa coleta \u2192 preparação \u2192 **gate anti-leakage** \u2192 benchmark \u2192 análises estatísticas, preservando os parâmetros do `scientific_config.py`. O gate verifica integridade temporal de todos os folds antes de prosseguir ao benchmark.
 
 2. **Componentes individuais** (quando precisar repetir apenas uma etapa)
    ```bash
@@ -40,8 +40,8 @@ pip install -r requirements.txt
    # Equivalência prática (gera JSON/LaTeX)
    python src/statistical_validation/tost_baseline.py --latex
 
-   # Teste anti-leak dos folds
-   pytest tests/test_lag_anti_leak.py
+   # Testes unitários e anti-leakage (42 testes)
+   pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
    ```
 
 3. **Pós-processamento das saídas**
@@ -81,7 +81,7 @@ Sempre documente alterações no memo `tema4_metodologia_analysis.md` ou em um n
 ### 5.2 Adicionar Nova Arquitetura
 
 1. Registre a arquitetura em `src/core/config.py` (via `register_architecture`).
-2. Crie uma subpasta em `src/architectures_ml/<nova_arquitetura>/` com as etapas `setup.py`, `models/`, etc., seguindo o contrato de `BaseArchitectureML`.
+2. Crie uma subpasta em `src/architectures_ml/<nova_arquitetura>/` com as etapas `setup.py`, `models/`, etc., implementando os 11 métodos abstratos de `BaseArchitectureML`. O enforcement anti-leakage (validação temporal, gap mínimo, separação de features) é herdado automaticamente.
 3. Atualize o pipeline (ou invoque manualmente) para incluir a nova arquitetura nas comparações.
 
 ### 5.3 Instrumentar Métricas Extras
@@ -92,7 +92,7 @@ Sempre documente alterações no memo `tema4_metodologia_analysis.md` ou em um n
 
 ## 6. Boas Práticas e Sanity Checks
 
-- Execute `pytest tests/test_lag_anti_leak.py` depois de qualquer alteração em geração de folds.
+- Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (42 testes) depois de qualquer alteração em geração de folds ou lógica de validação.
 - Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre arquiteturas.
 - Utilize `fair_comparison_analysis.md` como checklist de vieses (materialização, escala de dados, paradigmas).
 - Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
