@@ -72,6 +72,38 @@ SCIENTIFIC_CONFIG = {
     # Parâmetros estatísticos
     # Número padrão de iterações de bootstrap para ICs
     'bootstrap_iters': 3000,
+
+    # SESOI (Smallest Effect Size Of Interest) — Lakens et al. (2018)
+    #
+    # Definidos a priori usando abordagem híbrida:
+    #   - distribution-based para R² (referência em Cohen 1988)
+    #   - anchor-based para MASE/WAPE (resolução prática de decisão)
+    #
+    # sesoi_r2 = 0.01: metade do efeito pequeno de Cohen (1988, f²=0.02,
+    #   equivalente a R²~0.02). Deliberadamente conservador — exigimos
+    #   equivalência dentro de uma margem menor que o convencionalmente
+    #   considerado "pequeno". Se |delta_R²| < 0.01, a diferença preditiva
+    #   entre arquiteturas é irrelevante para qualquer aplicação prática.
+    #
+    # sesoi_mase = 0.05: MASE é relativo ao forecast naïve (Hyndman &
+    #   Koehler 2006); delta_MASE de 0.05 significa que ambas arquiteturas
+    #   estão dentro de 5% uma da outra em relação ao baseline naïve.
+    #   Abaixo da resolução em que um pesquisador alteraria sua escolha
+    #   de paradigma de dados.
+    #
+    # sesoi_wape = 0.05: 5 pontos percentuais de erro ponderado. Margem
+    #   dentro da qual a diferença não alteraria uma decisão prática
+    #   de adoção de arquitetura em contexto educacional.
+    #
+    # Referências:
+    #   Lakens, D., Scheel, A. M., & Isager, P. M. (2018). Equivalence
+    #     Testing for Psychological Research: A Tutorial. Advances in
+    #     Methods and Practices in Psychological Science, 1(2), 259-269.
+    #   Cohen, J. (1988). Statistical Power Analysis for the Behavioral
+    #     Sciences (2nd ed.). Lawrence Erlbaum Associates.
+    #   Hyndman, R. J., & Koehler, A. B. (2006). Another look at measures
+    #     of forecast accuracy. International Journal of Forecasting,
+    #     22(4), 679-688.
     'sesoi_r2': 0.01,
     'sesoi_mase': 0.05,
     'sesoi_wape': 0.05

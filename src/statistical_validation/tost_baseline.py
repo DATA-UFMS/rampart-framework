@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """
-Equivalência por Estimativa (SESOI + IC) com robustez (Wilcoxon + Hodges–Lehmann)
+Equivalência por Estimativa (SESOI + IC) com robustez (Wilcoxon + Hodges-Lehmann)
 
 Substitui o TOST e é adequada a n pequeno entre folds:
-- Define δ (SESOI) por métrica
+- Define delta (SESOI) por métrica
 - Estima efeito pareado DL vs DW com bootstrap (IC95%)
 - Decide equivalência/superioridade/inferioridade/inconclusivo
-- Aplica Wilcoxon pareado e Hodges–Lehmann como robustez
+- Aplica Wilcoxon pareado e Hodges-Lehmann como robustez
 
-Saídas:
+Limiares SESOI definidos a priori (ver scientific_config.py):
+  R2=0.01  — metade do efeito pequeno de Cohen (1988, f2=0.02)
+  MASE=0.05 — 5% relativo ao baseline naive (Hyndman & Koehler 2006)
+  WAPE=0.05 — 5pp de erro ponderado
+
+Justificativa: abordagem hibrida distribution-based + anchor-based
+conforme Lakens, Scheel & Isager (2018).
+
+Saidas:
 - JSON: outputs/statistics/equivalence_estimation.json
 - LaTeX (opcional): outputs/statistics/equivalence_estimation.tex
 """
