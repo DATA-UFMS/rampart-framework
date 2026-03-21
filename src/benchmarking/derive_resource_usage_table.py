@@ -121,16 +121,16 @@ def resumir(df: pd.DataFrame) -> Dict:
     }).reset_index()
     
     # Converte para dicionário estruturado
-    result = {"por_fase": {}}
+    result = {"per_phase": {}}
     
     for _, row in metrics.iterrows():
         phase = row['phase']
         arch = row['architecture']
         
-        if phase not in result["por_fase"]:
-            result["por_fase"][phase] = {}
+        if phase not in result["per_phase"]:
+            result["per_phase"][phase] = {}
             
-        result["por_fase"][phase][arch] = {
+        result["per_phase"][phase][arch] = {
             'cpu_proc_mean': row.get('cpu_proc_mean'),
             'cpu_proc_max': row.get('cpu_proc_max'),
             'rss_mb_mean': row.get('rss_mb_mean'),
@@ -175,7 +175,7 @@ def para_latex(resumo: Dict) -> str:
     ]
 
     # Verifica se há dados para exibir
-    if not resumo or "por_fase" not in resumo or not resumo["por_fase"]:
+    if not resumo or "per_phase" not in resumo or not resumo["per_phase"]:
         linhas_erro = wrapper_prefix + [
             r"Sem dados & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\",
         ] + wrapper_suffix
@@ -190,8 +190,8 @@ def para_latex(resumo: Dict) -> str:
     linhas.extend(wrapper_prefix)
 
 
-    for fase in sorted(resumo.get('por_fase', {}).keys()):
-        por_arq = resumo['por_fase'][fase]
+    for fase in sorted(resumo.get('per_phase', {}).keys()):
+        por_arq = resumo['per_phase'][fase]
         for arq in sorted(por_arq.keys()):
             r = por_arq[arq]
             

@@ -85,7 +85,7 @@ def resumir(df: pd.DataFrame) -> Dict:
     fases = sorted(df["phase"].unique())
     arq = sorted(df["architecture"].unique())
 
-    out: Dict = {"por_fase": {}, "arquiteturas": arq, "fases": fases}
+    out: Dict = {"per_phase": {}, "architectures": arq, "fases": fases}
     for fase in fases:
         dff = df[df["phase"] == fase]
         por_arq: Dict[str, Dict[str, float | None]] = {}
@@ -97,7 +97,7 @@ def resumir(df: pd.DataFrame) -> Dict:
                 "p99": _pct(arr, 99),
                 "n": int(np.isfinite(arr).sum()),
             }
-        out["por_fase"][fase] = {"arquiteturas": por_arq}
+        out["per_phase"][fase] = {"architectures": por_arq}
 
     return out
 
@@ -122,7 +122,7 @@ def para_latex(resumo: Dict) -> str:
         r"\endgroup",
     ]
 
-    if not resumo or "por_fase" not in resumo:
+    if not resumo or "per_phase" not in resumo:
         linhas_erro = wrapper_prefix + [
             r"Sem dados & — & — & — & — & — & — \\",
         ] + wrapper_suffix
@@ -135,11 +135,11 @@ def para_latex(resumo: Dict) -> str:
     ]
     linhas.extend(wrapper_prefix)
 
-    por_fase = resumo.get("por_fase", {})
+    por_fase = resumo.get("per_phase", {})
     
     for fase in sorted(por_fase.keys()):
         item = por_fase[fase]
-        arquiteturas = item.get("arquiteturas", {})
+        arquiteturas = item.get("architectures", {})
         
         # Extrair dados por arquitetura
         dl = arquiteturas.get("data_lake", {})

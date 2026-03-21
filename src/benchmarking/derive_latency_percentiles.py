@@ -72,7 +72,7 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
     fases = sorted(df_filt["phase"].unique())
     arq = sorted(df_filt["architecture"].unique())
 
-    resumo: Dict = {"por_fase": {}, "arquiteturas": arq, "fases": fases}
+    resumo: Dict = {"per_phase": {}, "architectures": arq, "fases": fases}
 
     # Percentis por fase
     for fase in fases:
@@ -89,9 +89,9 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
 
         dl_med = por_arq.get("data_lake", {}).get("p50")
         dw_med = por_arq.get("data_warehouse", {}).get("p50")
-        speedup = (dl_med / dw_med) if (dl_med and dw_med and dw_med > 0) else None
+        speedup = (dl_med / dw_med) if (dl_med is not None and dw_med is not None and dw_med > 0) else None
 
-        resumo["por_fase"][fase] = {"arquiteturas": por_arq, "speedup_dw_vs_dl_p50": speedup}
+        resumo["per_phase"][fase] = {"architectures": por_arq, "speedup_dw_vs_dl_p50": speedup}
 
     # Totais por execução (somando fases não-excluídas)
     totais = (
@@ -109,13 +109,13 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
         }
     dl_med = por_arq_total.get("data_lake", {}).get("p50")
     dw_med = por_arq_total.get("data_warehouse", {}).get("p50")
-    speedup_total = (dl_med / dw_med) if (dl_med and dw_med and dw_med > 0) else None
-    resumo["total"] = {"arquiteturas": por_arq_total, "speedup_dw_vs_dl_p50": speedup_total}
+    speedup_total = (dl_med / dw_med) if (dl_med is not None and dw_med is not None and dw_med > 0) else None
+    resumo["total"] = {"architectures": por_arq_total, "speedup_dw_vs_dl_p50": speedup_total}
     return resumo
 
 
 def para_latex(resumo: Dict) -> str:
-    if not resumo or "por_fase" not in resumo:
+    if not resumo or "per_phase" not in resumo:
         return (
             "\\begin{tabular}{lrrrrrr}\n"
             "\\hline\n"
@@ -134,10 +134,10 @@ def para_latex(resumo: Dict) -> str:
     linhas.append("Fase & DL P50 & DL P95 & DL P99 & DW P50 & DW P95 & DW P99 & Speedup DW (P50) \\\\")
     linhas.append("\\hline")
 
-    por_fase = resumo.get("por_fase", {})
+    por_fase = resumo.get("per_phase", {})
     for fase in sorted(por_fase.keys()):
         item = por_fase[fase]
-        a = item.get("arquiteturas", {})
+        a = item.get("architectures", {})
         dl = a.get("data_lake", {})
         dw = a.get("data_warehouse", {})
         sp = item.get("speedup_dw_vs_dl_p50")
@@ -154,7 +154,7 @@ def para_latex(resumo: Dict) -> str:
         linhas.append(" ".join([f"{col}" for col in row]).replace(" ", " & ") + " \\\\")
 
     total = resumo.get("total", {})
-    ta = total.get("arquiteturas", {})
+    ta = total.get("architectures", {})
     dl = ta.get("data_lake", {})
     dw = ta.get("data_warehouse", {})
     sp = total.get("speedup_dw_vs_dl_p50")

@@ -49,13 +49,12 @@ def main() -> None:
     res = {}
     if LAT_JSON.exists():
         j = json.loads(LAT_JSON.read_text())
-        # aceitar chaves em PT/EN
-        per_phase = j.get("per_phase") or j.get("por_fase") or {}
+        per_phase = j.get("per_phase", {})
         phases = sorted(per_phase.keys())
         lat = j
     if RES_JSON.exists():
         r = json.loads(RES_JSON.read_text())
-        res = r.get("por_fase", {})
+        res = r.get("per_phase", r.get("por_fase", {}))
 
     lines = []
     lines.append("% Painel operacional compacto (P50 e recursos médios)")
@@ -65,8 +64,8 @@ def main() -> None:
     lines.append("\\hline")
 
     def row_for_phase(ph: str) -> str:
-        per_phase = lat.get("per_phase") or lat.get("por_fase") or {}
-        arch_key = "architectures" if "architectures" in per_phase.get(ph, {}) else "arquiteturas"
+        per_phase = lat.get("per_phase", {})
+        arch_key = "architectures"
         dl_p50 = per_phase.get(ph, {}).get(arch_key, {}).get("data_lake", {}).get("p50")
         dw_p50 = per_phase.get(ph, {}).get(arch_key, {}).get("data_warehouse", {}).get("p50")
         sp = per_phase.get(ph, {}).get("speedup_dw_vs_dl_p50")
@@ -88,7 +87,7 @@ def main() -> None:
 
     # total
     t_total = lat.get("total", {})
-    t_arch_key = "architectures" if "architectures" in t_total else "arquiteturas"
+    t_arch_key = "architectures"
     t_dl = t_total.get(t_arch_key, {}).get("data_lake", {}).get("p50")
     t_dw = t_total.get(t_arch_key, {}).get("data_warehouse", {}).get("p50")
     t_sp = t_total.get("speedup_dw_vs_dl_p50")
