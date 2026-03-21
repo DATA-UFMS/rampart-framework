@@ -12,7 +12,7 @@ A demonstração empírica compara dois paradigmas clássicos — schema-on-writ
 
 | Protocolo | Objetivo | Componentes-chave |
 |-----------|----------|--------------------|
-| Validação temporal + Anti-leakage | Evitar vazamentos temporais com enforcement automático (raise em violações) | `src/core/validation.py`, `src/core/base_architecture.py`, `pipeline.py` (gate), `tests/test_lag_anti_leak.py` |
+| Validação temporal + Anti-leakage | Evitar vazamentos temporais com enforcement automático (raise em violações), embargo configurável (López de Prado 2018) | `src/core/validation.py`, `src/core/base_architecture.py`, `pipeline.py` (gate), `tests/test_lag_anti_leak.py`, `tests/test_leakage_injection.py` |
 | Equivalência prática | Estimar efeitos arquiteturais com SESOI + IC95% | `src/statistical_validation/tost_baseline.py`, `outputs/statistics/equivalence_estimation.*` |
 | Benchmark arquitetural | Mensurar latência, throughput e uso de recursos | `src/benchmarking/architectural_benchmark.py`, `outputs/benchmarks/*` |
 | Reprodutibilidade integral | Registrar parâmetros, seeds e artefatos auditáveis | `pipeline.py`, `src/core/scientific_config.py`, `src/core/logging_config.py` |
@@ -35,13 +35,16 @@ python pipeline.py
 # 2. Rodar testes unitários e anti-leakage (42 testes)
 pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
 
+# 2b. Teste de injeção de leakage (validação negativa do gate, cenários S1-S4)
+python tests/test_leakage_injection.py
+
 # 3. (Re)gerar tabelas LaTeX a partir das saídas do benchmark
 python src/benchmarking/derive_latency_percentiles.py
 python src/benchmarking/derive_throughput_percentiles.py
 python src/benchmarking/derive_resource_usage_table.py
 ```
 
-O pipeline inclui um **gate anti-leakage** entre o setup ML e o benchmark: se qualquer fold violar a integridade temporal (ordenação, gap mínimo de 2 anos, ou separação de features), a execução é interrompida com `ValueError`. Seeds centralizadas e `n_jobs=1` garantem determinismo entre execuções.
+O pipeline inclui um **gate anti-leakage** entre o setup ML e o benchmark: se qualquer fold violar a integridade temporal (ordenação, gap mínimo de 2 anos, ou separação de features), a execução é interrompida com `ValueError`. O validador suporta um período de embargo configurável (`embargo_years` em `scientific_config.py`, default 0) conforme López de Prado (2018). Seeds centralizadas e `n_jobs=1` garantem determinismo entre execuções.
 
 ## 3. Checklist de Reprodutibilidade
 

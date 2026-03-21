@@ -86,7 +86,7 @@ graph TB
     CONFIG --> BASE
 
     %% GATE ANTI-LEAKAGE (entre Fase 3 e Fase 4)
-    GATE{"<b>🛡️ GATE ANTI-LEAKAGE</b><br/>TemporalValidator.enforce_walk_forward()<br/>• P1: Ordenação temporal<br/>• P2: Gap mínimo (2 anos)<br/>• P3: Separação de features<br/>❌ raise ValueError se violado"}:::validationClass
+    GATE{"<b>🛡️ GATE ANTI-LEAKAGE</b><br/>TemporalValidator.enforce_walk_forward()<br/>• P1: Ordenação temporal<br/>• P2: Gap mínimo (2 anos)<br/>• P3: Separação de features<br/>• Embargo configurável (López de Prado 2018)<br/>❌ raise ValueError se violado"}:::validationClass
 
     DL_FOLDS --> GATE
     DW_FOLDS --> GATE
@@ -107,9 +107,9 @@ graph TB
     subgraph HIER ["<b>FASE 5: Modelos Hierárquicos</b>"]
         direction LR
 
-        DL_HIER["<b>hierarchical_models.py</b><br/>🌳 Data Lake<br/>• XGBoost<br/>• LightGBM<br/>• CatBoost<br/>• Cross-validation"]:::dlClass
+        DL_HIER["<b>hierarchical_models.py</b><br/>🌳 Data Lake<br/>• Simple Hierarchical (Ridge)<br/>• Random Forest<br/>• James-Stein shrinkage<br/>• Walk-forward folds"]:::dlClass
 
-        DW_HIER["<b>hierarchical_models.py</b><br/>🌳 Data Warehouse<br/>• XGBoost<br/>• LightGBM<br/>• CatBoost<br/>• Cross-validation"]:::dwClass
+        DW_HIER["<b>hierarchical_models.py</b><br/>🌳 Data Warehouse<br/>• Simple Hierarchical (Ridge)<br/>• Random Forest<br/>• James-Stein shrinkage<br/>• Walk-forward folds"]:::dwClass
     end
 
     DL_BASE --> DL_HIER
@@ -163,7 +163,7 @@ graph TB
 
     RQ2["<b>RQ2: Recomendação Automática</b><br/>• DuckDB: 3.18s<br/>• Dask: 249.50s<br/>• SESOI + IC95%"]:::configClass
 
-    RQ3["<b>RQ3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 42 testes automatizados<br/>• Snapshots completos<br/>• Seeds centralizadas"]:::configClass
+    RQ3["<b>RQ3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 42 testes + injeção de leakage (S1-S4)<br/>• Snapshots completos<br/>• Seeds centralizadas"]:::configClass
 
     BASE -.-> RQ1
     BENCH -.-> RQ2

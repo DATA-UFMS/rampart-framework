@@ -7,7 +7,7 @@ Este guia descreve como executar, verificar e adaptar o framework metodológico 
 1. **Extensibilidade (RQ1)** — Arquitetura modular via Template Method com 11 métodos abstratos; novas arquiteturas herdam enforcement anti-leakage automaticamente.
 2. **Recomendação automática (RQ2)** — Benchmark arquitetural com SESOI + IC95% por bootstrap e estatísticas robustas (Wilcoxon, Hodges–Lehmann), gerando recomendação automática de paradigma.
 3. **Reprodutibilidade integral (RQ3)** — Seeds centralizadas, `n_jobs=1`, snapshot completo de ambiente (packages, hardware, git commit) e gate anti-leakage no pipeline.
-4. **Validação anti-leakage** — Enforcement automático: `raise ValueError` em violações de ordenação temporal, gap mínimo e separação de features. Gate no pipeline bloqueia execução se integridade temporal falhar.
+4. **Validação anti-leakage** — Enforcement automático: `raise ValueError` em violações de ordenação temporal, gap mínimo e separação de features. Gate no pipeline bloqueia execução se integridade temporal falhar. Suporte a embargo configurável (`embargo_years`, default 0) conforme López de Prado (2018).
 
 A demonstração embarcada compara DuckDB (schema-on-write) a Dask (schema-on-read); você pode reutilizar os mesmos protocolos para outras arquiteturas.
 
@@ -42,6 +42,9 @@ pip install -r requirements.txt
 
    # Testes unitários e anti-leakage (42 testes)
    pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
+
+   # Teste de injeção de leakage (validação negativa, cenários S1-S4)
+   python tests/test_leakage_injection.py
    ```
 
 3. **Pós-processamento das saídas**
@@ -72,8 +75,8 @@ Compare os hashes/timestamps com os registrados nos cabeçalhos para garantir qu
 
 Edite `src/core/scientific_config.py` para alterar:
 
-- `temporal_gap_years`, `folds_min_train_years`, `folds_step_years` (validação temporal).
-- `sesoi_thresholds` (limiares de equivalência).
+- `temporal_gap_years`, `folds_min_train_years`, `folds_step_years`, `embargo_years` (validação temporal).
+- `sesoi_r2`, `sesoi_mase`, `sesoi_wape` (limiares de equivalência por métrica).
 - `bootstrap_iters` (número de reamostragens).
 
 Sempre documente alterações no memo `tema4_metodologia_analysis.md` ou em um novo arquivo de decisão.
@@ -92,7 +95,7 @@ Sempre documente alterações no memo `tema4_metodologia_analysis.md` ou em um n
 
 ## 6. Boas Práticas e Sanity Checks
 
-- Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (42 testes) depois de qualquer alteração em geração de folds ou lógica de validação.
+- Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (42 testes) e `python tests/test_leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
 - Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre arquiteturas.
 - Utilize `fair_comparison_analysis.md` como checklist de vieses (materialização, escala de dados, paradigmas).
 - Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
