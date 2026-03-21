@@ -122,7 +122,14 @@ class HierarchicalModelDataLake:
             raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
     
     def _prepare_data(self, data_ddf, reference_ddf):
-        """Preparar dados usando processamento distribuído com batch compute."""
+        """
+        Preparar dados usando processamento distribuído com batch compute.
+
+        P5 (escopo de preprocessing): medianas/médias para imputação
+        são computadas a partir de reference_ddf (= train), nunca do
+        conjunto completo. Chamadas usam _prepare_data(val, train),
+        _prepare_data(test, train).
+        """
         # Batch compute para medianas/médias
         medians_batch = {}
         means_batch = {}
@@ -405,6 +412,7 @@ class HierarchicalModelDataLake:
         X_val, y_val, countries_val = self._prepare_data(val_ddf, train_ddf)
         X_test, y_test, countries_test = self._prepare_data(test_ddf, train_ddf)
         
+        # P5: scaler ajustado exclusivamente no treino (Semmelrock et al. 2025)
         scaler = StandardScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
@@ -417,8 +425,11 @@ class HierarchicalModelDataLake:
         print(f"   PAÍSES: Train={countries_train.nunique()}, Val={countries_val.nunique()}, Test={countries_test.nunique()}")
         
         # Modelos hierárquicos
+        # HPO: seleção de hiperparâmetros via grid search no conjunto de
+        # validação. Modelo final retreinado no treino completo para avaliação
+        # no teste. Previne leakage L3.3 (Kapoor & Narayanan 2023).
         models = {}
-        
+
         # 1. Simple Hierarchical (tuning de residual_shrinkage por validação)
         best_shrink = 0.8
         best_val_r2 = -1e9

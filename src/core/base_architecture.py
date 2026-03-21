@@ -24,17 +24,28 @@ from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 class BaseArchitectureML(ABC):
     """
     Classe base abstrata para arquiteturas de Machine Learning.
-    
+
     Define a estrutura comum e métodos compartilhados entre diferentes
     arquiteturas (Data Lake, Data Warehouse), garantindo consistência
     metodológica e eliminando duplicação de código.
-    
-    Características principais:
-    - Interface abstrata para métodos específicos de cada arquitetura
-    - Implementação compartilhada de lógica comum (folds, validação, etc.)
-    - Preservação de 100% da lógica científica original
-    - Suporte para diferentes backends (Dask, SQL, Pandas)
-    
+
+    Protocolo anti-leakage (P1-P5):
+        P1 — Ordenação temporal: train < val < test estritamente.
+        P2 — Gap mínimo: N anos entre splits consecutivos (default 2).
+        P3 — Separação de features: exclusão de derivadas do target
+             e detecção de proxy (|correlação| > threshold).
+        P4 — Escopo temporal da seleção: feature selection restrita
+             ao período de treino do primeiro fold (Kapoor L1.3).
+        P5 — Escopo de preprocessing: transformações estatísticas
+             (scaling, imputação) ajustadas exclusivamente no treino
+             (Semmelrock et al. 2025).
+
+    Estratégia de HPO:
+        Hiperparâmetros são selecionados via grid search no conjunto
+        de validação, nunca no teste. O modelo final é retreinado no
+        treino completo com os hiperparâmetros selecionados. Isso
+        previne leakage tipo L3.3 (Kapoor & Narayanan 2023).
+
     Attributes:
         architecture_name: Nome da arquitetura (data_lake, data_warehouse)
         output_base: Diretório base para outputs
@@ -343,13 +354,29 @@ class BaseArchitectureML(ABC):
         """
         pass
     
+    def _filter_by_year(self, data: Any, max_year: int) -> Any:
+        """Filtra dados para year <= max_year. Suporta pandas e Dask."""
+        if hasattr(data, 'compute'):  # Dask DataFrame
+            return data[data['year'] <= max_year]
+        elif isinstance(data, pd.DataFrame):
+            return data[data['year'] <= max_year]
+        else:
+            raise TypeError(f"Tipo de dados não suportado para filtro temporal: {type(data)}")
+
+    @staticmethod
+    def _count_rows(data: Any) -> int:
+        """Conta linhas de um DataFrame (pandas ou Dask)."""
+        if hasattr(data, 'compute'):  # Dask
+            return len(data)
+        return len(data)
+
     def get_excluded_features(self) -> List[str]:
         """
         Retorna lista de features a excluir (vazamento/metadados).
-        
+
         Lista harmonizada entre todas as arquiteturas para garantir
         comparação científica justa.
-        
+
         Returns:
             Lista de nomes de colunas a excluir
         """
@@ -437,43 +464,98 @@ class BaseArchitectureML(ABC):
         """
         pass
     
+    def _first_fold_train_end(self) -> int:
+        """
+        Calcula train_end do primeiro fold a partir da config científica.
+
+        Usado para restringir feature selection ao período de treino,
+        prevenindo leakage tipo L1.3 (Kapoor & Narayanan, 2023): seleção
+        de features usando dados que pertencem a validação/teste.
+        """
+        cfg = self.config
+        start_year = int(cfg.get('temporal_range_start', 2000))
+        min_train = int(cfg.get('folds_min_train_years', 8))
+        val_len = int(cfg.get('folds_val_len_years', 2))
+        gap = int(cfg.get('temporal_gap_years', 2))
+        # Primeiro fold: test_start_min = start + min_train + val_len + 2*gap
+        # val_end = test_start_min - gap - 1
+        # train_end = val_start - gap - 1 = (val_end - val_len + 1) - gap - 1
+        test_start_min = start_year + min_train + val_len + 2 * gap
+        val_end = test_start_min - gap - 1
+        val_start = val_end - val_len + 1
+        train_end = val_start - gap - 1
+        return train_end
+
     def run_feature_selection(self, data: Any) -> Dict:
         """
         Executa pipeline completo de seleção de features.
-        
-        Pipeline padronizado:
-        1. Remove features com vazamento/metadados
-        2. Seleciona por correlação moderada com target
-        3. Remove multicolinearidade via filtragem pairwise de correlação
-        
+
+        Pipeline padronizado com enforcement anti-leakage:
+        1. Remove features com vazamento/metadados (P3)
+        2. Restringe dados ao período de treino do primeiro fold (P4)
+        3. Seleciona por correlação moderada com target
+        4. Remove multicolinearidade via filtragem pairwise
+        5. Detecta features proxy do target (P3 estendido)
+
+        Nota: preprocessing (scaling, imputação) ocorre em prepare_features()
+        e nos modelos, com enforcement de P5 (escopo de preprocessing).
+
+        P4 (Kapoor & Narayanan 2023, tipo L1.3; Kaufman et al. 2012):
+        Correlações são computadas usando apenas dados até train_end do
+        primeiro fold, impedindo que informação de períodos de validação
+        ou teste influencie a seleção de features.
+
         Args:
             data: Dados para seleção
-            
+
         Returns:
             Dicionário com estatísticas e features selecionadas
         """
         print(f"\nFeature selection {self.architecture_name}...")
-        
+
         exclude_cols = self.get_excluded_features()
         all_features = self.get_numeric_features(data)
         feature_cols = [col for col in all_features if col not in exclude_cols]
-        
+
         print(f"   Removidas {len(exclude_cols)} variáveis (vazamento/metadados)")
         print(f"   Analisando {len(feature_cols)} features candidatas...")
-        
-        # Correlação com target
-        correlations = self.compute_feature_correlations(data, feature_cols)
-        selected_by_corr = self.select_features_by_correlation(correlations)
-        
-        # Filtragem de colinearidade pairwise
-        final_features = self.apply_collinearity_filter(data, selected_by_corr)
 
-        # P3: Impor que nenhuma feature excluída/derivada do target esteja na seleção final
+        # P4: Restringir ao período de treino para evitar leakage na seleção
+        # (Kapoor & Narayanan 2023, tipo L1.3; Kaufman et al. 2012)
+        train_end = self._first_fold_train_end()
+        data_train_only = self._filter_by_year(data, max_year=train_end)
+        n_total = self._count_rows(data)
+        n_train = self._count_rows(data_train_only)
+        print(f"   P4: Correlações restritas ao período de treino "
+              f"(≤{train_end}): {n_train}/{n_total} observações")
+
+        # Correlação com target (usando apenas dados de treino)
+        correlations = self.compute_feature_correlations(data_train_only, feature_cols)
+        selected_by_corr = self.select_features_by_correlation(correlations)
+
+        # Filtragem de colinearidade pairwise (usando dados de treino)
+        final_features = self.apply_collinearity_filter(data_train_only, selected_by_corr)
+
+        # P3: Impor que nenhuma feature excluída/derivada do target esteja na seleção
         leaked = set(final_features) & set(exclude_cols)
         if leaked:
             raise ValueError(
                 f"Anti-leakage violation (P3 data separation): "
                 f"excluded features found in final selection: {leaked}"
+            )
+
+        # P3 estendido: detecção de features proxy do target
+        # (Kapoor & Narayanan 2023, tipo L2; Kaufman et al. 2012)
+        PROXY_THRESHOLD = float(self.config.get('proxy_correlation_threshold', 0.95))
+        proxies = {
+            feat: corr for feat, corr in correlations.items()
+            if feat in final_features and abs(corr) > PROXY_THRESHOLD
+        }
+        if proxies:
+            raise ValueError(
+                f"Anti-leakage violation (P3 proxy detection): "
+                f"features with |correlation| > {PROXY_THRESHOLD} with target "
+                f"suggest proxy leakage (Kapoor L2): {proxies}"
             )
 
         # Estatísticas de seleção
@@ -482,6 +564,8 @@ class BaseArchitectureML(ABC):
             'total_features_analyzed': len(feature_cols),
             'features_selected': len(final_features),
             'selection_method': 'correlation_pairwise_filter',
+            'temporal_scope': f'train_only (≤{train_end})',
+            'proxy_threshold': PROXY_THRESHOLD,
             'selected_features': final_features,
             'target_correlations': {
                 feat: float(correlations.get(feat, 0))
@@ -516,11 +600,24 @@ class BaseArchitectureML(ABC):
     def prepare_features(self, data: Any, selected_features: List[str]) -> Any:
         """
         Prepara features finais para ML.
-        
+
+        P5 (escopo de preprocessing — Semmelrock et al. 2025):
+        Implementações devem garantir que qualquer transformação
+        estatística (scaling, imputação, encoding) seja ajustada
+        exclusivamente nos dados de treino. Estatísticas derivadas
+        do conjunto completo (incluindo validação/teste) configuram
+        leakage de preprocessing, mesmo quando a separação temporal
+        dos folds está correta.
+
+        Padrão exigido nas subclasses:
+          - scaler.fit(X_train) → scaler.transform(X_val), scaler.transform(X_test)
+          - fillna(reference_data.median()) onde reference_data = train_data
+          - NUNCA usar data.median() ou scaler.fit(X_completo)
+
         Args:
             data: Dados completos
             selected_features: Lista de features selecionadas
-            
+
         Returns:
             Dados preparados com features finais
         """

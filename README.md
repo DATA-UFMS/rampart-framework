@@ -14,9 +14,10 @@ O pipeline executa coleta, processamento, treinamento e benchmark de ponta a pon
 
 ### Garantias do pipeline
 
-- **Anti-leakage automático** — o pipeline verifica ordenação temporal, gap mínimo (2 anos) e separação de features a cada fold. Violações geram `ValueError` e interrompem a execução. Suporte a embargo configurável (López de Prado, 2018).
-- **Equivalência estatística, não p-hacking** — comparação arquitetural via SESOI + IC 95% por bootstrap, com Wilcoxon e Hodges–Lehmann como suporte.
-- **Reprodutibilidade integral** — seeds centralizadas, `n_jobs=1`, snapshot de ambiente (packages, hardware, git commit) e 42 testes automatizados + 4 cenários de injeção de leakage.
+- **Anti-leakage automático (P1-P5)** — ordenação temporal (P1), gap mínimo de 2 anos (P2), separação de features e detecção de proxy (P3), escopo temporal da seleção de features (P4), e escopo de preprocessing com scaling/imputação ajustados exclusivamente no treino (P5). Violações de P1-P4 geram `ValueError` e interrompem a execução; P5 é enforced por contrato e testes unitários. Cobre as categorias L1.1-L1.4, L2 e L3.2 da taxonomia de Kapoor & Narayanan (2023) e as 4 variantes de Semmelrock et al. (2025).
+- **HPO sem contaminação** — hiperparâmetros selecionados via grid search no conjunto de validação; modelo final retreinado no treino completo. Previne leakage L3.3.
+- **Equivalência estatística, não p-hacking** — comparação arquitetural via SESOI + IC 95% por bootstrap, com Wilcoxon e Hodges-Lehmann como suporte.
+- **Reprodutibilidade integral** — seeds centralizadas, `n_jobs=1`, snapshot de ambiente (packages, hardware, git commit) e 51 testes automatizados + 4 cenários de injeção de leakage.
 - **Extensível por design** — `BaseArchitectureML` (11 métodos abstratos, Template Method) permite adicionar novas arquiteturas herdando o enforcement anti-leakage automaticamente.
 
 ### Limitações explícitas
@@ -34,7 +35,7 @@ pip install -r requirements.txt
 # Pipeline completo: coleta → validação → benchmark → artefatos LaTeX
 python pipeline.py
 
-# Testes (42 unitários + 4 cenários de injeção de leakage)
+# Testes (51 unitários + 4 cenários de injeção de leakage)
 pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
 python tests/test_leakage_injection.py
 ```
@@ -60,7 +61,7 @@ src/
 ├── benchmarking/            # Instrumentação e derivação de métricas
 └── statistical_validation/  # TOST, bootstrap, effect sizes, scorecard
 tests/
-├── test_unit_core.py        # 40 testes unitários
+├── test_unit_core.py        # 49 testes unitários
 ├── test_lag_anti_leak.py    # 2 testes de integridade temporal
 └── test_leakage_injection.py # Validação negativa do gate (S1–S4)
 pipeline.py                  # Orquestra tudo

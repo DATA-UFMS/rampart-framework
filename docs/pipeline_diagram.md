@@ -163,7 +163,7 @@ graph TB
 
     RQ2["<b>RQ2: Recomendação Automática</b><br/>• Instrumentação por fase<br/>• SESOI + IC95%"]:::configClass
 
-    RQ3["<b>RQ3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 42 testes + injeção de leakage (S1-S4)<br/>• Snapshots completos<br/>• Seeds centralizadas"]:::configClass
+    RQ3["<b>RQ3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 51 testes + injeção de leakage (S1-S4)<br/>• Snapshots completos<br/>• Seeds centralizadas"]:::configClass
 
     BASE -.-> RQ1
     BENCH -.-> RQ2
@@ -195,7 +195,7 @@ As métricas abaixo são geradas pelo pipeline (valores variam conforme hardware
 
 1. **RQ1 (Extensibilidade)**: BaseArchitectureML com 11 métodos abstratos (Template Method). Enforcement anti-leakage é herdado automaticamente.
 2. **RQ2 (Recomendação Automática)**: Instrumentação com SESOI + IC95% gera recomendação automática de paradigma.
-3. **RQ3 (Reprodutibilidade)**: Snapshot científico + seeds centralizadas + `n_jobs=1` + 42 testes + injeção de leakage (S1-S4) + gate anti-leakage no pipeline.
+3. **RQ3 (Reprodutibilidade)**: Snapshot científico + seeds centralizadas + `n_jobs=1` + 51 testes + injeção de leakage (S1-S4) + gate anti-leakage no pipeline.
 
 ### 📁 Estrutura de Outputs
 

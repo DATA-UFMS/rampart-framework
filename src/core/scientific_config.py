@@ -9,8 +9,14 @@ benchmark cientificamente válido.
 Parâmetros definidos aqui governam:
 - Reprodutibilidade (seeds)
 - Lógica de seleção de features (correlações pairwise)
-- Validação temporal
+- Validação temporal (P1-P2)
+- Detecção de proxy (P3)
+- Escopo temporal de seleção (P4)
 - Transformações de features
+
+Parâmetros de P5 (escopo de preprocessing) e HPO são enforced
+diretamente no código dos modelos (ver BaseArchitectureML e
+hierarchical_model.py) e validados por testes unitários.
 """
 
 import random
@@ -34,6 +40,8 @@ SCIENTIFIC_CONFIG = {
     # Amostragem de correlação (para alinhar DL e DW)
     'correlation_sampling': True,
     'correlation_min_sample_size': 5000,
+    # Limiar para detecção de proxy features (Kapoor & Narayanan 2023, tipo L2)
+    'proxy_correlation_threshold': 0.95,
 
     # Validação Temporal
     'temporal_gap_years': 2,

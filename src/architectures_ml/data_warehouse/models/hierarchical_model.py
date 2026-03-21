@@ -199,7 +199,13 @@ class HierarchicalModelSQLFirst:
         return available_features
     
     def _prepare_data(self, data, reference_data, available_features):
-        """Preparar dados para treinamento."""
+        """
+        Preparar dados para treinamento.
+
+        P5 (escopo de preprocessing): imputação usa mediana de
+        reference_data (= train), nunca do conjunto completo.
+        Chamadas: _prepare_data(val, train, ...), _prepare_data(test, train, ...).
+        """
         X = data[available_features].fillna(reference_data[available_features].median())
         y = data[self.target_col]
         countries = data['country_code']
@@ -441,6 +447,7 @@ class HierarchicalModelSQLFirst:
         X_val, y_val, countries_val = self._prepare_data(val_data, train_data, available_features)
         X_test, y_test, countries_test = self._prepare_data(test_data, train_data, available_features)
         
+        # P5: scaler ajustado exclusivamente no treino (Semmelrock et al. 2025)
         scaler = StandardScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
@@ -449,8 +456,11 @@ class HierarchicalModelSQLFirst:
         print(f"   🗲 EXECUTANDO MODELOS HIERÁRQUICOS:")
         
         # Modelos hierárquicos
+        # HPO: seleção de hiperparâmetros via grid search no conjunto de
+        # validação. Modelo final retreinado no treino completo para avaliação
+        # no teste. Previne leakage L3.3 (Kapoor & Narayanan 2023).
         models = {}
-        
+
         # 1. Simple Hierarchical (tuning de residual_shrinkage)
         best_shrink = 0.8
         best_val_r2 = -1e9

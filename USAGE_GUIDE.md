@@ -40,7 +40,7 @@ pip install -r requirements.txt
    # Equivalência prática (gera JSON/LaTeX)
    python src/statistical_validation/tost_baseline.py --latex
 
-   # Testes unitários e anti-leakage (42 testes)
+   # Testes unitários e anti-leakage (51 testes)
    pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
 
    # Teste de injeção de leakage (validação negativa, cenários S1-S4)
@@ -94,7 +94,7 @@ Sempre documente alterações em um memo de decisão.
 
 ## 6. Boas Práticas e Sanity Checks
 
-- Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (42 testes) e `python tests/test_leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
+- Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (51 testes) e `python tests/test_leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
 - Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre arquiteturas.
 - Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
 

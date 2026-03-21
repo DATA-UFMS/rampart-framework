@@ -4,6 +4,24 @@ Módulo centralizado de validação para arquiteturas ML.
 
 Centraliza toda lógica de validação temporal, integridade de dados e
 métricas científicas, eliminando duplicação entre arquiteturas.
+
+Protocolo anti-leakage completo (P1-P5):
+    P1 — Ordenação temporal: train_end < val_start < val_end < test_start.
+    P2 — Gap mínimo: N anos entre splits (default 2), configurável via
+         temporal_gap_years. Embargo opcional para dados sub-anuais.
+    P3 — Separação de features: lista de exclusão (derivadas do target,
+         metadados) + detecção de proxy (|r| > 0.95 com target).
+    P4 — Escopo de seleção: feature selection restrita ao período de
+         treino do primeiro fold (Kapoor & Narayanan 2023, L1.3).
+    P5 — Escopo de preprocessing: scaling e imputação ajustados
+         exclusivamente nos dados de treino (Semmelrock et al. 2025).
+
+HPO: grid search no conjunto de validação; modelo final retreinado
+no treino completo. Previne leakage L3.3 (Kapoor & Narayanan 2023).
+
+Enforcement: violações de P1/P2 geram ValueError via enforce_walk_forward().
+Violações de P3/P4 geram ValueError em run_feature_selection().
+P5 é enforced por contrato (docstring + testes unitários).
 """
 
 import numpy as np
@@ -26,6 +44,17 @@ class TemporalValidator:
       - **Embargo**: observações adjacentes ao limite de cada split
         são excluídas do treino para prevenir leakage por
         autocorrelação residual (López de Prado, 2018).
+
+    Nota sobre purging (López de Prado 2018):
+        Purging remove observações de treino cujos labels sobrepõem
+        temporalmente o período de teste. Em dados com granularidade
+        anual (um ponto por país/ano), não há sobreposição de labels
+        entre splits — cada observação é um ponto discreto. Portanto,
+        purging é desnecessário neste contexto. O gap temporal de N
+        anos já subsume o efeito do embargo para dados anuais, pois
+        não existem observações sub-anuais intermediárias a excluir.
+        O parâmetro embargo_years existe para uso em adaptações do
+        framework a dados de maior frequência (mensal, diário).
     """
 
     def __init__(self, min_gap_years: int = 2, embargo_years: int = 0):
