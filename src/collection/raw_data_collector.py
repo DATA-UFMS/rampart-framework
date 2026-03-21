@@ -416,9 +416,10 @@ class RawDataCollector:
         df['collection_method'] = 'raw_single_collection'
         df['is_original'] = True  # Flag para distinguir de valores imputados
         
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        if len(numeric_cols) > 0:
-            df['data_completeness_score'] = df[numeric_cols].notna().mean(axis=1) * 100
+        indicator_names = list(ALL_INDICATORS.values())
+        indicator_cols = [c for c in df.columns if c in indicator_names]
+        if indicator_cols:
+            df['data_completeness_score'] = df[indicator_cols].notna().mean(axis=1) * 100
         else:
             df['data_completeness_score'] = 100.0
         
@@ -824,7 +825,22 @@ class RawDataCollector:
                 
                 if isinstance(transform_info, dict):
                     if transform_info['method'] == 'yeojohnson':
-                        print(f"      [INFO] Mantendo transformação Yeo-Johnson")
+                        lmbda = transform_info['lambda']
+                        print(f"      [INFO] Revertendo Yeo-Johnson (λ={lmbda:.4f})")
+                        y = df_imputed.loc[non_na_mask, column].values.astype(float)
+                        x = np.zeros_like(y)
+                        for _i, _y in enumerate(y):
+                            if _y >= 0:
+                                if abs(lmbda) < 1e-12:
+                                    x[_i] = np.expm1(_y)
+                                else:
+                                    x[_i] = (_y * lmbda + 1) ** (1.0 / lmbda) - 1
+                            else:
+                                if abs(lmbda - 2) < 1e-12:
+                                    x[_i] = -np.expm1(-_y)
+                                else:
+                                    x[_i] = 1 - (-(2 - lmbda) * _y + 1) ** (1.0 / (2 - lmbda))
+                        df_imputed.loc[non_na_mask, column] = x
                     elif transform_info['method'] == 'log1p_shifted':
                         shift = transform_info['shift']
                         df_imputed.loc[non_na_mask, column] = np.expm1(df_imputed.loc[non_na_mask, column]) - shift

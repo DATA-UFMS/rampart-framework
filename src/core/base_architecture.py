@@ -15,6 +15,8 @@ from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 import numpy as np
 import pandas as pd
+from scipy import stats
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
@@ -174,7 +176,7 @@ class BaseArchitectureML(ABC):
         })
         
         # Validações científicas comuns
-        expected_range = [0, 80]  # Baseado em completion rates reais
+        expected_range = [0, 80]  # Sanity check: taxas de evasão observadas na LATAM (0–80%)
         if stats['mean'] < expected_range[0] or stats['mean'] > expected_range[1]:
             print(f"   Aviso: Média de dropout ({stats['mean']:.2f}%) "
                   f"fora do range esperado {expected_range}")
@@ -209,12 +211,14 @@ class BaseArchitectureML(ABC):
         """
         print("\nCriando folds temporais...")
         gap = int(self.config.get('temporal_gap_years', 2))
-        print(f"Metodologia: Walk-forward automático com gaps de {gap} anos")
+        embargo = int(self.config.get('embargo_years', 0))
+        print(f"Metodologia: Walk-forward automático com gaps de {gap} anos"
+              + (f" e embargo de {embargo} anos" if embargo > 0 else ""))
         folds = self._generate_walkforward_folds_auto()
 
         # Impor anti-leakage: interromper em caso de violação
         from core.validation import TemporalValidator
-        validator = TemporalValidator(min_gap_years=gap)
+        validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
         validator.enforce_walk_forward(folds)
 
         # Validar folds se dados fornecidos
@@ -365,14 +369,6 @@ class BaseArchitectureML(ABC):
             # Vazamento de dados - features derivadas do target
             'lower_secondary_completion_rate',  # Fonte direta do target
             'enrollment_rate_secondary_net',    # Relacionada ao target
-            'stratum_completion_mean',          # Deriva de completion_rate
-            'stratum_completion_std',           # Deriva de completion_rate
-            'completion_rate_lag1',             # Deriva de completion_rate
-            'completion_rate_rolling_mean',     # Deriva de completion_rate
-            'temporal_trend',                   # Deriva de correlação temporal
-            
-            # Redundâncias
-            'year_rank'  # Redundante com 'year'
         ]
     
     @abstractmethod
@@ -530,73 +526,20 @@ class BaseArchitectureML(ABC):
         """
         pass
     
-    def prepare_time_series_data(self, data: Any, target_col: str = None) -> Any:
-        """
-        Prepara dados de série temporal para ML.
-        
-        Args:
-            data: Dados de entrada
-            target_col: Nome da coluna target
-            
-        Returns:
-            Dados preparados para série temporal
-        """
-        if target_col is None:
-            target_col = self.target_column
-            
-        # Implementação básica compartilhada
-        return data
-    
-    def engineer_features(self, data: Any) -> Any:
-        """
-        Aplica feature engineering nos dados.
-        
-        Args:
-            data: Dados de entrada
-            
-        Returns:
-            Dados com features engenheiradas
-        """
-        # Implementação básica compartilhada
-        return data
-    
-    def train_baseline_models(self, X_train: Any, y_train: Any) -> Dict:
-        """
-        Treina modelos baseline.
-        
-        Args:
-            X_train: Features de treino
-            y_train: Target de treino
-            
-        Returns:
-            Dicionário com modelos treinados
-        """
-        # Implementação básica compartilhada
-        return {}
-    
-    def evaluate_models(self, models: Dict, X_test: Any, y_test: Any) -> Dict:
-        """
-        Avalia modelos treinados.
-        
-        Args:
-            models: Dicionário com modelos
-            X_test: Features de teste
-            y_test: Target de teste
-            
-        Returns:
-            Dicionário com métricas
-        """
-        # Implementação básica compartilhada
-        return {}
-    
     @staticmethod
     def _convert_numpy_types(obj):
         """Converte tipos numpy para tipos Python nativos para serialização JSON."""
-        if hasattr(obj, 'item'):  # escalares numpy
-            return obj.item()
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
         elif isinstance(obj, dict):
             return {k: BaseArchitectureML._convert_numpy_types(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
+        elif isinstance(obj, (list, tuple)):
             return [BaseArchitectureML._convert_numpy_types(v) for v in obj]
         else:
             return obj
@@ -738,8 +681,6 @@ class BaseArchitectureML(ABC):
             - r2: Coeficiente de determinação R²
             - mape: Mean Absolute Percentage Error (se aplicável)
         """
-        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-        
         mae = mean_absolute_error(y_true, y_pred)
         mse = mean_squared_error(y_true, y_pred)
         rmse = np.sqrt(mse)
@@ -884,7 +825,7 @@ class BaseArchitectureML(ABC):
         train_val_gap = val_years[0] - train_years[1] - 1
         val_test_gap = test_years[0] - val_years[1] - 1
 
-        MIN_GAP = self.config.get('temporal_gap_years', 2)
+        MIN_GAP = int(self.config.get('temporal_gap_years', 2))
 
         if train_val_gap < MIN_GAP:
             raise ValueError(
@@ -940,8 +881,6 @@ class BaseArchitectureML(ABC):
         Returns:
             Dicionário com análise de drift por feature
         """
-        from scipy import stats
-        
         drift_analysis = {}
         
         for feature in features:

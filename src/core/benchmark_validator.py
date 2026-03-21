@@ -11,6 +11,7 @@ arquiteturais, a lógica científica seja estatisticamente equivalente.
 import json
 import os
 import numpy as np
+from datetime import datetime
 from typing import Dict, Any, List, Tuple
 
 from core.scientific_config import SCIENTIFIC_CONFIG
@@ -212,5 +213,5 @@ class BenchmarkValidator:
         self.report['acceptable_differences'].append({
             'context': context,
             'message': message,
-            'timestamp': np.datetime_as_string(np.datetime64('now'))
+            'timestamp': datetime.now().isoformat()
         })
