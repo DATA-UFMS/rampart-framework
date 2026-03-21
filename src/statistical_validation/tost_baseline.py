@@ -2,7 +2,7 @@
 """
 Equivalência por Estimativa (SESOI + IC) com robustez (Wilcoxon + Hodges-Lehmann)
 
-Substitui o TOST e é adequada a n pequeno entre folds:
+Substitui o TOST formal e é adequada a n pequeno entre folds:
 - Define delta (SESOI) por métrica
 - Estima efeito pareado DL vs DW com bootstrap (IC95%)
 - Decide equivalência/superioridade/inferioridade/inconclusivo
@@ -15,6 +15,24 @@ Limiares SESOI definidos a priori (ver scientific_config.py):
 
 Justificativa: abordagem hibrida distribution-based + anchor-based
 conforme Lakens, Scheel & Isager (2018).
+
+Nota sobre poder estatístico:
+  O walk-forward com gaps de 2 anos produz n=9 folds (máximo sem
+  comprometer anti-leakage). Wilcoxon pareado com n=9 tem poder
+  ~30% para efeitos médios (d~0.5), insuficiente como teste primário.
+  Por isso a decisão principal usa bootstrap CI: não depende de
+  premissas assintóticas e fornece intervalo diretamente interpretável.
+  Wilcoxon e Hodges-Lehmann são complementos de robustez.
+
+  Interpretação dos desfechos com n pequeno:
+    - "equivalent": forte — difícil de atingir com pouca precisão
+    - "inconclusive": esperado — reflete a precisão disponível, não
+      falha metodológica (Lakens et al. 2018)
+    - "superior"/"inferior": requer corroboração pela sensibilidade
+
+  A análise de sensibilidade (bootstrap_sensitivity.py) varia SESOI
+  (0.5x, 1.0x, 1.5x) e iterações (1000, 3000, 5000) para verificar
+  estabilidade das decisões.
 
 Saidas:
 - JSON: outputs/statistics/equivalence_estimation.json
@@ -328,10 +346,22 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
 def run(args: argparse.Namespace) -> int:
     predictive = _analyze_predictive_metrics(args)
     latency = _analyze_latency(args)
+    # Extrair n_pairs para nota de poder
+    n_pairs = max(
+        (r.get('n_pairs', 0) for r in predictive.values() if isinstance(r, dict)),
+        default=0
+    )
     out = {
         'method': 'equivalence_by_estimation',
         'seed': args.seed,
-    'bootstrap': args.bootstrap,
+        'bootstrap': args.bootstrap,
+        'n_folds': n_pairs,
+        'power_note': (
+            f'n={n_pairs} folds (maximo sem comprometer anti-leakage temporal). '
+            f'Wilcoxon pareado com n={n_pairs} tem poder limitado (~30% para d=0.5); '
+            f'decisao principal via bootstrap CI. Resultado "inconclusive" e esperado '
+            f'e reflete precisao disponivel (Lakens et al. 2018).'
+        ) if n_pairs > 0 else 'Sem dados para analise de poder.',
         'predictive': predictive,
         'latency': latency,
     }

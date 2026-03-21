@@ -22,7 +22,7 @@ O pipeline executa coleta, processamento, treinamento e benchmark de ponta a pon
 
 ### Limitações explícitas
 
-Os dados são macro-educacionais (agregados por país/ano), não logs individuais de alunos. Isso limita a generalização dos resultados preditivos, mas não invalida o protocolo — que é o foco do trabalho. Expomos essa limitação deliberadamente.
+Os dados são macro-educacionais (agregados por país/ano), não logs individuais de alunos. O walk-forward com gaps de 2 anos produz n=9 folds, o máximo sem comprometer o anti-leakage temporal. Isso limita o poder do Wilcoxon pareado (~30% para efeitos médios), por isso a decisão primária usa bootstrap CI e o Wilcoxon é complemento de robustez. Um resultado "inconclusivo" é esperado e reflete a precisão disponível, não falha metodológica (Lakens et al. 2018). Expomos essas limitações deliberadamente.
 
 ## Quickstart
 

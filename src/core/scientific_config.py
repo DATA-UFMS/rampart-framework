@@ -47,6 +47,26 @@ SCIENTIFIC_CONFIG = {
     'temporal_gap_years': 2,
     'embargo_years': 0,  # Embargo adicional (López de Prado 2018); 0 = desativado
     # Parâmetros do gerador automático de folds
+    #
+    # Estes parâmetros produzem n=9 folds walk-forward. Esse n é o
+    # máximo alcançável sem violar as restrições temporais (P1-P2):
+    #   n = floor((end - start - min_train - val - test - 2*gap + 1) / step)
+    #   n = floor((2023 - 2000 - 8 - 2 - 2 - 4 + 1) / 1) = 8... +1 = 9
+    #
+    # Aumentar n exigiria reduzir gap (comprometendo P2), reduzir
+    # min_train (comprometendo estabilidade do treino) ou usar folds
+    # sobrepostos (comprometendo independência). A decisão de manter
+    # n=9 prioriza integridade anti-leakage sobre poder estatístico,
+    # conforme recomendado para dados temporais (Cerqueira et al. 2020;
+    # Roberts et al. 2017).
+    #
+    # Implicação: o Wilcoxon pareado com n=9 tem poder ~30% para
+    # efeitos médios (d~0.5). Por isso o método primário de decisão
+    # é bootstrap CI (que não depende de premissas assintóticas), e
+    # Wilcoxon + Hodges-Lehmann são complementos de robustez. Um
+    # resultado "inconclusivo" é o desfecho esperado quando o efeito
+    # real é pequeno e n é limitado — não indica falha metodológica,
+    # mas reflete a precisão disponível (Lakens et al. 2018).
     'temporal_range_start': 2000,
     'temporal_range_end': 2023,
     'folds_min_train_years': 8,
