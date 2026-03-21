@@ -54,24 +54,20 @@ except ImportError:
 class HierarchicalModelSQLFirst:
     """
     Modelo Hierárquico para Arquitetura Data Warehouse.
-    
+
     Implementa ML Data Warehouse Consumer pattern com queries diretas às views,
-    suporta modo normal (13 features científicas) e enhanced (19 features + engineered).
+    utilizando 13 features científicas selecionadas.
     """
     
-    def __init__(self, use_enhanced_features: bool = False):
+    def __init__(self):
         print("◇ INICIALIZANDO ML DATA WAREHOUSE CONSUMER - HIERARCHICAL MODEL")
         print("=" * 70)
         print("🖈  PESQUISA: Comparação de Arquiteturas ML para Dropout Educacional")
         print("▣ ARQUITETURA: Data Warehouse com ML Consumer pattern")
-        
-        self.use_enhanced_features = use_enhanced_features
+
         self.target_col = 'dropout_rate_data_warehouse'
-        
-        if use_enhanced_features:
-            print("▣ PATTERN: ML Data Warehouse Consumer com Feature Store enhanced views")
-        else:
-            print("▣ PATTERN: ML Data Warehouse Consumer com views básicas do setup")
+
+        print("▣ PATTERN: ML Data Warehouse Consumer com views básicas do setup")
         
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json")
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/models/hierarchical_results")
@@ -94,7 +90,6 @@ class HierarchicalModelSQLFirst:
             print(f"   ✓ Connection Manager inicializado: {self.db_path}")
         except Exception as e:
             raise RuntimeError(f"✗ Falha ao inicializar Connection Manager: {e}")
-        
 
         print("🖈  Carregando configuração dos folds...")
         with open(self.folds_path, 'r') as f:
@@ -106,11 +101,8 @@ class HierarchicalModelSQLFirst:
     
     def _verify_views(self):
         """Verificar se views necessárias existem no Data Warehouse."""
-        if self.use_enhanced_features:
-            print("   □ Verificando Feature Store enhanced views...")
-        else:
-            print("   □ Verificando views básicas do setup Data Warehouse...")
-        
+        print("   □ Verificando views básicas do setup Data Warehouse...")
+
         try:
             count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
             if count > 0:
@@ -162,11 +154,8 @@ class HierarchicalModelSQLFirst:
     
     def _load_ml_fold_data(self, fold_id: int, split: str) -> pd.DataFrame:
         """Carregar dados do fold via queries diretas às views."""
-        if self.use_enhanced_features:
-            view_name = f"vw_ml_fold_{fold_id}_enhanced_{split}"
-        else:
-            view_name = f"vw_fold_{fold_id}_{split}"
-        
+        view_name = f"vw_fold_{fold_id}_{split}"
+
         try:
             query = f"""
                 SELECT *
@@ -188,22 +177,8 @@ class HierarchicalModelSQLFirst:
     def _prepare_features(self, train_clean):
         """Preparar lista de features baseado no modo."""
         selection_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/feature_selection_data_warehouse.json")
-        
-        if self.use_enhanced_features:
-            # Modo Enhanced: 13 features científicas + 6 enhanced = 19 total
-            with open(selection_path, 'r') as f:
-                selection_data = json.load(f)
-            scientific_features = selection_data['selected_features']
-            
-            # Adicionar as 6 features enhanced (_dw)
-            all_columns = list(train_clean.columns)
-            enhanced_features = [col for col in all_columns if col.endswith('_dw')]
-            
-            available_features = scientific_features + enhanced_features
-            print(f"   □ ENHANCED MODE: {len(available_features)} features (13 científicas + {len(enhanced_features)} enhanced)")
-            print(f"   ✔ Features científicas: {len(scientific_features)}")
-            print(f"   ▲ Features enhanced: {len(enhanced_features)} features do Feature Store")
-        elif os.path.exists(selection_path):
+
+        if os.path.exists(selection_path):
             # Modo Normal: carregar features selecionadas cientificamente
             with open(selection_path, 'r') as f:
                 selection_data = json.load(f)
@@ -212,7 +187,7 @@ class HierarchicalModelSQLFirst:
             print(f"   Método: {selection_data.get('selection_method', 'N/A')}")
         else:
             raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
-        
+
         if 'dropout_rate_lag_2' in train_clean.columns and 'dropout_rate_lag_2' not in available_features:
             available_features.append('dropout_rate_lag_2')
         if 'dropout_rate_lag_3' in train_clean.columns and 'dropout_rate_lag_3' not in available_features:
@@ -348,6 +323,7 @@ class HierarchicalModelSQLFirst:
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
+            'country_sample_counts': {str(k): int(v) for k, v in country_sample_counts.items()},
             'regularization_applied': f'Adaptativo: α={final_alpha:.1f} com Shrinkage e CV',
             'features_count': features_count,
             'regularization_details': {
@@ -418,7 +394,8 @@ class HierarchicalModelSQLFirst:
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
             'regularization_applied': 'Regularizado: n_est=200, depth=6, split=15, leaf=8',
             'country_effect_importance': feature_importance.get('country_effect', 0),
-            'rf_params': {'max_depth': int(max_depth), 'min_samples_leaf': int(min_samples_leaf)}
+            'rf_params': {'max_depth': int(max_depth), 'min_samples_leaf': int(min_samples_leaf)},
+            'features_count': X_train_augmented.shape[1]
         }
     
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
@@ -433,12 +410,9 @@ class HierarchicalModelSQLFirst:
             
             print(f"   🖈  Dados via DW views: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
             print(f"    Gaps: Train-Val={fold_info['val_start']-fold_info['train_end']-1}yr, Val-Test={fold_info['test_start']-fold_info['val_end']-1}yr")
-            
-            if self.use_enhanced_features:
-                print(f"   □ Feature Store: Enhanced views com {len(train_data.columns)} features")
-            else:
-                print(f"   □ Setup Data Warehouse: Views básicas com {len(train_data.columns)} features")
-            
+
+            print(f"   □ Setup Data Warehouse: Views básicas com {len(train_data.columns)} features")
+
         except Exception as e:
             print(f"   Erro ao carregar dados do fold {fold_id}: {e}")
             return {}
@@ -562,7 +536,7 @@ class HierarchicalModelSQLFirst:
                 'architecture': 'data_warehouse',
                 'version': 'hierarchical_analysis',
                 'target': self.target_col,
-                'mode': 'enhanced' if self.use_enhanced_features else 'normal',
+                'mode': 'normal',
                 'corrections_applied': {
                     'simple_hierarchical': 'Adaptativo: α adaptativo + Shrinkage + CV',
                     'random_forest': 'Regularizado: n_est=200, depth=6, split=15, leaf=8',
@@ -655,14 +629,12 @@ class HierarchicalModelSQLFirst:
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Hierarchical Model Data Warehouse')
-    parser.add_argument('--enhanced', action='store_true', 
-                       help='Use enhanced Feature Store views instead of basic setup views')
     args = parser.parse_args()
-    
+
     try:
-        model = HierarchicalModelSQLFirst(use_enhanced_features=args.enhanced)
+        model = HierarchicalModelSQLFirst()
         results = model.run_hierarchical_analysis()
         print(f"\n⚙ Análise hierárquica Data Warehouse concluída!")
         print(f"   Regularização avançada aplicada")

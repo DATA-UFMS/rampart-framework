@@ -43,51 +43,24 @@ setup_reproducibility()
 class HierarchicalModelDataLake:
     """
     Modelo Hierárquico para Arquitetura Data Lake.
-    
+
     Implementa modelos hierárquicos com processamento distribuído e schema-on-read.
-    Suporta modo normal (13 features científicas) e enhanced (19 features + engineered).
     """
     
-    def __init__(self, use_enhanced_features: bool = False):
+    def __init__(self):
         print("Inicializando Modelo Hierárquico Data Lake")
         print("=" * 60)
         print("Arquitetura: Data Lake com processamento distribuído")
-        
-        self.use_enhanced_features = use_enhanced_features
-        self.enhanced_data = {}
+
         self.target_col = 'dropout_rate_data_lake'
-        
-        if use_enhanced_features:
-            print("Modo: Enhanced Features (pipeline de feature engineering)")
-            self._setup_enhanced_mode()
-        else:
-            print("Modo: Folds Normais (setup básico)")
-            self._setup_normal_mode()
-        
+
+        print("Modo: Folds Normais (setup básico)")
+        self._setup_normal_mode()
+
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/models/hierarchical_results")
         os.makedirs(self.results_path, exist_ok=True)
-        
-        if self.use_enhanced_features:
-            self._load_enhanced_summary()
-        else:
-            self._load_normal_summary()
-    
-    def _setup_enhanced_mode(self):
-        """Setup para modo enhanced features."""
-        self.enhanced_base_path = get_absolute_output_path("ml_pipeline/feature_engineering/data_lake/enhanced")
-        self.enhanced_metadata_path = f"{self.enhanced_base_path}/incremental_feature_engineering_metadata.json"
-        
-        if not os.path.exists(self.enhanced_metadata_path):
-            print(f"Enhanced features não encontradas. Fazendo fallback para modo normal...")
-            self.use_enhanced_features = False
-            self._setup_normal_mode()
-            return
-        
-        print(f"Enhanced features encontradas: {self.enhanced_base_path}")
-        with open(self.enhanced_metadata_path, 'r') as f:
-            self.enhanced_metadata = json.load(f)
-            self.folds = self.enhanced_metadata['enhanced_folds_data']
-            self.folds = [{'fold_id': int(k.split('_')[1]), **v} for k, v in self.folds.items()]
+
+        self._load_normal_summary()
     
     def _setup_normal_mode(self):
         """Setup para modo normal."""
@@ -147,71 +120,6 @@ class HierarchicalModelDataLake:
                 raise
         else:
             raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
-    
-    def _load_enhanced_summary(self):
-        """Carregar resumo dos dados enhanced."""
-        print(f"Folds enhanced: {len(self.folds)}")
-        print(f"Target: {self.target_col}")
-        print(f"Features adicionais incluídas do feature engineering")
-        
-        sample_fold = self._load_fold_enhanced_data(0)
-        if sample_fold:
-            sample_ddf = dd.concat([sample_fold['train'], sample_fold['val'], sample_fold['test']], ignore_index=True)
-            
-            # Batch compute para estatísticas enhanced
-            enhanced_stats = {
-                'year_min': sample_ddf['year'].min(),
-                'year_max': sample_ddf['year'].max(),
-                'n_countries': sample_ddf['country_code'].nunique(),
-                'unique_countries': sample_ddf['country_code'].unique(),
-                'target_mean': sample_ddf[self.target_col].mean() if self.target_col in sample_ddf.columns else None,
-                'target_std': sample_ddf[self.target_col].std() if self.target_col in sample_ddf.columns else None
-            }
-            computed_enhanced = dask.compute(enhanced_stats)[0]
-            
-            n_sample = sample_ddf.shape[0].compute()
-            print(f"Exemplo (fold 0): {n_sample} registros, {sample_ddf.npartitions} partições")
-            print(f"Período: {computed_enhanced['year_min']}-{computed_enhanced['year_max']}")
-            print(f"Países: {computed_enhanced['n_countries']}")
-            
-            self.available_features = [col for col in sample_ddf.columns
-                                     if col not in ['country_code', 'year', self.target_col]]
-            
-            print(f"Features enhanced disponíveis: {len(self.available_features)}")
-            
-            if self.target_col in sample_ddf.columns and computed_enhanced['target_mean'] is not None:
-                print(f"Target stats: μ={computed_enhanced['target_mean']:.2f}%, σ={computed_enhanced['target_std']:.2f}%")
-            else:
-                raise ValueError(f"Target {self.target_col} não encontrado nos dados enhanced")
-        else:
-            print("Não foi possível carregar dados enhanced para configuração inicial")
-            self.available_features = []
-    
-    def _load_fold_enhanced_data(self, fold_id: int) -> Dict:
-        """Carregar dados de um fold específico no modo enhanced."""
-        if fold_id in self.enhanced_data:
-            return self.enhanced_data[fold_id]
-        
-        fold_dir = f"{self.enhanced_base_path}/fold_{fold_id}"
-        if not os.path.exists(fold_dir):
-            return None
-        
-        try:
-            train_path = f"{fold_dir}/train_data_lake_enhanced.parquet"
-            val_path = f"{fold_dir}/val_data_lake_enhanced.parquet"
-            test_path = f"{fold_dir}/test_data_lake_enhanced.parquet"
-            
-            fold_data = {
-                'train': dd.read_parquet(train_path, engine='pyarrow'),
-                'val': dd.read_parquet(val_path, engine='pyarrow'),
-                'test': dd.read_parquet(test_path, engine='pyarrow')
-            }
-            
-            self.enhanced_data[fold_id] = fold_data
-            return fold_data
-        except Exception as e:
-            print(f"Erro ao carregar fold {fold_id} enhanced: {e}")
-            return None
     
     def _prepare_data(self, data_ddf, reference_ddf):
         """Preparar dados usando processamento distribuído com batch compute."""
@@ -379,6 +287,7 @@ class HierarchicalModelDataLake:
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
+            'country_sample_counts': {str(k): int(v) for k, v in country_sample_counts.items()},
             'regularization_applied': f'Adaptativo: α={final_alpha:.1f} com Shrinkage e CV',
             'features_count': features_count,
             'regularization_details': {
@@ -458,9 +367,8 @@ class HierarchicalModelDataLake:
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
         """Executar análise hierárquica completa para um fold específico."""
         fold_id = fold_info['fold_id']
-        mode_text = "ENHANCED" if self.use_enhanced_features else "NORMAL"
-        print(f"\nAnalisando Fold {fold_id} Data Lake ({mode_text})...")
-        
+        print(f"\nAnalisando Fold {fold_id} Data Lake (NORMAL)...")
+
         # Registrar features usadas para auditoria
         try:
             used = {
@@ -475,43 +383,27 @@ class HierarchicalModelDataLake:
                 json.dump(used, f, indent=2)
         except Exception:
             pass
-        
-        if self.use_enhanced_features:
-            fold_data = self._load_fold_enhanced_data(fold_id)
-            if not fold_data:
-                print(f"Fold {fold_id}: Dados enhanced não disponíveis")
-                return None
-            
-            train_data = fold_data['train']
-            val_data = fold_data['val']
-            test_data = fold_data['test']
-            print(f"Dados Enhanced: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
-        else:
-            train_ddf = self.ddf[
-                (self.ddf['year'] >= fold_info['train_start']) & 
-                (self.ddf['year'] <= fold_info['train_end'])
-            ]
-            val_ddf = self.ddf[
-                (self.ddf['year'] >= fold_info['val_start']) & 
-                (self.ddf['year'] <= fold_info['val_end'])
-            ]
-            test_ddf = self.ddf[
-                (self.ddf['year'] >= fold_info['test_start']) & 
-                (self.ddf['year'] <= fold_info['test_end'])
-            ]
-            n_train, n_val, n_test = dask.compute(
-                train_ddf.shape[0], val_ddf.shape[0], test_ddf.shape[0]
-            )
-            print(f"Dados Normais: Train={n_train}, Val={n_val}, Test={n_test}")
-        
-        if self.use_enhanced_features:
-            X_train, y_train, countries_train = self._prepare_data(train_data, train_data)
-            X_val, y_val, countries_val = self._prepare_data(val_data, train_data)
-            X_test, y_test, countries_test = self._prepare_data(test_data, train_data)
-        else:
-            X_train, y_train, countries_train = self._prepare_data(train_ddf, train_ddf)
-            X_val, y_val, countries_val = self._prepare_data(val_ddf, train_ddf)
-            X_test, y_test, countries_test = self._prepare_data(test_ddf, train_ddf)
+
+        train_ddf = self.ddf[
+            (self.ddf['year'] >= fold_info['train_start']) &
+            (self.ddf['year'] <= fold_info['train_end'])
+        ]
+        val_ddf = self.ddf[
+            (self.ddf['year'] >= fold_info['val_start']) &
+            (self.ddf['year'] <= fold_info['val_end'])
+        ]
+        test_ddf = self.ddf[
+            (self.ddf['year'] >= fold_info['test_start']) &
+            (self.ddf['year'] <= fold_info['test_end'])
+        ]
+        n_train, n_val, n_test = dask.compute(
+            train_ddf.shape[0], val_ddf.shape[0], test_ddf.shape[0]
+        )
+        print(f"Dados Normais: Train={n_train}, Val={n_val}, Test={n_test}")
+
+        X_train, y_train, countries_train = self._prepare_data(train_ddf, train_ddf)
+        X_val, y_val, countries_val = self._prepare_data(val_ddf, train_ddf)
+        X_test, y_test, countries_test = self._prepare_data(test_ddf, train_ddf)
         
         scaler = StandardScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
@@ -580,26 +472,24 @@ class HierarchicalModelDataLake:
         return {
             'fold_id': fold_id,
             'architecture': 'data_lake',
-            'mode': 'enhanced' if self.use_enhanced_features else 'normal',
+            'mode': 'normal',
             'total_features': len(self.available_features),
             'models': models
         }
     
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa para arquitetura Data Lake."""
-        mode_text = "ENHANCED" if self.use_enhanced_features else "NORMAL"
-        print(f"Análise Hierárquica Completa Data Lake ({mode_text})")
+        print("Análise Hierárquica Completa Data Lake (NORMAL)")
         print("=" * 60)
         print("Arquitetura: Data Lake para ML Hierárquico")
         print("Objetivo: Avaliar capacidade hierárquica arquitetural")
         print("Pattern: Data Lake com processamento flexível")
         print("Configuração: Ridge adaptativo, Random Forest regularizado")
-        
+
         all_results = {
             'architecture': 'data_lake',
             'version': 'hierarchical_analysis',
-            'mode': 'enhanced' if self.use_enhanced_features else 'normal',
-            'use_enhanced_features': self.use_enhanced_features,
+            'mode': 'normal',
             'target': self.target_col,
             'total_features': len(self.available_features),
             'corrections_applied': {
@@ -630,10 +520,10 @@ class HierarchicalModelDataLake:
             return all_results
         
         # Performance agregada
-        print(f"\nPERFORMANCE AGREGADA SCHEMA-ON-READ ({mode_text}):")
+        print("PERFORMANCE AGREGADA SCHEMA-ON-READ (NORMAL):")
         print("INTERPRETAÇÃO GAPS HIERÁRQUICOS:")
         print("   • Gap ≤0.15: Excelente - objetivo das correções atingido")
-        print("   • Gap 0.15-0.2: Bom - aceitável para dados educacionais") 
+        print("   • Gap 0.15-0.2: Bom - aceitável para dados educacionais")
         print("   • Gap >0.2: Necessita ajustes adicionais")
         
         for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
@@ -670,11 +560,11 @@ class HierarchicalModelDataLake:
                 }
         
         # Resumo executivo
-        print(f"\nRESUMO EXECUTIVO - HIERÁRQUICO SCHEMA-ON-READ:")
-        print(f"   PESQUISA: Modelos hierárquicos para arquitetura Data Lake")
-        print(f"   Arquitetura: Data Lake (Processamento Distribuído)")
-        print(f"   Pattern: Processamento flexível com Parquet")
-        print(f"   Versão: Corrigida com regularização científica")
+        print("RESUMO EXECUTIVO - HIERÁRQUICO SCHEMA-ON-READ:")
+        print("   PESQUISA: Modelos hierárquicos para arquitetura Data Lake")
+        print("   Arquitetura: Data Lake (Processamento Distribuído)")
+        print("   Pattern: Processamento flexível com Parquet")
+        print("   Versão: Corrigida com regularização científica")
         
         # Melhor modelo
         if 'simple_hierarchical_summary' in all_results and 'random_forest_hierarchical_summary' in all_results:
@@ -687,26 +577,18 @@ class HierarchicalModelDataLake:
             else:
                 print(f"   Melhor modelo: Simple Hierarchical")
                 print(f"   R² Teste: {simple_test:.3f}")
-        
-        mode_suffix = "_enhanced" if self.use_enhanced_features else "_normal"
-        results_file = f"{self.results_path}/hierarchical_analysis_data_lake_results{mode_suffix}.json"
+
+        results_file = f"{self.results_path}/hierarchical_analysis_data_lake_results_normal.json"
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
-        
-        print(f"\nResultados Data Lake ({mode_text}) salvos: {results_file}")
+
+        print(f"\nResultados Data Lake (NORMAL) salvos: {results_file}")
         
         return all_results
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Modelo Hierárquico Data Lake')
-    parser.add_argument('--enhanced', action='store_true', 
-                       help='Usar enhanced features do feature engineering')
-    args = parser.parse_args()
-    
-    print(f"Modo selecionado: {'Enhanced Features' if args.enhanced else 'Folds Normais'}")
-    model = HierarchicalModelDataLake(use_enhanced_features=args.enhanced)
+    print("Modo selecionado: Folds Normais")
+    model = HierarchicalModelDataLake()
     results = model.run_hierarchical_analysis()
-    print(f"\nAnálise hierárquica Data Lake concluída!")
+    print("\nAnálise hierárquica Data Lake concluída!")
     print("   Regularização avançada aplicada com abordagem científica")

@@ -390,196 +390,73 @@ class DataLakeProcessor:
 
     def _add_distributed_processing_metadata(self, partition):
         """
-        Enriquece partição com features científicas e metadados de processamento.
-        
+        Adiciona metadados de processamento e validação à partição.
+
         Args:
             partition: DataFrame pandas representando uma partição Dask
-            
+
         Returns:
-            Partição enriquecida com features temporais e metadados de qualidade
-            
-        Feature Engineering Científico:
-            1. Normalização de scores: Trunca valores impossíveis [0,100]
-            2. Features temporais:
-               - Lag-1: Autocorrelação temporal (Box et al., 2015)
-               - Rolling mean (janela=3): Suavização para tendências
-               - Year rank: Posição temporal relativa por país
-            3. Features cross-section:
-               - Stratum statistics: Comparação intra-grupo socioeconômico
-               - Temporal trend: Classificação via correlação de Pearson
-        
-        Limiares de classificação de tendência:
-            - |r| < 0.1: 'stable' (variação aleatória)
-            - r > 0.1: 'improving' (tendência positiva)
-            - r < -0.1: 'declining' (tendência negativa)
-            
-        Justificativa do limiar 0.1:
-            Cohen (1988) classifica |r|=0.1 como efeito pequeno.
-            Em séries temporais educacionais curtas (10-20 anos),
-            correlações maiores indicam tendências sistemáticas.
-        
-        Limitações:
-            - Assume linearidade local (violado em mudanças estruturais)
-            - Sensível a outliers em séries curtas
-            - Ignora sazonalidade (dados anuais amenizam isso)
-        
-        Referências:
-            Box, G. E., et al. (2015). Time series analysis: forecasting and control.
-            Cohen, J. (1988). Statistical power analysis for behavioral sciences.
+            Partição com metadados de auditoria e score de completude validado
         """
         if partition.empty:
             return partition
-        
+
         # Cópia defensiva para evitar mutação
         partition = partition.copy()
-        
+
         # === 1. Validação e normalização de score de completude ===
         if 'data_completeness_score' in partition.columns:
-            # Detecta valores fora do domínio [0, 100]
             invalid_mask = (partition['data_completeness_score'] < 0) | \
                           (partition['data_completeness_score'] > 100)
-            
+
             if invalid_mask.any():
-                # Truncagem científica: preserva monotonicidade
                 partition.loc[partition['data_completeness_score'] < 0, 'data_completeness_score'] = 0.0
                 partition.loc[partition['data_completeness_score'] > 100, 'data_completeness_score'] = 100.0
-                # Log silencioso - validação schema-on-read
-            
-            # Imputação conservadora para NaN
+
             partition['data_completeness_score'] = partition['data_completeness_score'].fillna(0.0)
-        
+
         # === 2. Metadados de processamento (auditoria científica) ===
         partition['processing_method'] = 'dask_distributed'
         partition['processed_timestamp'] = self.run_timestamp
-        partition['schema_validation_applied'] = 'true'  # String para compatibilidade schema
-        
+        partition['schema_validation_applied'] = 'true'
+
         # ID único de partição para debugging distribuído
         if not partition.empty:
             first_country = partition.iloc[0]['country_code']
             partition['partition_id'] = f"partition_{hash(str(first_country)) % 1000:03d}"
-        
-        # === 3. Features cross-section (comparação entre estratos) ===
-        if 'country_stratum' in partition.columns and 'lower_secondary_completion_rate' in partition.columns:
-            # Estatísticas por estrato socioeconômico
-            partition['stratum_completion_mean'] = partition.groupby(
-                'country_stratum', observed=True
-            )['lower_secondary_completion_rate'].transform('mean').astype('float64')
-            
-            partition['stratum_completion_std'] = partition.groupby(
-                'country_stratum', observed=True
-            )['lower_secondary_completion_rate'].transform('std').astype('float64')
-        else:
-            # Valores default quando variáveis ausentes
-            partition['stratum_completion_mean'] = 0.0
-            partition['stratum_completion_std'] = 0.0
-        
-        # === 4. Features temporais (análise longitudinal) ===
-        if 'year' in partition.columns and 'lower_secondary_completion_rate' in partition.columns:
-            # Rank temporal dentro de cada país
-            partition['year_rank'] = partition.groupby(
-                'country_code', observed=True
-            )['year'].rank(method='dense').astype('float64')
-            
-            # Função auxiliar para classificação de tendência
-            def calculate_temporal_trend(group):
-                """Classifica tendência temporal via correlação de Pearson."""
-                if len(group) < 2:
-                    return 'stable'  # Insuficiente para tendência
-                
-                # Verifica variabilidade mínima
-                completion_var = group['lower_secondary_completion_rate'].var()
-                year_var = group['year'].var()
-                
-                if pd.isna(completion_var) or pd.isna(year_var) or \
-                   completion_var == 0 or year_var == 0:
-                    return 'stable'  # Sem variação = sem tendência
-                
-                try:
-                    # Correlação de Pearson como proxy de tendência linear
-                    corr_val = group['lower_secondary_completion_rate'].corr(group['year'])
-                    
-                    if pd.isna(corr_val):
-                        return 'stable'
-                    elif corr_val > 0.1:  # Limiar de Cohen (1988)
-                        return 'improving'
-                    elif corr_val < -0.1:
-                        return 'declining'
-                    else:
-                        return 'stable'
-                except Exception:
-                    # Fallback para casos patológicos
-                    return 'stable'
-            
-            # Aplica classificação por país
-            trend_results = {}
-            for country in partition['country_code'].unique():
-                country_data = partition[partition['country_code'] == country]
-                trend_results[country] = calculate_temporal_trend(country_data)
-            
-            partition['temporal_trend'] = partition['country_code'].map(trend_results)
-            
-            # Features de autocorrelação temporal
-            partition['completion_rate_lag1'] = partition.groupby(
-                'country_code', observed=True
-            )['lower_secondary_completion_rate'].shift(1).astype('float64')
-            
-            # Média móvel para suavização (janela=3 anos)
-            partition['completion_rate_rolling_mean'] = partition.groupby(
-                'country_code', observed=True
-            )['lower_secondary_completion_rate'].rolling(
-                window=3, min_periods=1
-            ).mean().reset_index(0, drop=True).astype('float64')
-        else:
-            # Valores default quando séries temporais indisponíveis
-            partition['year_rank'] = 0.0
-            partition['temporal_trend'] = 'stable'
-            partition['completion_rate_lag1'] = 0.0
-            partition['completion_rate_rolling_mean'] = 0.0
-        
+
         return partition
 
     def process_data_lake_architecture(self, ddf: dd.DataFrame) -> dd.DataFrame:
         """
-        Executa processamento distribuído com feature engineering científico.
-        
+        Executa processamento distribuído com metadados de auditoria.
+
         Args:
             ddf: DataFrame Dask particionado otimamente
-            
+
         Returns:
-            DataFrame Dask enriquecido com features temporais e metadados
-            
+            DataFrame Dask com metadados de processamento
+
         Paradigma de processamento:
             Utiliza map_partitions para aplicar transformações idênticas e
             independentes em cada partição, seguindo modelo de computação
             embaraçosamente paralela (Foster, 1995). Não há comunicação
             entre partições, garantindo escalabilidade linear.
-        
-        Justificativa para não-imputação:
-            Dados já foram imputados na etapa raw_data_collector usando
-            metodologia hierárquica rigorosa (temporal → geográfica → global).
-            Re-imputação violaria princípio de idempotência e introduziria
-            viés sistemático.
-        
-        Complexidade computacional:
-            O(n/p) onde n = observações totais, p = número de partições
-            Escalabilidade linear com recursos computacionais disponíveis.
-        
+
         Referência:
             Foster, I. (1995). Designing and building parallel programs.
         """
         print("[PROCESSAMENTO] Iniciando pipeline Data Lake distribuído")
         print("[PREMISSA] Dados completos pós-imputação hierárquica")
-        
-        # Aplicação paralela de feature engineering
+
         print(f"[PARALELIZAÇÃO] Processando {ddf.npartitions} partições independentemente")
-        
         print("[SCHEMA] Usando inferência automática para novas colunas (schema-on-read)")
-        
+
         ddf_processed = ddf.map_partitions(
             self._add_distributed_processing_metadata
         )
-        
-        print("[FEATURES] Adicionadas: temporais (lag, trend), cross-section (stratum), metadados")
+
+        print("[METADADOS] Adicionados: método de processamento, timestamp, partition ID")
         print("[STATUS] Grafo computacional construído (não materializado)")
         
         return ddf_processed

@@ -1151,7 +1151,7 @@ class BaselineModelAnalysisDataWarehouse:
             'data_warehouse_validation': {
                 'connection_pooling': True,
                 'batch_loading_optimized': True,
-                'enhanced_ml_views_used': True,
+                'ml_views_used': True,
                 'parquet_reads_eliminated': True,
                 'scientific_interface_maintained': True
             },

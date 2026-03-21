@@ -515,7 +515,7 @@ class BenchmarkRunner:
     def _phase_hierarchical_dl(self) -> Tuple[int, Optional[int]]:
         start_ns = time.perf_counter_ns()
         Model = self.modules["HierarchicalModelDataLake"]
-        model = Model(use_enhanced_features=False)
+        model = Model()
         _ = model.run_hierarchical_analysis()
         end_ns = time.perf_counter_ns()
         # reusar mesma estimativa de contagem dos folds do baseline
@@ -538,7 +538,7 @@ class BenchmarkRunner:
     def _phase_hierarchical_dw(self) -> Tuple[int, Optional[int]]:
         start_ns = time.perf_counter_ns()
         Model = self.modules["HierarchicalModelSQLFirst"]
-        model = Model(use_enhanced_features=False)
+        model = Model()
         _ = model.run_hierarchical_analysis()
         end_ns = time.perf_counter_ns()
         records = 0
