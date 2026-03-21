@@ -1,116 +1,82 @@
-# Framework Metodológico para Avaliação de Arquiteturas de Dados em Analytics Educacional
+# dw-vs-dl-dropout-prediction-latam
 
-Este repositório materializa um **framework metodológico completo** para avaliar arquiteturas de dados aplicadas a analytics educacional com rigor científico. O trabalho responde a três questões centrais:
+Framework open-source para benchmarking reprodutível de arquiteturas de dados, com **verificação automática de anti-leakage temporal**.
 
-1. **RQ1 — Extensibilidade**: Como projetar uma arquitetura modular que minimize retrabalho ao incorporar novos paradigmas de dados?
-2. **RQ2 — Recomendação Automática**: Quais mecanismos de instrumentação suportam recomendação automática do paradigma mais eficiente para um dado contexto?
-3. **RQ3 — Reprodutibilidade**: Quais práticas de engenharia garantem reprodutibilidade integral dos experimentos?
+## O problema
 
-A demonstração empírica compara dois paradigmas clássicos — schema-on-write (DuckDB) e schema-on-read (Dask) — em dados públicos do Banco Mundial (2000–2023). O objetivo não é declarar vencedores, mas validar o protocolo e exemplificar como transformar resultados em heurísticas transparentes. Como os indicadores são agregados por país/ano, tratamos o estudo como um benchmark metodológico com dados macro-educacionais, útil quando logs individuais não estão acessíveis e expomos explicitamente as limitações decorrentes dessa granularidade.
+Leakage temporal é uma das principais causas de resultados irreplicáveis em machine learning aplicado a educação. Kapoor & Narayanan (2023) auditaram 294 papers e encontraram leakage em uma parcela significativa deles. Em analytics educacional, o cenário é agravado pela escassez de validação temporal rigorosa e pela ausência de ferramentas que automatizem essa verificação.
 
-## 1. Protocolos Metodológicos
+## O que este repositório faz
 
-| Protocolo | Objetivo | Componentes-chave |
-|-----------|----------|--------------------|
-| Validação temporal + Anti-leakage | Evitar vazamentos temporais com enforcement automático (raise em violações), embargo configurável (López de Prado 2018) | `src/core/validation.py`, `src/core/base_architecture.py`, `pipeline.py` (gate), `tests/test_lag_anti_leak.py`, `tests/test_leakage_injection.py` |
-| Equivalência prática | Estimar efeitos arquiteturais com SESOI + IC95% | `src/statistical_validation/tost_baseline.py`, `outputs/statistics/equivalence_estimation.*` |
-| Benchmark arquitetural | Mensurar latência, throughput e uso de recursos | `src/benchmarking/architectural_benchmark.py`, `outputs/benchmarks/*` |
-| Reprodutibilidade integral | Registrar parâmetros, seeds e artefatos auditáveis | `pipeline.py`, `src/core/scientific_config.py`, `src/core/logging_config.py` |
+Este framework compara dois paradigmas de dados — **DuckDB** (schema-on-write) e **Dask** (schema-on-read) — usando dados públicos do Banco Mundial (32 países, 2000–2023) para predição de evasão escolar. Mas o objetivo principal não é declarar um vencedor: é fornecer um **protocolo reutilizável** que qualquer pesquisador pode adaptar para seu domínio.
 
-Os parâmetros científicos (gaps, SESOI, número de bootstrap) são centralizados em `src/core/scientific_config.py`, garantindo consistência entre arquiteturas.
+O pipeline executa coleta, processamento, treinamento e benchmark de ponta a ponta, com um **gate anti-leakage** que interrompe a execução se qualquer fold violar integridade temporal. Inclui também testes de injeção que deliberadamente tentam quebrar o gate para provar que ele funciona.
 
-## 2. Como Reproduzir a Demonstração
+### Garantias do pipeline
+
+- **Anti-leakage automático** — o pipeline verifica ordenação temporal, gap mínimo (2 anos) e separação de features a cada fold. Violações geram `ValueError` e interrompem a execução. Suporte a embargo configurável (López de Prado, 2018).
+- **Equivalência estatística, não p-hacking** — comparação arquitetural via SESOI + IC 95% por bootstrap, com Wilcoxon e Hodges–Lehmann como suporte.
+- **Reprodutibilidade integral** — seeds centralizadas, `n_jobs=1`, snapshot de ambiente (packages, hardware, git commit) e 42 testes automatizados + 4 cenários de injeção de leakage.
+- **Extensível por design** — `BaseArchitectureML` (11 métodos abstratos, Template Method) permite adicionar novas arquiteturas herdando o enforcement anti-leakage automaticamente.
+
+### Limitações explícitas
+
+Os dados são macro-educacionais (agregados por país/ano), não logs individuais de alunos. Isso limita a generalização dos resultados preditivos, mas não invalida o protocolo — que é o foco do trabalho. Expomos essa limitação deliberadamente.
+
+## Quickstart
 
 ```bash
-# 0. Clonar repositório e instalar dependências
 git clone https://github.com/DATA-UFMS/dw-vs-dl-dropout-prediction-latam.git
 cd dw-vs-dl-dropout-prediction-latam
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 1. Executar pipeline completo (coleta → validação → benchmark → artefatos)
+# Pipeline completo: coleta → validação → benchmark → artefatos LaTeX
 python pipeline.py
 
-# 2. Rodar testes unitários e anti-leakage (42 testes)
+# Testes (42 unitários + 4 cenários de injeção de leakage)
 pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
-
-# 2b. Teste de injeção de leakage (validação negativa do gate, cenários S1-S4)
 python tests/test_leakage_injection.py
-
-# 3. (Re)gerar tabelas LaTeX a partir das saídas do benchmark
-python src/benchmarking/derive_latency_percentiles.py
-python src/benchmarking/derive_throughput_percentiles.py
-python src/benchmarking/derive_resource_usage_table.py
 ```
 
-O pipeline inclui um **gate anti-leakage** entre o setup ML e o benchmark: se qualquer fold violar a integridade temporal (ordenação, gap mínimo de 2 anos, ou separação de features), a execução é interrompida com `ValueError`. O validador suporta um período de embargo configurável (`embargo_years` em `scientific_config.py`, default 0) conforme López de Prado (2018). Seeds centralizadas e `n_jobs=1` garantem determinismo entre execuções.
+O pipeline gera todos os artefatos em `outputs/` — folds temporais, resultados de benchmark, tabelas LaTeX publication-ready e um snapshot completo do ambiente para replicação.
 
-## 3. Checklist de Reprodutibilidade
-
-Verifique os itens abaixo após rodar o pipeline:
-
-- `outputs/ml_pipeline/architectures/<arch>/prep/temporal_folds_<arch>.json` — fronteiras dos folds com gaps anti-leakage verificados (RQ1/RQ2).
-- `outputs/statistics/equivalence_estimation.json` — decisões de equivalência, IC95% e estatísticas de suporte (RQ2).
-- `outputs/benchmarks/architectural_benchmark_results.csv` e `architectural_benchmark_resource_log.jsonl` — latências, throughput e monitoramento de recursos (RQ2).
-- `outputs/scientific_config_snapshot.json` — snapshot completo do ambiente (packages, hardware, git commit, hash do requirements.txt) (RQ3).
-- Tabelas LaTeX em `outputs/statistics/` — artefatos publication-ready.
-
-## 4. Artefatos Gerados pelo Pipeline
-
-Após executar `python pipeline.py`, a seguinte estrutura é criada em `outputs/`:
+## Estrutura do projeto
 
 ```
-outputs/
-├── scientific_config_snapshot.json
-├── collection/raw_data/
-├── ml_pipeline/architectures/
-│   ├── data_lake/prep/
-│   └── data_warehouse/prep/
-├── benchmarks/
-│   ├── architectural_benchmark_results.csv
-│   ├── architectural_benchmark_resource_log.jsonl
-│   └── architectural_benchmark_summary.json
-└── statistics/
-    ├── equivalence_estimation.(json|tex)
-    ├── architectural_latency_percentiles.(json|tex)
-    ├── architectural_throughput_percentiles.(json|tex)
-    ├── architectural_resource_usage.(json|tex)
-    └── architectural_scorecard.tex
+src/
+├── core/                    # Base do framework
+│   ├── base_architecture.py # Classe abstrata (Template Method, 11 métodos)
+│   ├── validation.py        # TemporalValidator + DataIntegrityValidator
+│   ├── scientific_config.py # Parâmetros centralizados (gaps, SESOI, seeds)
+│   └── models/baseline.py   # Estratégias RF, XGBoost, LightGBM
+├── collection/              # Coleta e processamento de dados brutos
+│   ├── raw_data_collector.py
+│   ├── data_lake/           # Processador Dask (schema-on-read)
+│   └── data_warehouse/      # Processador DuckDB (schema-on-write)
+├── architectures_ml/        # Implementações por arquitetura
+│   ├── data_lake/           # Setup ML + modelos hierárquicos (Ridge, RF)
+│   └── data_warehouse/      # Setup ML + modelos hierárquicos (Ridge, RF)
+├── benchmarking/            # Instrumentação e derivação de métricas
+└── statistical_validation/  # TOST, bootstrap, effect sizes, scorecard
+tests/
+├── test_unit_core.py        # 40 testes unitários
+├── test_lag_anti_leak.py    # 2 testes de integridade temporal
+└── test_leakage_injection.py # Validação negativa do gate (S1–S4)
+pipeline.py                  # Orquestra tudo
 ```
 
-Cada arquivo possui cabeçalho com metadados (timestamp, versão do protocolo, seed). Esses artefatos não estão versionados no repositório — são gerados localmente ao rodar o pipeline.
+## Como adaptar para seu domínio
 
-## 5. Extender o Framework
+1. **Nova arquitetura** — crie uma subclasse de `BaseArchitectureML` em `src/architectures_ml/`. O anti-leakage é herdado. Registre no `pipeline.py`.
 
-1. **Adicionar nova arquitetura**
-   Implemente uma subclasse de `BaseArchitectureML` (11 métodos abstratos, padrão Template Method) em `src/architectures_ml/` replicando o padrão `data_lake`/`data_warehouse`. O enforcement anti-leakage é herdado automaticamente da classe base. Registre a nova arquitetura no pipeline principal (`pipeline.py`).
+2. **Novos parâmetros** — edite `src/core/scientific_config.py`: gaps temporais, limiares SESOI (`sesoi_r2`, `sesoi_mase`, `sesoi_wape`), embargo, bootstrap iterations.
 
-2. **Ajustar parâmetros científicos**
-   Atualize `SCIENTIFIC_CONFIG` com novos gaps, SESOI (`sesoi_r2`, `sesoi_wape`, `sesoi_mase`) ou número de iterações de bootstrap. Para inspecionar a sensibilidade das decisões sem reexecutar todo o pipeline, rode `python src/statistical_validation/bootstrap_sensitivity.py --latex`, que gera resumos em `outputs/statistics/bootstrap_sensitivity.*`.
+3. **Novas métricas** — estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão de entrada/saída JSON → LaTeX dos scripts existentes.
 
-3. **Instrumentar novas métricas**
-   Estenda `src/benchmarking/` ou `src/statistical_validation/` mantendo contratos de entrada/saída. Scripts já existentes servem de templates.
+4. **Outro domínio** — ajuste os indicadores no coletor de dados e os limiares SESOI. Os protocolos permanecem os mesmos.
 
-4. **Documentar heurísticas**
-   Crie memos de decisão para contextualizar interpretações, preservando transparência.
-
-## 6. Referências Internas
-
-- `USAGE_GUIDE.md` — Guia operacional detalhado para uso e adaptação do framework.
-- `docs/pipeline_diagram.md` — Diagrama Mermaid do fluxo completo do pipeline.
-
-## 7. Referências Bibliográficas de Apoio
-
-Principais trabalhos que embasam o protocolo:
-- Hyndman & Koehler (2006), Lakens (2017), Cerqueira et al. (2020) — Métricas e equivalência em séries temporais.
-- Roberts et al. (2017) — Boas práticas para validação temporal com blocked designs.
-- Kapoor & Narayanan (2023) — Leakage e crise de reprodutibilidade em ML (294 papers auditados).
-- Semmelrock et al. (2025) — Barreiras à reprodutibilidade em ML (5 pilares).
-- Romero & Ventura (2020), Hellas et al. (2018) — Lacunas metodológicas em analytics educacional.
-- Wilkinson et al. (2016) — Princípios FAIR para dados científicos.
-- Harby & Zulkernine (2024) — Survey comparativo de arquiteturas lake/warehouse/lakehouse.
-- Raasveldt & Mühleisen (2019), Zhang et al. (2023) — Caracterização de paradigmas arquiteturais.
+Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md). O fluxo completo do pipeline está em [`docs/pipeline_diagram.md`](docs/pipeline_diagram.md).
 
 ---
 
