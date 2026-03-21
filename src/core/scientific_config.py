@@ -37,6 +37,7 @@ SCIENTIFIC_CONFIG = {
 
     # Validação Temporal
     'temporal_gap_years': 2,
+    'embargo_years': 0,  # Embargo adicional (López de Prado 2018); 0 = desativado
     # Parâmetros do gerador automático de folds
     'temporal_range_start': 2000,
     'temporal_range_end': 2023,

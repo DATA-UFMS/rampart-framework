@@ -15,19 +15,35 @@ from datetime import datetime
 class TemporalValidator:
     """
     Validador temporal para prevenção de vazamento em séries temporais.
-    
+
     Implementa validação rigorosa de splits temporais com gaps obrigatórios
-    para garantir validade científica em previsão de dropout educacional.
+    e embargo configurável para garantir validade científica em previsão
+    de dropout educacional.
+
+    O protocolo combina dois mecanismos complementares:
+      - **Gap temporal**: período mínimo entre splits consecutivos,
+        impedindo que informação futura influencie o treino.
+      - **Embargo**: observações adjacentes ao limite de cada split
+        são excluídas do treino para prevenir leakage por
+        autocorrelação residual (López de Prado, 2018).
     """
-    
-    def __init__(self, min_gap_years: int = 2):
+
+    def __init__(self, min_gap_years: int = 2, embargo_years: int = 0):
         """
         Inicializa validador temporal.
-        
+
         Args:
-            min_gap_years: Gap mínimo em anos entre splits (default: 2)
+            min_gap_years: Gap mínimo em anos entre splits (default: 2).
+                Controla a separação temporal obrigatória entre períodos.
+            embargo_years: Período adicional de embargo em anos (default: 0).
+                Quando > 0, observações no intervalo [train_end+1,
+                train_end+embargo] são excluídas do treino, mesmo que
+                já estejam fora do split de treino. Previne leakage
+                por autocorrelação residual em dados com dependência
+                temporal (lagged features, médias móveis).
         """
         self.min_gap_years = min_gap_years
+        self.embargo_years = embargo_years
     
     def validate_fold_integrity(self, fold: Dict) -> Tuple[bool, List[str]]:
         """
@@ -74,13 +90,28 @@ class TemporalValidator:
         # Verificar gaps mínimos
         train_val_gap = fold['val_start'] - fold['train_end'] - 1
         val_test_gap = fold['test_start'] - fold['val_end'] - 1
-        
+
         if train_val_gap < self.min_gap_years:
             errors.append(f"Gap train-val insuficiente: {train_val_gap} < {self.min_gap_years}")
-        
+
         if val_test_gap < self.min_gap_years:
             errors.append(f"Gap val-test insuficiente: {val_test_gap} < {self.min_gap_years}")
-        
+
+        # Verificar embargo: o gap efetivo deve cobrir também o embargo
+        if self.embargo_years > 0:
+            effective_gap_tv = train_val_gap - self.embargo_years
+            effective_gap_vt = val_test_gap - self.embargo_years
+            if effective_gap_tv < 0:
+                errors.append(
+                    f"Embargo train-val violado: gap={train_val_gap} < "
+                    f"embargo={self.embargo_years}"
+                )
+            if effective_gap_vt < 0:
+                errors.append(
+                    f"Embargo val-test violado: gap={val_test_gap} < "
+                    f"embargo={self.embargo_years}"
+                )
+
         is_valid = len(errors) == 0
         return is_valid, errors
     

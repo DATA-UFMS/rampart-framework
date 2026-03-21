@@ -8,7 +8,7 @@ Fases:
   3) Setup ML (folds idênticos com gaps de 2 anos; seleção de features)
   4) Feature engineering (opcional)
   5) Baselines
-  6) Hierárquicos (modo básico - para usar features enhanced, execute manualmente com --enhanced)
+  6) Hierárquicos
   7) Benchmark arquitetural
   8) Testes estatísticos de validação
 """
@@ -116,7 +116,8 @@ def _validate_anti_leakage_gate(root: str) -> None:
         raise RuntimeError("TemporalValidator não disponível — validação anti-leakage impossível")
 
     gap = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
-    validator = TemporalValidator(min_gap_years=gap)
+    embargo = int(SCIENTIFIC_CONFIG.get('embargo_years', 0))
+    validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
 
     for arch in ['data_lake', 'data_warehouse']:
         folds_path = os.path.join(
@@ -143,7 +144,7 @@ def main() -> None:
 
     print_conclusion("INICIANDO PIPELINE METODOLÓGICO COMPLETO (QP1–QP3)")
     _snapshot_scientific_config(root)
-    print_system("PROTOCOLO 4/4 — REPRODUTIBILIDADE ATIVADA")
+    print_system("ETAPA 0 — SNAPSHOT DE REPRODUTIBILIDADE (P3: separação)")
     print_config("Snapshot de configuração e ambiente salvo em outputs/scientific_config_snapshot.json")
 
     # Coleta
@@ -165,8 +166,8 @@ def main() -> None:
     run(f"{py} {root}/src/collection/data_warehouse/processor.py")
     print_success("ETAPA 2 CONCLUÍDA: Processamento arquitetural completo")
 
-    print_system("PROTOCOLO 1/4 — VALIDAÇÃO TEMPORAL (QP1)")
-    print_config("Gaps temporais: 2 anos (anti-leak)")
+    print_system("PROTOCOLO ANTI-LEAKAGE — VALIDAÇÃO TEMPORAL (QP1)")
+    print_config("Gaps temporais: 2 anos (P1: ordenação, P2: gap, P3: separação)")
     # Setup ML (gaps 2 anos em ambas arquiteturas)
     print_system("SETUP ML DATA LAKE")
     print_config("Arquitetura: Data Lake (schema-on-read)")
@@ -205,14 +206,14 @@ def main() -> None:
     print_success("ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados")
 
     # Benchmark arquitetural
-    print_system("PROTOCOLO 3/4 — BENCHMARK ARQUITETURAL (QP3)")
+    print_system("BENCHMARK ARQUITETURAL (QP3)")
     print_config("Comparação demonstrativa: schema-on-write vs schema-on-read")
     print_step("ETAPA 6/7: Executando Benchmark Arquitetural...")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
     print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado")
 
     # Testes estatísticos de validação
-    print_system("PROTOCOLO 2/4 — EQUIVALÊNCIA PRÁTICA (QP2)")
+    print_system("EQUIVALÊNCIA PRÁTICA (QP2)")
     print_config("Validação: SESOI + IC95% com bootstrap e estatísticas robustas")
     print_step("ETAPA 7/7: Executando Testes Estatísticos...")
     
