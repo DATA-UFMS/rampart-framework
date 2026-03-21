@@ -175,7 +175,11 @@ class RandomForestStrategy(BaselineModelStrategy):
         return self.model.predict(X)
 
     def get_feature_importance(self) -> Optional[Dict[str, float]]:
-        """Retorna importância das features do Random Forest."""
+        """Retorna importância das features do Random Forest.
+
+        Nota: nomes genéricos (feature_0..N) porque o modelo
+        recebe numpy arrays sem metadata de colunas.
+        """
         if self.model is None or not hasattr(self.model, 'feature_importances_'):
             return None
         importances = self.model.feature_importances_

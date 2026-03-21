@@ -884,7 +884,7 @@ class BaselineModelAnalysisDataWarehouse:
                             model = BaselineModelFactory.create_model(
                                 model_type=model_type,
                                 params=None,  # Usar parâmetros padrão
-                                use_dask=False  # Dados já em Pandas do DW
+                                use_dask=False  # Deprecated, ignorado (mantido por compat)
                             )
                             
                             # Treinar modelo
@@ -918,7 +918,7 @@ class BaselineModelAnalysisDataWarehouse:
                         print(f"      Treinando Ensemble...")
                         
                         ensemble_config = [(model_type, None, 1.0) for model_type in successful_models]
-                        ensemble = BaselineEnsemble(ensemble_config, use_dask=False)
+                        ensemble = BaselineEnsemble(ensemble_config, use_dask=False)  # Deprecated, ignorado
                         
                         # Treinar ensemble
                         ensemble.train(X_train, y_train, X_val, y_val)

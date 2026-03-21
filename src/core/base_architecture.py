@@ -412,7 +412,7 @@ class BaseArchitectureML(ABC):
         if len(selected) < 5:
             selected = [
                 feat for feat, corr in correlations.items()
-                if corr >= min_corr * 0.67  
+                if corr >= min_corr * 0.67  # relaxa para 2/3 do limiar
             ]
             print(f"   Critério relaxado: {len(selected)} features")
         

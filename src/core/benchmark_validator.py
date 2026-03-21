@@ -187,22 +187,21 @@ class BenchmarkValidator:
             return False
 
         for i, (dw_fold, dl_fold) in enumerate(zip(dw_folds, dl_folds)):
-            
-            for split in ['train_count', 'val_count', 'test_count']:
-                dw_count = dw_fold.get(split, 0)
-                dl_count = dl_fold.get(split, 0)
-                diff = abs(dw_count - dl_count) / (dw_count + 1e-9)
 
-                if diff > max_diff_pct:
+            # Verificar fronteiras temporais (train_start/end, val_start/end, test_start/end)
+            for boundary in ['train_start', 'train_end', 'val_start', 'val_end',
+                             'test_start', 'test_end']:
+                dw_val = dw_fold.get(boundary)
+                dl_val = dl_fold.get(boundary)
+
+                if dw_val != dl_val:
                     is_equivalent = False
                     self.report['critical_divergences'].append({
                         'check': 'fold_integrity',
                         'fold_id': i,
-                        'split': split,
-                        'dw_count': dw_count,
-                        'dl_count': dl_count,
-                        'relative_difference': diff,
-                        'threshold': max_diff_pct
+                        'boundary': boundary,
+                        'dw_value': dw_val,
+                        'dl_value': dl_val,
                     })
 
         print(f"   - Validação de Integridade dos Folds: {'OK' if is_equivalent else 'FALHOU'}")

@@ -392,9 +392,9 @@ class HierarchicalModelSQLFirst:
             'y_true': y_test.tolist(),
             'feature_importance': {k: float(v) for k, v in feature_importance.items()},
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
-            'regularization_applied': 'Regularizado: n_est=200, depth=6, split=15, leaf=8',
+            'regularization_applied': f'Regularizado: n_est=200, depth={max_depth}, split=15, leaf={min_samples_leaf}',
             'country_effect_importance': feature_importance.get('country_effect', 0),
-            'rf_params': {'max_depth': int(max_depth), 'min_samples_leaf': int(min_samples_leaf)},
+            'rf_params': {'n_estimators': 200, 'max_depth': int(max_depth), 'min_samples_split': 15, 'min_samples_leaf': int(min_samples_leaf)},
             'features_count': X_train_augmented.shape[1]
         }
     

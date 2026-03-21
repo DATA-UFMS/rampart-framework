@@ -142,7 +142,7 @@ def main() -> None:
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
 
-    print_conclusion("INICIANDO PIPELINE METODOLÓGICO COMPLETO (QP1–QP3)")
+    print_conclusion("INICIANDO PIPELINE METODOLÓGICO COMPLETO (RQ1–RQ3)")
     _snapshot_scientific_config(root)
     print_system("ETAPA 0 — SNAPSHOT DE REPRODUTIBILIDADE (P3: separação)")
     print_config("Snapshot de configuração e ambiente salvo em outputs/scientific_config_snapshot.json")
@@ -166,7 +166,7 @@ def main() -> None:
     run(f"{py} {root}/src/collection/data_warehouse/processor.py")
     print_success("ETAPA 2 CONCLUÍDA: Processamento arquitetural completo")
 
-    print_system("PROTOCOLO ANTI-LEAKAGE — VALIDAÇÃO TEMPORAL (QP1)")
+    print_system("PROTOCOLO ANTI-LEAKAGE — VALIDAÇÃO TEMPORAL (RQ1)")
     print_config("Gaps temporais: 2 anos (P1: ordenação, P2: gap, P3: separação)")
     # Setup ML (gaps 2 anos em ambas arquiteturas)
     print_system("SETUP ML DATA LAKE")
@@ -206,14 +206,14 @@ def main() -> None:
     print_success("ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados")
 
     # Benchmark arquitetural
-    print_system("BENCHMARK ARQUITETURAL (QP3)")
+    print_system("BENCHMARK ARQUITETURAL (RQ3)")
     print_config("Comparação demonstrativa: schema-on-write vs schema-on-read")
     print_step("ETAPA 6/7: Executando Benchmark Arquitetural...")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
     print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado")
 
     # Testes estatísticos de validação
-    print_system("EQUIVALÊNCIA PRÁTICA (QP2)")
+    print_system("EQUIVALÊNCIA PRÁTICA (RQ2)")
     print_config("Validação: SESOI + IC95% com bootstrap e estatísticas robustas")
     print_step("ETAPA 7/7: Executando Testes Estatísticos...")
     

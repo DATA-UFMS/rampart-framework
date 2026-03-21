@@ -68,10 +68,9 @@ GOVERNANCE_INDICATORS = {
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis Econômicas Complementares
+# PREDICTORS - Variáveis Econômicas Complementares (reservado para expansão)
 # ============================================================================
-ECONOMIC_INDICATORS = {
-}
+ECONOMIC_INDICATORS = {}  # Placeholder: adicionar indicadores como NY.GDP.PCAP.CD
 
 # ============================================================================
 # CONSOLIDAÇÃO

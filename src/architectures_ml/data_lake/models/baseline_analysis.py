@@ -649,7 +649,7 @@ class BaselineModelAnalysisDataLake:
                         model = BaselineModelFactory.create_model(
                             model_type=model_type,
                             params=None,  # Usar parâmetros padrão
-                            use_dask=True  # Usar backend Dask
+                            use_dask=True  # Deprecated, ignorado (mantido por compat)
                         )
                         
                         # Treinar modelo
@@ -683,7 +683,7 @@ class BaselineModelAnalysisDataLake:
                     print(f"      Treinando Ensemble...")
                     
                     ensemble_config = [(model_type, None, 1.0) for model_type in successful_models]
-                    ensemble = BaselineEnsemble(ensemble_config, use_dask=True)
+                    ensemble = BaselineEnsemble(ensemble_config, use_dask=True)  # Deprecated, ignorado
                     
                     # Treinar ensemble
                     ensemble.train(X_train, y_train, X_val, y_val)

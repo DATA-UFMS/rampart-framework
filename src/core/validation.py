@@ -240,7 +240,9 @@ class TemporalValidator:
             
             return True, "Split temporal válido"
         
-        return True, "Coluna 'year' não encontrada para validação"
+        import warnings
+        warnings.warn("Coluna 'year' ausente: validação temporal não realizada", stacklevel=2)
+        return False, "Coluna 'year' não encontrada — validação temporal impossível"
 
 
 class DataIntegrityValidator:
@@ -456,10 +458,14 @@ class DataIntegrityValidator:
         if validation_report['errors']:
             validation_report['is_valid'] = False
         
-        # Se há muitos warnings, pode indicar problemas
-        if len(validation_report['warnings']) > 5:
+        # Heurística: mais de MAX_TOLERABLE_WARNINGS indica dataset degradado
+        MAX_TOLERABLE_WARNINGS = 5
+        if len(validation_report['warnings']) > MAX_TOLERABLE_WARNINGS:
             validation_report['is_valid'] = False
-            validation_report['errors'].append("Muitos problemas de qualidade detectados")
+            validation_report['errors'].append(
+                f"Número de warnings ({len(validation_report['warnings'])}) "
+                f"excede o limite tolerável ({MAX_TOLERABLE_WARNINGS})"
+            )
         
         return validation_report['is_valid'], validation_report
     
