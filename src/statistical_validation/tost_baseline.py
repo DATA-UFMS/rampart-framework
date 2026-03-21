@@ -30,9 +30,15 @@ try:
     from src.core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
     DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG.get('bootstrap_iters', 3000))
     DEFAULT_SEED = RANDOM_SEED
+    DEFAULT_SESOI_R2 = float(SCIENTIFIC_CONFIG.get('sesoi_r2', 0.01))
+    DEFAULT_SESOI_MASE = float(SCIENTIFIC_CONFIG.get('sesoi_mase', 0.05))
+    DEFAULT_SESOI_WAPE = float(SCIENTIFIC_CONFIG.get('sesoi_wape', 0.05))
 except Exception:
     DEFAULT_BOOTSTRAP_ITERS = 3000
     DEFAULT_SEED = 42
+    DEFAULT_SESOI_R2 = 0.01
+    DEFAULT_SESOI_MASE = 0.05
+    DEFAULT_SESOI_WAPE = 0.05
 
 
 def _median_hodges_lehmann(deltas: np.ndarray) -> float:
@@ -330,9 +336,9 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description='Equivalência por Estimativa (SESOI + IC) para baselines e latência.')
     p.add_argument('--bootstrap', type=int, default=DEFAULT_BOOTSTRAP_ITERS, help=f'Iterações de bootstrap (default: {DEFAULT_BOOTSTRAP_ITERS})')
     p.add_argument('--seed', type=int, default=DEFAULT_SEED, help='Seed (default: 42)')
-    p.add_argument('--r2-delta', type=float, default=0.01, help='SESOI δ para R² (default: 0.01)')
-    p.add_argument('--mase-delta', type=float, default=0.05, help='SESOI δ para MASE (default: 0.05)')
-    p.add_argument('--wape-delta', type=float, default=0.05, help='SESOI δ para WAPE (default: 0.05)')
+    p.add_argument('--r2-delta', type=float, default=DEFAULT_SESOI_R2, help=f'SESOI δ para R² (default: {DEFAULT_SESOI_R2})')
+    p.add_argument('--mase-delta', type=float, default=DEFAULT_SESOI_MASE, help=f'SESOI δ para MASE (default: {DEFAULT_SESOI_MASE})')
+    p.add_argument('--wape-delta', type=float, default=DEFAULT_SESOI_WAPE, help=f'SESOI δ para WAPE (default: {DEFAULT_SESOI_WAPE})')
     p.add_argument('--latency-delta', type=float, default=0.10, help='SESOI δ para latência TOTAL (default: 0.10)')
     p.add_argument('--latency-delta-profile', type=str, default='setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10',
                    help='Perfil de δ por fase (ex.: setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10)')

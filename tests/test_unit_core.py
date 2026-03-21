@@ -156,7 +156,7 @@ class TestWalkForwardFolds:
         folds_step1 = _generate_folds(2000, 2023, 8, 2, 2, 2, step=1)
         folds_step2 = _generate_folds(2000, 2023, 8, 2, 2, 2, step=2)
         assert len(folds_step2) < len(folds_step1)
-        assert len(folds_step2) == 5  # 9 folds / step 2 = 5
+        assert len(folds_step2) == 5  # step=2 seleciona folds 0,2,4,6,8 → 5 folds
 
 
 # ---------------------------------------------------------------------------
