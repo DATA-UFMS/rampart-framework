@@ -56,26 +56,30 @@ Verifique os itens abaixo após rodar o pipeline:
 - `outputs/scientific_config_snapshot.json` — snapshot completo do ambiente (packages, hardware, git commit, hash do requirements.txt) (RQ3).
 - Tabelas LaTeX em `outputs/statistics/` — artefatos publication-ready.
 
-## 4. Artefatos Essenciais
+## 4. Artefatos Gerados pelo Pipeline
+
+Após executar `python pipeline.py`, a seguinte estrutura é criada em `outputs/`:
 
 ```
 outputs/
-├── statistics/
-│   ├── equivalence_estimation.(json|tex)
-│   ├── architectural_latency_percentiles.(json|tex)
-│   ├── architectural_throughput_percentiles.(json|tex)
-│   ├── architectural_resource_usage.(json|tex)
-│   └── architectural_scorecard.tex
+├── scientific_config_snapshot.json
+├── collection/raw_data/
+├── ml_pipeline/architectures/
+│   ├── data_lake/prep/
+│   └── data_warehouse/prep/
 ├── benchmarks/
 │   ├── architectural_benchmark_results.csv
+│   ├── architectural_benchmark_resource_log.jsonl
 │   └── architectural_benchmark_summary.json
-└── ml_pipeline/
-    └── architectures/
-        ├── data_lake/
-        └── data_warehouse/
+└── statistics/
+    ├── equivalence_estimation.(json|tex)
+    ├── architectural_latency_percentiles.(json|tex)
+    ├── architectural_throughput_percentiles.(json|tex)
+    ├── architectural_resource_usage.(json|tex)
+    └── architectural_scorecard.tex
 ```
 
-Cada arquivo possui cabeçalho com metadados (timestamp, versão do protocolo, seed). Utilize-os como evidência de replicação ou como base para meta-análises.
+Cada arquivo possui cabeçalho com metadados (timestamp, versão do protocolo, seed). Esses artefatos não estão versionados no repositório — são gerados localmente ao rodar o pipeline.
 
 ## 5. Extender o Framework
 
@@ -89,14 +93,12 @@ Cada arquivo possui cabeçalho com metadados (timestamp, versão do protocolo, s
    Estenda `src/benchmarking/` ou `src/statistical_validation/` mantendo contratos de entrada/saída. Scripts já existentes servem de templates.
 
 4. **Documentar heurísticas**
-   Adicione notas ao `tema4_metodologia_analysis.md` ou crie novos memos para contextualizar interpretações, preservando transparência.
+   Crie memos de decisão para contextualizar interpretações, preservando transparência.
 
 ## 6. Referências Internas
 
-- `docs/paper_sbc.tex` — Artigo completo (SBC) descrevendo o protocolo e a demonstração.
 - `USAGE_GUIDE.md` — Guia operacional detalhado para uso e adaptação do framework.
-- `fair_comparison_analysis.md` — Análise crítica de vieses potenciais em comparações arquiteturais.
-- `tema4_metodologia_analysis.md` — Registro das decisões de reposicionamento metodológico.
+- `docs/pipeline_diagram.md` — Diagrama Mermaid do fluxo completo do pipeline.
 
 ## 7. Referências Bibliográficas de Apoio
 

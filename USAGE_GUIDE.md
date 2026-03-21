@@ -1,6 +1,6 @@
 # Guia de Uso do Framework Metodológico
 
-Este guia descreve como executar, verificar e adaptar o framework metodológico de avaliação de arquiteturas de dados em analytics educacional. O material complementa o artigo `docs/paper_sbc.tex` e o README principal.
+Este guia descreve como executar, verificar e adaptar o framework metodológico de avaliação de arquiteturas de dados em analytics educacional. O material complementa o README principal.
 
 ## 1. Visão Geral dos Protocolos
 
@@ -79,31 +79,28 @@ Edite `src/core/scientific_config.py` para alterar:
 - `sesoi_r2`, `sesoi_mase`, `sesoi_wape` (limiares de equivalência por métrica).
 - `bootstrap_iters` (número de reamostragens).
 
-Sempre documente alterações no memo `tema4_metodologia_analysis.md` ou em um novo arquivo de decisão.
+Sempre documente alterações em um memo de decisão.
 
 ### 5.2 Adicionar Nova Arquitetura
 
-1. Registre a arquitetura em `src/core/config.py` (via `register_architecture`).
-2. Crie uma subpasta em `src/architectures_ml/<nova_arquitetura>/` com as etapas `setup.py`, `models/`, etc., implementando os 11 métodos abstratos de `BaseArchitectureML`. O enforcement anti-leakage (validação temporal, gap mínimo, separação de features) é herdado automaticamente.
-3. Atualize o pipeline (ou invoque manualmente) para incluir a nova arquitetura nas comparações.
+1. Crie uma subpasta em `src/architectures_ml/<nova_arquitetura>/` com as etapas `setup.py`, `models/`, etc., implementando os 11 métodos abstratos de `BaseArchitectureML`. O enforcement anti-leakage (validação temporal, gap mínimo, separação de features) é herdado automaticamente.
+2. Registre a nova arquitetura no pipeline principal (`pipeline.py`) para incluí-la nas comparações.
 
 ### 5.3 Instrumentar Métricas Extras
 
 - Extenda `src/benchmarking` para coletar métricas adicionais (p.ex., energia, custo).
 - Adicione novos módulos em `src/statistical_validation` mantendo o padrão de entrada/saída JSON/LaTeX.
-- Registre scripts personalizados no README e nos memos de decisão.
+- Registre scripts personalizados no README.
 
 ## 6. Boas Práticas e Sanity Checks
 
 - Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (42 testes) e `python tests/test_leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
 - Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre arquiteturas.
-- Utilize `fair_comparison_analysis.md` como checklist de vieses (materialização, escala de dados, paradigmas).
 - Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
 
 ## 7. Integração com o Artigo
 
-- Tabelas LaTeX geradas automaticamente (`outputs/statistics/*.tex`) alimentam `docs/paper_sbc.tex`.
-- O memo `tema4_metodologia_analysis.md` documenta o racional metodológico e deve ser mantido atualizado para suporte a revisões.
+- Tabelas LaTeX geradas automaticamente (`outputs/statistics/*.tex`) podem ser incluídas diretamente no artigo via `\input{}`.
 - Em submissões, inclua a checklist de reprodutibilidade (Seção 4) como material suplementar.
 
 ## 8. Perguntas Frequentes

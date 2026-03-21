@@ -147,7 +147,7 @@ graph TB
     BENCH_OUT --> SIGNIF
     BENCH_OUT --> BOOT
     %% Outputs Finais
-    FINAL_OUT[("<b>📁 outputs/statistics/</b><br/>• effect_sizes_summary.csv/json<br/>• significance_summary.csv/json/md<br/>• bootstrap_sensitivity.json<br/>• architectural_scorecard.tex<br/>• resource_usage.tex<br/>• throughput_percentiles.tex<br/><br/><b>📁 outputs/review/</b><br/>• IMPROVEMENTS_REPORT.md<br/>• ACTION_PLAN.md<br/>• FINAL_SUMMARY.md")]:::outputClass
+    FINAL_OUT[("<b>📁 outputs/statistics/</b><br/>• effect_sizes_summary.csv/json<br/>• significance_summary.csv/json<br/>• bootstrap_sensitivity.json<br/>• architectural_scorecard.tex<br/>• resource_usage.tex<br/>• throughput_percentiles.tex")]:::outputClass
 
     SCORE --> FINAL_OUT
 
@@ -159,9 +159,9 @@ graph TB
     VALIDATOR --> FINAL_OUT
 
     %% RQ Labels
-    RQ1["<b>RQ1: Extensibilidade</b><br/>• 11 métodos abstratos<br/>• 18% SLOC overhead<br/>• 55% infra compartilhada<br/>• Anti-leakage herdado"]:::configClass
+    RQ1["<b>RQ1: Extensibilidade</b><br/>• 11 métodos abstratos<br/>• Infra compartilhada (Template Method)<br/>• Anti-leakage herdado"]:::configClass
 
-    RQ2["<b>RQ2: Recomendação Automática</b><br/>• DuckDB: 3.18s<br/>• Dask: 249.50s<br/>• SESOI + IC95%"]:::configClass
+    RQ2["<b>RQ2: Recomendação Automática</b><br/>• Instrumentação por fase<br/>• SESOI + IC95%"]:::configClass
 
     RQ3["<b>RQ3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 42 testes + injeção de leakage (S1-S4)<br/>• Snapshots completos<br/>• Seeds centralizadas"]:::configClass
 
@@ -182,29 +182,20 @@ graph TB
 - **Roxo**: Validação Estatística e Anti-leakage
 - **Laranja Escuro**: Outputs Finais
 
-### 📊 Métricas Principais
+### 📊 Métricas Coletadas
 
-#### Data Lake (Dask)
+As métricas abaixo são geradas pelo pipeline (valores variam conforme hardware):
 
-- **Latência Total**: 249.50s
-- **Setup**: 223.47s ± 14.09s
-- **Processing**: 2.30s ± 0.13s
-- **Baseline analysis**: 23.73s ± 1.35s
-- **Paradigma**: Schema-on-read, lazy evaluation
-
-#### Data Warehouse (DuckDB)
-
-- **Latência Total**: 3.18s (78× mais rápido)
-- **Setup**: 0.61s ± 0.08s
-- **Processing**: 0.23s ± 0.04s
-- **Baseline analysis**: 2.34s ± 0.17s
-- **Paradigma**: Schema-on-write, SIMD vetorizado
+- **Latência por fase** (setup, processing, baseline, hierarchical) — percentis P50/P95/P99.
+- **Throughput** — registros processados por segundo por arquitetura.
+- **Uso de recursos** — CPU, RAM, I/O monitorados via psutil.
+- **Paradigmas**: Data Lake (Dask, schema-on-read, lazy evaluation) vs Data Warehouse (DuckDB, schema-on-write, SIMD vetorizado).
 
 ### 🎯 Questões de Pesquisa Respondidas
 
-1. **RQ1 (Extensibilidade)**: BaseArchitectureML com 11 métodos abstratos permite adicionar novo paradigma com 18% SLOC overhead, reutilizando 53% da infraestrutura compartilhada. Enforcement anti-leakage é herdado automaticamente.
-2. **RQ2 (Recomendação Automática)**: Instrumentação com SESOI + IC95% gera recomendação automática de paradigma (DuckDB mais eficiente para datasets <1GB single-node).
-3. **RQ3 (Reprodutibilidade)**: Snapshot científico + seeds centralizadas + `n_jobs=1` + 42 testes automatizados + gate anti-leakage no pipeline.
+1. **RQ1 (Extensibilidade)**: BaseArchitectureML com 11 métodos abstratos (Template Method). Enforcement anti-leakage é herdado automaticamente.
+2. **RQ2 (Recomendação Automática)**: Instrumentação com SESOI + IC95% gera recomendação automática de paradigma.
+3. **RQ3 (Reprodutibilidade)**: Snapshot científico + seeds centralizadas + `n_jobs=1` + 42 testes + injeção de leakage (S1-S4) + gate anti-leakage no pipeline.
 
 ### 📁 Estrutura de Outputs
 
@@ -245,4 +236,3 @@ python pipeline.py
 
 - Framework completo: [GitHub Repository](https://github.com/DATA-UFMS/dw-vs-dl-dropout-prediction-latam.git)
 - Documentação: `USAGE_GUIDE.md`
-- Artigo científico: `docs/paper_sbc.tex`
