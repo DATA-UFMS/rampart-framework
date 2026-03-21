@@ -8,9 +8,11 @@ Leakage temporal é uma das principais causas de resultados irreplicáveis em ma
 
 ## O que este repositório faz
 
-Este framework compara dois paradigmas de dados — **DuckDB** (schema-on-write) e **Dask** (schema-on-read) — usando dados públicos do Banco Mundial (32 países, 2000–2023) para predição de evasão escolar. Mas o objetivo principal não é declarar um vencedor: é fornecer um **protocolo reutilizável** que qualquer pesquisador pode adaptar para seu domínio.
+Este framework fornece um **protocolo reutilizável de benchmarking com verificação anti-leakage** para pipelines de ML, demonstrado com dados públicos do Banco Mundial (32 países, 2000-2023) para predição de evasão escolar. A contribuição principal é o protocolo, não o resultado preditivo.
 
-O pipeline executa coleta, processamento, treinamento e benchmark de ponta a ponta, com um **gate anti-leakage** que interrompe a execução se qualquer fold violar integridade temporal. Inclui também testes de injeção que deliberadamente tentam quebrar o gate para provar que ele funciona.
+Como caso de uso, o pipeline processa os mesmos dados em dois fluxos de processamento distintos — **DuckDB** (SQL analítico, schema-on-write) e **Dask** (DataFrames distribuídos, schema-on-read) — e verifica se o resultado preditivo é estatisticamente equivalente independente do backend. Isso testa se a escolha de paradigma de processamento introduz viés nos resultados de ML, uma pergunta que a literatura de analytics educacional não aborda sistematicamente.
+
+O pipeline executa coleta, processamento, treinamento e benchmark de ponta a ponta, com um **gate anti-leakage** que interrompe a execução se qualquer fold violar integridade temporal. Inclui testes de injeção que deliberadamente tentam quebrar o gate para provar que ele funciona.
 
 ### Garantias do pipeline
 
