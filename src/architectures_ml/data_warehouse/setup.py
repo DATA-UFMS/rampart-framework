@@ -1299,8 +1299,8 @@ def main():
         if is_success:
             print("✓ Pipeline executado com SUCESSO")
             print(f"  → Arquitetura: {results.get('architecture', 'N/A')}")
-            print(f"  → Features selecionadas: {results.get('selected_features_count', 'N/A')}")
-            print(f"  → Folds temporais: {results.get('total_folds', 'N/A')}")
+            print(f"  → Features selecionadas: {results.get('features_selected', results.get('selected_features_count', 'N/A'))}")
+            print(f"  → Folds temporais: {results.get('folds_created', results.get('total_folds', 'N/A'))}")
             if isinstance(results.get('total_observations', None), (int, float)):
                 print(f"  → Observações processadas: {int(results.get('total_observations')):,}")
             
