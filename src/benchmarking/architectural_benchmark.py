@@ -563,6 +563,22 @@ class BenchmarkRunner:
         return end_ns - start_ns, records
 
     # --------------------------- execução ----------------------------------
+    # Fases "upstream" (coleta + processamento) são infraestrutura compartilhada
+    # que produz os mesmos dados determinísticos em toda execução. Repetí-las
+    # N vezes apenas desperdiça tempo com chamadas HTTP e I/O sem adicionar
+    # informação estatística.
+    #
+    # Fases "downstream" (setup → baseline → hierarchical) contêm a lógica
+    # arquitetural que diferencia DW e DL e são o alvo real do benchmark.
+    #
+    # Estratégia:
+    #   1. Rodar coleta + processamento UMA vez (usando cache quando possível)
+    #   2. Registrar seus tempos como run_id=0 para referência
+    #   3. Repetir apenas setup/baseline/hierarchical N vezes
+
+    _UPSTREAM_PHASES = {"collection", "processing"}
+    _DOWNSTREAM_PHASES = {"setup", "baseline", "hierarchical"}
+
     def run(self) -> List[PhaseResult]:
         results: List[PhaseResult] = []
 
@@ -594,6 +610,40 @@ class BenchmarkRunner:
                     records=None,
                 )
 
+        # --- Fase 1: upstream (coleta + processamento) - executa UMA vez -------
+        # Estas fases produzem dados determinísticos idênticos em toda execução.
+        # Registram-se como run_id=0 para referência no CSV de resultados.
+        run_id = 0
+        print("Upstream: coleta e processamento (execução única)")
+
+        if "collection" in self.phases:
+            r = measure(
+                self._phase_collection, "collection", "both", "raw_data_collector"
+            )
+            if r:
+                results.append(r)
+
+        if "processing" in self.phases:
+            r1 = measure(
+                self._phase_processing_dl, "processing", "data_lake", "processor"
+            )
+            r2 = measure(
+                self._phase_processing_dw,
+                "processing",
+                "data_warehouse",
+                "processor",
+            )
+            if r1:
+                results.append(r1)
+            if r2:
+                results.append(r2)
+
+        # --- Fase 2: downstream (setup → baseline → hierarchical) - repetida --
+        # Estas fases contêm a lógica arquitetural DW vs DL.
+        downstream_phases = [p for p in self.phases if p in self._DOWNSTREAM_PHASES]
+        if not downstream_phases:
+            return results
+
         total_runs = self.warmup_runs + self.repetitions
         for run_id in range(total_runs):
             is_warmup = run_id < self.warmup_runs
@@ -604,30 +654,7 @@ class BenchmarkRunner:
                     f"Benchmark run {run_id - self.warmup_runs + 1}/{self.repetitions}"
                 )
 
-            if "collection" in self.phases:
-                r = measure(
-                    self._phase_collection, "collection", "both", "raw_data_collector"
-                )
-                if r and not is_warmup:
-                    results.append(r)
-
-            if "processing" in self.phases:
-                r1 = measure(
-                    self._phase_processing_dl, "processing", "data_lake", "processor"
-                )
-                r2 = measure(
-                    self._phase_processing_dw,
-                    "processing",
-                    "data_warehouse",
-                    "processor",
-                )
-                if not is_warmup:
-                    if r1:
-                        results.append(r1)
-                    if r2:
-                        results.append(r2)
-
-            if "setup" in self.phases:
+            if "setup" in downstream_phases:
                 r1 = measure(self._phase_setup_dl, "setup", "data_lake", "setup")
                 r2 = measure(self._phase_setup_dw, "setup", "data_warehouse", "setup")
                 if not is_warmup:
@@ -636,7 +663,7 @@ class BenchmarkRunner:
                     if r2:
                         results.append(r2)
 
-            if "baseline" in self.phases:
+            if "baseline" in downstream_phases:
                 r1 = measure(
                     self._phase_baseline_dl, "baseline", "data_lake", "baseline_models"
                 )
@@ -652,7 +679,7 @@ class BenchmarkRunner:
                     if r2:
                         results.append(r2)
 
-            if "hierarchical" in self.phases:
+            if "hierarchical" in downstream_phases:
                 r1 = measure(
                     self._phase_hierarchical_dl,
                     "hierarchical",
