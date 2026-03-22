@@ -29,8 +29,10 @@ Nota metodológica:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
+import random
 import sys
 import time
 from dataclasses import dataclass, asdict
@@ -644,6 +646,11 @@ class BenchmarkRunner:
         if not downstream_phases:
             return results
 
+        # Seed determinístico para randomização da ordem de execução.
+        # Elimina viés sistemático de cache/page-fault ao alternar qual
+        # arquitetura executa primeiro em cada iteração.
+        order_rng = random.Random(42)
+
         total_runs = self.warmup_runs + self.repetitions
         for run_id in range(total_runs):
             is_warmup = run_id < self.warmup_runs
@@ -654,49 +661,72 @@ class BenchmarkRunner:
                     f"Benchmark run {run_id - self.warmup_runs + 1}/{self.repetitions}"
                 )
 
+            # Randomizar ordem DL/DW por iteração (determinístico via seed)
+            dl_first = order_rng.random() < 0.5
+
             if "setup" in downstream_phases:
-                r1 = measure(self._phase_setup_dl, "setup", "data_lake", "setup")
-                r2 = measure(self._phase_setup_dw, "setup", "data_warehouse", "setup")
+                if dl_first:
+                    r_dl = measure(self._phase_setup_dl, "setup", "data_lake", "setup")
+                    gc.collect()
+                    r_dw = measure(self._phase_setup_dw, "setup", "data_warehouse", "setup")
+                else:
+                    r_dw = measure(self._phase_setup_dw, "setup", "data_warehouse", "setup")
+                    gc.collect()
+                    r_dl = measure(self._phase_setup_dl, "setup", "data_lake", "setup")
+                gc.collect()
                 if not is_warmup:
-                    if r1:
-                        results.append(r1)
-                    if r2:
-                        results.append(r2)
+                    if r_dl:
+                        results.append(r_dl)
+                    if r_dw:
+                        results.append(r_dw)
 
             if "baseline" in downstream_phases:
-                r1 = measure(
-                    self._phase_baseline_dl, "baseline", "data_lake", "baseline_models"
-                )
-                r2 = measure(
-                    self._phase_baseline_dw,
-                    "baseline",
-                    "data_warehouse",
-                    "baseline_models",
-                )
+                if dl_first:
+                    r_dl = measure(
+                        self._phase_baseline_dl, "baseline", "data_lake", "baseline_models"
+                    )
+                    gc.collect()
+                    r_dw = measure(
+                        self._phase_baseline_dw, "baseline", "data_warehouse", "baseline_models",
+                    )
+                else:
+                    r_dw = measure(
+                        self._phase_baseline_dw, "baseline", "data_warehouse", "baseline_models",
+                    )
+                    gc.collect()
+                    r_dl = measure(
+                        self._phase_baseline_dl, "baseline", "data_lake", "baseline_models"
+                    )
+                gc.collect()
                 if not is_warmup:
-                    if r1:
-                        results.append(r1)
-                    if r2:
-                        results.append(r2)
+                    if r_dl:
+                        results.append(r_dl)
+                    if r_dw:
+                        results.append(r_dw)
 
             if "hierarchical" in downstream_phases:
-                r1 = measure(
-                    self._phase_hierarchical_dl,
-                    "hierarchical",
-                    "data_lake",
-                    "hierarchical_models",
-                )
-                r2 = measure(
-                    self._phase_hierarchical_dw,
-                    "hierarchical",
-                    "data_warehouse",
-                    "hierarchical_models",
-                )
+                if dl_first:
+                    r_dl = measure(
+                        self._phase_hierarchical_dl, "hierarchical", "data_lake", "hierarchical_models",
+                    )
+                    gc.collect()
+                    r_dw = measure(
+                        self._phase_hierarchical_dw, "hierarchical", "data_warehouse", "hierarchical_models",
+                    )
+                else:
+                    r_dw = measure(
+                        self._phase_hierarchical_dw, "hierarchical", "data_warehouse", "hierarchical_models",
+                    )
+                    gc.collect()
+                    r_dl = measure(
+                        self._phase_hierarchical_dl, "hierarchical", "data_lake", "hierarchical_models",
+                    )
+                gc.collect()
                 if not is_warmup:
-                    if r1:
-                        results.append(r1)
-                    if r2:
-                        results.append(r2)
+                    if r_dl:
+                        results.append(r_dl)
+                    if r_dw:
+                        results.append(r_dw)
 
         return results
 
