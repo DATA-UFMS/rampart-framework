@@ -2,6 +2,57 @@
 
 Framework open-source para benchmarking reprodutível de arquiteturas de dados, com **verificação automática de anti-leakage temporal**.
 
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: "#4a90d9"
+    primaryTextColor: "#fff"
+    primaryBorderColor: "#2c5f8a"
+    secondaryColor: "#f5a623"
+    tertiaryColor: "#7ed321"
+    lineColor: "#5c6370"
+    fontSize: "14px"
+---
+flowchart LR
+    subgraph upstream ["Upstream (1x)"]
+        direction LR
+        A["World Bank\nAPI"]
+        B["Coleta +\nImputação"]
+        A --> B
+    end
+
+    subgraph fork [" "]
+        direction TB
+        DL["Data Lake\n Dask "]:::dask
+        DW["Data Warehouse\n DuckDB "]:::duck
+    end
+
+    subgraph downstream ["Downstream (35x)"]
+        direction LR
+        S["Setup\nML"]
+        G{{"Anti-Leak\nGate"}}:::gate
+        M["Baseline +\nHierárquico"]
+        S --> G --> M
+    end
+
+    subgraph val ["Validação"]
+        direction LR
+        V["Bootstrap CI\n+ Effect Sizes"]
+        T["Tabelas\nLaTeX"]
+        V --> T
+    end
+
+    B --> DL & DW
+    DL & DW --> S
+    M --> V
+
+    classDef dask fill:#66bb6a,stroke:#2e7d32,color:#fff
+    classDef duck fill:#42a5f5,stroke:#1565c0,color:#fff
+    classDef gate fill:#ef5350,stroke:#b71c1c,color:#fff
+```
+
 ## O problema
 
 Leakage temporal é uma das principais causas de resultados irreplicáveis em machine learning aplicado a educação. Kapoor & Narayanan (2023) auditaram 294 papers e encontraram leakage em uma parcela significativa deles. Em analytics educacional, o cenário é agravado pela escassez de validação temporal rigorosa e pela ausência de ferramentas que automatizem essa verificação.
@@ -13,6 +64,151 @@ Este framework fornece um **protocolo reutilizável de benchmarking com verifica
 Como caso de uso, o pipeline processa os mesmos dados em dois fluxos de processamento distintos — **DuckDB** (SQL analítico, schema-on-write) e **Dask** (DataFrames distribuídos, schema-on-read) — e verifica se o resultado preditivo é estatisticamente equivalente independente do backend. Isso testa se a escolha de paradigma de processamento introduz viés nos resultados de ML, uma pergunta que a literatura de analytics educacional não aborda sistematicamente.
 
 O pipeline executa coleta, processamento, treinamento e benchmark de ponta a ponta, com um **gate anti-leakage** que interrompe a execução se qualquer fold violar integridade temporal. Inclui testes de injeção que deliberadamente tentam quebrar o gate para provar que ele funciona.
+
+### Walk-forward temporal
+
+O framework usa validação walk-forward com gaps de 2 anos entre treino e teste, garantindo que nenhuma informação futura contamine o modelo. O diagrama abaixo mostra como os 9 folds se distribuem ao longo de 23 anos de dados:
+
+```mermaid
+gantt
+    title Walk-Forward Temporal (9 folds, gap = 2 anos)
+    dateFormat YYYY
+    axisFormat %Y
+    todayMarker off
+
+    section Fold 1
+    Treino 2000-2005      :done, f1t, 2000, 2006
+    Gap                   :crit, f1g, 2006, 2008
+    Val 2008              :active, f1v, 2008, 2009
+    Teste 2009            :f1e, 2009, 2010
+
+    section Fold 2
+    Treino 2000-2007      :done, f2t, 2000, 2008
+    Gap                   :crit, f2g, 2008, 2010
+    Val 2010              :active, f2v, 2010, 2011
+    Teste 2011            :f2e, 2011, 2012
+
+    section Fold 3
+    Treino 2000-2009      :done, f3t, 2000, 2010
+    Gap                   :crit, f3g, 2010, 2012
+    Val 2012              :active, f3v, 2012, 2013
+    Teste 2013            :f3e, 2013, 2014
+
+    section Fold 5
+    Treino 2000-2013      :done, f5t, 2000, 2014
+    Gap                   :crit, f5g, 2014, 2016
+    Val 2016              :active, f5v, 2016, 2017
+    Teste 2017            :f5e, 2017, 2018
+
+    section Fold 9
+    Treino 2000-2017      :done, f9t, 2000, 2018
+    Gap                   :crit, f9g, 2018, 2020
+    Val 2020              :active, f9v, 2020, 2021
+    Teste 2021-2023       :f9e, 2021, 2024
+```
+
+### Protocolo anti-leakage (P1-P5)
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    state "Dados Temporais" as INPUT
+    state fork_state <<fork>>
+    state join_state <<join>>
+
+    state "P1: Ordenação\ntemporal" as P1
+    state "P2: Gap\nmínimo 2a" as P2
+    state "P3: Separação\nde features" as P3
+    state "P4: Seleção no\nescopo do treino" as P4
+    state "P5: Scaling/imput.\nsó no treino" as P5
+
+    state check <<choice>>
+
+    state "Pipeline ML\n(baseline + hierárquico)" as ML
+    state "ValueError!\nExecução interrompida" as FAIL
+
+    INPUT --> fork_state
+    fork_state --> P1
+    fork_state --> P2
+    fork_state --> P3
+    fork_state --> P4
+    fork_state --> P5
+    P1 --> join_state
+    P2 --> join_state
+    P3 --> join_state
+    P4 --> join_state
+    P5 --> join_state
+    join_state --> check
+    check --> ML : Todas OK
+    check --> FAIL : Qualquer violação
+```
+
+### DuckDB vs Dask: o que cada um faz
+
+```mermaid
+block-beta
+    columns 3
+
+    space header["Mesmo dado, mesmo modelo, backends diferentes"] space
+
+    block:dw:1
+        columns 1
+        dw_title["Data Warehouse"]
+        dw1["DuckDB in-process"]
+        dw2["SQL views (zero I/O)"]
+        dw3["Schema-on-write"]
+        dw4["Buffer pool implícito"]
+        dw5["LAG() window functions"]
+    end
+
+    block:shared:1
+        columns 1
+        sh_title["Compartilhado"]
+        sh1["World Bank API"]
+        sh2["9 walk-forward folds"]
+        sh3["Ridge + Random Forest"]
+        sh4["Anti-leakage gate"]
+        sh5["SESOI + Bootstrap CI"]
+    end
+
+    block:dl:1
+        columns 1
+        dl_title["Data Lake"]
+        dl1["Dask distributed"]
+        dl2["Parquet materializado"]
+        dl3["Schema-on-read"]
+        dl4[".persist() explícito"]
+        dl5["merge() para lags"]
+    end
+
+    style header fill:transparent,stroke:none,color:#333
+    style dw_title fill:#42a5f5,stroke:#1565c0,color:#fff
+    style dl_title fill:#66bb6a,stroke:#2e7d32,color:#fff
+    style sh_title fill:#ff9800,stroke:#e65100,color:#fff
+    style dw fill:#e3f2fd,stroke:#1565c0
+    style shared fill:#fff3e0,stroke:#e65100
+    style dl fill:#e8f5e9,stroke:#2e7d32
+```
+
+### Benchmark (Azure D4s_v3, n=35)
+
+```mermaid
+---
+config:
+  themeVariables:
+    xyChart:
+      backgroundColor: transparent
+---
+xychart-beta
+    title "Latência por fase: DuckDB vs Dask (segundos, log scale)"
+    x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
+    y-axis "Tempo (s)" 0 --> 500
+    bar [0.83, 0.32, 3.81, 43.22]
+    bar [478.18, 2.50, 21.27, 47.83]
+```
+
+> DuckDB (azul) vs Dask (laranja). Setup: **574x**. Baseline: **6x**. Hierarchical: **1.1x**. Total: **11x**.
 
 ### Garantias do pipeline
 
