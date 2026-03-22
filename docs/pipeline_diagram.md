@@ -1,12 +1,11 @@
-# Diagrama dos Pipelines de Benchmarking - Data Lake vs Data Warehouse
+# Diagrama do Pipeline — Data Warehouse vs Data Lake
 
-## Visão Geral do Framework
+Documentação técnica do fluxo completo do framework de benchmarking reprodutível. Mostra ambos os paradigmas (DuckDB e Dask) em paralelo, a separação upstream/downstream, e as garantias de fairness implementadas.
 
-Este diagrama ilustra o fluxo completo do framework de benchmarking reprodutível para arquiteturas de dados, mostrando ambos os paradigmas (Data Lake e Data Warehouse) em paralelo.
+## Visão geral
 
 ```mermaid
 graph TB
-    %% Estilos
     classDef configClass fill:#e1f5ff,stroke:#01579b,stroke-width:3px
     classDef collectionClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
     classDef dlClass fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
@@ -14,225 +13,364 @@ graph TB
     classDef benchClass fill:#ffccbc,stroke:#d84315,stroke-width:2px
     classDef validationClass fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
     classDef outputClass fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+    classDef fairnessClass fill:#e8eaf6,stroke:#283593,stroke-width:2px
 
-    %% Configuração Científica (RQ3 - Reprodutibilidade)
-    CONFIG[/"<b>scientific_config.py</b><br/>⚙️ Configuração Centralizada<br/>• Seeds (reprodutibilidade)<br/>• Gaps temporais (2 anos)<br/>• Limiares estatísticos<br/>• Parâmetros de benchmark"/]:::configClass
+    %% ============================================================
+    %% UPSTREAM — executa UMA vez (run_id=0)
+    %% ============================================================
+    subgraph UPSTREAM ["UPSTREAM — execução única"]
+        direction TB
 
-    %% Snapshot
-    SNAPSHOT["<b>Snapshot Científico</b><br/>📸 scientific_config_snapshot.json<br/>• Timestamp<br/>• Git commit<br/>• Ambiente Python<br/>• Plataforma"]:::configClass
+        CONFIG[/"scientific_config.py\n• Seeds centralizadas\n• Gaps temporais (2a)\n• Limiares SESOI\n• Parâmetros de benchmark"/]:::configClass
 
-    CONFIG --> SNAPSHOT
+        SNAPSHOT["Snapshot Científico\nscientific_config_snapshot.json\n• Timestamp + Git commit\n• Ambiente Python + Hardware"]:::configClass
 
-    %% FASE 1: Coleta de Dados Brutos
-    COLLECT["<b>FASE 1: Coleta de Dados</b><br/>🌐 raw_data_collector.py<br/>• Fonte: Banco Mundial<br/>• 32 países, 2000-2023<br/>• ~85MB comprimidos"]:::collectionClass
+        CONFIG --> SNAPSHOT
 
-    SNAPSHOT --> COLLECT
+        COLLECT["FASE 1 · Coleta\nraw_data_collector.py\n• World Bank API\n• 32 países, 2000-2023\n• Cache local < 24h"]:::collectionClass
 
-    RAWDATA[("📁 outputs/collection/raw_data/<br/>Dados brutos (CSV/Parquet)")]:::collectionClass
+        SNAPSHOT --> COLLECT
 
-    COLLECT --> RAWDATA
+        RAWDATA[("raw_data/\ncomplete_data.parquet")]:::collectionClass
 
-    %% FASE 2: Processamento Arquitetural
-    subgraph ARCH ["<b>FASE 2: Processamento Arquitetural Paralelo</b>"]
-        direction LR
+        COLLECT --> RAWDATA
 
-        %% Data Lake Path
-        subgraph DL ["<b>Pipeline Data Lake</b><br/>(Schema-on-Read)"]
-            direction TB
-            DL_PROC["<b>processor.py</b><br/>🏞️ Dask Distribuído<br/>• Lazy evaluation<br/>• Parquet particionado<br/>• Schema flexível"]:::dlClass
-            DL_DATA[("📁 data_lake/<br/>Parquet particionado")]:::dlClass
-            DL_PROC --> DL_DATA
+        subgraph PROC ["FASE 2 · Processamento Arquitetural"]
+            direction LR
+
+            subgraph DL_PROC_G ["Data Lake"]
+                direction TB
+                DL_PROC["processor.py\nDask · schema-on-read\n• Lazy evaluation\n• Parquet particionado"]:::dlClass
+                DL_DATA[("data_lake/\nParquet")]:::dlClass
+                DL_PROC --> DL_DATA
+            end
+
+            subgraph DW_PROC_G ["Data Warehouse"]
+                direction TB
+                DW_PROC["processor.py\nDuckDB · schema-on-write\n• SIMD vetorizado\n• SQL transacional"]:::dwClass
+                DW_DATA[("data_warehouse/\nDuckDB + Parquet")]:::dwClass
+                DW_PROC --> DW_DATA
+            end
         end
 
-        %% Data Warehouse Path
-        subgraph DW ["<b>Pipeline Data Warehouse</b><br/>(Schema-on-Write)"]
-            direction TB
-            DW_PROC["<b>processor.py</b><br/>🏛️ DuckDB In-Process<br/>• SIMD vetorizado<br/>• Schema transacional<br/>• Otimização SQL"]:::dwClass
-            DW_DATA[("📁 data_warehouse/<br/>DuckDB + Parquet")]:::dwClass
-            DW_PROC --> DW_DATA
-        end
+        RAWDATA --> DL_PROC
+        RAWDATA --> DW_PROC
     end
 
-    RAWDATA --> DL_PROC
-    RAWDATA --> DW_PROC
+    %% ============================================================
+    %% DOWNSTREAM — repete 35x (+ 2 warmup descartados)
+    %% ============================================================
+    subgraph DOWNSTREAM ["DOWNSTREAM — 35 repetições + 2 warmup"]
+        direction TB
 
-    %% FASE 3: Setup ML com Validação Temporal (RQ1)
-    subgraph MLSETUP ["<b>FASE 3: Setup ML - Validação Temporal (RQ1)</b>"]
-        direction LR
+        FAIR["Fairness por iteração\n• Ordem DL/DW randomizada (seed=42)\n• gc.collect() entre fases\n• Feature set unificado"]:::fairnessClass
 
-        %% Base Architecture
-        BASE["<b>BaseArchitectureML</b><br/>🏗️ Classe Abstrata<br/>• 11 métodos abstratos<br/>• Walk-forward automático<br/>• Enforcement anti-leakage<br/>• Seleção de features"]:::configClass
+        subgraph SETUP_G ["FASE 3 · Setup ML"]
+            direction LR
 
-        subgraph DL_ML ["<b>ML Data Lake</b>"]
-            direction TB
-            DL_SETUP["<b>setup.py</b><br/>📊 Dask ML Pipeline<br/>• 9 folds walk-forward<br/>• Gap: 2 anos<br/>• Seleção por correlação"]:::dlClass
-            DL_FOLDS[("📁 folds/<br/>temporal_folds_data_lake.json<br/>feature_selection.json")]:::dlClass
-            DL_SETUP --> DL_FOLDS
+            BASE["BaseArchitectureML\n11 métodos abstratos\nTemplate Method\nEnforcement anti-leakage"]:::configClass
+
+            subgraph DL_ML_G ["ML Data Lake"]
+                direction TB
+                DL_SETUP["setup.py · Dask\n• .persist() após read_parquet\n• Lags via merge()\n• Folds → Parquet"]:::dlClass
+                DL_FOLDS[("temporal_folds_data_lake.json\nfeature_selection_data_lake.json")]:::dlClass
+                DL_SETUP --> DL_FOLDS
+            end
+
+            subgraph DW_ML_G ["ML Data Warehouse"]
+                direction TB
+                DW_SETUP["setup.py · DuckDB\n• SQL views (zero I/O)\n• LAG() window functions\n• Folds → Views"]:::dwClass
+                DW_FOLDS[("temporal_folds_data_warehouse.json\nfeature_selection_data_warehouse.json")]:::dwClass
+                DW_SETUP --> DW_FOLDS
+            end
+
+            BASE -.-> DL_SETUP
+            BASE -.-> DW_SETUP
         end
 
-        subgraph DW_ML ["<b>ML Data Warehouse</b>"]
-            direction TB
-            DW_SETUP["<b>setup.py</b><br/>📊 DuckDB ML Pipeline<br/>• 9 folds walk-forward<br/>• Gap: 2 anos<br/>• Seleção por correlação"]:::dwClass
-            DW_FOLDS[("📁 folds/<br/>temporal_folds_data_warehouse.json<br/>feature_selection.json")]:::dwClass
-            DW_SETUP --> DW_FOLDS
+        FAIR --> SETUP_G
+
+        GATE{"GATE ANTI-LEAKAGE\nTemporalValidator.enforce_walk_forward()\n• P1: Ordenação temporal\n• P2: Gap mínimo 2 anos\n• P3: Separação de features\n• P4: Seleção no escopo do treino\n• P5: Scaling/imputação só no treino\nraise ValueError se violado"}:::validationClass
+
+        DL_FOLDS --> GATE
+        DW_FOLDS --> GATE
+
+        subgraph BASELINE_G ["FASE 4 · Modelos Baseline"]
+            direction LR
+            DL_BASE["baseline_analysis.py\nData Lake (.persist())\n• Média histórica\n• Tendência linear\n• Naive · Cross-country"]:::dlClass
+            DW_BASE["baseline_analysis.py\nData Warehouse (SQL)\n• Média histórica\n• Tendência linear\n• Naive · Cross-country"]:::dwClass
         end
 
-        BASE -.-> DL_SETUP
-        BASE -.-> DW_SETUP
+        GATE --> DL_BASE
+        GATE --> DW_BASE
+
+        subgraph HIER_G ["FASE 5 · Modelos Hierárquicos"]
+            direction LR
+            DL_HIER["hierarchical_models.py\nData Lake (.persist())\n• Ridge hierárquico\n• Random Forest\n• James-Stein shrinkage"]:::dlClass
+            DW_HIER["hierarchical_models.py\nData Warehouse (SQL-first)\n• Ridge hierárquico\n• Random Forest\n• James-Stein shrinkage"]:::dwClass
+        end
+
+        DL_BASE --> DL_HIER
+        DW_BASE --> DW_HIER
     end
 
     DL_DATA --> DL_SETUP
     DW_DATA --> DW_SETUP
     CONFIG --> BASE
 
-    %% GATE ANTI-LEAKAGE (entre Fase 3 e Fase 4)
-    GATE{"<b>🛡️ GATE ANTI-LEAKAGE</b><br/>TemporalValidator.enforce_walk_forward()<br/>• P1: Ordenação temporal<br/>• P2: Gap mínimo (2 anos)<br/>• P3: Separação de features<br/>• Embargo configurável (López de Prado 2018)<br/>❌ raise ValueError se violado"}:::validationClass
-
-    DL_FOLDS --> GATE
-    DW_FOLDS --> GATE
-
-    %% FASE 4: Modelos Baseline
-    subgraph BASELINE ["<b>FASE 4: Modelos Baseline</b>"]
-        direction LR
-
-        DL_BASE["<b>baseline_analysis.py</b><br/>📈 Data Lake<br/>• Média histórica<br/>• Tendência linear<br/>• Naive<br/>• Cross-country"]:::dlClass
-
-        DW_BASE["<b>baseline_analysis.py</b><br/>📈 Data Warehouse<br/>• Média histórica<br/>• Tendência linear<br/>• Naive<br/>• Cross-country"]:::dwClass
-    end
-
-    GATE --> DL_BASE
-    GATE --> DW_BASE
-
-    %% FASE 5: Modelos Hierárquicos
-    subgraph HIER ["<b>FASE 5: Modelos Hierárquicos</b>"]
-        direction LR
-
-        DL_HIER["<b>hierarchical_models.py</b><br/>🌳 Data Lake<br/>• Simple Hierarchical (Ridge)<br/>• Random Forest<br/>• James-Stein shrinkage<br/>• Walk-forward folds"]:::dlClass
-
-        DW_HIER["<b>hierarchical_models.py</b><br/>🌳 Data Warehouse<br/>• Simple Hierarchical (Ridge)<br/>• Random Forest<br/>• James-Stein shrinkage<br/>• Walk-forward folds"]:::dwClass
-    end
-
-    DL_BASE --> DL_HIER
-    DW_BASE --> DW_HIER
-
-    %% FASE 6: Benchmark Arquitetural (RQ2)
-    BENCH["<b>FASE 6: Benchmark Arquitetural (RQ2)</b><br/>⚡ architectural_benchmark.py<br/>• Instrumentação psutil<br/>• Latência (nanosegundos)<br/>• CPU/RAM/I/O<br/>• Throughput percentis<br/>• 30 repetições"]:::benchClass
+    %% ============================================================
+    %% BENCHMARK + VALIDAÇÃO
+    %% ============================================================
+    BENCH["FASE 6 · Benchmark Arquitetural\narchitectural_benchmark.py\n• perf_counter_ns()\n• psutil (CPU/RAM/I/O)\n• 35 repetições + 2 warmup\n• Ordem randomizada por iteração"]:::benchClass
 
     DL_HIER --> BENCH
     DW_HIER --> BENCH
     CONFIG --> BENCH
 
-    BENCH_OUT[("📁 benchmarks/<br/>• architectural_benchmark_results.csv<br/>• resource_log.jsonl<br/>• summary.json")]:::benchClass
+    BENCH_OUT[("benchmarks/\n• architectural_benchmark_results.csv\n• architectural_benchmark_resource_log.jsonl\n• architectural_benchmark_summary.json")]:::benchClass
 
     BENCH --> BENCH_OUT
 
-    %% FASE 7: Validação Estatística
-    subgraph STATS ["<b>FASE 7: Validação Estatística</b>"]
+    subgraph STATS_G ["FASE 7 · Validação Estatística"]
         direction TB
-
-        EFFECT["<b>effect_analysis.py</b><br/>📊 Análise de Efeito<br/>• Cohen's d<br/>• Interpretação prática"]:::validationClass
-
-        SIGNIF["<b>significance_tests.py</b><br/>📊 Testes de Significância<br/>• Mann-Whitney U<br/>• Wilcoxon<br/>• Bootstrap CI"]:::validationClass
-
-        BOOT["<b>bootstrap_sensitivity.py</b><br/>📊 Bootstrap<br/>• IC 95%<br/>• Sensibilidade n=9"]:::validationClass
-
-        SCORE["<b>make_scorecard.py</b><br/>📋 Scorecard<br/>• Tabelas LaTeX<br/>• Métricas comparativas"]:::validationClass
+        EFFECT["effect_analysis.py\n• Cohen's dz pareado\n• Interpretação prática"]:::validationClass
+        SIGNIF["significance_tests.py\n• Wilcoxon pareado\n• Bootstrap CI 95%\n• Hodges-Lehmann"]:::validationClass
+        EQUIV["equivalence_estimation.py\n• TOST por bootstrap\n• SESOI: R²=0.01, MASE/WAPE=0.05\n• Sensibilidade 0.5x–1.5x"]:::validationClass
+        SCORE["make_scorecard.py\n• Tabelas LaTeX\n• Métricas comparativas"]:::validationClass
 
         EFFECT --> SCORE
         SIGNIF --> SCORE
-        BOOT --> SCORE
+        EQUIV --> SCORE
     end
 
     BENCH_OUT --> EFFECT
     BENCH_OUT --> SIGNIF
-    BENCH_OUT --> BOOT
-    %% Outputs Finais
-    FINAL_OUT[("<b>📁 outputs/statistics/</b><br/>• effect_sizes_summary.csv/json<br/>• significance_summary.csv/json<br/>• bootstrap_sensitivity.json<br/>• architectural_scorecard.tex<br/>• resource_usage.tex<br/>• throughput_percentiles.tex")]:::outputClass
+    BENCH_OUT --> EQUIV
+
+    FINAL_OUT[("statistics/\n• effect_sizes_summary.csv/json\n• significance_summary.csv/json\n• equivalence_estimation.json/tex\n• architectural_scorecard.tex")]:::outputClass
 
     SCORE --> FINAL_OUT
 
-    %% Validador de Equivalência
-    VALIDATOR["<b>benchmark_validator.py</b><br/>✅ Validação de Equivalência<br/>• Folds idênticos<br/>• Features overlap >99%<br/>• Stats diff <0.01%<br/>• Hash verification"]:::validationClass
+    VALIDATOR["benchmark_validator.py\n• Folds idênticos\n• Target diff < 1e-15\n• Predições equivalentes"]:::validationClass
 
     DL_FOLDS --> VALIDATOR
     DW_FOLDS --> VALIDATOR
     VALIDATOR --> FINAL_OUT
-
-    %% RQ Labels
-    RQ1["<b>RQ1: Extensibilidade</b><br/>• 11 métodos abstratos<br/>• Infra compartilhada (Template Method)<br/>• Anti-leakage herdado"]:::configClass
-
-    RQ2["<b>RQ2: Recomendação Automática</b><br/>• Instrumentação por fase<br/>• SESOI + IC95%"]:::configClass
-
-    RQ3["<b>RQ3: Reprodutibilidade</b><br/>• Hash idênticos<br/>• 51 testes + injeção de leakage (S1-S4)<br/>• Snapshots completos<br/>• Seeds centralizadas"]:::configClass
-
-    BASE -.-> RQ1
-    BENCH -.-> RQ2
-    VALIDATOR -.-> RQ3
 ```
+
+## Separação upstream / downstream
+
+O benchmark separa o pipeline em duas camadas com justificativas distintas:
+
+```mermaid
+flowchart LR
+    subgraph U ["Upstream (1x)"]
+        direction TB
+        C["Coleta\nWorld Bank API"]
+        P["Processamento\nDL + DW"]
+        C --> P
+    end
+
+    subgraph D ["Downstream (35x + 2 warmup)"]
+        direction TB
+        S["Setup ML"]
+        B["Baseline"]
+        H["Hierárquico"]
+        S --> B --> H
+    end
+
+    U --> D
+
+    style U fill:#fff9c4,stroke:#f57f17
+    style D fill:#ffccbc,stroke:#d84315
+```
+
+**Upstream** — coleta e processamento produzem dados determinísticos idênticos em toda execução. Repetí-los N vezes apenas desperdiça tempo com chamadas HTTP e I/O sem adicionar informação estatística. O cache local (`_cache_is_valid()`) evita chamadas redundantes à API do World Bank quando os dados já existem e têm menos de 24 horas.
+
+**Downstream** — setup, baseline e hierarchical contêm a lógica arquitetural que diferencia DW e DL. São o alvo real do benchmark e por isso são repetidos N vezes para poder derivar intervalos de confiança e effect sizes.
+
+## Garantias de fairness no benchmark
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    state "Início da\niteração i" as START
+    state fork_fair <<fork>>
+    state join_fair <<join>>
+
+    state "Randomizar ordem\nDL/DW (seed=42)" as RAND
+    state "gc.collect()\nentre fases" as GC
+    state "Feature set\nunificado" as FEAT
+    state "Amostragem\nnormalizada" as SAMP
+
+    state "Medir fase\n(perf_counter_ns)" as MEASURE
+
+    START --> fork_fair
+    fork_fair --> RAND
+    fork_fair --> GC
+    fork_fair --> FEAT
+    fork_fair --> SAMP
+    RAND --> join_fair
+    GC --> join_fair
+    FEAT --> join_fair
+    SAMP --> join_fair
+    join_fair --> MEASURE
+```
+
+Cada iteração do benchmark aplica 4 controles de fairness:
+
+**Ordem randomizada** — a cada iteração, `random.Random(42)` decide se DL ou DW executa primeiro. Elimina viés sistemático de OS page cache onde uma arquitetura sempre se beneficiaria do I/O prévio da outra. O seed é fixo para reprodutibilidade.
+
+**gc.collect()** — garbage collection forçado entre cada execução de arquitetura e entre fases. Evita que objetos Python residuais de uma arquitetura fiquem em memória beneficiando ou prejudicando a próxima.
+
+**Feature set unificado** — lag features (`dropout_rate_lag_2/3`) são excluídas do `get_numeric_features()` em ambas as arquiteturas. O DL as criava em `create_target_implementation` (antes do filtro de colinearidade) e o DW só as criava em `prepare_features` (depois), gerando conjuntos iniciais de 23 vs 21 features. Agora ambos entram com o mesmo conjunto base no filtro.
+
+**Amostragem normalizada** — o filtro de colinearidade do DW aplicava `IS NOT NULL` apenas nas primeiras 10 features antes de amostrar. Agora filtra em todas as features candidatas, equivalente ao `.dropna()` que o DL faz. Ambos computam a matriz de correlação sobre a mesma população de linhas completas.
+
+## Protocolo anti-leakage (P1-P5)
+
+```mermaid
+flowchart TB
+    classDef pass fill:#c8e6c9,stroke:#2e7d32
+    classDef fail fill:#ffcdd2,stroke:#c62828
+    classDef check fill:#f3e5f5,stroke:#6a1b9a
+
+    INPUT["Dados temporais\n(country, year, features)"]
+
+    P1["P1 · Ordenação temporal\ntrain.year.max < val.year.min\nval.year.max < test.year.min"]:::check
+    P2["P2 · Gap mínimo\nval.year.min - train.year.max >= 2"]:::check
+    P3["P3 · Separação de features\nProxy detection\nLag features isolados"]:::check
+    P4["P4 · Seleção temporal\nCorrelação/colinearidade\nsomente em dados <= train_end"]:::check
+    P5["P5 · Preprocessing\nScaling/imputação ajustados\nexclusivamente no treino"]:::check
+
+    OK["Pipeline ML prossegue"]:::pass
+    FAIL["ValueError!\nExecução interrompida"]:::fail
+
+    INPUT --> P1 --> P2 --> P3 --> P4 --> P5
+    P5 -->|Todas OK| OK
+    P1 -->|Violação| FAIL
+    P2 -->|Violação| FAIL
+    P3 -->|Violação| FAIL
+    P4 -->|Violação| FAIL
+    P5 -->|Violação| FAIL
+```
+
+O gate valida cada fold individualmente antes de liberar para os modelos. Cobre as categorias L1.1-L1.4, L2 e L3.2-L3.3 da taxonomia de Kapoor & Narayanan (2023). P1-P4 geram `ValueError` em runtime; P5 é enforced por contrato e testes unitários. A injeção de leakage (`test_leakage_injection.py`, cenários S1-S4) verifica que o gate detecta violações deliberadas.
+
+## Comparação arquitetural
+
+```mermaid
+block-beta
+    columns 3
+
+    block:dw:1
+        columns 1
+        dw_t["Data Warehouse (DuckDB)"]
+        dw1["In-process SQL engine"]
+        dw2["Schema-on-write (ACID)"]
+        dw3["Views para folds (zero I/O)"]
+        dw4["LAG() para features temporais"]
+        dw5["information_schema para tipos"]
+        dw6["CORR() pairwise via SQL"]
+        dw7["Buffer pool implícito"]
+    end
+
+    block:shared:1
+        columns 1
+        sh_t["Compartilhado"]
+        sh1["World Bank API (cache 24h)"]
+        sh2["9 walk-forward folds"]
+        sh3["Gap 2 anos, embargo"]
+        sh4["Ridge + Random Forest"]
+        sh5["Filtro colinearidade (0.8)"]
+        sh6["Symmetric log transform"]
+        sh7["SESOI + Bootstrap CI"]
+    end
+
+    block:dl:1
+        columns 1
+        dl_t["Data Lake (Dask)"]
+        dl1["Distributed scheduler"]
+        dl2["Schema-on-read (Parquet)"]
+        dl3["Parquet por fold (I/O)"]
+        dl4["merge() para lags"]
+        dl5["select_dtypes() inference"]
+        dl6[".corr() via Pandas sample"]
+        dl7[".persist() explícito"]
+    end
+
+    style dw_t fill:#42a5f5,stroke:#1565c0,color:#fff
+    style sh_t fill:#ff9800,stroke:#e65100,color:#fff
+    style dl_t fill:#66bb6a,stroke:#2e7d32,color:#fff
+    style dw fill:#e3f2fd,stroke:#1565c0
+    style shared fill:#fff3e0,stroke:#e65100
+    style dl fill:#e8f5e9,stroke:#2e7d32
+```
+
+## Resultados de referência (Azure D4s_v3, n=35)
+
+```mermaid
+xychart-beta
+    title "Latência por fase (segundos)"
+    x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
+    y-axis "Tempo (s)" 0 --> 500
+    bar [0.83, 0.32, 3.81, 43.22]
+    bar [478.18, 2.50, 21.27, 47.83]
+```
+
+| Fase | DuckDB (s) | Dask (s) | Ratio | Cohen's dz |
+|------|-----------|---------|-------|-----------|
+| Setup (n=35) | 0.83 ± 0.01 | 478.18 ± 3.39 | **574x** | 48.4 |
+| Processing (n=1) | 0.32 | 2.50 | **8x** | — |
+| Baseline (n=35) | 3.81 ± 0.05 | 21.27 ± 0.25 | **6x** | 27.9 |
+| Hierarchical (n=35) | 43.22 ± 0.33 | 47.83 ± 0.23 | **1.1x** | 6.3 |
+| **Total** | **48.18** | **549.77** | **11x** | — |
+
+Ambiente: Azure Standard_D4s_v3 (4 vCPUs, 16 GB RAM), Ubuntu 22.04, Python 3.10. IC 95% via t-distribution. Processing executa uma vez (upstream); demais fases repetidas 35 vezes com 2 warmup descartados.
 
 ## Legenda
 
-### 🎨 Código de Cores
+### Código de cores
 
-- **Azul Claro**: Configuração e Reprodutibilidade (RQ3)
-- **Amarelo**: Coleta de Dados Brutos
-- **Verde**: Pipeline Data Lake (Dask)
-- **Azul**: Pipeline Data Warehouse (DuckDB)
-- **Laranja**: Benchmarking e Instrumentação (RQ2)
-- **Roxo**: Validação Estatística e Anti-leakage
-- **Laranja Escuro**: Outputs Finais
+- **Azul claro** — configuração e reprodutibilidade
+- **Amarelo** — coleta de dados brutos (upstream)
+- **Verde** — pipeline Data Lake (Dask)
+- **Azul** — pipeline Data Warehouse (DuckDB)
+- **Laranja** — benchmarking e instrumentação
+- **Roxo** — validação estatística e anti-leakage
+- **Índigo** — controles de fairness
 
-### 📊 Métricas Coletadas
-
-As métricas abaixo são geradas pelo pipeline (valores variam conforme hardware):
-
-- **Latência por fase** (setup, processing, baseline, hierarchical) — percentis P50/P95/P99.
-- **Throughput** — registros processados por segundo por arquitetura.
-- **Uso de recursos** — CPU, RAM, I/O monitorados via psutil.
-- **Paradigmas**: Data Lake (Dask, schema-on-read, lazy evaluation) vs Data Warehouse (DuckDB, schema-on-write, SIMD vetorizado).
-
-### 🎯 Questões de Pesquisa Respondidas
-
-1. **RQ1 (Extensibilidade)**: BaseArchitectureML com 11 métodos abstratos (Template Method). Enforcement anti-leakage é herdado automaticamente.
-2. **RQ2 (Recomendação Automática)**: Instrumentação com SESOI + IC95% gera recomendação automática de paradigma.
-3. **RQ3 (Reprodutibilidade)**: Snapshot científico + seeds centralizadas + `n_jobs=1` + 51 testes + injeção de leakage (S1-S4) + gate anti-leakage no pipeline.
-
-### 📁 Estrutura de Outputs
+### Estrutura de outputs
 
 ```
 outputs/
-├── scientific_config_snapshot.json    # Reprodutibilidade completa
+├── scientific_config_snapshot.json
 ├── collection/
-│   ├── raw_data/                      # Dados brutos do Banco Mundial
-│   ├── data_lake/                     # Parquet particionado (Dask)
-│   └── data_warehouse/                # DuckDB + Parquet
+│   ├── raw_data/                          # Dados brutos do Banco Mundial
+│   ├── data_lake/                         # Parquet particionado (Dask)
+│   └── data_warehouse/                    # DuckDB + Parquet
 ├── ml_pipeline/
 │   └── architectures/
-│       ├── data_lake/folds/           # Folds temporais DL
-│       └── data_warehouse/folds/      # Folds temporais DW
+│       ├── data_lake/prep/                # Folds, features, modelos DL
+│       └── data_warehouse/prep/           # Folds, features, modelos DW
 ├── benchmarks/
 │   ├── architectural_benchmark_results.csv
-│   ├── resource_log.jsonl
-│   └── summary.json
+│   ├── architectural_benchmark_resource_log.jsonl
+│   └── architectural_benchmark_summary.json
 └── statistics/
     ├── effect_sizes_summary.csv/json
     ├── significance_summary.csv/json/md
-    ├── bootstrap_sensitivity.json
-    ├── architectural_scorecard.tex
-    └── architectural_resource_usage.tex
+    ├── equivalence_estimation.json/tex
+    └── architectural_scorecard.tex
 ```
 
-## 🚀 Execução do Pipeline Completo
+### Execução
 
 ```bash
-# Executar pipeline completo (8 fases)
+# Pipeline completo (7 fases)
 python pipeline.py
 
-# Tempo total estimado: ~10-15 minutos (dataset <100MB)
-# Resultado: Recomendação automática do paradigma mais eficiente
+# Com configuração de produção (35 reps + 2 warmup)
+python pipeline.py --repetitions 35 --warmup 2
 ```
-
-## 📖 Referências
-
-- Framework completo: [GitHub Repository](https://github.com/DATA-UFMS/dw-vs-dl-dropout-prediction-latam.git)
-- Documentação: `USAGE_GUIDE.md`
