@@ -209,7 +209,7 @@ def main() -> None:
     print_system("BENCHMARK ARQUITETURAL (RQ3)")
     print_config("Comparação demonstrativa: schema-on-write vs schema-on-read")
     print_step("ETAPA 6/7: Executando Benchmark Arquitetural...")
-    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
+    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 35 --warmup 2")
     print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado")
 
     # Testes estatísticos de validação
