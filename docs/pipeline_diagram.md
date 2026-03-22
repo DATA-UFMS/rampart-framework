@@ -308,26 +308,26 @@ block-beta
     style dl fill:#e8f5e9,stroke:#2e7d32
 ```
 
-## Resultados de referência (Azure D4s_v3, n=35)
+## Resultados de referência (Azure L4as_v4, 32 GB RAM, n=35)
 
 ```mermaid
 xychart-beta
     title "Latência por fase (segundos)"
     x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
-    y-axis "Tempo (s)" 0 --> 500
-    bar [0.83, 0.32, 3.81, 43.22]
-    bar [478.18, 2.50, 21.27, 47.83]
+    y-axis "Tempo (s)" 0 --> 200
+    bar [0.39, 0.16, 1.19, 15.23]
+    bar [177.28, 0.79, 7.71, 16.92]
 ```
 
 | Fase | DuckDB (s) | Dask (s) | Ratio | Cohen's dz |
 |------|-----------|---------|-------|-----------|
-| Setup (n=35) | 0.83 ± 0.01 | 478.18 ± 3.39 | **574x** | 48.4 |
-| Processing (n=1) | 0.32 | 2.50 | **8x** | — |
-| Baseline (n=35) | 3.81 ± 0.05 | 21.27 ± 0.25 | **6x** | 27.9 |
-| Hierarchical (n=35) | 43.22 ± 0.33 | 47.83 ± 0.23 | **1.1x** | 6.3 |
-| **Total** | **48.18** | **549.77** | **11x** | — |
+| Setup (n=35) | 0.39 ± 0.04 | 177.28 ± 0.08 | **452x** | 704.2 |
+| Processing (n=1) | 0.16 | 0.79 | **5x** | — |
+| Baseline (n=35) | 1.19 ± 0.00 | 7.71 ± 0.00 | **6x** | 441.0 |
+| Hierarchical (n=35) | 15.23 ± 0.01 | 16.92 ± 0.01 | **1.1x** | 47.0 |
+| **Total** | **16.97** | **202.70** | **12x** | — |
 
-Ambiente: Azure Standard_D4s_v3 (4 vCPUs, 16 GB RAM), Ubuntu 22.04, Python 3.10. IC 95% via t-distribution. Processing executa uma vez (upstream); demais fases repetidas 35 vezes com 2 warmup descartados.
+Ambiente: Azure Standard_L4as_v4 (4 vCPUs, 32 GB RAM, NVMe), Ubuntu 22.04, Python 3.10. IC 95% via t-distribution. Processing executa uma vez (upstream); demais fases repetidas 35 vezes com 2 warmup descartados. Ordem DL/DW randomizada por iteração com `gc.collect()` entre execuções.
 
 ## Legenda
 
@@ -371,6 +371,7 @@ outputs/
 # Pipeline completo (7 fases)
 python pipeline.py
 
-# Com configuração de produção (35 reps + 2 warmup)
-python pipeline.py --repetitions 35 --warmup 2
+# Repetições e warmup configurados em scientific_config.py
+# (padrão: 35 repetições downstream + 2 warmup descartados)
+python pipeline.py
 ```

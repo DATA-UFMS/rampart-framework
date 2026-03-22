@@ -191,7 +191,7 @@ block-beta
     style dl fill:#e8f5e9,stroke:#2e7d32
 ```
 
-### Benchmark (Azure D4s_v3, n=35)
+### Benchmark (Azure L4as_v4, 32 GB RAM, n=35)
 
 ```mermaid
 ---
@@ -201,14 +201,14 @@ config:
       backgroundColor: transparent
 ---
 xychart-beta
-    title "Latência por fase: DuckDB vs Dask (segundos, log scale)"
+    title "Latência por fase: DuckDB vs Dask (segundos)"
     x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
-    y-axis "Tempo (s)" 0 --> 500
-    bar [0.83, 0.32, 3.81, 43.22]
-    bar [478.18, 2.50, 21.27, 47.83]
+    y-axis "Tempo (s)" 0 --> 200
+    bar [0.39, 0.16, 1.19, 15.23]
+    bar [177.28, 0.79, 7.71, 16.92]
 ```
 
-> DuckDB (azul) vs Dask (laranja). Setup: **574x**. Baseline: **6x**. Hierarchical: **1.1x**. Total: **11x**.
+> DuckDB (azul) vs Dask (laranja). Setup: **452x**. Baseline: **6x**. Hierarchical: **1.1x**. Total: **12x**.
 
 ### Garantias do pipeline
 
