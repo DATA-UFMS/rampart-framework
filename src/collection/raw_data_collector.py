@@ -1210,12 +1210,38 @@ class RawDataCollector:
         print(f"[QUALIDADE] Completude: {metadata['data_completeness']:.1f}%")
         print(f"[STATUS] Validação científica: Completa")
     
-    def run(self):
+    def _cache_is_valid(self) -> bool:
+        """Verifica se cache local de dados brutos existe e é válido.
+
+        O cache é considerado válido se:
+        1. O arquivo complete_data.parquet existe
+        2. O arquivo raw_data_long.parquet existe
+        3. Todos os arquivos de análise científica existem
+        4. Os arquivos têm menos de 24 horas (dados do World Bank são atualizados anualmente)
+
+        Returns:
+            bool: True se cache válido, False se necessita re-coleta
+        """
+        required_files = [
+            f"{self.output_dir}/complete_data.parquet",
+            f"{self.output_dir}/raw_data_long.parquet",
+            f"{self.output_dir}/scientific_collection_metadata.json",
+            f"{self.output_dir}/scientific_imputation_log.json",
+        ]
+        for fpath in required_files:
+            if not os.path.exists(fpath):
+                return False
+        # Cache válido por 24h (dados World Bank são anuais)
+        import time as _time
+        age_hours = (_time.time() - os.path.getmtime(required_files[0])) / 3600
+        return age_hours < 24
+
+    def run(self, force_recollect: bool = False):
         """
         Executa pipeline completo de coleta e processamento com validação científica.
-        
+
         Pipeline de 10 etapas:
-        
+
         1. Coleta dados brutos da API World Bank
         2. Adiciona metadados e estratificação geográfica
         3. Converte para formato wide (análise matricial)
@@ -1226,16 +1252,20 @@ class RawDataCollector:
         8. Análise de sensibilidade dos métodos
         9. Validação inteligente de outliers
         10. Persistência de dados e análises científicas
-        
+
+        Args:
+            force_recollect: Se True, ignora cache e re-coleta da API.
+                            Se False, reutiliza dados locais quando disponíveis.
+
         Returns:
             bool: True se pipeline executado com sucesso, False em caso de erro
-            
+
         Outputs esperados:
             - Dados imputados em formatos long e wide
             - 5 arquivos de análises científicas (JSON)
             - Log detalhado de imputações aplicadas
             - Metadados completos com referências
-            
+
         Validações incluídas:
             ✔ Eliminação de data leakage (temporal LAG-only)
             ✔ Estratificação geográfica por categoria
@@ -1247,12 +1277,19 @@ class RawDataCollector:
             ✔ Análise de padrões de missingness
             ✔ Métricas de qualidade por categoria
             ✔ Análise de sensibilidade metodológica
-            
-        Tempo estimado: 5-10 minutos dependendo da latência da API
+
+        Tempo estimado: 5-10 minutos (primeira execução) / <1s (com cache)
         """
+        # Verificar cache local antes de chamar API
+        if not force_recollect and self._cache_is_valid():
+            print("\n[CACHE] Dados brutos encontrados localmente (< 24h)")
+            print(f"[CACHE] Usando: {self.output_dir}/complete_data.parquet")
+            print("[CACHE] Para forçar re-coleta, use force_recollect=True")
+            return True
+
         print("\n[SISTEMA] EXECUTANDO COLETA DE DADOS BRUTOS")
         print("=" * 80)
-        
+
         try:
             # 1. Coletar dados
             df_long = self.collect_all_indicators()
