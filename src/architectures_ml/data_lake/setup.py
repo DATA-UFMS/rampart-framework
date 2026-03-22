@@ -165,10 +165,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
         if os.path.exists(self.data_lake_path):
             try:
                 print("[TENTATIVA 1] Carregando dados processados...")
-                ddf = dd.read_parquet(self.data_lake_path, engine='pyarrow')
+                ddf = dd.read_parquet(self.data_lake_path, engine='pyarrow').persist()
                 data_source = "processed"
                 ncols = len(ddf.columns)
-                print(f"   ✓ Carregado: {ddf.npartitions} partições × {ncols} variáveis")
+                print(f"   ✓ Carregado: {ddf.npartitions} partições × {ncols} variáveis (persistido em memória)")
             except Exception as e:
                 self.logger.warning(f"Erro ao carregar dados processados: {e}")
                 print(f"   ✗ Erro dados processados: {e}")
@@ -1011,8 +1011,8 @@ class DataLakeArchitectureML(BaseArchitectureML):
         if not parquet_files:
             raise FileNotFoundError("Nenhum arquivo parquet encontrado")
         
-        ddf = dd.read_parquet(self.fallback_path, engine='pyarrow')
-        
+        ddf = dd.read_parquet(self.fallback_path, engine='pyarrow').persist()
+
         # Conversão para formato wide se necessário
         if 'indicator_name' in ddf.columns:
             print("   Convertendo para formato wide (Schema-on-Read)...")

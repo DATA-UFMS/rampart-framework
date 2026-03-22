@@ -70,7 +70,7 @@ class BaselineModelAnalysisDataLake:
             raise FileNotFoundError(f"Folds Data Lake não encontrados: {self.folds_path}")
 
         print("Carregando dados Data Lake com Dask...")
-        self.ddf = dd.read_parquet(self.data_path)
+        self.ddf = dd.read_parquet(self.data_path).persist()
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']

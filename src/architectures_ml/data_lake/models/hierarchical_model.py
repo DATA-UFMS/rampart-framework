@@ -71,7 +71,7 @@ class HierarchicalModelDataLake:
             raise FileNotFoundError("Dados Data Lake não encontrados")
         
         print("Carregando dados Data Lake com processamento distribuído...")
-        self.ddf = dd.read_parquet(self.data_path, engine='pyarrow')
+        self.ddf = dd.read_parquet(self.data_path, engine='pyarrow').persist()
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
