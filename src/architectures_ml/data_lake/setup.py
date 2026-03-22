@@ -546,11 +546,19 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # Schema-on-read: Type inference dinâmico
         numeric_cols = ddf.select_dtypes(include=[np.number]).columns.tolist()
         
-        # Exclusão sistemática de metadados e targets
+        # Exclusão sistemática de metadados, targets e features derivadas
+        # Lag features (dropout_rate_lag_*) são adicionadas em prepare_features,
+        # não devem participar do filtro de colinearidade — análogo ao DW,
+        # que cria lags via SQL LAG() somente em prepare_features.
         exclude_cols = ['year', 'country_code', self.target_column, self.source_column]
-        
+        exclude_prefixes = ('dropout_rate_lag_',)
+
         # Filtro preservando ordem para determinismo
-        numeric_features = [col for col in numeric_cols if col not in exclude_cols]
+        numeric_features = [
+            col for col in numeric_cols
+            if col not in exclude_cols
+            and not any(col.startswith(p) for p in exclude_prefixes)
+        ]
         
         return numeric_features
     

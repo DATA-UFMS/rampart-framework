@@ -997,11 +997,14 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             self.conn_manager.execute_sql_no_return(f"SELECT setseed({seed_float})")
             self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
             
-            # Amostragem aleatória estratificada (preserva distribuição temporal)
+            # Amostragem aleatória com dropna completo (equivalente ao DL que
+            # faz .compute().dropna() sobre TODAS as features candidatas).
+            # Versão anterior filtrava apenas features[:10], criando divergência.
+            not_null_clauses = ' AND '.join([f'{feat} IS NOT NULL' for feat in features])
             sampling_query = f"""
                 CREATE OR REPLACE VIEW {sample_view_name} AS
                 SELECT * FROM analytics_wide
-                WHERE {' AND '.join([f'{feat} IS NOT NULL' for feat in features[:10]])}
+                WHERE {not_null_clauses}
                 ORDER BY RANDOM()
                 LIMIT {final_sample_size}
             """
