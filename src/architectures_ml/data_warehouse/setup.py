@@ -370,9 +370,9 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         print(f"  → Range: [{validation_stats['min_dropout']:.1f}%, {validation_stats['max_dropout']:.1f}%]")
         
         print("[STATUS] ✓ Variável target construída e validada")
-        
-        # Paradigma Data Warehouse: dados persistem no banco
-        return None
+
+        # Retorna dados atualizados do banco para uso no pipeline
+        return self.conn_manager.execute_sql("SELECT * FROM analytics_wide")
     
     def _compute_target_statistics(self, data: Any) -> Dict[str, float]:
         """
