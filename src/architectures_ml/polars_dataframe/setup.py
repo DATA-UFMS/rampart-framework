@@ -344,9 +344,6 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             Utiliza .with_columns() com expressions para eficiência, criando
             lags temporais via .sort() + .shift() agrupados por country_code.
 
-        Equivalência metodológica:
-            Implementa mesma transformação que DL e DW, garantindo comparabilidade
-            científica entre arquiteturas.
         """
         print("[TARGET] Construindo variável target com fundamentação educacional")
 
