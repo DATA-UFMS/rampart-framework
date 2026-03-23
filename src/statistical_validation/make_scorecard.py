@@ -59,34 +59,48 @@ def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
     return res
 
 
-def get_speedups() -> Dict[str, Tuple[float, float, float]]:
+def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
+    """Returns {pair_key: {phase: (speedup, lo, hi)}}"""
     j = load_json(BASE / 'significance_summary.json')
     if j:
-        out: Dict[str, Tuple[float, float, float]] = {}
-        for phase, metrics in j.items():
-            if not isinstance(metrics, dict):
+        out: Dict[str, Dict[str, Tuple[float, float, float]]] = {}
+        for pair_key, phases in j.items():
+            if not isinstance(phases, dict):
                 continue
-            if 'speedup_dw_vs_dl' in metrics and 'speedup_ci95_lo' in metrics and 'speedup_ci95_hi' in metrics:
-                out[phase.lower()] = (
-                    float(metrics['speedup_dw_vs_dl']),
-                    float(metrics['speedup_ci95_lo']),
-                    float(metrics['speedup_ci95_hi']),
-                )
+            pair_speedups: Dict[str, Tuple[float, float, float]] = {}
+            for phase, metrics in phases.items():
+                if not isinstance(metrics, dict):
+                    continue
+                # Detect the speedup key dynamically
+                speedup_key = [k for k in metrics if k.startswith('speedup_') and not k.endswith('_lo') and not k.endswith('_hi')]
+                ci_lo_key = [k for k in metrics if k.endswith('ci95_lo') and 'speedup' in k]
+                ci_hi_key = [k for k in metrics if k.endswith('ci95_hi') and 'speedup' in k]
+                if speedup_key and ci_lo_key and ci_hi_key:
+                    pair_speedups[phase.lower()] = (
+                        float(metrics[speedup_key[0]]),
+                        float(metrics[ci_lo_key[0]]),
+                        float(metrics[ci_hi_key[0]]),
+                    )
+            if pair_speedups:
+                out[pair_key] = pair_speedups
         if out:
             return out
+    # Fallback to legacy flat structure (backward compatibility)
     tex = read_text(BASE / 'significance_summary.tex')
     if tex:
-        return parse_significance_tex(tex)
+        flat_speedups = parse_significance_tex(tex)
+        return {'dl_vs_dw': flat_speedups} if flat_speedups else {}
     return {}
 
 
-def summarize_equivalence(metric: str) -> Optional[str]:
+def summarize_equivalence(metric: str, pair_key: str = 'dl_vs_dw') -> Optional[str]:
     """Lê equivalence_estimation.json e retorna resumo para a métrica dada."""
     data = load_json(BASE / 'equivalence_estimation.json')
     if not data:
         return None
     pred = data.get('predictive', {})
-    entry = pred.get(metric)
+    pair_data = pred.get(pair_key, {})
+    entry = pair_data.get(metric)
     if not entry or not isinstance(entry, dict):
         return None
     decision = entry.get('decision', '?')
@@ -96,12 +110,12 @@ def summarize_equivalence(metric: str) -> Optional[str]:
     return f"{status} ($\\delta={delta:.3f}$, IC=[{ci[0]:.3f},{ci[1]:.3f}])"
 
 
-def get_resources_processing() -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """Retorna (cpu_dl, cpu_dw, rss_dl, rss_dw) de resource_usage.tex para fase de processamento."""
+def get_resources_processing() -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float], Optional[float], Optional[float]]:
+    """Retorna (cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl) de resource_usage.tex para fase de processamento."""
     tex = read_text(BASE / 'architectural_resource_usage.tex')
     if not tex:
-        return (None, None, None, None)
-    cpu_dl = cpu_dw = rss_dl = rss_dw = None
+        return (None, None, None, None, None, None)
+    cpu_dl = cpu_dw = cpu_pl = rss_dl = rss_dw = rss_pl = None
     for line in tex.splitlines():
         if line.startswith('%'):
             continue
@@ -114,62 +128,85 @@ def get_resources_processing() -> Tuple[Optional[float], Optional[float], Option
                 rss_dl = float(re.sub(r'[\\%\s]', '', parts[4]))
             except Exception:
                 pass
-        if 'processing & data_warehouse' in norm:
+        elif 'processing & data_warehouse' in norm:
             parts = [p.strip() for p in norm.split('&')]
             try:
                 cpu_dw = float(re.sub(r'[\\%\s]', '', parts[2]))
                 rss_dw = float(re.sub(r'[\\%\s]', '', parts[4]))
             except Exception:
                 pass
-    return (cpu_dl, cpu_dw, rss_dl, rss_dw)
+        elif 'processing & polars' in norm:
+            parts = [p.strip() for p in norm.split('&')]
+            try:
+                cpu_pl = float(re.sub(r'[\\%\s]', '', parts[2]))
+                rss_pl = float(re.sub(r'[\\%\s]', '', parts[4]))
+            except Exception:
+                pass
+    return (cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl)
 
 
 def build_scorecard() -> str:
-    sp = get_speedups()
-    def row(k: str) -> Optional[str]:
-        v = sp.get(k)
-        if not v:
-            return None
-        return f"{v[0]:.2f}$\\times$ [{v[1]:.2f},\\,{v[2]:.2f}]"
+    speedups_by_pair = get_speedups()
 
-    setup = row('setup')
-    processing = row('processing')
-    baseline = row('baseline')
-    hierarchical = row('hierarchical')
-    total = sp.get('total (sem collection)') or sp.get('total_architectural')
-    total_s = None
-    if total:
-        total_s = f"{total[0]:.2f}$\\times$ [{total[1]:.2f},\\,{total[2]:.2f}]"
+    # Define pair keys and labels
+    pairs = [('dl_vs_dw', 'DL vs DW'), ('dl_vs_pl', 'DL vs PL'), ('dw_vs_pl', 'DW vs PL')]
 
-    r2 = summarize_equivalence('r2') or '—'
-    mase = summarize_equivalence('mase') or '—'
-    wape = summarize_equivalence('wape') or '—'
+    # Build speedup rows for each pair
+    speedup_rows = {}
+    for pair_key, pair_label in pairs:
+        sp = speedups_by_pair.get(pair_key, {})
+        def row(k: str) -> Optional[str]:
+            v = sp.get(k)
+            if not v:
+                return None
+            return f"{v[0]:.2f}$\\times$ [{v[1]:.2f},\\,{v[2]:.2f}]"
 
-    cpu_dl, cpu_dw, rss_dl, rss_dw = get_resources_processing()
-    cpu_s = '—'
-    rss_s = '—'
+        speed_lines = []
+        if row('setup'): speed_lines.append(f"Setup: {row('setup')}")
+        if row('processing'): speed_lines.append(f"Processing: {row('processing')}")
+        if row('baseline'): speed_lines.append(f"Baseline: {row('baseline')}")
+        if row('hierarchical'): speed_lines.append(f"Hierarchical: {row('hierarchical')}")
+        total = sp.get('total (sem collection)') or sp.get('total_architectural')
+        if total:
+            total_s = f"{total[0]:.2f}$\\times$ [{total[1]:.2f},\\,{total[2]:.2f}]"
+            speed_lines.append(f"Total: {total_s}")
+        speedup_rows[pair_key] = '; '.join(speed_lines) if speed_lines else '—'
+
+    # Build equivalence rows for each pair
+    equiv_rows = {}
+    for pair_key, pair_label in pairs:
+        r2 = summarize_equivalence('r2', pair_key) or '—'
+        mase = summarize_equivalence('mase', pair_key) or '—'
+        wape = summarize_equivalence('wape', pair_key) or '—'
+        equiv_rows[pair_key] = f"R$^2$: {r2}; MASE: {mase}; WAPE: {wape}"
+
+    # Get resource information
+    cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl = get_resources_processing()
+    resource_lines = []
     if cpu_dl is not None and cpu_dw is not None:
-        cpu_s = f"CPU(proc) média: DL={cpu_dl:.1f}\\%, DW={cpu_dw:.1f}\\%"
+        resource_lines.append(f"CPU(proc) média: DL={cpu_dl:.1f}\\%, DW={cpu_dw:.1f}\\%")
+    if cpu_pl is not None:
+        resource_lines.append(f"CPU(proc) média PL={cpu_pl:.1f}\\%")
     if rss_dl is not None and rss_dw is not None:
-        rss_s = f"RSS (MB): DL={rss_dl:.1f}, DW={rss_dw:.1f}"
+        resource_lines.append(f"RSS (MB): DL={rss_dl:.1f}, DW={rss_dw:.1f}")
+    if rss_pl is not None:
+        resource_lines.append(f"RSS (MB) PL={rss_pl:.1f}")
+    resource_s = '; '.join(resource_lines) if resource_lines else '—'
 
+    # Build 3-way table
     parts = []
-    parts.append('% Auto-generated scorecard')
+    parts.append('% Auto-generated scorecard with 3-way comparison')
     parts.append('\\begin{table}[htbp]')
     parts.append('\\centering')
-    parts.append('\\caption{Painel de evidências (resumo consolidado)}')
+    parts.append('\\caption{Painel de evidências (resumo consolidado 3-way)}')
     parts.append('\\label{tab:architectural-scorecard}')
-    parts.append('\\begin{tabular}{p{0.22\\linewidth}p{0.73\\linewidth}}')
+    parts.append('\\begin{tabular}{p{0.18\\linewidth}p{0.26\\linewidth}p{0.26\\linewidth}p{0.26\\linewidth}}')
     parts.append('\\toprule')
-    speed_lines = []
-    if setup: speed_lines.append(f"Setup: {setup}")
-    if processing: speed_lines.append(f"Processing: {processing}")
-    if baseline: speed_lines.append(f"Baseline: {baseline}")
-    if hierarchical: speed_lines.append(f"Hierarchical: {hierarchical}")
-    if total_s: speed_lines.append(f"Total: {total_s}")
-    parts.append('\\textbf{Speedup por fase} & ' + '; '.join(speed_lines) + '. \\\\ ')
-    parts.append('\\textbf{Equivalência (SESOI+IC)} & ' + f"R$^2$: {r2}; MASE: {mase}; WAPE: {wape}." + ' \\\\ ')
-    parts.append('\\textbf{Recursos (processing)} & ' + f"{cpu_s}; {rss_s}." + ' \\\\ ')
+    parts.append(' & DL vs DW & DL vs PL & DW vs PL \\\\')
+    parts.append('\\midrule')
+    parts.append('\\textbf{Speedup por fase} & ' + speedup_rows['dl_vs_dw'] + ' & ' + speedup_rows['dl_vs_pl'] + ' & ' + speedup_rows['dw_vs_pl'] + ' \\\\')
+    parts.append('\\textbf{Equivalência (SESOI+IC)} & ' + equiv_rows['dl_vs_dw'] + ' & ' + equiv_rows['dl_vs_pl'] + ' & ' + equiv_rows['dw_vs_pl'] + ' \\\\')
+    parts.append('\\textbf{Recursos (processing)} & \\multicolumn{3}{l}{' + resource_s + '} \\\\')
     parts.append('\\bottomrule')
     parts.append('\\end{tabular}')
     parts.append('\\end{table}')
