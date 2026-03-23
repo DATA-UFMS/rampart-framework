@@ -366,10 +366,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
             para preservar tipos e otimizar grafo computacional. Operação
             O(1) em termos de memória devido à lazy evaluation.
             
-        Equivalência metodológica:
-            Implementa mesma transformação que Data Warehouse (SQL),
-            garantindo comparabilidade científica entre arquiteturas.
-        
         Referência:
             Psacharopoulos, G. (1994). Returns to investment in education.
         """
@@ -440,10 +436,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
             grafo computacional, crítico para datasets >10GB que não
             cabem em memória (Rocklin, 2015).
             
-        Equivalência metodológica:
-            Implementa mesmas estatísticas que Data Warehouse via SQL,
-            garantindo comparabilidade rigorosa entre arquiteturas.
-            
         Complexidade: O(n/p) onde p = número de partições Dask
         """
         # Computação em lote otimizada para eficiência distribuída
@@ -466,7 +458,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         """Validação temporal  com TemporalValidator."""
         print("   ↪ Validando folds temporais...")
         
-        # Usar TemporalValidator centralizado IGUAL ao Data Warehouse
+        # Validação via TemporalValidator centralizado
         for fold in folds:
             # Validar integridade temporal usando anos
             train_years = (fold['train_start'], fold['train_end'])
