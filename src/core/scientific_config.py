@@ -37,7 +37,7 @@ SCIENTIFIC_CONFIG = {
     'collinearity_threshold': 0.8,
     'correlation_precision': 1e-3, # MAE máximo permitido entre correlações
     'correlation_sample_fraction': 0.1,
-    # Amostragem de correlação (para alinhar DL e DW)
+    # Amostragem de correlação (reduz custo computacional mantendo equivalência)
     'correlation_sampling': True,
     'correlation_min_sample_size': 5000,
     # Limiar para detecção de proxy features (Kapoor & Narayanan 2023, tipo L2)
