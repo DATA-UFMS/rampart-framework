@@ -1,5 +1,5 @@
 """
-Módulo de modelos machine learning para arquitetura Polars Lakehouse.
+Módulo de modelos machine learning para arquitetura Polars DataFrame.
 
 Implementa modelos baseline e hierárquicos com Polars para leitura de dados
 e scikit-learn para treinamento, mantendo princípios arquiteturais Data Lake.

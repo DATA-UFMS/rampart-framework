@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Setup reprodutível do pipeline ML para a arquitetura Polars Lakehouse.
+"""Setup reprodutível do pipeline ML para a arquitetura Polars DataFrame.
 
 O módulo executa as etapas do protocolo metodológico no paradigma Polars nativo:
 carregamento via pl.scan_parquet() (LazyFrame), criação de folds temporais com gaps
 anti-leak, alinhamento de features com as arquiteturas Data Lake e Data Warehouse,
-e geração de artefatos em `outputs/ml_pipeline/architectures/polars_lakehouse/`.
+e geração de artefatos em `outputs/ml_pipeline/architectures/polars_dataframe/`.
 
 Mantém simetria metodológica com DL e DW para comparação científica rigorosa,
 diferindo apenas na implementação específica de Polars usando expressions e
@@ -27,8 +27,8 @@ from core.validation import TemporalValidator, DataIntegrityValidator
 from core.logging_config import get_logger, log_ml_pipeline
 
 
-class PolarsLakehouseArchitectureML(BaseArchitectureML):
-    """Implementação do pipeline ML para a arquitetura Polars Lakehouse.
+class PolarsDataFrameArchitectureML(BaseArchitectureML):
+    """Implementação do pipeline ML para a arquitetura Polars DataFrame.
 
     A classe mantém simetria metodológica com as versões Data Lake e Data Warehouse:
     usa os mesmos folds temporais (QP1), garante equivalência de features e validações
@@ -62,20 +62,20 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
         df.write_parquet(file_path)
 
     def __init__(self):
-        """Inicializa paths, validadores e logging para o pipeline Polars Lakehouse."""
+        """Inicializa paths, validadores e logging para o pipeline Polars DataFrame."""
         # Inicialização da arquitetura base
-        output_base = get_absolute_output_path('ml_pipeline/architectures/polars_lakehouse')
-        super().__init__(architecture_name='polars_lakehouse', output_base_path=output_base)
+        output_base = get_absolute_output_path('ml_pipeline/architectures/polars_dataframe')
+        super().__init__(architecture_name='polars_dataframe', output_base_path=output_base)
 
         # Logger científico com contexto ML
         self.logger = get_logger(__name__, with_ml_context=True)
-        self.logger.set_context(architecture='polars_lakehouse', module='setup')
+        self.logger.set_context(architecture='polars_dataframe', module='setup')
 
-        print("Inicializando Pipeline ML Polars Lakehouse Científico")
+        print("Inicializando Pipeline ML Polars DataFrame Científico")
         print("=" * 70)
         print("[PARADIGMA] Lazy evaluation com expressions idiomáticas Polars")
 
-        # Configurações de paths Polars Lakehouse
+        # Configurações de paths Polars DataFrame
         self.data_lake_path = get_absolute_output_path('collection/data_lake/processed/final_results.parquet')
         self.fallback_path = get_absolute_output_path('collection/data_lake/raw')
 
@@ -86,7 +86,7 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
         print(f"[OUTPUT] Diretório base: {self.output_base}")
         print(f"[INPUT] Dados primários: {self.data_lake_path}")
         print(f"[FALLBACK] Dados raw: {self.fallback_path}")
-        print("[METODOLOGIA] Lazy evaluation com expresiones idiomáticas Polars")
+        print("[METODOLOGIA] Lazy evaluation com expressões idiomáticas Polars")
 
     def setup_environment(self) -> None:
         """
@@ -157,7 +157,7 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
                 lf = pl.scan_parquet(self.data_lake_path)
                 data_source = "processed"
                 print(f"   ✓ LazyFrame carregado (materialization adiada)")
-            except Exception as e:
+            except (OSError, pl.exceptions.ComputeError, pl.exceptions.SchemaError) as e:
                 self.logger.warning(f"Erro ao carregar dados processados: {e}")
                 print(f"   ✗ Erro dados processados: {e}")
 
@@ -172,14 +172,14 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
                     lf = pl.scan_parquet(f"{self.fallback_path}/*.parquet")
                     data_source = "raw_partitioned"
                     print("   ✓ Carregamento raw bem-sucedido com lazy evaluation")
-            except Exception as e:
+            except (OSError, pl.exceptions.ComputeError, pl.exceptions.SchemaError) as e:
                 self.logger.error(f"Erro ao carregar dados raw: {e}")
                 print(f"   ✗ Erro dados raw: {e}")
 
         # === Validação de carregamento ===
         if lf is None:
             raise FileNotFoundError(
-                "Dados Polars Lakehouse não encontrados em nenhuma fonte.\n"
+                "Dados Polars DataFrame não encontrados em nenhuma fonte.\n"
                 f"Verificar: {self.data_lake_path} ou {self.fallback_path}\n"
                 "Execute 'data_lake/processor.py' para gerar dados processados."
             )
@@ -335,7 +335,7 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
             df: DataFrame Polars com dados educacionais
 
         Returns:
-            DataFrame Polars enriquecido com variável target dropout_rate_polars_lakehouse
+            DataFrame Polars enriquecido com variável target dropout_rate_polars_dataframe
 
         Transformação científica:
             Dropout Rate = 100 - Completion Rate
@@ -382,7 +382,7 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
 
             df_with_target = df_sorted
             print("[FEATURE] dropout_rate_lag_2 e dropout_rate_lag_3 criados (shift by country/year)")
-        except Exception as e:
+        except (pl.exceptions.ColumnNotFoundError, pl.exceptions.ComputeError, KeyError) as e:
             print(f"[AVISO] Falha ao criar dropout_rate_lag_2: {e}")
 
         print("[STATUS] ✓ Target criado via Polars expressions idiomáticas")
@@ -607,7 +607,7 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
                     correlations[feat] = abs(float(corr))
                     successful_correlations += 1
 
-            except Exception as e:
+            except (ValueError, TypeError, pl.exceptions.ComputeError) as e:
                 self.logger.warning(f"Erro correlação {feat}: {e}")
                 correlations[feat] = 0.0
                 failed_features.append(feat)
@@ -742,7 +742,7 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
                 print(f"[FALLBACK] Amostra inadequada ({actual_sample_size}≤10) - retornando top-10")
                 return features[:10]
 
-        except Exception as e:
+        except (ValueError, TypeError, np.linalg.LinAlgError) as e:
             self.logger.error(f"Erro na filtragem de colinearidade: {e}")
             print(f"[ERRO] Filtragem de colinearidade falhou: {e}")
             print("[FALLBACK] Retornando top-10 features como segurança")
@@ -851,13 +851,13 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
 
     def save_folds(self, df: pl.DataFrame, folds: List[Dict]) -> None:
         """
-        Salva folds como arquivos Parquet, mantendo paradigma Polars Lakehouse.
+        Salva folds como arquivos Parquet, mantendo paradigma Polars DataFrame.
 
         Args:
             df: DataFrame Polars processado
             folds: Lista de configurações de folds
         """
-        print("\n🖧 SALVANDO FOLDS POLARS LAKEHOUSE...")
+        print("\n🖧 SALVANDO FOLDS POLARS DATAFRAME...")
 
         for fold in folds:
             fold_id = fold['fold_id']
@@ -890,9 +890,9 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
                 val_df = df.filter(val_filter)
                 test_df = df.filter(test_filter)
 
-                self._safe_write_parquet_file(train_df, f'{fold_dir}/train_data_polars_lakehouse.parquet')
-                self._safe_write_parquet_file(val_df, f'{fold_dir}/val_data_polars_lakehouse.parquet')
-                self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_polars_lakehouse.parquet')
+                self._safe_write_parquet_file(train_df, f'{fold_dir}/train_data_polars_dataframe.parquet')
+                self._safe_write_parquet_file(val_df, f'{fold_dir}/val_data_polars_dataframe.parquet')
+                self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_polars_dataframe.parquet')
 
                 print(f"   ✔ Fold {fold_id} salvo: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
 
@@ -903,14 +903,14 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
             fold_metadata = {
                 **fold,
                 'storage_method': 'parquet_files',
-                'paradigm': 'polars_lakehouse'
+                'paradigm': 'polars_dataframe'
             }
             self.save_fold_metadata(fold_metadata, fold_dir)
 
         # Master data
         print("\n   ↪ Salvando master data...")
         try:
-            master_path = f"{self.prep_dir}/master_data_polars_lakehouse.parquet"
+            master_path = f"{self.prep_dir}/master_data_polars_dataframe.parquet"
             self._safe_write_parquet_file(df, master_path)
             print(f"   ✔ Master data salvo: {len(df)} registros")
 
@@ -926,19 +926,19 @@ class PolarsLakehouseArchitectureML(BaseArchitectureML):
 
         self.save_master_config(folds, total_obs, total_countries, (year_min, year_max))
 
-        print(f"   ✔ Polars Lakehouse: Folds salvos com paradigma lazy evaluation")
+        print(f"   ✔ Polars DataFrame: Folds salvos com paradigma lazy evaluation")
 
 
 def main():
-    """Executa o pipeline Polars Lakehouse end-to-end para validação local."""
+    """Executa o pipeline Polars DataFrame end-to-end para validação local."""
     print("=" * 80)
-    print("TESTE PIPELINE ML POLARS LAKEHOUSE - METODOLOGIA LAZY EVALUATION CIENTÍFICA".center(80))
+    print("TESTE PIPELINE ML POLARS DATAFRAME - METODOLOGIA LAZY EVALUATION CIENTÍFICA".center(80))
     print("=" * 80)
 
     try:
         # Inicialização com configurações científicas otimizadas
-        print("\n[INICIALIZAÇÃO] Configurando pipeline Polars Lakehouse...")
-        setup = PolarsLakehouseArchitectureML()
+        print("\n[INICIALIZAÇÃO] Configurando pipeline Polars DataFrame...")
+        setup = PolarsDataFrameArchitectureML()
 
         # Execução do pipeline científico
         print("\n[EXECUÇÃO] Iniciando pipeline científico...")
@@ -946,11 +946,11 @@ def main():
 
         # Relatório científico detalhado
         print("\n" + "=" * 80)
-        print("RELATÓRIO CIENTÍFICO DO PIPELINE POLARS LAKEHOUSE".center(80))
+        print("RELATÓRIO CIENTÍFICO DO PIPELINE POLARS DATAFRAME".center(80))
         print("=" * 80)
 
         if results.get('status') == 'success':
-            print("✓ Pipeline Polars Lakehouse executado com SUCESSO")
+            print("✓ Pipeline Polars DataFrame executado com SUCESSO")
             print(f"  - Features selecionadas: {results.get('features_selected', 'N/A')}")
             print(f"  - Folds criados: {results.get('folds_created', 'N/A')}")
             print(f"  - Timestamp: {results.get('setup_timestamp', 'N/A')}")
@@ -965,7 +965,7 @@ def main():
         import traceback
         traceback.print_exc()
         return {
-            'architecture': 'polars_lakehouse',
+            'architecture': 'polars_dataframe',
             'status': 'failed',
             'error': str(e),
             'setup_timestamp': datetime.now().isoformat()

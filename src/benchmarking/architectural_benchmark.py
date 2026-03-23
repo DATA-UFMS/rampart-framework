@@ -90,30 +90,30 @@ def _import_modules():
         HierarchicalModelSQLFirst,
     )
 
-    # Polars Lakehouse
-    from src.collection.polars_lakehouse.processor import PolarsLakehouseProcessor
-    import src.architectures_ml.polars_lakehouse.setup as pl_setup
-    from src.architectures_ml.polars_lakehouse.models.baseline_analysis import (
-        BaselineModelAnalysisPolarsLakehouse,
+    # Polars DataFrame
+    from src.collection.polars_dataframe.processor import PolarsDataFrameProcessor
+    import src.architectures_ml.polars_dataframe.setup as pl_setup
+    from src.architectures_ml.polars_dataframe.models.baseline_analysis import (
+        BaselineModelAnalysisPolarsDataFrame,
     )
-    from src.architectures_ml.polars_lakehouse.models.hierarchical_model import (
-        HierarchicalModelPolarsLakehouse,
+    from src.architectures_ml.polars_dataframe.models.hierarchical_model import (
+        HierarchicalModelPolarsDataFrame,
     )
 
     return {
         "RawDataCollector": RawDataCollector,
         "DataLakeProcessor": DataLakeProcessor,
         "DataWarehouseProcessor": DataWarehouseProcessor,
-        "PolarsLakehouseProcessor": PolarsLakehouseProcessor,
+        "PolarsDataFrameProcessor": PolarsDataFrameProcessor,
         "dl_setup_module": dl_setup,
         "dw_setup_module": dw_setup,
         "pl_setup_module": pl_setup,
         "BaselineModelAnalysisDataLake": BaselineModelAnalysisDataLake,
         "BaselineModelAnalysisDataWarehouse": BaselineModelAnalysisDataWarehouse,
-        "BaselineModelAnalysisPolarsLakehouse": BaselineModelAnalysisPolarsLakehouse,
+        "BaselineModelAnalysisPolarsDataFrame": BaselineModelAnalysisPolarsDataFrame,
         "HierarchicalModelDataLake": HierarchicalModelDataLake,
         "HierarchicalModelSQLFirst": HierarchicalModelSQLFirst,
-        "HierarchicalModelPolarsLakehouse": HierarchicalModelPolarsLakehouse,
+        "HierarchicalModelPolarsDataFrame": HierarchicalModelPolarsDataFrame,
     }
 
 
@@ -128,6 +128,7 @@ class PhaseResult:
     step: str
     duration_ns: int
     records: Optional[int]
+    peak_rss_mb: Optional[float] = None
 
     @property
     def duration_s(self) -> float:
@@ -205,6 +206,7 @@ class BenchmarkRunner:
             self._io0 = None
             self._start_ts = None
             self._end_ts = None
+            self.peak_rss_mb = None  # exposto após __exit__ para PhaseResult
 
         def __enter__(self):
             try:
@@ -284,6 +286,10 @@ class BenchmarkRunner:
             mem_sys = agg("mem_sys_percent")
             cpu_children = agg("cpu_children_percent")
             rss_children = agg("rss_children_mb")
+            # Expor pico de RSS (proc + filhos) para PhaseResult
+            rss_peak = rss.get("max") or 0.0
+            children_peak = rss_children.get("max") or 0.0
+            self.peak_rss_mb = round(rss_peak + children_peak, 1)
             # IO delta (processo)
             try:
                 io1 = self._proc.io_counters()
@@ -393,12 +399,12 @@ class BenchmarkRunner:
 
     def _pl_master_path(self) -> str:
         return get_absolute_output_path(
-            "ml_pipeline/architectures/polars_lakehouse/prep/master_data_polars_lakehouse.parquet"
+            "ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet"
         )
 
     def _pl_folds_path(self) -> str:
         return get_absolute_output_path(
-            "ml_pipeline/architectures/polars_lakehouse/prep/temporal_folds_polars_lakehouse.json"
+            "ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json"
         )
 
     # --------------------------- fases medidas -----------------------------
@@ -588,12 +594,12 @@ class BenchmarkRunner:
             records = None
         return end_ns - start_ns, records
 
-    # --- Polars Lakehouse phases ---
+    # --- Polars DataFrame phases ---
     def _phase_processing_pl(self) -> Tuple[int, Optional[int]]:
-        Processor = self.modules["PolarsLakehouseProcessor"]
+        Processor = self.modules["PolarsDataFrameProcessor"]
         proc = Processor()
         t0 = time.perf_counter_ns()
-        res = proc.run_polars_lakehouse_processing()
+        res = proc.run_polars_dataframe_processing()
         t1 = time.perf_counter_ns()
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
@@ -620,7 +626,7 @@ class BenchmarkRunner:
 
     def _phase_baseline_pl(self) -> Tuple[int, Optional[int]]:
         start_ns = time.perf_counter_ns()
-        Analyzer = self.modules["BaselineModelAnalysisPolarsLakehouse"]
+        Analyzer = self.modules["BaselineModelAnalysisPolarsDataFrame"]
         analyzer = Analyzer()
         analyzer.run_complete_analysis()
         end_ns = time.perf_counter_ns()
@@ -637,7 +643,7 @@ class BenchmarkRunner:
 
     def _phase_hierarchical_pl(self) -> Tuple[int, Optional[int]]:
         start_ns = time.perf_counter_ns()
-        Model = self.modules["HierarchicalModelPolarsLakehouse"]
+        Model = self.modules["HierarchicalModelPolarsDataFrame"]
         model = Model()
         _ = model.run_hierarchical_analysis()
         end_ns = time.perf_counter_ns()
@@ -677,9 +683,10 @@ class BenchmarkRunner:
         ) -> Optional[PhaseResult]:
             try:
                 # Monitorar recursos durante a execução da fase
-                with self._ResourceMonitor(
+                mon = self._ResourceMonitor(
                     self.resource_log_path, run_id, phase, arch, step_name
-                ):
+                )
+                with mon:
                     duration_ns, records = step_fn()
                 return PhaseResult(
                     run_id=run_id,
@@ -688,6 +695,7 @@ class BenchmarkRunner:
                     step=step_name,
                     duration_ns=duration_ns,
                     records=records,
+                    peak_rss_mb=mon.peak_rss_mb,
                 )
             except Exception:
                 # registrar falha com duração nula
@@ -726,7 +734,7 @@ class BenchmarkRunner:
             r3 = measure(
                 self._phase_processing_pl,
                 "processing",
-                "polars_lakehouse",
+                "polars_dataframe",
                 "processor",
             )
             if r1:
@@ -752,17 +760,17 @@ class BenchmarkRunner:
             "setup": [
                 (self._phase_setup_dl, "data_lake", "setup"),
                 (self._phase_setup_dw, "data_warehouse", "setup"),
-                (self._phase_setup_pl, "polars_lakehouse", "setup"),
+                (self._phase_setup_pl, "polars_dataframe", "setup"),
             ],
             "baseline": [
                 (self._phase_baseline_dl, "data_lake", "baseline_models"),
                 (self._phase_baseline_dw, "data_warehouse", "baseline_models"),
-                (self._phase_baseline_pl, "polars_lakehouse", "baseline_models"),
+                (self._phase_baseline_pl, "polars_dataframe", "baseline_models"),
             ],
             "hierarchical": [
                 (self._phase_hierarchical_dl, "data_lake", "hierarchical_models"),
                 (self._phase_hierarchical_dw, "data_warehouse", "hierarchical_models"),
-                (self._phase_hierarchical_pl, "polars_lakehouse", "hierarchical_models"),
+                (self._phase_hierarchical_pl, "polars_dataframe", "hierarchical_models"),
             ],
         }
 
@@ -816,6 +824,8 @@ class BenchmarkRunner:
             .agg(
                 duration_s_mean=("duration_s", "mean"),
                 duration_s_std=("duration_s", "std"),
+                peak_rss_mb_mean=("peak_rss_mb", "mean"),
+                peak_rss_mb_max=("peak_rss_mb", "max"),
                 throughput_mean=("throughput_rps", "mean"),
                 runs=("run_id", "count"),
             )
@@ -831,6 +841,13 @@ class BenchmarkRunner:
         try:
             import matplotlib.pyplot as plt
 
+            # Mapeamento fixo: cor por arquitetura (independente da ordem de sort)
+            arch_color_map = {
+                "data_lake": "#4C78A8",
+                "data_warehouse": "#72B7B2",
+                "polars_dataframe": "#F58518",
+            }
+
             for phase in df["phase"].unique():
                 fig, ax = plt.subplots(figsize=(7, 4))
                 sub = df[df["phase"] == phase]
@@ -839,7 +856,8 @@ class BenchmarkRunner:
                     .mean()
                     .sort_values(ascending=False)
                 )
-                plot.plot(kind="bar", ax=ax, color=["#4C78A8", "#72B7B2", "#F58518"])
+                colors = [arch_color_map.get(a, "#999999") for a in plot.index]
+                plot.plot(kind="bar", ax=ax, color=colors)
                 ax.set_title(f"Tempo médio por arquitetura - {phase}")
                 ax.set_ylabel("segundos")
                 ax.set_xlabel("")
@@ -847,8 +865,8 @@ class BenchmarkRunner:
                 fig_path = os.path.join(self.output_dir, f"fig_{phase}_duration.png")
                 plt.savefig(fig_path, dpi=120)
                 plt.close(fig)
-        except Exception:
-            # Apenas ignore falhas de plotting
+        except ImportError:
+            # matplotlib não disponível — ignora geração de gráficos
             pass
 
         return csv_path, summary_path

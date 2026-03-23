@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Modelo Hierárquico para Arquitetura Polars Lakehouse.
+Modelo Hierárquico para Arquitetura Polars DataFrame.
 
-Implementa modelos hierárquicos para arquitetura Polars Lakehouse com leitura lazy
+Implementa modelos hierárquicos para arquitetura Polars DataFrame com leitura lazy
 e processamento eficiente de memória para predição de dropout escolar.
 
 Otimizado com computação seletiva para minimizar materializações desnecessárias.
@@ -40,9 +40,9 @@ from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
 setup_reproducibility()
 
 
-class HierarchicalModelPolarsLakehouse:
+class HierarchicalModelPolarsDataFrame:
     """
-    Modelo Hierárquico para Arquitetura Polars Lakehouse.
+    Modelo Hierárquico para Arquitetura Polars DataFrame.
 
     Implementa modelos hierárquicos com leitura lazy e processamento eficiente
     de memória, mantendo princípios arquiteturais Data Lake.
@@ -52,20 +52,20 @@ class HierarchicalModelPolarsLakehouse:
 
     def __init__(self):
         """
-        Inicializa modelo hierárquico Polars Lakehouse.
+        Inicializa modelo hierárquico Polars DataFrame.
 
         Docstring em Português.
         """
-        print("Inicializando Modelo Hierárquico Polars Lakehouse")
+        print("Inicializando Modelo Hierárquico Polars DataFrame")
         print("=" * 60)
-        print("Arquitetura: Polars Lakehouse com lazy evaluation")
+        print("Arquitetura: Polars DataFrame com lazy evaluation")
 
-        self.target_col = 'dropout_rate_polars_lakehouse'
+        self.target_col = 'dropout_rate_polars_dataframe'
 
         print("Modo: Folds Normais (setup básico)")
         self._setup_normal_mode()
 
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/polars_lakehouse/models/hierarchical_results")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/models/hierarchical_results")
         os.makedirs(self.results_path, exist_ok=True)
 
         self._load_normal_summary()
@@ -76,13 +76,13 @@ class HierarchicalModelPolarsLakehouse:
 
         Docstring em Português.
         """
-        self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_lakehouse/prep/master_data_polars_lakehouse.parquet")
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_lakehouse/prep/temporal_folds_polars_lakehouse.json")
+        self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet")
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json")
 
         if not os.path.exists(self.data_path) or not os.path.exists(self.folds_path):
-            raise FileNotFoundError("Dados Polars Lakehouse não encontrados")
+            raise FileNotFoundError("Dados Polars DataFrame não encontrados")
 
-        print("Carregando dados Polars Lakehouse com lazy evaluation...")
+        print("Carregando dados Polars DataFrame com lazy evaluation...")
         self.df_lazy = pl.scan_parquet(self.data_path)
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
@@ -116,7 +116,7 @@ class HierarchicalModelPolarsLakehouse:
             raise ValueError(f"Target {self.target_col} não encontrado nos dados")
 
         # Alinhar features com seleção científica salva no setup
-        selection_path = get_absolute_output_path("ml_pipeline/architectures/polars_lakehouse/prep/feature_selection_polars_lakehouse.json")
+        selection_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/feature_selection_polars_dataframe.json")
         if os.path.exists(selection_path):
             try:
                 with open(selection_path, 'r') as f:
@@ -158,7 +158,7 @@ class HierarchicalModelPolarsLakehouse:
                     pl.col(feature).median()
                 ).collect().to_dicts()[0][feature]
                 medians[feature] = median_val if median_val is not None else 0.0
-            except Exception:
+            except (KeyError, pl.exceptions.ColumnNotFoundError, pl.exceptions.ComputeError):
                 mean_val = reference_lazy.select(
                     pl.col(feature).mean()
                 ).collect().to_dicts()[0][feature]
@@ -248,13 +248,13 @@ class HierarchicalModelPolarsLakehouse:
                         if mean_score > best_score:
                             best_score = mean_score
                             final_alpha = alpha_test
-                    except Exception:
+                    except (ValueError, np.linalg.LinAlgError):
                         continue
 
             residual_model = Ridge(alpha=final_alpha)
             residual_model.fit(residuals_X, residuals_y)
 
-            print(f"      Simple Hierarchical Polars Lakehouse:")
+            print(f"      Simple Hierarchical Polars DataFrame:")
             print(f"         {features_count} features × {samples_count} samples de resíduos")
             print(f"         α adaptativo: {final_alpha:.1f}")
         else:
@@ -292,7 +292,7 @@ class HierarchicalModelPolarsLakehouse:
 
         return {
             'model_name': 'simple_hierarchical',
-            'architecture': 'polars_lakehouse',
+            'architecture': 'polars_dataframe',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -365,7 +365,7 @@ class HierarchicalModelPolarsLakehouse:
 
         return {
             'model_name': 'random_forest_hierarchical',
-            'architecture': 'polars_lakehouse',
+            'architecture': 'polars_dataframe',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -384,12 +384,12 @@ class HierarchicalModelPolarsLakehouse:
         Docstring em Português.
         """
         fold_id = fold_info['fold_id']
-        print(f"\nAnalisando Fold {fold_id} Polars Lakehouse (NORMAL)...")
+        print(f"\nAnalisando Fold {fold_id} Polars DataFrame (NORMAL)...")
 
         # Registrar features usadas para auditoria
         try:
             used = {
-                'architecture': 'polars_lakehouse',
+                'architecture': 'polars_dataframe',
                 'fold_id': int(fold_id),
                 'target': self.target_col,
                 'total_features': len(self.available_features),
@@ -398,7 +398,7 @@ class HierarchicalModelPolarsLakehouse:
             used_path = os.path.join(self.results_path, f"used_features_fold_{fold_id}.json")
             with open(used_path, 'w') as f:
                 json.dump(used, f, indent=2)
-        except Exception:
+        except (OSError, IOError, TypeError):
             pass
 
         # Filtros lazy
@@ -496,7 +496,7 @@ class HierarchicalModelPolarsLakehouse:
 
         return {
             'fold_id': fold_id,
-            'architecture': 'polars_lakehouse',
+            'architecture': 'polars_dataframe',
             'mode': 'normal',
             'total_features': len(self.available_features),
             'models': models
@@ -504,19 +504,19 @@ class HierarchicalModelPolarsLakehouse:
 
     def run_hierarchical_analysis(self):
         """
-        Executar análise hierárquica completa para arquitetura Polars Lakehouse.
+        Executar análise hierárquica completa para arquitetura Polars DataFrame.
 
         Docstring em Português.
         """
-        print("Análise Hierárquica Completa Polars Lakehouse (NORMAL)")
+        print("Análise Hierárquica Completa Polars DataFrame (NORMAL)")
         print("=" * 60)
-        print("Arquitetura: Polars Lakehouse para ML Hierárquico")
+        print("Arquitetura: Polars DataFrame para ML Hierárquico")
         print("Objetivo: Avaliar capacidade hierárquica arquitetural")
         print("Pattern: Polars lazy com sklearn para modelos")
         print("Configuração: Ridge adaptativo, Random Forest regularizado")
 
         all_results = {
-            'architecture': 'polars_lakehouse',
+            'architecture': 'polars_dataframe',
             'version': 'hierarchical_analysis',
             'mode': 'normal',
             'target': self.target_col,
@@ -590,8 +590,8 @@ class HierarchicalModelPolarsLakehouse:
 
         # Resumo executivo
         print("RESUMO EXECUTIVO - HIERÁRQUICO SCHEMA-ON-READ:")
-        print("   PESQUISA: Modelos hierárquicos para arquitetura Polars Lakehouse")
-        print("   Arquitetura: Polars Lakehouse (Lazy Evaluation)")
+        print("   PESQUISA: Modelos hierárquicos para arquitetura Polars DataFrame")
+        print("   Arquitetura: Polars DataFrame (Lazy Evaluation)")
         print("   Pattern: Leitura lazy com Polars, sklearn para treinamento")
         print("   Versão: Corrigida com regularização científica")
 
@@ -607,18 +607,18 @@ class HierarchicalModelPolarsLakehouse:
                 print(f"   Melhor modelo: Simple Hierarchical")
                 print(f"   R² Teste: {simple_test:.3f}")
 
-        results_file = f"{self.results_path}/hierarchical_analysis_polars_lakehouse_results_normal.json"
+        results_file = f"{self.results_path}/hierarchical_analysis_polars_dataframe_results_normal.json"
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
 
-        print(f"\nResultados Polars Lakehouse (NORMAL) salvos: {results_file}")
+        print(f"\nResultados Polars DataFrame (NORMAL) salvos: {results_file}")
 
         return all_results
 
 
 if __name__ == "__main__":
     print("Modo selecionado: Folds Normais")
-    model = HierarchicalModelPolarsLakehouse()
+    model = HierarchicalModelPolarsDataFrame()
     results = model.run_hierarchical_analysis()
-    print("\nAnálise hierárquica Polars Lakehouse concluída!")
+    print("\nAnálise hierárquica Polars DataFrame concluída!")
     print("   Regularização avançada aplicada com abordagem científica")

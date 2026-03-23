@@ -1,8 +1,8 @@
 """
-Arquitetura ML Polars Lakehouse para comparação com Data Lake (Dask) e Data Warehouse (DuckDB).
+Arquitetura ML Polars DataFrame para comparação com Data Lake (Dask) e Data Warehouse (DuckDB).
 
 Este módulo implementa o pipeline de ML scientificamente rigoroso para a arquitetura
-Polars Lakehouse, mantendo equivalência metodológica com as implementações Data Lake
+Polars DataFrame, mantendo equivalência metodológica com as implementações Data Lake
 e Data Warehouse para benchmarking justo em contexto de pesquisa SBBD 2026.
 
 Paradigma:
@@ -19,11 +19,11 @@ Protocolo anti-leakage (P1-P5):
     - P5: Preprocessing ajustado exclusivamente no treino
 
 Classes exportadas:
-    - PolarsLakehouseArchitectureML: Implementação do pipeline ML
+    - PolarsDataFrameArchitectureML: Implementação do pipeline ML
 """
 
-from .setup import PolarsLakehouseArchitectureML, main
+from .setup import PolarsDataFrameArchitectureML, main
 
-__all__ = ['PolarsLakehouseArchitectureML', 'main']
+__all__ = ['PolarsDataFrameArchitectureML', 'main']
 __version__ = '1.0.0'
 __author__ = 'SBBD 2026 Research Team'

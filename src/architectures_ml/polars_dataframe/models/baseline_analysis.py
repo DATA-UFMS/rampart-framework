@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Análise de modelos baseline para arquitetura Polars Lakehouse.
+Análise de modelos baseline para arquitetura Polars DataFrame.
 
 Módulo para análise comparativa de modelos baseline usando leitura lazy com Polars
 e validação temporal walk-forward com gaps para predição de dropout educacional.
@@ -29,21 +29,21 @@ warnings.filterwarnings('ignore')
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from src.core.config import get_absolute_output_path
 from src.core.models.baseline import BaselineModelFactory, BaselineEnsemble
-from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+from src.core.scientific_config import RANDOM_SEED, SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
 
 
-class BaselineModelAnalysisPolarsLakehouse:
+class BaselineModelAnalysisPolarsDataFrame:
     """
-    Análise de modelos baseline para arquitetura Polars Lakehouse.
+    Análise de modelos baseline para arquitetura Polars DataFrame.
 
     Implementa análise científica de modelos baseline com validação temporal
     rigorosa, prevenindo vazamento de dados e utilizando leitura lazy com Polars
     para dados em formato Parquet.
 
     Attributes:
-        data_path (str): Caminho para os dados principais do Polars Lakehouse
+        data_path (str): Caminho para os dados principais do Polars DataFrame
         folds_path (str): Caminho para configuração dos folds temporais
         results_path (str): Diretório para salvar resultados
         df_lazy (pl.LazyFrame): DataFrame Polars lazy com os dados
@@ -53,32 +53,32 @@ class BaselineModelAnalysisPolarsLakehouse:
 
     def __init__(self):
         """
-        Inicializa a análise baseline para arquitetura Polars Lakehouse.
+        Inicializa a análise baseline para arquitetura Polars DataFrame.
 
         Docstring em Português conforme padrão do projeto.
         """
-        print("Inicializando análise baseline Polars Lakehouse")
+        print("Inicializando análise baseline Polars DataFrame")
         print("=" * 60)
         print("Pesquisa: Comparação de arquiteturas ML para evasão educacional")
 
-        self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_lakehouse/prep/master_data_polars_lakehouse.parquet")
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_lakehouse/prep/temporal_folds_polars_lakehouse.json")
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/polars_lakehouse/models/baseline_results")
+        self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet")
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/models/baseline_results")
 
         os.makedirs(self.results_path, exist_ok=True)
 
         if not os.path.exists(self.data_path):
-            raise FileNotFoundError(f"Dados Polars Lakehouse não encontrados: {self.data_path}")
+            raise FileNotFoundError(f"Dados Polars DataFrame não encontrados: {self.data_path}")
         if not os.path.exists(self.folds_path):
-            raise FileNotFoundError(f"Folds Polars Lakehouse não encontrados: {self.folds_path}")
+            raise FileNotFoundError(f"Folds Polars DataFrame não encontrados: {self.folds_path}")
 
-        print("Carregando dados Polars Lakehouse com lazy evaluation...")
+        print("Carregando dados Polars DataFrame com lazy evaluation...")
         self.df_lazy = pl.scan_parquet(self.data_path)
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
 
-        self.target_col = 'dropout_rate_polars_lakehouse'
+        self.target_col = 'dropout_rate_polars_dataframe'
         self._load_data_summary()
 
     def _load_data_summary(self):
@@ -117,7 +117,7 @@ class BaselineModelAnalysisPolarsLakehouse:
         print(f"   Folds: {len(self.folds)}")
 
         if self.target_col not in self.df_lazy.collect_schema().names():
-            raise ValueError(f"Target {self.target_col} não encontrado nos dados Polars Lakehouse")
+            raise ValueError(f"Target {self.target_col} não encontrado nos dados Polars DataFrame")
 
         print(f"   Target stats: μ={stats['target_mean']:.2f}%, σ={stats['target_std']:.2f}%")
 
@@ -130,14 +130,14 @@ class BaselineModelAnalysisPolarsLakehouse:
 
     def analyze_target_distribution(self) -> Dict:
         """
-        Analisar distribuição do target Polars Lakehouse.
+        Analisar distribuição do target Polars DataFrame.
 
         Returns:
             Dict: Estatísticas da distribuição do target
 
         Docstring em Português.
         """
-        print(f"\nAnálise da distribuição do target Polars Lakehouse")
+        print(f"\nAnálise da distribuição do target Polars DataFrame")
         print("=" * 50)
 
         analysis = {}
@@ -146,7 +146,7 @@ class BaselineModelAnalysisPolarsLakehouse:
             stats = self._cached_basic_stats
 
             target_stats = {
-                'architecture': 'polars_lakehouse',
+                'architecture': 'polars_dataframe',
                 'target_variable': self.target_col,
                 'mean': float(stats['target_mean']),
                 'std': float(stats['target_std']),
@@ -166,12 +166,12 @@ class BaselineModelAnalysisPolarsLakehouse:
             ]).collect()
 
             target_stats = {
-                'architecture': 'polars_lakehouse',
+                'architecture': 'polars_dataframe',
                 'target_variable': self.target_col
             }
             unique_years = self.df_lazy.select(pl.col('year').n_unique()).collect()[0, 0]
 
-        print(f"   Target Polars Lakehouse ({self.target_col}):")
+        print(f"   Target Polars DataFrame ({self.target_col}):")
         print(f"      Média: {target_stats['mean']:.2f}%")
         print(f"      Desvio: {target_stats['std']:.2f}%")
         print(f"      Range: {target_stats['min']:.2f}% - {target_stats['max']:.2f}%")
@@ -189,7 +189,7 @@ class BaselineModelAnalysisPolarsLakehouse:
                 pl.col(self.target_col).max().alias('max')
             ]).sort('year').collect()
 
-            print(f"\n   Evolução temporal Polars Lakehouse:")
+            print(f"\n   Evolução temporal Polars DataFrame:")
             if len(temporal_df) > 0:
                 first_year_mean = temporal_df[0, 'mean']
                 last_year_mean = temporal_df[-1, 'mean']
@@ -209,7 +209,7 @@ class BaselineModelAnalysisPolarsLakehouse:
             pl.col(self.target_col).max().alias('max')
         ]).sort('mean', descending=True).collect()
 
-        print(f"\n   Variação por país (Polars Lakehouse):")
+        print(f"\n   Variação por país (Polars DataFrame):")
         if len(country_df) > 0:
             print(f"      Menor dropout: {country_df[-1, 'mean']:.1f}% ({country_df[-1, 'country_code']})")
             print(f"      Maior dropout: {country_df[0, 'mean']:.1f}% ({country_df[0, 'country_code']})")
@@ -320,7 +320,7 @@ class BaselineModelAnalysisPolarsLakehouse:
             }
 
             # Baseline 3: Naive com Lag Científico
-            MIN_LAG = 2
+            MIN_LAG = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
 
             val_pred_naive = []
             for _, row in val_clean.iterrows():
@@ -433,22 +433,22 @@ class BaselineModelAnalysisPolarsLakehouse:
 
     def run_complete_analysis(self) -> Dict:
         """
-        Executar análise baseline completa para arquitetura Polars Lakehouse.
+        Executar análise baseline completa para arquitetura Polars DataFrame.
 
         Returns:
             Dict contendo resultados completos de baseline
 
         Docstring em Português.
         """
-        print("Análise Baseline Completa Polars Lakehouse")
+        print("Análise Baseline Completa Polars DataFrame")
         print("=" * 60)
-        print("Arquitetura: Polars Lakehouse para ML com Lazy Evaluation")
+        print("Arquitetura: Polars DataFrame para ML com Lazy Evaluation")
         print("Objetivo: Avaliar performance de baselines científicos")
         print("Pattern: Leitura lazy com Polars, sklearn para modelos")
         print("Configuração: Sem vazamento temporal, gaps de 2 anos")
 
         all_results = {
-            'architecture': 'polars_lakehouse',
+            'architecture': 'polars_dataframe',
             'version': 'baseline_analysis',
             'target': self.target_col,
             'target_analysis': self.analyze_target_distribution(),
@@ -456,7 +456,7 @@ class BaselineModelAnalysisPolarsLakehouse:
         }
 
         # Análise de performance agregada
-        print("\nPERFORMANCE AGREGADA POLARS LAKEHOUSE:")
+        print("\nPERFORMANCE AGREGADA POLARS DATAFRAME:")
 
         for model_name in ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country_average']:
             test_r2s = []
@@ -477,16 +477,16 @@ class BaselineModelAnalysisPolarsLakehouse:
                 }
 
         # Salvar resultados
-        results_file = f"{self.results_path}/baseline_analysis_polars_lakehouse_results.json"
+        results_file = f"{self.results_path}/baseline_analysis_polars_dataframe_results.json"
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
 
-        print(f"\nResultados Polars Lakehouse salvos: {results_file}")
+        print(f"\nResultados Polars DataFrame salvos: {results_file}")
 
         return all_results
 
 
 if __name__ == "__main__":
-    model = BaselineModelAnalysisPolarsLakehouse()
+    model = BaselineModelAnalysisPolarsDataFrame()
     results = model.run_complete_analysis()
-    print("\nAnálise baseline Polars Lakehouse concluída!")
+    print("\nAnálise baseline Polars DataFrame concluída!")

@@ -4,7 +4,7 @@ Pipeline orquestrador da pesquisa: executa as fases na ordem com caminhos absolu
 
 Fases:
   1) Coleta bruta (World Bank)
-  2) Processamento arquitetural (Data Lake, Data Warehouse, Polars Lakehouse)
+  2) Processamento arquitetural (Data Lake, Data Warehouse, Polars DataFrame)
   3) Setup ML (folds idênticos com gaps de 2 anos; seleção de features)
   4) Baselines (3 paradigmas)
   5) Hierárquicos (3 paradigmas)
@@ -118,7 +118,7 @@ def _validate_anti_leakage_gate(root: str) -> None:
     embargo = int(SCIENTIFIC_CONFIG.get('embargo_years', 0))
     validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
 
-    for arch in ['data_lake', 'data_warehouse', 'polars_lakehouse']:
+    for arch in ['data_lake', 'data_warehouse', 'polars_dataframe']:
         folds_path = os.path.join(
             root, 'outputs', 'ml_pipeline', 'architectures', arch, 'prep',
             f'temporal_folds_{arch}.json'
@@ -164,10 +164,10 @@ def main() -> None:
     print_step("ETAPA 2b/9: Processando Data Warehouse (DuckDB)...")
     run(f"{py} {root}/src/collection/data_warehouse/processor.py")
 
-    print_system("PROCESSADOR POLARS LAKEHOUSE")
-    print_config("Arquitetura: Polars Lakehouse com Lazy Evaluation")
-    print_step("ETAPA 2c/9: Processando Polars Lakehouse...")
-    run(f"{py} {root}/src/collection/polars_lakehouse/processor.py")
+    print_system("PROCESSADOR POLARS DATAFRAME")
+    print_config("Arquitetura: Polars DataFrame com Lazy Evaluation")
+    print_step("ETAPA 2c/9: Processando Polars DataFrame...")
+    run(f"{py} {root}/src/collection/polars_dataframe/processor.py")
     print_success("ETAPA 2 CONCLUÍDA: Processamento arquitetural completo (3 paradigmas)")
 
     print_system("PROTOCOLO ANTI-LEAKAGE — VALIDAÇÃO TEMPORAL (RQ1)")
@@ -183,10 +183,10 @@ def main() -> None:
     print_step("ETAPA 3b/9: Configurando ML Data Warehouse...")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/setup.py")
 
-    print_system("SETUP ML POLARS LAKEHOUSE")
-    print_config("Arquitetura: Polars Lakehouse (lazy evaluation)")
-    print_step("ETAPA 3c/9: Configurando ML Polars Lakehouse...")
-    run(f"{py} {root}/src/architectures_ml/polars_lakehouse/setup.py")
+    print_system("SETUP ML POLARS DATAFRAME")
+    print_config("Arquitetura: Polars DataFrame (lazy evaluation)")
+    print_step("ETAPA 3c/9: Configurando ML Polars DataFrame...")
+    run(f"{py} {root}/src/architectures_ml/polars_dataframe/setup.py")
     print_success("ETAPA 3 CONCLUÍDA: Setup ML completo (3 paradigmas)")
 
     # Gate anti-leakage: interromper pipeline se integridade temporal for violada
@@ -206,10 +206,10 @@ def main() -> None:
     print_step("ETAPA 4b/9: Executando Baselines Data Warehouse...")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/models/baseline_analysis.py")
 
-    print_system("MODELOS BASELINE POLARS LAKEHOUSE")
+    print_system("MODELOS BASELINE POLARS DATAFRAME")
     print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 4c/9: Executando Baselines Polars Lakehouse...")
-    run(f"{py} {root}/src/architectures_ml/polars_lakehouse/models/baseline_analysis.py")
+    print_step("ETAPA 4c/9: Executando Baselines Polars DataFrame...")
+    run(f"{py} {root}/src/architectures_ml/polars_dataframe/models/baseline_analysis.py")
     print_success("ETAPA 4 CONCLUÍDA: Modelos baseline executados (3 paradigmas)")
 
     # Hierárquicos
@@ -217,14 +217,14 @@ def main() -> None:
     print_step("ETAPA 5/9: Executando Modelos Hierárquicos...")
     run(f"{py} {root}/src/architectures_ml/data_lake/models/hierarchical_model.py")
     run(f"{py} {root}/src/architectures_ml/data_warehouse/models/hierarchical_model.py")
-    run(f"{py} {root}/src/architectures_ml/polars_lakehouse/models/hierarchical_model.py")
+    run(f"{py} {root}/src/architectures_ml/polars_dataframe/models/hierarchical_model.py")
     print_success("ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados (3 paradigmas)")
 
     # Benchmark arquitetural
     print_system("BENCHMARK ARQUITETURAL (RQ3)")
     print_config("Comparação: schema-on-write vs schema-on-read vs lazy evaluation")
     print_step("ETAPA 6/9: Executando Benchmark Arquitetural...")
-    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 35 --warmup 2")
+    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 3 --warmup 1")
     print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado (3 paradigmas)")
 
     # Testes estatísticos de validação

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Processador Polars Lakehouse para Dados Educacionais Latino-Americanos.
+Processador Polars DataFrame para Dados Educacionais Latino-Americanos.
 
 Implementa pipeline de processamento com Polars mantendo princípios arquiteturais
 Data Lake: leitura lazy, transformações eficientes de memória e schema-on-read.
@@ -39,9 +39,9 @@ from src.core.config import get_absolute_output_path
 from src.core.indicators import ALL_INDICATORS
 
 
-class PolarsLakehouseProcessor:
+class PolarsDataFrameProcessor:
     """
-    Processador científico Polars Lakehouse para análise de indicadores educacionais.
+    Processador científico Polars DataFrame para análise de indicadores educacionais.
 
     Implementa processamento lazy com Polars seguindo princípios arquiteturais Data Lake,
     otimizado para análise exploratória de dados com footprint de memória menor que Dask
@@ -56,21 +56,21 @@ class PolarsLakehouseProcessor:
 
     def __init__(self):
         """
-        Inicializa processador Polars Lakehouse.
+        Inicializa processador Polars DataFrame.
 
         Configurações:
             - Polars lazy evaluation habilitada por padrão
             - Estrutura de diretórios seguindo convenções científicas
             - Caminhos absolutos para portabilidade
         """
-        print("[SISTEMA] Inicializando Processador Polars Lakehouse")
+        print("[SISTEMA] Inicializando Processador Polars DataFrame")
         print("=" * 60)
         print("[CONFIG] Arquitetura: Data Lake com Polars Lazy Evaluation")
         print("[CONFIG] Paradigma: Schema-on-read com query plan automático")
 
         self.run_timestamp = datetime.now().isoformat()
         self.complete_data_path = get_absolute_output_path('collection/raw_data/complete_data.parquet')
-        self.output_dir = get_absolute_output_path('collection/polars_lakehouse')
+        self.output_dir = get_absolute_output_path('collection/polars_dataframe')
         self.processed_dir = f"{self.output_dir}/processed"
 
         os.makedirs(self.output_dir, exist_ok=True)
@@ -232,7 +232,7 @@ class PolarsLakehouseProcessor:
 
         # Metadados JSON
         metadata = {
-            'architecture': 'polars_lakehouse',
+            'architecture': 'polars_dataframe',
             'processing_paradigm': 'polars_lazy_evaluation',
             'dataset_statistics': {
                 'total_records': int(n_rows),
@@ -271,9 +271,9 @@ class PolarsLakehouseProcessor:
 
         return output_path
 
-    def run_polars_lakehouse_processing(self) -> Dict:
+    def run_polars_dataframe_processing(self) -> Dict:
         """
-        Orquestra pipeline completo de processamento Polars Lakehouse.
+        Orquestra pipeline completo de processamento Polars DataFrame.
 
         Returns:
             Dict contendo status de execução, artefatos gerados e metadados
@@ -289,7 +289,7 @@ class PolarsLakehouseProcessor:
             - Retorno estruturado para integração em pipelines
         """
         print("="*70)
-        print(" PROCESSAMENTO POLARS LAKEHOUSE - LAZY EVALUATION ".center(70))
+        print(" PROCESSAMENTO POLARS DATAFRAME - LAZY EVALUATION ".center(70))
         print("="*70)
 
         start_time = datetime.now()
@@ -315,13 +315,13 @@ class PolarsLakehouseProcessor:
             processing_time = (end_time - start_time).total_seconds()
 
             print("\n" + "="*70)
-            print(" ✓ PROCESSAMENTO POLARS LAKEHOUSE CONCLUÍDO COM SUCESSO ".center(70))
+            print(" ✓ PROCESSAMENTO POLARS DATAFRAME CONCLUÍDO COM SUCESSO ".center(70))
             print("="*70)
             print(f"\n[TEMPO TOTAL] {processing_time:.2f} segundos")
 
             return {
                 'status': 'success',
-                'architecture': 'polars_lakehouse',
+                'architecture': 'polars_dataframe',
                 'paradigm': 'lazy_evaluation',
                 'output': {
                     'dataset': output_path,
@@ -356,7 +356,7 @@ class PolarsLakehouseProcessor:
             tb = traceback.format_exc()
 
             print("\n" + "="*70)
-            print(" ✗ ERRO NO PROCESSAMENTO POLARS LAKEHOUSE ".center(70))
+            print(" ✗ ERRO NO PROCESSAMENTO POLARS DATAFRAME ".center(70))
             print("="*70)
             print(f"\n[EXCEÇÃO] {e.__class__.__name__}: {str(e)}")
             print("\n[TRACEBACK COMPLETO]")
@@ -372,6 +372,6 @@ class PolarsLakehouseProcessor:
 
 
 if __name__ == "__main__":
-    processor = PolarsLakehouseProcessor()
-    results = processor.run_polars_lakehouse_processing()
+    processor = PolarsDataFrameProcessor()
+    results = processor.run_polars_dataframe_processing()
     print(f"[STATUS] Execução: {results.get('status', 'failed').upper()}")

@@ -1,5 +1,5 @@
 """
-Módulo de processamento Polars Lakehouse para coleta de dados educacionais.
+Módulo de processamento Polars DataFrame para coleta de dados educacionais.
 
 Implementa pipeline de processamento com Polars mantendo princípios arquiteturais
 Data Lake com leitura lazy e transformações eficientes de memória.
