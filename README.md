@@ -1,6 +1,6 @@
 # dw-vs-dl-dropout-prediction-latam
 
-Framework open-source para benchmarking reprodutível de arquiteturas de dados, com **verificação automática de anti-leakage temporal**.
+Framework open-source para benchmarking reprodutível de arquiteturas de dados, comparando **três paradigmas** (DuckDB, Dask, Polars), com **verificação automática de anti-leakage temporal**.
 
 ```mermaid
 ---
@@ -27,6 +27,7 @@ flowchart LR
         direction TB
         DL["Data Lake\n Dask "]:::dask
         DW["Data Warehouse\n DuckDB "]:::duck
+        PL["Polars DataFrame\n Polars "]:::polars
     end
 
     subgraph downstream ["Downstream (35x)"]
@@ -44,12 +45,13 @@ flowchart LR
         V --> T
     end
 
-    B --> DL & DW
-    DL & DW --> S
+    B --> DL & DW & PL
+    DL & DW & PL --> S
     M --> V
 
     classDef dask fill:#66bb6a,stroke:#2e7d32,color:#fff
     classDef duck fill:#42a5f5,stroke:#1565c0,color:#fff
+    classDef polars fill:#ffa726,stroke:#e65100,color:#fff
     classDef gate fill:#ef5350,stroke:#b71c1c,color:#fff
 ```
 
@@ -61,9 +63,13 @@ Leakage temporal é uma das principais causas de resultados irreplicáveis em ma
 
 Este framework fornece um **protocolo reutilizável de benchmarking com verificação anti-leakage** para pipelines de ML, demonstrado com dados públicos do Banco Mundial (32 países, 2000-2023) para predição de evasão escolar. A contribuição principal é o protocolo, não o resultado preditivo.
 
-Como caso de uso, o pipeline processa os mesmos dados em dois fluxos de processamento distintos — **DuckDB** (SQL analítico, schema-on-write) e **Dask** (DataFrames distribuídos, schema-on-read) — e verifica se o resultado preditivo é estatisticamente equivalente independente do backend. Isso testa se a escolha de paradigma de processamento introduz viés nos resultados de ML, uma pergunta que a literatura de analytics educacional não aborda sistematicamente.
+Como caso de uso, o pipeline processa os mesmos dados em três fluxos de processamento distintos — **DuckDB** (SQL analítico, schema-on-write), **Dask** (DataFrames distribuídos, schema-on-read) e **Polars** (lazy evaluation, schema-on-read) — e verifica se o resultado preditivo é estatisticamente equivalente independente do backend. Isso testa se a escolha de paradigma de processamento introduz viés nos resultados de ML, uma pergunta que a literatura de analytics educacional não aborda sistematicamente.
 
 O pipeline executa coleta, processamento, treinamento e benchmark de ponta a ponta, com um **gate anti-leakage** que interrompe a execução se qualquer fold violar integridade temporal. Inclui testes de injeção que deliberadamente tentam quebrar o gate para provar que ele funciona.
+
+### Por que três paradigmas?
+
+A comparação original (DuckDB vs Dask) cobria os extremos do espectro: SQL analítico in-process versus DataFrames distribuídos. Polars ocupa um nicho intermediário — lazy evaluation single-machine com otimização de query plan, sem overhead de coordenação distribuída (Dask) e sem linguagem SQL (DuckDB). Isso permite testar se a equivalência preditiva se mantém não apenas entre extremos, mas também em um paradigma que combina características de ambos: schema-on-read como o Data Lake, mas execução in-process como o Data Warehouse. Com N=3 paradigmas, a generalização da tese ("a arquitetura de processamento não introduz viés nos resultados de ML") é mais robusta do que com N=2.
 
 ### Walk-forward temporal
 
@@ -144,13 +150,13 @@ stateDiagram-v2
     check --> FAIL : Qualquer violação
 ```
 
-### DuckDB vs Dask: o que cada um faz
+### DuckDB vs Dask vs Polars: o que cada um faz
 
 ```mermaid
 block-beta
-    columns 3
+    columns 4
 
-    space header["Mesmo dado, mesmo modelo, backends diferentes"] space
+    space header["Mesmo dado, mesmo modelo, backends diferentes"] space space
 
     block:dw:1
         columns 1
@@ -182,13 +188,25 @@ block-beta
         dl5["merge() para lags"]
     end
 
+    block:pl:1
+        columns 1
+        pl_title["Polars DataFrame"]
+        pl1["Polars lazy engine"]
+        pl2["Schema-on-read (Parquet)"]
+        pl3["In-process, single-machine"]
+        pl4["Expressions idiomáticas"]
+        pl5["Query plan optimizer"]
+    end
+
     style header fill:transparent,stroke:none,color:#333
     style dw_title fill:#42a5f5,stroke:#1565c0,color:#fff
     style dl_title fill:#66bb6a,stroke:#2e7d32,color:#fff
+    style pl_title fill:#ffa726,stroke:#e65100,color:#fff
     style sh_title fill:#ff9800,stroke:#e65100,color:#fff
     style dw fill:#e3f2fd,stroke:#1565c0
     style shared fill:#fff3e0,stroke:#e65100
     style dl fill:#e8f5e9,stroke:#2e7d32
+    style pl fill:#ffe0b2,stroke:#e65100
 ```
 
 ### Benchmark (Azure L4as_v4, 32 GB RAM, n=35)
@@ -201,18 +219,19 @@ config:
       backgroundColor: transparent
 ---
 xychart-beta
-    title "Latência por fase: DuckDB vs Dask (segundos)"
+    title "Latência por fase: DuckDB vs Dask vs Polars (segundos)"
     x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
     y-axis "Tempo (s)" 0 --> 200
     bar [0.39, 0.16, 1.19, 15.23]
     bar [177.28, 0.79, 7.71, 16.92]
+    bar [0.43, 0.02, 0.92, 14.50]
 ```
 
-> DuckDB (azul) vs Dask (laranja). Setup: **452x**. Baseline: **6x**. Hierarchical: **1.1x**. Total: **12x**.
+> DuckDB (azul) vs Dask (verde) vs Polars (laranja). Setup: **452x** (DW vs DL), **412x** (PL vs DL). Baseline: **6x** (DW vs DL), **8.6x** (PL vs DL). Hierarchical: **1.1x** (DW vs DL), **1.2x** (PL vs DL). Total: **12x** (DW vs DL), **12.3x** (PL vs DL).
 
 ### Garantias do pipeline
 
-- **Anti-leakage automático (P1-P5)** — ordenação temporal (P1), gap mínimo de 2 anos (P2), separação de features e detecção de proxy (P3), escopo temporal da seleção de features (P4), e escopo de preprocessing com scaling/imputação ajustados exclusivamente no treino (P5). Violações de P1-P4 geram `ValueError` e interrompem a execução; P5 é enforced por contrato e testes unitários. Cobre as categorias L1.1-L1.4, L2 e L3.2 da taxonomia de Kapoor & Narayanan (2023) e as 4 variantes de Semmelrock et al. (2025).
+- **Anti-leakage automático (P1-P5)** em todas as 3 arquiteturas — ordenação temporal (P1), gap mínimo de 2 anos (P2), separação de features e detecção de proxy (P3), escopo temporal da seleção de features (P4), e escopo de preprocessing com scaling/imputação ajustados exclusivamente no treino (P5). Violações de P1-P4 geram `ValueError` e interrompem a execução; P5 é enforced por contrato e testes unitários. Cobre as categorias L1.1-L1.4, L2 e L3.2 da taxonomia de Kapoor & Narayanan (2023) e as 4 variantes de Semmelrock et al. (2025).
 - **HPO sem contaminação** — hiperparâmetros selecionados via grid search no conjunto de validação; modelo final retreinado no treino completo. Previne leakage L3.3.
 - **Equivalência estatística, não p-hacking** — comparação arquitetural via SESOI + IC 95% por bootstrap, com Wilcoxon e Hodges-Lehmann como suporte. Limiares SESOI definidos a priori: R² = 0.01 (metade do efeito pequeno de Cohen 1988), MASE = 0.05, WAPE = 0.05 (resolução prática de decisão, Lakens et al. 2018).
 - **Reprodutibilidade integral** — seeds centralizadas, `n_jobs=1`, snapshot de ambiente (packages, hardware, git commit) e 51 testes automatizados + 4 cenários de injeção de leakage.
@@ -230,10 +249,10 @@ cd dw-vs-dl-dropout-prediction-latam
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Pipeline completo: coleta → validação → benchmark → artefatos LaTeX
+# Pipeline completo: coleta → validação → benchmark → artefatos LaTeX (3 arquiteturas: DW, DL, PL)
 python pipeline.py
 
-# Testes (51 unitários + 4 cenários de injeção de leakage)
+# Testes (51 unitários + 4 cenários de injeção de leakage, aplica a todas as 3 arquiteturas)
 pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
 python tests/test_leakage_injection.py
 ```
@@ -252,10 +271,12 @@ src/
 ├── collection/              # Coleta e processamento de dados brutos
 │   ├── raw_data_collector.py
 │   ├── data_lake/           # Processador Dask (schema-on-read)
-│   └── data_warehouse/      # Processador DuckDB (schema-on-write)
+│   ├── data_warehouse/      # Processador DuckDB (schema-on-write)
+│   └── polars_dataframe/    # Processador Polars (lazy evaluation)
 ├── architectures_ml/        # Implementações por arquitetura
 │   ├── data_lake/           # Setup ML + modelos hierárquicos (Ridge, RF)
-│   └── data_warehouse/      # Setup ML + modelos hierárquicos (Ridge, RF)
+│   ├── data_warehouse/      # Setup ML + modelos hierárquicos (Ridge, RF)
+│   └── polars_dataframe/    # Setup ML + modelos hierárquicos (Ridge, RF)
 ├── benchmarking/            # Instrumentação e derivação de métricas
 └── statistical_validation/  # TOST, bootstrap, effect sizes, scorecard
 tests/
@@ -267,7 +288,7 @@ pipeline.py                  # Orquestra tudo
 
 ## Como adaptar para seu domínio
 
-1. **Nova arquitetura** — crie uma subclasse de `BaseArchitectureML` em `src/architectures_ml/`. O anti-leakage é herdado. Registre no `pipeline.py`.
+1. **Nova arquitetura** — crie uma subclasse de `BaseArchitectureML` em `src/architectures_ml/`. O anti-leakage é herdado. Registre no `pipeline.py`. Polars foi implementado como primeira extensão de terceiros seguindo este padrão.
 
 2. **Novos parâmetros** — edite `src/core/scientific_config.py`: gaps temporais, limiares SESOI (`sesoi_r2`, `sesoi_mase`, `sesoi_wape`), embargo, bootstrap iterations.
 
