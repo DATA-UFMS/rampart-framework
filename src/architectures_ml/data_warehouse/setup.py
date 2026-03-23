@@ -797,7 +797,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         correlations = {}
         failed_features = []
 
-        # Decidir base da análise (amostra vs full table) para alinhar DL/DW
+        # Decidir base da análise (amostra vs full table) conforme scientific_config
         use_sampling = bool(self.config.get('correlation_sampling', True))
         min_sample = int(self.config.get('correlation_min_sample_size', 5000))
         frac = float(self.config.get('correlation_sample_fraction', 0.1))
@@ -974,15 +974,13 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             min_sample_absolute,
             int(total_rows * sample_fraction)
         )
-        
-        # Limitação superior para eficiência computacional
-        max_sample_size = 10000  # Baseado em benchmarks O(n²)
-        final_sample_size = min(optimal_sample_size, total_rows, max_sample_size)
+
+        final_sample_size = min(optimal_sample_size, total_rows)
         
         sample_percentage = (final_sample_size / total_rows) * 100
         
         print(f"[AMOSTRAGEM] {final_sample_size:,}/{total_rows:,} observações ({sample_percentage:.1f}%)")
-        print(f"[JUSTIFICATIVA] Balanceamento precisão vs eficiência computacional")
+        print(f"[CRITÉRIO] max(config={min_sample_absolute}, {sample_fraction:.0%}×dataset)")
         
         # === Criação de view amostrada reprodutível ===
         sample_view_name = "vw_collinearity_sample"
