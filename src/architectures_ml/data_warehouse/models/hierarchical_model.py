@@ -447,7 +447,7 @@ class HierarchicalModelSQLFirst:
         X_val, y_val, countries_val = self._prepare_data(val_data, train_data, available_features)
         X_test, y_test, countries_test = self._prepare_data(test_data, train_data, available_features)
         
-        # P5: scaler ajustado exclusivamente no treino (Semmelrock et al. 2025)
+        # P5: scaler ajustado exclusivamente no treino (Kaufman et al. 2012)
         scaler = StandardScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)

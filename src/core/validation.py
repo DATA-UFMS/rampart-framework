@@ -14,7 +14,7 @@ Protocolo anti-leakage completo (P1-P5):
     P4 — Escopo de seleção: feature selection restrita ao período de
          treino do primeiro fold (Kapoor & Narayanan 2023, L1.3).
     P5 — Escopo de preprocessing: scaling e imputação ajustados
-         exclusivamente nos dados de treino (Semmelrock et al. 2025).
+         exclusivamente nos dados de treino (Kaufman et al. 2012).
 
 HPO: grid search no conjunto de validação; modelo final retreinado
 no treino completo. Previne leakage L3.3 (Kapoor & Narayanan 2023).

@@ -45,7 +45,7 @@ class BaseArchitectureML(ABC):
              ao período de treino do primeiro fold (Kapoor L1.3).
         P5 — Escopo de preprocessing: transformações estatísticas
              (scaling, imputação) ajustadas exclusivamente no treino
-             (Semmelrock et al. 2025).
+             (Kaufman et al. 2012).
 
     Estratégia de HPO:
         Hiperparâmetros são selecionados via grid search no conjunto
@@ -610,7 +610,7 @@ class BaseArchitectureML(ABC):
         """
         Prepara features finais para ML.
 
-        P5 (escopo de preprocessing — Semmelrock et al. 2025):
+        P5 (escopo de preprocessing — Kaufman et al. 2012):
         Implementações devem garantir que qualquer transformação
         estatística (scaling, imputação, encoding) seja ajustada
         exclusivamente nos dados de treino. Estatísticas derivadas
