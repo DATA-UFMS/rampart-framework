@@ -1,6 +1,6 @@
-# Diagrama do Pipeline — Data Warehouse vs Data Lake
+# Diagrama do Pipeline — Data Warehouse vs Data Lake vs Polars DataFrame
 
-Documentação técnica do fluxo completo do framework de benchmarking reprodutível. Mostra ambos os paradigmas (DuckDB e Dask) em paralelo, a separação upstream/downstream, e as garantias de fairness implementadas.
+Documentação técnica do fluxo completo do framework de benchmarking reprodutível. Mostra os três paradigmas (DuckDB, Dask e Polars) em paralelo, a separação upstream/downstream, e as garantias de fairness implementadas.
 
 ## Visão geral
 
@@ -10,6 +10,7 @@ graph TB
     classDef collectionClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
     classDef dlClass fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
     classDef dwClass fill:#b3e5fc,stroke:#0277bd,stroke-width:2px
+    classDef plClass fill:#ffe0b2,stroke:#e65100,stroke-width:2px
     classDef benchClass fill:#ffccbc,stroke:#d84315,stroke-width:2px
     classDef validationClass fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
     classDef outputClass fill:#ffe0b2,stroke:#e65100,stroke-width:2px
@@ -51,10 +52,18 @@ graph TB
                 DW_DATA[("data_warehouse/\nDuckDB + Parquet")]:::dwClass
                 DW_PROC --> DW_DATA
             end
+
+            subgraph PL_PROC_G ["Polars DataFrame"]
+                direction TB
+                PL_PROC["processor.py\nPolars · lazy evaluation\n• Query plan optimizer\n• In-process engine"]:::plClass
+                PL_DATA[("polars_dataframe/\nParquet")]:::plClass
+                PL_PROC --> PL_DATA
+            end
         end
 
         RAWDATA --> DL_PROC
         RAWDATA --> DW_PROC
+        RAWDATA --> PL_PROC
     end
 
     %% ============================================================
@@ -84,8 +93,16 @@ graph TB
                 DW_SETUP --> DW_FOLDS
             end
 
+            subgraph PL_ML_G ["ML Polars DataFrame"]
+                direction TB
+                PL_SETUP["setup.py · Polars\n• .lazy() expressions\n• Lags via shift()\n• Folds → Parquet"]:::plClass
+                PL_FOLDS[("temporal_folds_polars_dataframe.json\nfeature_selection_polars_dataframe.json")]:::plClass
+                PL_SETUP --> PL_FOLDS
+            end
+
             BASE -.-> DL_SETUP
             BASE -.-> DW_SETUP
+            BASE -.-> PL_SETUP
         end
 
         FAIR --> SETUP_G
@@ -94,28 +111,34 @@ graph TB
 
         DL_FOLDS --> GATE
         DW_FOLDS --> GATE
+        PL_FOLDS --> GATE
 
         subgraph BASELINE_G ["FASE 4 · Modelos Baseline"]
             direction LR
             DL_BASE["baseline_analysis.py\nData Lake (.persist())\n• Média histórica\n• Tendência linear\n• Naive · Cross-country"]:::dlClass
             DW_BASE["baseline_analysis.py\nData Warehouse (SQL)\n• Média histórica\n• Tendência linear\n• Naive · Cross-country"]:::dwClass
+            PL_BASE["baseline_analysis.py\nPolars (.collect())\n• Média histórica\n• Tendência linear\n• Naive · Cross-country"]:::plClass
         end
 
         GATE --> DL_BASE
         GATE --> DW_BASE
+        GATE --> PL_BASE
 
         subgraph HIER_G ["FASE 5 · Modelos Hierárquicos"]
             direction LR
             DL_HIER["hierarchical_models.py\nData Lake (.persist())\n• Ridge hierárquico\n• Random Forest\n• James-Stein shrinkage"]:::dlClass
             DW_HIER["hierarchical_models.py\nData Warehouse (SQL-first)\n• Ridge hierárquico\n• Random Forest\n• James-Stein shrinkage"]:::dwClass
+            PL_HIER["hierarchical_models.py\nPolars (.collect())\n• Ridge hierárquico\n• Random Forest\n• James-Stein shrinkage"]:::plClass
         end
 
         DL_BASE --> DL_HIER
         DW_BASE --> DW_HIER
+        PL_BASE --> PL_HIER
     end
 
     DL_DATA --> DL_SETUP
     DW_DATA --> DW_SETUP
+    PL_DATA --> PL_SETUP
     CONFIG --> BASE
 
     %% ============================================================
@@ -125,6 +148,7 @@ graph TB
 
     DL_HIER --> BENCH
     DW_HIER --> BENCH
+    PL_HIER --> BENCH
     CONFIG --> BENCH
 
     BENCH_OUT[("benchmarks/\n• architectural_benchmark_results.csv\n• architectural_benchmark_resource_log.jsonl\n• architectural_benchmark_summary.json")]:::benchClass
@@ -155,6 +179,7 @@ graph TB
 
     DL_FOLDS --> VALIDATOR
     DW_FOLDS --> VALIDATOR
+    PL_FOLDS --> VALIDATOR
     VALIDATOR --> FINAL_OUT
 ```
 
@@ -167,7 +192,7 @@ flowchart LR
     subgraph U ["Upstream (1x)"]
         direction TB
         C["Coleta\nWorld Bank API"]
-        P["Processamento\nDL + DW"]
+        P["Processamento\nDL + DW + PL"]
         C --> P
     end
 
@@ -199,7 +224,7 @@ stateDiagram-v2
     state fork_fair <<fork>>
     state join_fair <<join>>
 
-    state "Randomizar ordem\nDL/DW (seed=42)" as RAND
+    state "Randomizar ordem\nDL/DW/PL (seed=42)" as RAND
     state "gc.collect()\nentre fases" as GC
     state "Feature set\nunificado" as FEAT
     state "Amostragem\nnormalizada" as SAMP
@@ -262,7 +287,7 @@ O gate valida cada fold individualmente antes de liberar para os modelos. Cobre 
 
 ```mermaid
 block-beta
-    columns 3
+    columns 4
 
     block:dw:1
         columns 1
@@ -288,6 +313,18 @@ block-beta
         sh7["SESOI + Bootstrap CI"]
     end
 
+    block:pl:1
+        columns 1
+        pl_t["Polars DataFrame"]
+        pl1["In-process lazy engine"]
+        pl2["Schema-on-read (Parquet)"]
+        pl3["LazyFrame → collect()"]
+        pl4["Expressions para lags"]
+        pl5["select_dtypes via schema"]
+        pl6[".lazy().collect() pipeline"]
+        pl7["Query plan optimization"]
+    end
+
     block:dl:1
         columns 1
         dl_t["Data Lake (Dask)"]
@@ -302,9 +339,11 @@ block-beta
 
     style dw_t fill:#42a5f5,stroke:#1565c0,color:#fff
     style sh_t fill:#ff9800,stroke:#e65100,color:#fff
+    style pl_t fill:#ffa726,stroke:#e65100,color:#fff
     style dl_t fill:#66bb6a,stroke:#2e7d32,color:#fff
     style dw fill:#e3f2fd,stroke:#1565c0
     style shared fill:#fff3e0,stroke:#e65100
+    style pl fill:#fff3e0,stroke:#e65100
     style dl fill:#e8f5e9,stroke:#2e7d32
 ```
 
@@ -316,18 +355,19 @@ xychart-beta
     x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
     y-axis "Tempo (s)" 0 --> 200
     bar [0.39, 0.16, 1.19, 15.23]
+    bar [0.43, 0.015, 0.92, 14.50]
     bar [177.28, 0.79, 7.71, 16.92]
 ```
 
-| Fase | DuckDB (s) | Dask (s) | Ratio | Cohen's dz |
-|------|-----------|---------|-------|-----------|
-| Setup (n=35) | 0.39 ± 0.04 | 177.28 ± 0.08 | **452x** | 704.2 |
-| Processing (n=1) | 0.16 | 0.79 | **5x** | — |
-| Baseline (n=35) | 1.19 ± 0.00 | 7.71 ± 0.00 | **6x** | 441.0 |
-| Hierarchical (n=35) | 15.23 ± 0.01 | 16.92 ± 0.01 | **1.1x** | 47.0 |
-| **Total** | **16.97** | **202.70** | **12x** | — |
+| Fase | DuckDB (s) | Polars (s) | Dask (s) | Ratio | Cohen's dz |
+|------|-----------|-----------|---------|-------|-----------|
+| Setup (n=35) | 0.39 ± 0.04 | 0.43 ± 0.03 | 177.28 ± 0.08 | **412x** | 704.2 |
+| Processing (n=1) | 0.16 | 0.015 | 0.79 | **52x** | — |
+| Baseline (n=35) | 1.19 ± 0.00 | 0.92 ± 0.01 | 7.71 ± 0.00 | **8x** | 441.0 |
+| Hierarchical (n=35) | 15.23 ± 0.01 | 14.50 ± 0.02 | 16.92 ± 0.01 | **1.2x** | 47.0 |
+| **Total** | **16.97** | **15.92** | **202.70** | **13x** | — |
 
-Ambiente: Azure Standard_L4as_v4 (4 vCPUs, 32 GB RAM, NVMe), Ubuntu 22.04, Python 3.10. IC 95% via t-distribution. Processing executa uma vez (upstream); demais fases repetidas 35 vezes com 2 warmup descartados. Ordem DL/DW randomizada por iteração com `gc.collect()` entre execuções.
+Ambiente: Azure Standard_L4as_v4 (4 vCPUs, 32 GB RAM, NVMe), Ubuntu 22.04, Python 3.10. IC 95% via t-distribution. Processing executa uma vez (upstream); demais fases repetidas 35 vezes com 2 warmup descartados. Ordem DL/DW/PL randomizada por iteração com `gc.collect()` entre execuções.
 
 ## Legenda
 
@@ -337,6 +377,7 @@ Ambiente: Azure Standard_L4as_v4 (4 vCPUs, 32 GB RAM, NVMe), Ubuntu 22.04, Pytho
 - **Amarelo** — coleta de dados brutos (upstream)
 - **Verde** — pipeline Data Lake (Dask)
 - **Azul** — pipeline Data Warehouse (DuckDB)
+- **Âmbar** — pipeline Polars DataFrame
 - **Laranja** — benchmarking e instrumentação
 - **Roxo** — validação estatística e anti-leakage
 - **Índigo** — controles de fairness
@@ -349,11 +390,13 @@ outputs/
 ├── collection/
 │   ├── raw_data/                          # Dados brutos do Banco Mundial
 │   ├── data_lake/                         # Parquet particionado (Dask)
-│   └── data_warehouse/                    # DuckDB + Parquet
+│   ├── data_warehouse/                    # DuckDB + Parquet
+│   └── polars_dataframe/                  # Parquet (Polars)
 ├── ml_pipeline/
 │   └── architectures/
 │       ├── data_lake/prep/                # Folds, features, modelos DL
-│       └── data_warehouse/prep/           # Folds, features, modelos DW
+│       ├── data_warehouse/prep/           # Folds, features, modelos DW
+│       └── polars_dataframe/prep/         # Folds, features, modelos PL
 ├── benchmarks/
 │   ├── architectural_benchmark_results.csv
 │   ├── architectural_benchmark_resource_log.jsonl
