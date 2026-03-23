@@ -66,6 +66,14 @@ except Exception:
     DEFAULT_SESOI_MASE = 0.05
     DEFAULT_SESOI_WAPE = 0.05
 
+# Pairwise comparisons for 3-way analysis
+PREDICTIVE_PAIRS = [("dl", "dw"), ("dl", "pl"), ("dw", "pl")]
+LATENCY_PAIRS = [
+    ("data_lake", "data_warehouse", "dl", "dw"),
+    ("data_lake", "polars_dataframe", "dl", "pl"),
+    ("data_warehouse", "polars_dataframe", "dw", "pl"),
+]
+
 
 def _median_hodges_lehmann(deltas: np.ndarray) -> float:
     n = len(deltas)
@@ -134,7 +142,7 @@ def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
             fid = int(k.split('_')[1])
         except Exception:
             continue
-        # Segue a referência best_baseline para o modelo real, recorre a naive_with_lag
+        # Usa best_baseline se disponível, senão recorre a naive_with_lag
         best = v.get('best_baseline', {})
         best_name = best.get('model', '') if isinstance(best, dict) else ''
         model = v.get(best_name) if best_name else None
@@ -163,6 +171,7 @@ def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
     paths = {
         'dw': 'outputs/ml_pipeline/architectures/data_warehouse/models/baseline_analysis_data_warehouse_consumer_results.json',
         'dl': 'outputs/ml_pipeline/architectures/data_lake/models/baseline_results/baseline_analysis_data_lake_results.json',
+        'pl': 'outputs/ml_pipeline/architectures/polars_dataframe/models/baseline_results/baseline_analysis_polars_dataframe_results.json',
     }
     out = {}
     for arch, p in paths.items():
@@ -171,16 +180,16 @@ def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
     return out
 
 
-def _paired_deltas_for_metric(pairs: Dict[str, Dict[int, Dict[str, float]]], metric: str) -> np.ndarray:
-    dl = pairs.get('dl', {})
-    dw = pairs.get('dw', {})
-    common_ids = sorted(set(dl.keys()) & set(dw.keys()))
+def _paired_deltas_for_metric(pairs: Dict[str, Dict[int, Dict[str, float]]], metric: str, arch_a: str = 'dl', arch_b: str = 'dw') -> np.ndarray:
+    a = pairs.get(arch_a, {})
+    b = pairs.get(arch_b, {})
+    common_ids = sorted(set(a.keys()) & set(b.keys()))
     deltas = []
     for fid in common_ids:
-        vdl = dl[fid].get(metric)
-        vdw = dw[fid].get(metric)
-        if isinstance(vdl, (int, float)) and isinstance(vdw, (int, float)):
-            deltas.append(vdw - vdl)
+        va = a[fid].get(metric)
+        vb = b[fid].get(metric)
+        if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
+            deltas.append(vb - va)
     return np.array(deltas, dtype=float)
 
 
@@ -188,28 +197,32 @@ def _analyze_predictive_metrics(args) -> Dict:
     pairs = _load_baseline_pairs()
     results = {}
     cfg = {'r2': args.r2_delta, 'mase': args.mase_delta, 'wape': args.wape_delta}
-    for metric, delta in cfg.items():
-        deltas = _paired_deltas_for_metric(pairs, metric)
-        point, (lo, hi) = _bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
-        decision = _decision_equivalence(lo, hi, delta)
-        wilcoxon_p = None
-        hl = None
-        if len(deltas) >= 1 and not np.all(np.isnan(deltas)):
-            try:
-                w = stats.wilcoxon(deltas, zero_method='wilcox', alternative='two-sided', method='auto')
-                wilcoxon_p = float(w.pvalue)
-            except Exception:
-                wilcoxon_p = None
-            hl = _median_hodges_lehmann(deltas)
-        results[metric] = {
-            'delta': delta,
-            'n_pairs': int(len(deltas)),
-            'point_estimate': point,
-            'ci95': [lo, hi],
-            'decision': decision,
-            'wilcoxon_p': wilcoxon_p,
-            'hodges_lehmann': hl,
-        }
+    for arch_a, arch_b in PREDICTIVE_PAIRS:
+        pair_key = f"{arch_a}_vs_{arch_b}"
+        pair_results = {}
+        for metric, delta in cfg.items():
+            deltas = _paired_deltas_for_metric(pairs, metric, arch_a, arch_b)
+            point, (lo, hi) = _bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
+            decision = _decision_equivalence(lo, hi, delta)
+            wilcoxon_p = None
+            hl = None
+            if len(deltas) >= 1 and not np.all(np.isnan(deltas)):
+                try:
+                    w = stats.wilcoxon(deltas, zero_method='wilcox', alternative='two-sided', method='auto')
+                    wilcoxon_p = float(w.pvalue)
+                except Exception:
+                    wilcoxon_p = None
+                hl = _median_hodges_lehmann(deltas)
+            pair_results[metric] = {
+                'delta': delta,
+                'n_pairs': int(len(deltas)),
+                'point_estimate': point,
+                'ci95': [lo, hi],
+                'decision': decision,
+                'wilcoxon_p': wilcoxon_p,
+                'hodges_lehmann': hl,
+            }
+        results[pair_key] = pair_results
     return results
 
 
@@ -250,39 +263,42 @@ def _analyze_latency(args) -> Dict:
     profile = _parse_latency_profile(args.latency_delta_profile, args.latency_delta)
     for phase, pdf in piv.groupby(level=0):
         vals = pdf.droplevel(0)
-        if 'data_warehouse' not in vals.columns or 'data_lake' not in vals.columns:
-            results[phase] = {'status': 'missing_architectures'}
-            continue
-        x = vals['data_warehouse'].to_numpy(dtype=float)
-        y = vals['data_lake'].to_numpy(dtype=float)
-        mask = np.isfinite(x) & np.isfinite(y) & (x > 0) & (y > 0)
-        lr = np.log(x[mask] / y[mask])
-        if lr.size == 0:
-            results[phase] = {'status': 'insufficient_data'}
-            continue
-        point, (lo, hi) = _bootstrap_ci(lr, iters=args.bootstrap, seed=args.seed, ci=0.95)
-        delta_pct = profile.get(str(phase).lower(), profile['total'])
-        delta_lr = math.log(1.0 + delta_pct)
-        decision = _decision_equivalence(lo, hi, delta_lr)
-        try:
-            w = stats.wilcoxon(lr, zero_method='wilcox', alternative='two-sided', method='auto')
-            p = float(w.pvalue)
-        except Exception:
-            p = None
-        hl = _median_hodges_lehmann(lr)
-        results[phase] = {
-            'delta_pct': float(delta_pct),
-            'n_pairs': int(lr.size),
-            'point_estimate_lr': float(point),
-            'ci95_lr': [float(lo), float(hi)],
-            'decision': decision,
-            'wilcoxon_p': p,
-            'hodges_lehmann_lr': hl,
-            'interpretation': {
-                'pct_effect': float((math.exp(point) - 1.0) * 100.0),
-                'ci95_pct': [float((math.exp(lo) - 1.0) * 100.0), float((math.exp(hi) - 1.0) * 100.0)],
+        phase_results = {}
+        for arch_name_a, arch_name_b, arch_a, arch_b in LATENCY_PAIRS:
+            if arch_name_a not in vals.columns or arch_name_b not in vals.columns:
+                continue
+            pair_key = f"{arch_a}_vs_{arch_b}"
+            x = vals[arch_name_a].to_numpy(dtype=float)
+            y = vals[arch_name_b].to_numpy(dtype=float)
+            mask = np.isfinite(x) & np.isfinite(y) & (x > 0) & (y > 0)
+            lr = np.log(x[mask] / y[mask])
+            if lr.size == 0:
+                phase_results[pair_key] = {'status': 'insufficient_data'}
+                continue
+            point, (lo, hi) = _bootstrap_ci(lr, iters=args.bootstrap, seed=args.seed, ci=0.95)
+            delta_pct = profile.get(str(phase).lower(), profile['total'])
+            delta_lr = math.log(1.0 + delta_pct)
+            decision = _decision_equivalence(lo, hi, delta_lr)
+            try:
+                w = stats.wilcoxon(lr, zero_method='wilcox', alternative='two-sided', method='auto')
+                p = float(w.pvalue)
+            except Exception:
+                p = None
+            hl = _median_hodges_lehmann(lr)
+            phase_results[pair_key] = {
+                'delta_pct': float(delta_pct),
+                'n_pairs': int(lr.size),
+                'point_estimate_lr': float(point),
+                'ci95_lr': [float(lo), float(hi)],
+                'decision': decision,
+                'wilcoxon_p': p,
+                'hodges_lehmann_lr': hl,
+                'interpretation': {
+                    'pct_effect': float((math.exp(point) - 1.0) * 100.0),
+                    'ci95_pct': [float((math.exp(lo) - 1.0) * 100.0), float((math.exp(hi) - 1.0) * 100.0)],
+                }
             }
-        }
+        results[phase] = phase_results
     return results
 
 
@@ -295,22 +311,25 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             '% Equivalência por Estimativa (SESOI + IC) — Gerado automaticamente',
             '\\begin{table}[htb]',
             '\\centering',
-            '\\caption{Equivalência prática por estimativa — predição}',
-            '\\begin{tabular}{lrrrrl}',
+            '\\caption{Equivalência prática por estimativa — predição (3-way pairwise)}',
+            '\\begin{tabular}{llrrrrl}',
             '\\toprule',
-            'Métrica & n & Estim. & IC95\\% & $\\delta$ & Decisão \\\\ ',
+            'Par & Métrica & n & Estim. & IC95\\% & $\\delta$ & Decisão \\\\ ',
             '\\midrule',
         ]
         pred = obj.get('predictive', {})
-        for m, r in pred.items():
-            if not isinstance(r, dict):
+        for pair_key, pair_data in pred.items():
+            if not isinstance(pair_data, dict):
                 continue
-            n = r.get('n_pairs', 0)
-            est = r.get('point_estimate', float('nan'))
-            ci = r.get('ci95', [float('nan'), float('nan')])
-            d = r.get('delta', float('nan'))
-            dec = r.get('decision', '')
-            lines.append(f"{m} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & {dec} \\\\")
+            for m, r in pair_data.items():
+                if not isinstance(r, dict):
+                    continue
+                n = r.get('n_pairs', 0)
+                est = r.get('point_estimate', float('nan'))
+                ci = r.get('ci95', [float('nan'), float('nan')])
+                d = r.get('delta', float('nan'))
+                dec = r.get('decision', '')
+                lines.append(f"{pair_key} & {m} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & {dec} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',
@@ -318,22 +337,25 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             '',
             '\\begin{table}[htb]',
             '\\centering',
-            '\\caption{Equivalência prática por estimativa — latência (log‑ratio)}',
-            '\\begin{tabular}{lrrrrl}',
+            '\\caption{Equivalência prática por estimativa — latência (log‑ratio, 3-way pairwise)}',
+            '\\begin{tabular}{llrrrrl}',
             '\\toprule',
-            'Fase & n & Estim. (LR) & IC95\\% & $\\delta$(%) & Decisão \\\\ ',
+            'Fase & Par & n & Estim. (LR) & IC95\\% & $\\delta$(%) & Decisão \\\\ ',
             '\\midrule',
         ]
         lat = obj.get('latency', {})
-        for phase, r in lat.items():
-            if not isinstance(r, dict) or 'point_estimate_lr' not in r:
+        for phase, phase_data in lat.items():
+            if not isinstance(phase_data, dict):
                 continue
-            n = r.get('n_pairs', 0)
-            est = r.get('point_estimate_lr', float('nan'))
-            ci = r.get('ci95_lr', [float('nan'), float('nan')])
-            d_pct = r.get('delta_pct', float('nan')) * 100.0
-            dec = r.get('decision', '')
-            lines.append(f"{phase} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d_pct:.1f} & {dec} \\\\")
+            for pair_key, r in phase_data.items():
+                if not isinstance(r, dict) or 'point_estimate_lr' not in r:
+                    continue
+                n = r.get('n_pairs', 0)
+                est = r.get('point_estimate_lr', float('nan'))
+                ci = r.get('ci95_lr', [float('nan'), float('nan')])
+                d_pct = r.get('delta_pct', float('nan')) * 100.0
+                dec = r.get('decision', '')
+                lines.append(f"{phase} & {pair_key} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d_pct:.1f} & {dec} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',
@@ -346,9 +368,11 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
 def run(args: argparse.Namespace) -> int:
     predictive = _analyze_predictive_metrics(args)
     latency = _analyze_latency(args)
-    # Extrair n_pairs para nota de poder
+    # Extrair n_pairs para nota de poder (máximo entre todos os pares preditivos)
     n_pairs = max(
-        (r.get('n_pairs', 0) for r in predictive.values() if isinstance(r, dict)),
+        (r.get('n_pairs', 0) for pair_data in predictive.values()
+         if isinstance(pair_data, dict)
+         for r in pair_data.values() if isinstance(r, dict)),
         default=0
     )
     out = {
@@ -358,6 +382,7 @@ def run(args: argparse.Namespace) -> int:
         'n_folds': n_pairs,
         'power_note': (
             f'n={n_pairs} folds (maximo sem comprometer anti-leakage temporal). '
+            f'Analise 3-way pairwise: dl_vs_dw, dl_vs_pl, dw_vs_pl. '
             f'Wilcoxon pareado com n={n_pairs} tem poder limitado (~30% para d=0.5); '
             f'decisao principal via bootstrap CI. Resultado "inconclusive" e esperado '
             f'e reflete precisao disponivel (Lakens et al. 2018).'
