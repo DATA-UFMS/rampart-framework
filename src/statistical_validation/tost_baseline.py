@@ -126,13 +126,17 @@ def _load_json(path: str) -> Optional[Dict]:
 
 def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
     """Extrai métricas de teste por fold do JSON de resultados de baseline.
-    
+
     Usa o modelo 'best_baseline' quando disponível, recorrendo a 'naive_with_lag'.
     Extrai test_r2, test_mase, test_wape explicitamente por nome de chave.
+
+    Compatível com ambas as estruturas de JSON:
+      - DW/DL (v2+): baseline_model_results -> fold_X -> {best_baseline, naive_with_lag, ...}
+      - PL (v1 legacy): baseline_models -> fold_X -> {naive_with_lag, cross_country_average, ...}
     """
     out: Dict[int, Dict[str, float]] = {}
-    # Folds ficam em 'baseline_model_results' ou diretamente no dict
-    folds_container = d.get('baseline_model_results', d)
+    # Folds ficam em 'baseline_model_results', 'baseline_models', ou diretamente no dict
+    folds_container = d.get('baseline_model_results') or d.get('baseline_models') or d
     if not isinstance(folds_container, dict):
         return out
     for k, v in folds_container.items():
