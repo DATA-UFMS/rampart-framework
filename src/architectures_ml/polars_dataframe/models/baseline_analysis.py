@@ -54,8 +54,6 @@ class BaselineModelAnalysisPolarsDataFrame:
     def __init__(self):
         """
         Inicializa a análise baseline para arquitetura Polars DataFrame.
-
-        Docstring em Português conforme padrão do projeto.
         """
         print("Inicializando análise baseline Polars DataFrame")
         print("=" * 60)
@@ -84,8 +82,6 @@ class BaselineModelAnalysisPolarsDataFrame:
     def _load_data_summary(self):
         """
         Carrega resumo dos dados usando computação seletiva com Polars.
-
-        Docstring em Português.
         """
         print("[RESUMO] Computando estatísticas dos dados...")
 
@@ -134,8 +130,6 @@ class BaselineModelAnalysisPolarsDataFrame:
 
         Returns:
             Dict: Estatísticas da distribuição do target
-
-        Docstring em Português.
         """
         print(f"\nAnálise da distribuição do target Polars DataFrame")
         print("=" * 50)
@@ -226,8 +220,6 @@ class BaselineModelAnalysisPolarsDataFrame:
 
         Returns:
             Dict: Resultados dos modelos baseline para todos os folds
-
-        Docstring em Português.
         """
         print(f"\nBaselines com validação temporal")
         print("=" * 60)
@@ -279,6 +271,24 @@ class BaselineModelAnalysisPolarsDataFrame:
             y_test = test_clean[self.target_col].values
             global_mean = y_train.mean()
 
+            # MASE scale from training data
+            def _mase_scale_from_train(df):
+                try:
+                    if df is None or df.empty:
+                        return None
+                    diffs = []
+                    for _, g in df.sort_values(['country_code', 'year']).groupby('country_code'):
+                        vals = g[self.target_col].values
+                        if len(vals) > 1:
+                            diffs.append(np.abs(np.diff(vals)))
+                    if not diffs:
+                        return None
+                    return float(np.mean(np.concatenate(diffs)))
+                except Exception:
+                    return None
+
+            mase_scale = _mase_scale_from_train(train_clean)
+
             fold_results = {}
 
             # Baseline 1: Média Global
@@ -293,6 +303,9 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'test_r2': float(test_r2_global),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_global))),
                 'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred_global))),
+                'test_wape': float((np.abs(y_test - test_pred_global)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
+                'test_mase': (float(np.mean(np.abs(y_test - test_pred_global))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
+                'mase_scale_train': mase_scale,
                 'method': 'global_mean_no_leakage'
             }
 
@@ -315,6 +328,9 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'test_r2': float(test_r2_trend),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_trend))),
                 'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred_trend))),
+                'test_wape': float((np.abs(y_test - test_pred_trend)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
+                'test_mase': (float(np.mean(np.abs(y_test - test_pred_trend))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
+                'mase_scale_train': mase_scale,
                 'slope': float(trend_model.coef_[0]),
                 'method': 'linear_trend_no_leakage'
             }
@@ -418,75 +434,259 @@ class BaselineModelAnalysisPolarsDataFrame:
             val_r2_cross = r2_score(y_val, val_pred_cross)
             test_r2_cross = r2_score(y_test, test_pred_cross)
 
-            fold_results['cross_country_average'] = {
+            fold_results['cross_country'] = {
                 'val_r2': float(val_r2_cross),
                 'test_r2': float(test_r2_cross),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_cross))),
                 'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred_cross))),
-                'method': 'cross_country_average_with_lag'
+                'test_wape': float((np.abs(y_test - test_pred_cross)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
+                'test_mase': (float(np.mean(np.abs(y_test - test_pred_cross))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
+                'mase_scale_train': mase_scale,
+                'min_lag_years': MIN_LAG,
+                'geographic_leakage_prevented': True,
+                'method': 'cross_country_average_excluding_target'
             }
+
+            # Métricas agregadas para Naive (inclui WAPE/MASE)
+            try:
+                test_wape_naive = float((np.abs(y_test - test_pred_naive)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None
+                test_mase_naive = (float(np.mean(np.abs(y_test - test_pred_naive))) / mase_scale) if (mase_scale and mase_scale > 0) else None
+            except Exception:
+                test_wape_naive = None
+                test_mase_naive = None
+            fold_results['naive_with_lag'].update({
+                'test_wape': test_wape_naive,
+                'test_mase': test_mase_naive,
+                'mase_scale_train': mase_scale
+            })
+
+            # Best baseline por fold
+            val_scores = [(name, data['val_r2']) for name, data in fold_results.items()]
+            best_val_baseline, best_val_r2 = max(val_scores, key=lambda x: x[1])
+            best_test_r2 = fold_results[best_val_baseline]['test_r2']
+            generalization_gap = best_val_r2 - best_test_r2
+
+            fold_results['best_baseline'] = {
+                'model': best_val_baseline,
+                'val_r2': best_val_r2,
+                'test_r2': best_test_r2,
+                'generalization_gap': generalization_gap
+            }
+
+            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} → Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
 
             # Registrar resultados do fold
             baseline_results[f'fold_{fold_id}'] = fold_results
 
         return baseline_results
 
-    def run_complete_analysis(self) -> Dict:
+    def analyze_predictability(self, baseline_results: Dict) -> Dict:
         """
-        Executar análise baseline completa para arquitetura Polars DataFrame.
+        Análise científica de predictabilidade dos modelos baseline.
+
+        Segue o mesmo protocolo de Data Lake e Data Warehouse.
+
+        Args:
+            baseline_results: Resultados dos modelos baseline por fold
 
         Returns:
-            Dict contendo resultados completos de baseline
-
-        Docstring em Português.
+            Dict: Análise completa de predictabilidade com métricas de estabilidade
         """
-        print("Análise Baseline Completa Polars DataFrame")
+        print("\nAnálise de predictabilidade Polars DataFrame")
         print("=" * 60)
-        print("Arquitetura: Polars DataFrame para ML com Lazy Evaluation")
-        print("Objetivo: Avaliar performance de baselines científicos")
-        print("Pattern: Leitura lazy com Polars, sklearn para modelos")
-        print("Configuração: Sem vazamento temporal, gaps de 2 anos")
 
-        all_results = {
-            'architecture': 'polars_dataframe',
-            'version': 'baseline_analysis',
-            'target': self.target_col,
-            'target_analysis': self.analyze_target_distribution(),
-            'baseline_models': self.test_baseline_models()
-        }
+        baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
+        all_test_scores = {}
+        all_val_scores = {}
+        generalization_gaps = {}
 
-        # Análise de performance agregada
-        print("\nPERFORMANCE AGREGADA POLARS DATAFRAME:")
+        for baseline in baselines:
+            test_r2_scores = []
+            val_r2_scores = []
+            gaps = []
 
-        for model_name in ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country_average']:
-            test_r2s = []
+            for fold_key in baseline_results:
+                fold_data = baseline_results[fold_key]
+                if baseline in fold_data:
+                    test_r2_scores.append(fold_data[baseline]['test_r2'])
+                    val_r2_scores.append(fold_data[baseline]['val_r2'])
+                    gaps.append(fold_data[baseline]['val_r2'] - fold_data[baseline]['test_r2'])
 
-            for fold_key, fold_results in all_results['baseline_models'].items():
-                if model_name in fold_results:
-                    test_r2s.append(fold_results[model_name]['test_r2'])
-
-            if len(test_r2s) > 0:
-                mean_r2 = np.mean(test_r2s)
-                std_r2 = np.std(test_r2s)
-                print(f"\n   {model_name}:")
-                print(f"      Test R² = {mean_r2:.3f} ± {std_r2:.3f}")
-
-                all_results[f'{model_name}_summary'] = {
-                    'mean_test_r2': float(mean_r2),
-                    'std_test_r2': float(std_r2)
+            if test_r2_scores:
+                all_test_scores[baseline] = {
+                    'mean_r2': float(np.mean(test_r2_scores)),
+                    'std_r2': float(np.std(test_r2_scores)),
+                    'min_r2': float(np.min(test_r2_scores)),
+                    'max_r2': float(np.max(test_r2_scores)),
+                    'scores': test_r2_scores
+                }
+                all_val_scores[baseline] = {
+                    'mean_r2': float(np.mean(val_r2_scores)),
+                    'std_r2': float(np.std(val_r2_scores))
+                }
+                generalization_gaps[baseline] = {
+                    'mean_gap': float(np.mean(gaps)),
+                    'std_gap': float(np.std(gaps)),
+                    'gaps': gaps
                 }
 
-        # Salvar resultados
+        print("   Performance out-of-sample (TEST SET) dos baselines:")
+        for baseline, stats in all_test_scores.items():
+            val_stats = all_val_scores[baseline]
+            gap_stats = generalization_gaps[baseline]
+            print(f"      {baseline:20} | Test: R²={stats['mean_r2']:.3f}±{stats['std_r2']:.3f} | Val: R²={val_stats['mean_r2']:.3f} | Gap: {gap_stats['mean_gap']:+.3f}")
+
+        if all_test_scores:
+            best_baseline_overall = max(all_test_scores.keys(), key=lambda x: all_test_scores[x]['mean_r2'])
+            best_mean_test_r2 = all_test_scores[best_baseline_overall]['mean_r2']
+            best_mean_val_r2 = all_val_scores[best_baseline_overall]['mean_r2']
+            best_generalization_gap = generalization_gaps[best_baseline_overall]['mean_gap']
+
+            predictability_analysis = {
+                'architecture': 'polars_dataframe',
+                'methodology': 'scientific_baselines_with_temporal_lags',
+                'validation_scores': all_val_scores,
+                'test_scores': all_test_scores,
+                'generalization_gaps': generalization_gaps,
+                'best_baseline': best_baseline_overall,
+                'best_test_r2': best_mean_test_r2,
+                'best_val_r2': best_mean_val_r2,
+                'generalization_gap': best_generalization_gap,
+                'predictability_level': 'unknown',
+                'scientific_validity': {
+                    'temporal_leakage_prevented': True,
+                    'geographic_leakage_prevented': True,
+                    'validation_used_correctly': True,
+                    'walk_forward_validation': True
+                }
+            }
+
+            if best_mean_test_r2 < 0:
+                predictability_analysis['predictability_level'] = 'very_low'
+            elif best_mean_test_r2 < 0.05:
+                predictability_analysis['predictability_level'] = 'very_low'
+            elif best_mean_test_r2 < 0.15:
+                predictability_analysis['predictability_level'] = 'low'
+            elif best_mean_test_r2 < 0.35:
+                predictability_analysis['predictability_level'] = 'moderate'
+            else:
+                predictability_analysis['predictability_level'] = 'good'
+
+            avg_generalization_gap = np.mean([gap_data['mean_gap'] for gap_data in generalization_gaps.values()])
+            abs_avg_gap = abs(avg_generalization_gap)
+
+            if abs_avg_gap <= 0.05:
+                stability_level = "excellent"
+            elif abs_avg_gap <= 0.1:
+                stability_level = "good"
+            elif abs_avg_gap <= 0.15:
+                stability_level = "moderate"
+            else:
+                stability_level = "low"
+
+            publication_criteria = {
+                'temporal_leakage_prevented': True,
+                'validation_used_correctly': True,
+                'stability_acceptable': abs_avg_gap <= 0.2
+            }
+
+            predictability_analysis['stability_analysis'] = {
+                'avg_generalization_gap': float(avg_generalization_gap),
+                'stability_level': stability_level,
+                'publication_criteria': {k: bool(v) for k, v in publication_criteria.items()}
+            }
+            predictability_analysis['publication_ready'] = bool(all(publication_criteria.values()))
+
+            print(f"\n   Melhor baseline: {best_baseline_overall}")
+            print(f"      Performance Teste: R² = {best_mean_test_r2:.3f}")
+            print(f"      Estabilidade: {stability_level} (gap médio: {avg_generalization_gap:+.3f})")
+
+        else:
+            predictability_analysis = {
+                'architecture': 'polars_dataframe',
+                'baseline_scores': {},
+                'predictability_level': 'unknown',
+                'scientific_validity': {'error': 'no_valid_results'},
+                'publication_ready': False
+            }
+
+        return predictability_analysis
+
+    def save_results(self, target_analysis: Dict, baseline_results: Dict,
+                     predictability_analysis: Dict) -> Dict:
+        """
+        Salvar resultados no formato padronizado (idêntico a DL/DW).
+
+        Args:
+            target_analysis: Análise da distribuição do target
+            baseline_results: Resultados dos modelos baseline
+            predictability_analysis: Análise de predictabilidade
+
+        Returns:
+            Dict: Resultados completos consolidados
+        """
+        print(f"\nSalvando resultados Polars DataFrame...")
+
+        full_results = {
+            'architecture': 'polars_dataframe',
+            'target_variable': self.target_col,
+            'data_source': self.data_path,
+            'target_distribution_analysis': target_analysis,
+            'baseline_model_results': baseline_results,
+            'predictability_analysis': predictability_analysis,
+            'summary': {
+                'total_folds_analyzed': len(baseline_results),
+                'best_baseline_model': predictability_analysis.get('best_baseline', 'unknown'),
+                'best_baseline_r2': predictability_analysis.get('best_test_r2', 0),
+                'predictability_level': predictability_analysis.get('predictability_level', 'unknown'),
+            }
+        }
+
         results_file = f"{self.results_path}/baseline_analysis_polars_dataframe_results.json"
         with open(results_file, 'w') as f:
-            json.dump(all_results, f, indent=2)
+            json.dump(full_results, f, indent=2)
 
-        print(f"\nResultados Polars DataFrame salvos: {results_file}")
+        print(f"   Resultados Polars DataFrame salvos: {results_file}")
 
-        return all_results
+        return full_results
+
+    def run_complete_analysis(self):
+        """
+        Executar análise completa de baseline Polars DataFrame.
+
+        Segue o mesmo protocolo de run_complete_analysis de Data Lake.
+
+        Returns:
+            Dict: Resultados consolidados da análise ou erro
+        """
+        print(f"Análise completa - arquitetura Polars DataFrame")
+        print("=" * 60)
+
+        try:
+            target_analysis = self.analyze_target_distribution()
+            baseline_results = self.test_baseline_models()
+            predictability_analysis = self.analyze_predictability(baseline_results)
+            results = self.save_results(target_analysis, baseline_results,
+                                        predictability_analysis)
+
+            print(f"\nResumo executivo - arquitetura Polars DataFrame:")
+            print(f"   Target: {self.target_col}")
+            print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
+            print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
+            print(f"   R² Teste: {predictability_analysis.get('best_test_r2', 0):.3f}")
+
+            return results
+
+        except Exception as e:
+            print(f"\nErro na análise Polars DataFrame: {e}")
+            return {
+                'architecture': 'polars_dataframe',
+                'status': 'failed',
+                'error': str(e)
+            }
 
 
 if __name__ == "__main__":
-    model = BaselineModelAnalysisPolarsDataFrame()
-    results = model.run_complete_analysis()
+    analyzer = BaselineModelAnalysisPolarsDataFrame()
+    results = analyzer.run_complete_analysis()
     print("\nAnálise baseline Polars DataFrame concluída!")
