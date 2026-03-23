@@ -610,6 +610,14 @@ class BenchmarkRunner:
             rows = self._count_rows_parquet(self._pl_master_path())
         return t1 - t0, rows
 
+    def _count_pl_split_rows(self, start: int, end: int) -> int:
+        """Conta registros no intervalo [start, end] do master Polars."""
+        master = self._pl_master_path()
+        if not os.path.exists(master):
+            return 0
+        df = pd.read_parquet(master, columns=["year"])
+        return int(len(df[(df["year"] >= start) & (df["year"] <= end)]))
+
     def _phase_baseline_pl(self) -> Tuple[int, Optional[int]]:
         start_ns = time.perf_counter_ns()
         Analyzer = self.modules["BaselineModelAnalysisPolarsLakehouse"]
@@ -621,12 +629,8 @@ class BenchmarkRunner:
             with open(self._pl_folds_path(), "r") as f:
                 folds_cfg = json.load(f)["folds"]
             for fold in folds_cfg:
-                master = self._pl_master_path()
-                if os.path.exists(master):
-                    df = pd.read_parquet(master)
-                    for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
-                        records += int(len(df[(df["year"] >= fold[split[0]]) & (df["year"] <= fold[split[1]])]))
-                    del df
+                for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
+                    records += self._count_pl_split_rows(fold[split[0]], fold[split[1]])
         except Exception:
             records = None
         return end_ns - start_ns, records
@@ -642,12 +646,8 @@ class BenchmarkRunner:
             with open(self._pl_folds_path(), "r") as f:
                 folds_cfg = json.load(f)["folds"]
             for fold in folds_cfg:
-                master = self._pl_master_path()
-                if os.path.exists(master):
-                    df = pd.read_parquet(master)
-                    for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
-                        records += int(len(df[(df["year"] >= fold[split[0]]) & (df["year"] <= fold[split[1]])]))
-                    del df
+                for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
+                    records += self._count_pl_split_rows(fold[split[0]], fold[split[1]])
         except Exception:
             records = None
         return end_ns - start_ns, records
@@ -839,7 +839,7 @@ class BenchmarkRunner:
                     .mean()
                     .sort_values(ascending=False)
                 )
-                plot.plot(kind="bar", ax=ax, color=["#4C78A8", "#F58518"])
+                plot.plot(kind="bar", ax=ax, color=["#4C78A8", "#72B7B2", "#F58518"])
                 ax.set_title(f"Tempo médio por arquitetura - {phase}")
                 ax.set_ylabel("segundos")
                 ax.set_xlabel("")
