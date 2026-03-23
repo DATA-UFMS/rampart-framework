@@ -9,7 +9,7 @@ Este guia descreve como executar, verificar e adaptar o framework metodológico 
 3. **Reprodutibilidade integral (RQ3)** — Seeds centralizadas, `n_jobs=1`, snapshot completo de ambiente (packages, hardware, git commit) e gate anti-leakage no pipeline.
 4. **Validação anti-leakage** — Enforcement automático: `raise ValueError` em violações de ordenação temporal, gap mínimo e separação de features. Gate no pipeline bloqueia execução se integridade temporal falhar. Suporte a embargo configurável (`embargo_years`, default 0) conforme López de Prado (2018).
 
-A demonstração embarcada compara DuckDB (schema-on-write) a Dask (schema-on-read); você pode reutilizar os mesmos protocolos para outras arquiteturas.
+A demonstração embarcada compara DuckDB (schema-on-write), Dask (schema-on-read) e Polars DataFrame (lazy evaluation); você pode reutilizar os mesmos protocolos para outras arquiteturas.
 
 ## 2. Preparação do Ambiente
 
@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 Após a execução, valide os seguintes artefatos:
 
-- `outputs/ml_pipeline/architectures/<arch>/prep/temporal_folds_<arch>.json` — intervalos treino/validação/teste e gaps \u22652 anos.
+- `outputs/ml_pipeline/architectures/<arch>/prep/temporal_folds_<arch>.json` — intervalos treino/validação/teste e gaps \u22652 anos (onde `<arch>` pode ser `duckdb`, `dask`, ou `polars_dataframe`).
 - `outputs/ml_pipeline/architectures/<arch>/prep/target_statistics.json` — estatísticas do target e checagens de consistência.
 - `outputs/statistics/equivalence_estimation.json` — decisão (equivalente/superior/inferior) + IC95% + Wilcoxon/Hodges-Lehmann.
 - `outputs/benchmarks/architectural_benchmark_results.csv` — latência por fase com identificador de execução.
@@ -83,7 +83,7 @@ Sempre documente alterações em um memo de decisão.
 
 ### 5.2 Adicionar Nova Arquitetura
 
-1. Crie uma subpasta em `src/architectures_ml/<nova_arquitetura>/` com as etapas `setup.py`, `models/`, etc., implementando os 11 métodos abstratos de `BaseArchitectureML`. O enforcement anti-leakage (validação temporal, gap mínimo, separação de features) é herdado automaticamente.
+1. Crie uma subpasta em `src/architectures_ml/<nova_arquitetura>/` com as etapas `setup.py`, `models/`, etc., implementando os 11 métodos abstratos de `BaseArchitectureML`. O enforcement anti-leakage (validação temporal, gap mínimo, separação de features) é herdado automaticamente. (Polars DataFrame foi o primeiro exemplo de terceira arquitetura adicionada usando esse processo.)
 2. Registre a nova arquitetura no pipeline principal (`pipeline.py`) para incluí-la nas comparações.
 
 ### 5.3 Instrumentar Métricas Extras
@@ -95,7 +95,7 @@ Sempre documente alterações em um memo de decisão.
 ## 6. Boas Práticas e Sanity Checks
 
 - Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (51 testes) e `python tests/test_leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
-- Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre arquiteturas.
+- Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre as 3 arquiteturas (DuckDB, Dask, Polars DataFrame).
 - Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
 
 ## 7. Integração com o Artigo
