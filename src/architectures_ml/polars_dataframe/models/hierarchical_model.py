@@ -46,15 +46,11 @@ class HierarchicalModelPolarsDataFrame:
 
     Implementa modelos hierárquicos com leitura lazy e processamento eficiente
     de memória, mantendo princípios arquiteturais Data Lake.
-
-    Docstring em Português conforme padrão do projeto.
     """
 
     def __init__(self):
         """
         Inicializa modelo hierárquico Polars DataFrame.
-
-        Docstring em Português.
         """
         print("Inicializando Modelo Hierárquico Polars DataFrame")
         print("=" * 60)
@@ -73,8 +69,6 @@ class HierarchicalModelPolarsDataFrame:
     def _setup_normal_mode(self):
         """
         Setup para modo normal.
-
-        Docstring em Português.
         """
         self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet")
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json")
@@ -91,8 +85,6 @@ class HierarchicalModelPolarsDataFrame:
     def _load_normal_summary(self):
         """
         Carregar resumo dos dados normais.
-
-        Docstring em Português.
         """
         stats_df = self.df_lazy.select([
             pl.col('year').min().alias('year_min'),
@@ -147,8 +139,6 @@ class HierarchicalModelPolarsDataFrame:
         P5 (escopo de preprocessing): medianas/médias para imputação
         são computadas a partir de reference_lazy (= train), nunca do
         conjunto completo.
-
-        Docstring em Português.
         """
         # Computar medianas/médias da referência
         medians = {}
@@ -184,8 +174,6 @@ class HierarchicalModelPolarsDataFrame:
                                  residual_shrinkage: float = 0.8) -> Dict:
         """
         Modelo hierárquico simples: médias por país + resíduos com Ridge regularizado.
-
-        Docstring em Português.
         """
         global_mean = y_train.mean()
         n_countries = countries_train.nunique()
@@ -314,8 +302,6 @@ class HierarchicalModelPolarsDataFrame:
                                  max_depth: int = 6, min_samples_leaf: int = 8) -> Dict:
         """
         Random Forest hierárquico com country effects como features.
-
-        Docstring em Português.
         """
         # Calcular médias por país
         country_means = {}
@@ -380,8 +366,6 @@ class HierarchicalModelPolarsDataFrame:
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
         """
         Executar análise hierárquica completa para um fold específico.
-
-        Docstring em Português.
         """
         fold_id = fold_info['fold_id']
         print(f"\nAnalisando Fold {fold_id} Polars DataFrame (NORMAL)...")
@@ -505,8 +489,6 @@ class HierarchicalModelPolarsDataFrame:
     def run_hierarchical_analysis(self):
         """
         Executar análise hierárquica completa para arquitetura Polars DataFrame.
-
-        Docstring em Português.
         """
         print("Análise Hierárquica Completa Polars DataFrame (NORMAL)")
         print("=" * 60)
