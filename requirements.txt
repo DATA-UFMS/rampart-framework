@@ -26,6 +26,9 @@ dask[dataframe,distributed]==2024.10.0
 # Banco de dados analítico
 duckdb==1.1.3
 
+# DataFrame engine com lazy evaluation (Rust/Arrow)
+polars==1.39.3
+
 # ============================================================================
 # MACHINE LEARNING
 # ============================================================================

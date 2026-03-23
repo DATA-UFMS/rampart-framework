@@ -90,16 +90,30 @@ def _import_modules():
         HierarchicalModelSQLFirst,
     )
 
+    # Polars Lakehouse
+    from src.collection.polars_lakehouse.processor import PolarsLakehouseProcessor
+    import src.architectures_ml.polars_lakehouse.setup as pl_setup
+    from src.architectures_ml.polars_lakehouse.models.baseline_analysis import (
+        BaselineModelAnalysisPolarsLakehouse,
+    )
+    from src.architectures_ml.polars_lakehouse.models.hierarchical_model import (
+        HierarchicalModelPolarsLakehouse,
+    )
+
     return {
         "RawDataCollector": RawDataCollector,
         "DataLakeProcessor": DataLakeProcessor,
         "DataWarehouseProcessor": DataWarehouseProcessor,
+        "PolarsLakehouseProcessor": PolarsLakehouseProcessor,
         "dl_setup_module": dl_setup,
         "dw_setup_module": dw_setup,
+        "pl_setup_module": pl_setup,
         "BaselineModelAnalysisDataLake": BaselineModelAnalysisDataLake,
         "BaselineModelAnalysisDataWarehouse": BaselineModelAnalysisDataWarehouse,
+        "BaselineModelAnalysisPolarsLakehouse": BaselineModelAnalysisPolarsLakehouse,
         "HierarchicalModelDataLake": HierarchicalModelDataLake,
         "HierarchicalModelSQLFirst": HierarchicalModelSQLFirst,
+        "HierarchicalModelPolarsLakehouse": HierarchicalModelPolarsLakehouse,
     }
 
 
@@ -377,6 +391,16 @@ class BenchmarkRunner:
             except Exception:
                 pass
 
+    def _pl_master_path(self) -> str:
+        return get_absolute_output_path(
+            "ml_pipeline/architectures/polars_lakehouse/prep/master_data_polars_lakehouse.parquet"
+        )
+
+    def _pl_folds_path(self) -> str:
+        return get_absolute_output_path(
+            "ml_pipeline/architectures/polars_lakehouse/prep/temporal_folds_polars_lakehouse.json"
+        )
+
     # --------------------------- fases medidas -----------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
         Collector = self.modules["RawDataCollector"]
@@ -564,6 +588,70 @@ class BenchmarkRunner:
             records = None
         return end_ns - start_ns, records
 
+    # --- Polars Lakehouse phases ---
+    def _phase_processing_pl(self) -> Tuple[int, Optional[int]]:
+        Processor = self.modules["PolarsLakehouseProcessor"]
+        proc = Processor()
+        t0 = time.perf_counter_ns()
+        res = proc.run_polars_lakehouse_processing()
+        t1 = time.perf_counter_ns()
+        rows = None
+        if isinstance(res, dict) and res.get("status") == "success":
+            rows = self._count_rows_parquet(res.get("output_path", ""))
+        return t1 - t0, rows
+
+    def _phase_setup_pl(self) -> Tuple[int, Optional[int]]:
+        setup_module = self.modules["pl_setup_module"]
+        t0 = time.perf_counter_ns()
+        res = setup_module.main()
+        t1 = time.perf_counter_ns()
+        rows = None
+        if isinstance(res, dict) and res.get("status") == "success":
+            rows = self._count_rows_parquet(self._pl_master_path())
+        return t1 - t0, rows
+
+    def _phase_baseline_pl(self) -> Tuple[int, Optional[int]]:
+        start_ns = time.perf_counter_ns()
+        Analyzer = self.modules["BaselineModelAnalysisPolarsLakehouse"]
+        analyzer = Analyzer()
+        analyzer.run_complete_analysis()
+        end_ns = time.perf_counter_ns()
+        records = 0
+        try:
+            with open(self._pl_folds_path(), "r") as f:
+                folds_cfg = json.load(f)["folds"]
+            for fold in folds_cfg:
+                master = self._pl_master_path()
+                if os.path.exists(master):
+                    df = pd.read_parquet(master)
+                    for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
+                        records += int(len(df[(df["year"] >= fold[split[0]]) & (df["year"] <= fold[split[1]])]))
+                    del df
+        except Exception:
+            records = None
+        return end_ns - start_ns, records
+
+    def _phase_hierarchical_pl(self) -> Tuple[int, Optional[int]]:
+        start_ns = time.perf_counter_ns()
+        Model = self.modules["HierarchicalModelPolarsLakehouse"]
+        model = Model()
+        _ = model.run_hierarchical_analysis()
+        end_ns = time.perf_counter_ns()
+        records = 0
+        try:
+            with open(self._pl_folds_path(), "r") as f:
+                folds_cfg = json.load(f)["folds"]
+            for fold in folds_cfg:
+                master = self._pl_master_path()
+                if os.path.exists(master):
+                    df = pd.read_parquet(master)
+                    for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
+                        records += int(len(df[(df["year"] >= fold[split[0]]) & (df["year"] <= fold[split[1]])]))
+                    del df
+        except Exception:
+            records = None
+        return end_ns - start_ns, records
+
     # --------------------------- execução ----------------------------------
     # Fases "upstream" (coleta + processamento) são infraestrutura compartilhada
     # que produz os mesmos dados determinísticos em toda execução. Repetí-las
@@ -635,10 +723,18 @@ class BenchmarkRunner:
                 "data_warehouse",
                 "processor",
             )
+            r3 = measure(
+                self._phase_processing_pl,
+                "processing",
+                "polars_lakehouse",
+                "processor",
+            )
             if r1:
                 results.append(r1)
             if r2:
                 results.append(r2)
+            if r3:
+                results.append(r3)
 
         # --- Fase 2: downstream (setup → baseline → hierarchical) - repetida --
         # Estas fases contêm a lógica arquitetural DW vs DL.
@@ -647,9 +743,28 @@ class BenchmarkRunner:
             return results
 
         # Seed determinístico para randomização da ordem de execução.
-        # Elimina viés sistemático de cache/page-fault ao alternar qual
-        # arquitetura executa primeiro em cada iteração.
+        # Elimina viés sistemático de cache/page-fault ao permutar a
+        # ordem das 3 arquiteturas em cada iteração.
         order_rng = random.Random(42)
+
+        # Mapeamento: (phase, arch) → step_fn
+        phase_fns = {
+            "setup": [
+                (self._phase_setup_dl, "data_lake", "setup"),
+                (self._phase_setup_dw, "data_warehouse", "setup"),
+                (self._phase_setup_pl, "polars_lakehouse", "setup"),
+            ],
+            "baseline": [
+                (self._phase_baseline_dl, "data_lake", "baseline_models"),
+                (self._phase_baseline_dw, "data_warehouse", "baseline_models"),
+                (self._phase_baseline_pl, "polars_lakehouse", "baseline_models"),
+            ],
+            "hierarchical": [
+                (self._phase_hierarchical_dl, "data_lake", "hierarchical_models"),
+                (self._phase_hierarchical_dw, "data_warehouse", "hierarchical_models"),
+                (self._phase_hierarchical_pl, "polars_lakehouse", "hierarchical_models"),
+            ],
+        }
 
         total_runs = self.warmup_runs + self.repetitions
         for run_id in range(total_runs):
@@ -661,72 +776,20 @@ class BenchmarkRunner:
                     f"Benchmark run {run_id - self.warmup_runs + 1}/{self.repetitions}"
                 )
 
-            # Randomizar ordem DL/DW por iteração (determinístico via seed)
-            dl_first = order_rng.random() < 0.5
+            for phase_name in downstream_phases:
+                archs = list(phase_fns[phase_name])
+                # Permutação aleatória determinística (Fisher-Yates via RNG)
+                order_rng.shuffle(archs)
 
-            if "setup" in downstream_phases:
-                if dl_first:
-                    r_dl = measure(self._phase_setup_dl, "setup", "data_lake", "setup")
+                phase_results_run = []
+                for fn, arch, step in archs:
+                    r = measure(fn, phase_name, arch, step)
+                    if r:
+                        phase_results_run.append(r)
                     gc.collect()
-                    r_dw = measure(self._phase_setup_dw, "setup", "data_warehouse", "setup")
-                else:
-                    r_dw = measure(self._phase_setup_dw, "setup", "data_warehouse", "setup")
-                    gc.collect()
-                    r_dl = measure(self._phase_setup_dl, "setup", "data_lake", "setup")
-                gc.collect()
-                if not is_warmup:
-                    if r_dl:
-                        results.append(r_dl)
-                    if r_dw:
-                        results.append(r_dw)
 
-            if "baseline" in downstream_phases:
-                if dl_first:
-                    r_dl = measure(
-                        self._phase_baseline_dl, "baseline", "data_lake", "baseline_models"
-                    )
-                    gc.collect()
-                    r_dw = measure(
-                        self._phase_baseline_dw, "baseline", "data_warehouse", "baseline_models",
-                    )
-                else:
-                    r_dw = measure(
-                        self._phase_baseline_dw, "baseline", "data_warehouse", "baseline_models",
-                    )
-                    gc.collect()
-                    r_dl = measure(
-                        self._phase_baseline_dl, "baseline", "data_lake", "baseline_models"
-                    )
-                gc.collect()
                 if not is_warmup:
-                    if r_dl:
-                        results.append(r_dl)
-                    if r_dw:
-                        results.append(r_dw)
-
-            if "hierarchical" in downstream_phases:
-                if dl_first:
-                    r_dl = measure(
-                        self._phase_hierarchical_dl, "hierarchical", "data_lake", "hierarchical_models",
-                    )
-                    gc.collect()
-                    r_dw = measure(
-                        self._phase_hierarchical_dw, "hierarchical", "data_warehouse", "hierarchical_models",
-                    )
-                else:
-                    r_dw = measure(
-                        self._phase_hierarchical_dw, "hierarchical", "data_warehouse", "hierarchical_models",
-                    )
-                    gc.collect()
-                    r_dl = measure(
-                        self._phase_hierarchical_dl, "hierarchical", "data_lake", "hierarchical_models",
-                    )
-                gc.collect()
-                if not is_warmup:
-                    if r_dl:
-                        results.append(r_dl)
-                    if r_dw:
-                        results.append(r_dw)
+                    results.extend(phase_results_run)
 
         return results
 

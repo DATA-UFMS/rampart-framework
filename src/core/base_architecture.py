@@ -20,6 +20,13 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
+# Optional: Polars support (lazy import for backward compatibility)
+try:
+    import polars as pl
+    _HAS_POLARS = True
+except ImportError:
+    _HAS_POLARS = False
+
 
 class BaseArchitectureML(ABC):
     """
@@ -355,8 +362,10 @@ class BaseArchitectureML(ABC):
         pass
     
     def _filter_by_year(self, data: Any, max_year: int) -> Any:
-        """Filtra dados para year <= max_year. Suporta pandas e Dask."""
-        if hasattr(data, 'compute'):  # Dask DataFrame
+        """Filtra dados para year <= max_year. Suporta pandas, Dask e Polars."""
+        if _HAS_POLARS and isinstance(data, pl.DataFrame):
+            return data.filter(pl.col('year') <= max_year)
+        elif hasattr(data, 'compute'):  # Dask DataFrame
             return data[data['year'] <= max_year]
         elif isinstance(data, pd.DataFrame):
             return data[data['year'] <= max_year]
