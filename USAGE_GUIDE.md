@@ -38,7 +38,7 @@ pip install -r requirements.txt
    python src/benchmarking/architectural_benchmark.py --repetitions 5 --warmup 1
 
    # Equivalência prática (gera JSON/LaTeX)
-   python src/statistical_validation/tost_baseline.py --latex
+   python src/statistical_validation/equivalence_estimation.py --latex
 
    # Testes unitários e anti-leakage (73 testes)
    pytest tests/test_unit_core.py tests/test_lag_anti_leak.py

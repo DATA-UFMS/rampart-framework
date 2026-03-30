@@ -2,7 +2,7 @@
 """Análise de sensibilidade bootstrap para SESOI e contagens de iterações.
 
 Este utilitário reutiliza a extração de deltas pareados implementada em
-`tost_baseline.py` para recomputar estimativas pontuais, intervalos de confiança
+`equivalence_estimation.py` para recomputar estimativas pontuais, intervalos de confiança
 e decisões sob valores alternativos de SESOI e contagens de iterações bootstrap.
 
 Saídas:
@@ -25,7 +25,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 from src.core.scientific_config import SCIENTIFIC_CONFIG
-from src.statistical_validation.tost_baseline import (
+from src.statistical_validation.equivalence_estimation import (
     _bootstrap_ci,
     _decision_equivalence,
     _load_baseline_pairs,

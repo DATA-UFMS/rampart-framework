@@ -228,7 +228,7 @@ def main() -> None:
     
     # Equivalência por estimativa (SESOI + IC) (sempre executa para gerar estrutura)
     print_step("ETAPA 7b/9: Equivalência por estimativa (SESOI + IC)...")
-    run(f"{py} {root}/src/statistical_validation/tost_baseline.py --latex")
+    run(f"{py} {root}/src/statistical_validation/equivalence_estimation.py --latex")
     
     print_success("ETAPA 7 CONCLUÍDA: Testes estatísticos executados")
 

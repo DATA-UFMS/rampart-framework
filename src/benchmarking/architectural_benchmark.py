@@ -660,7 +660,7 @@ if __name__ == "__main__":
             [
                 sys.executable,
                 os.path.join(
-                    PROJECT_ROOT, "src", "statistical_validation", "tost_baseline.py"
+                    PROJECT_ROOT, "src", "statistical_validation", "equivalence_estimation.py"
                 ),
             ],
             check=False,
