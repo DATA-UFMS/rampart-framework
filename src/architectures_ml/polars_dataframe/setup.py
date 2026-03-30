@@ -39,6 +39,22 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
     mas mantendo equivalência científica nos resultados finais.
     """
 
+    PARADIGM_META = {
+        'name': 'polars_dataframe',
+        'label': 'Polars DataFrame com Lazy Evaluation',
+        'processor_module': 'collection.polars_dataframe.processor',
+        'processor_class': 'PolarsDataFrameProcessor',
+        'processor_run_method': 'run_polars_dataframe_processing',
+        'baseline_module': 'architectures_ml.polars_dataframe.models.baseline_analysis',
+        'baseline_class': 'BaselineModelAnalysisPolarsDataFrame',
+        'hierarchical_module': 'architectures_ml.polars_dataframe.models.hierarchical_model',
+        'hierarchical_class': 'HierarchicalModelPolarsDataFrame',
+        'setup_script': 'src/architectures_ml/polars_dataframe/setup.py',
+        'processor_script': 'src/collection/polars_dataframe/processor.py',
+        'baseline_script': 'src/architectures_ml/polars_dataframe/models/baseline_analysis.py',
+        'hierarchical_script': 'src/architectures_ml/polars_dataframe/models/hierarchical_model.py',
+    }
+
     def _safe_write_parquet_file(self, df: pl.DataFrame, file_path: str) -> None:
         """
         Escreve arquivo Parquet com tratamento defensivo de conflitos.
