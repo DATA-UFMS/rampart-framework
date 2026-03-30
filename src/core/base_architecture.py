@@ -108,25 +108,34 @@ class BaseArchitectureML(ABC):
         """Retorna todas as classes de paradigmas concretos registrados."""
         return dict(cls._registry)
 
-    def __init__(self, architecture_name: str, output_base_path: str):
+    def __init__(self, architecture_name: str, output_base_path: str,
+                 dataset_config=None):
         """
         Inicializa a arquitetura base.
-        
+
         Args:
             architecture_name: Identificador da arquitetura
             output_base_path: Caminho base para outputs
+            dataset_config: DatasetConfig (default: worldbank para
+                backward compatibility)
         """
         self.architecture_name = architecture_name
         self.output_base = output_base_path
         self.prep_dir = f"{self.output_base}/prep"
-        
+
         # Configuração científica centralizada
         self.config = SCIENTIFIC_CONFIG
         setup_reproducibility()
 
-        # Configuração de target (comum a todas arquiteturas)
+        # Dataset config (lazy import para evitar circular)
+        if dataset_config is None:
+            from datasets.worldbank import WorldBankDatasetConfig
+            dataset_config = WorldBankDatasetConfig()
+        self.dataset_config = dataset_config
+
+        # Configuração de target (derivada do dataset)
         self.target_column = f"dropout_rate_{architecture_name}"
-        self.source_column = "lower_secondary_completion_rate"
+        self.source_column = dataset_config.target_source_column
         
         self._create_directory_structure()
         
@@ -241,12 +250,12 @@ class BaseArchitectureML(ABC):
         })
         
         # Validações científicas comuns
-        expected_range = [0, 80]  # Sanity check: taxas de evasão observadas na LATAM (0–80%)
+        expected_range = list(self.dataset_config.target_expected_range)
         if stats['mean'] < expected_range[0] or stats['mean'] > expected_range[1]:
             print(f"   Aviso: Média de dropout ({stats['mean']:.2f}%) "
                   f"fora do range esperado {expected_range}")
-        
-        if stats['valid_count'] < 500:
+
+        if stats['valid_count'] < self.dataset_config.min_valid_count:
             print(f"   Aviso: Poucos dados válidos ({stats['valid_count']}) "
                   f"para ML robusto")
         
@@ -436,23 +445,11 @@ class BaseArchitectureML(ABC):
         Returns:
             Lista de nomes de colunas a excluir
         """
-        return [
-            # Identificadores e metadados
-            'country_code', 'country_name', 'year', 'country_stratum', 
-            'synthetic_flag',
-            
-            # Target
-            self.target_column,
-            
-            # Metadados de processamento
-            'data_source', 'etl_batch_id', 'collection_timestamp',
-            'data_completeness_score', 'processing_method', 
-            'processed_timestamp', 'partition_id',
-            
-            # Vazamento de dados - features derivadas do target
-            'lower_secondary_completion_rate',  # Fonte direta do target
-            'enrollment_rate_secondary_net',    # Relacionada ao target
-        ]
+        base_excluded = list(self.dataset_config.excluded_columns)
+        # Sempre excluir o target column gerado
+        if self.target_column not in base_excluded:
+            base_excluded.append(self.target_column)
+        return base_excluded
     
     @abstractmethod
     def compute_feature_correlations(self, data: Any, features: List[str]) -> Dict[str, float]:
@@ -718,16 +715,16 @@ class BaseArchitectureML(ABC):
             json.dump(fold_metadata, f, indent=2)
     
     def save_master_config(self, folds: List[Dict], total_observations: int,
-                          total_countries: int, year_range: Tuple[int, int]) -> str:
+                          total_entities: int, year_range: Tuple[int, int]) -> str:
         """
         Salva configuração master dos folds.
-        
+
         Args:
             folds: Lista de folds
             total_observations: Total de observações
-            total_countries: Total de países
+            total_entities: Total de entidades geográficas (países, municípios)
             year_range: Tupla (ano_min, ano_max)
-            
+
         Returns:
             Caminho do arquivo de configuração salvo
         """
@@ -735,7 +732,7 @@ class BaseArchitectureML(ABC):
             'architecture': self.architecture_name,
             'creation_timestamp': datetime.now().isoformat(),
             'total_observations': int(total_observations),
-            'total_countries': int(total_countries),
+            'total_entities': int(total_entities),
             'year_range': [int(year_range[0]), int(year_range[1])],
             'target_variable': self.target_column,
             'folds': self._convert_numpy_types(folds)
