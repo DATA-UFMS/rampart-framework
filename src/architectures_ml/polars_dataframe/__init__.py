@@ -22,8 +22,18 @@ Classes exportadas:
     - PolarsDataFrameArchitectureML: Implementação do pipeline ML
 """
 
-from .setup import PolarsDataFrameArchitectureML, main
+# O registro de paradigmas é gerenciado pelo mecanismo de auto-descoberta do framework
+# (BaseArchitectureML.__init_subclass__). Imports antecipados removidos para evitar
+# problemas de identidade dupla de módulo quando paradigm_registry e importlib
+# usam caminhos diferentes.
 
 __all__ = ['PolarsDataFrameArchitectureML', 'main']
 __version__ = '1.0.0'
-__author__ = 'SBBD 2026 Research Team'
+
+
+def __getattr__(name):
+    """Importação preguiçosa para manter compatibilidade retroativa sem carregamento antecipado."""
+    if name in ('PolarsDataFrameArchitectureML', 'main'):
+        from .setup import PolarsDataFrameArchitectureML, main
+        return PolarsDataFrameArchitectureML if name == 'PolarsDataFrameArchitectureML' else main
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
