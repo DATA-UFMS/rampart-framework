@@ -3,56 +3,30 @@
 Framework open-source para benchmarking reprodutível de arquiteturas de dados, comparando **três paradigmas** (DuckDB, Dask, Polars), com **verificação automática de anti-leakage temporal**.
 
 ```mermaid
----
-config:
-  theme: base
-  themeVariables:
-    primaryColor: "#4a90d9"
-    primaryTextColor: "#fff"
-    primaryBorderColor: "#2c5f8a"
-    secondaryColor: "#f5a623"
-    tertiaryColor: "#7ed321"
-    lineColor: "#5c6370"
-    fontSize: "14px"
----
 flowchart LR
-    subgraph upstream ["Upstream (1x)"]
-        direction LR
-        A["World Bank\nAPI"]
-        B["Coleta +\nImputação"]
-        A --> B
+    subgraph U["🌐 Upstream · 1x"]
+        A["World Bank API"] --> B["Coleta + Imputação"]
     end
 
-    subgraph fork [" "]
-        direction TB
-        DL["Data Lake\n Dask "]:::dask
-        DW["Data Warehouse\n DuckDB "]:::duck
-        PL["Polars DataFrame\n Polars "]:::polars
+    B --> DW & DL & PL
+
+    DW["🗄️ DuckDB<br/><i>SQL · schema-on-write</i>"]:::dw
+    DL["📦 Dask<br/><i>distributed · schema-on-read</i>"]:::dl
+    PL["⚡ Polars<br/><i>lazy eval · Arrow</i>"]:::pl
+
+    DW & DL & PL --> S
+
+    subgraph D["🔁 Downstream · 30x"]
+        S["Setup ML"] --> G{{"🛡️ Anti-Leak<br/>Gate"}}:::gate
+        G --> M["Baseline + Hierárquico"]
     end
 
-    subgraph downstream ["Downstream (30x)"]
-        direction LR
-        S["Setup\nML"]
-        G{{"Anti-Leak\nGate"}}:::gate
-        M["Baseline +\nHierárquico"]
-        S --> G --> M
-    end
+    M --> V["📊 Bootstrap CI + Effect Sizes"] --> T["📄 LaTeX"]
 
-    subgraph val ["Validação"]
-        direction LR
-        V["Bootstrap CI\n+ Effect Sizes"]
-        T["Tabelas\nLaTeX"]
-        V --> T
-    end
-
-    B --> DL & DW & PL
-    DL & DW & PL --> S
-    M --> V
-
-    classDef dask fill:#66bb6a,stroke:#2e7d32,color:#fff
-    classDef duck fill:#42a5f5,stroke:#1565c0,color:#fff
-    classDef polars fill:#ffa726,stroke:#e65100,color:#fff
-    classDef gate fill:#ef5350,stroke:#b71c1c,color:#fff
+    classDef dw fill:#1e88e5,stroke:#0d47a1,color:#fff,font-weight:bold
+    classDef dl fill:#43a047,stroke:#1b5e20,color:#fff,font-weight:bold
+    classDef pl fill:#fb8c00,stroke:#e65100,color:#fff,font-weight:bold
+    classDef gate fill:#e53935,stroke:#b71c1c,color:#fff,font-weight:bold
 ```
 
 ## O problema
