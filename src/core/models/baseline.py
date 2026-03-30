@@ -378,15 +378,13 @@ class BaselineModelFactory:
 
     @staticmethod
     def create_model(model_type: str,
-                    params: Optional[Dict] = None,
-                    use_dask: bool = False) -> BaselineModelStrategy:
+                    params: Optional[Dict] = None) -> BaselineModelStrategy:
         """
         Cria modelo baseline com estratégia apropriada.
 
         Args:
             model_type: Tipo do modelo ('rf', 'xgboost', 'lightgbm')
             params: Hiperparâmetros customizados
-            use_dask: Deprecated, mantido por compatibilidade (ignorado)
 
         Returns:
             Instância da estratégia de modelo apropriada
@@ -479,14 +477,12 @@ class BaselineEnsemble:
     ou voting para robustez aumentada.
     """
 
-    def __init__(self, models: List[Tuple[str, Optional[Dict], float]],
-                 use_dask: bool = False):
+    def __init__(self, models: List[Tuple[str, Optional[Dict], float]]):
         """
         Inicializa ensemble.
 
         Args:
             models: Lista de tuplas (tipo_modelo, params, peso)
-            use_dask: Deprecated, mantido por compatibilidade (ignorado)
         """
         self.models = []
         self.weights = []
