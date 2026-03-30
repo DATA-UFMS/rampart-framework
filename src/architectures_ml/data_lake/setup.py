@@ -33,7 +33,23 @@ class DataLakeArchitectureML(BaseArchitectureML):
     O processamento é realizado com Dask em modo lazy, sem camadas de cache
     adicionais, para evidenciar características intrínsecas do paradigma
     schema-on-read."""
-    
+
+    PARADIGM_META = {
+        'name': 'data_lake',
+        'label': 'Data Lake com Dask',
+        'processor_module': 'collection.data_lake.processor',
+        'processor_class': 'DataLakeProcessor',
+        'processor_run_method': 'run_data_lake_processing',
+        'baseline_module': 'architectures_ml.data_lake.models.baseline_analysis',
+        'baseline_class': 'BaselineModelAnalysisDataLake',
+        'hierarchical_module': 'architectures_ml.data_lake.models.hierarchical_model',
+        'hierarchical_class': 'HierarchicalModelDataLake',
+        'setup_script': 'src/architectures_ml/data_lake/setup.py',
+        'processor_script': 'src/collection/data_lake/processor.py',
+        'baseline_script': 'src/architectures_ml/data_lake/models/baseline_analysis.py',
+        'hierarchical_script': 'src/architectures_ml/data_lake/models/hierarchical_model.py',
+    }
+
     def _safe_write_parquet_file(self, df: pd.DataFrame, file_path: str) -> None:
         """
         Escreve arquivo Parquet com limpeza defensiva de conflitos.
