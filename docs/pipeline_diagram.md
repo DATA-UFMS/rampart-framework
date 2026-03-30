@@ -67,9 +67,9 @@ graph TB
     end
 
     %% ============================================================
-    %% DOWNSTREAM — repete 35x (+ 2 warmup descartados)
+    %% DOWNSTREAM — repete 30x (+ 2 warmup descartados)
     %% ============================================================
-    subgraph DOWNSTREAM ["DOWNSTREAM — 35 repetições + 2 warmup"]
+    subgraph DOWNSTREAM ["DOWNSTREAM — 30 repetições + 2 warmup"]
         direction TB
 
         FAIR["Fairness por iteração\n• Ordem DL/DW randomizada (seed=42)\n• gc.collect() entre fases\n• Feature set unificado"]:::fairnessClass
@@ -144,7 +144,7 @@ graph TB
     %% ============================================================
     %% BENCHMARK + VALIDAÇÃO
     %% ============================================================
-    BENCH["FASE 6 · Benchmark Arquitetural\narchitectural_benchmark.py\n• perf_counter_ns()\n• psutil (CPU/RAM/I/O)\n• 35 repetições + 2 warmup\n• Ordem randomizada por iteração"]:::benchClass
+    BENCH["FASE 6 · Benchmark Arquitetural\narchitectural_benchmark.py\n• perf_counter_ns()\n• psutil (CPU/RAM/I/O)\n• 30 repetições + 2 warmup\n• Ordem randomizada por iteração"]:::benchClass
 
     DL_HIER --> BENCH
     DW_HIER --> BENCH
@@ -175,12 +175,12 @@ graph TB
 
     SCORE --> FINAL_OUT
 
-    VALIDATOR["benchmark_validator.py\n• Folds idênticos\n• Target diff < 1e-15\n• Predições equivalentes"]:::validationClass
+    AUTOGATE["Framework: auto-discovery + gate anti-leakage\n• Folds gerados deterministicamente por arquitetura\n• TemporalValidator.enforce_walk_forward() valida cada fold\n• Divergências interrompem execução via ValueError"]:::validationClass
 
-    DL_FOLDS --> VALIDATOR
-    DW_FOLDS --> VALIDATOR
-    PL_FOLDS --> VALIDATOR
-    VALIDATOR --> FINAL_OUT
+    DL_FOLDS --> AUTOGATE
+    DW_FOLDS --> AUTOGATE
+    PL_FOLDS --> AUTOGATE
+    AUTOGATE --> FINAL_OUT
 ```
 
 ## Separação upstream / downstream
@@ -196,7 +196,7 @@ flowchart LR
         C --> P
     end
 
-    subgraph D ["Downstream (35x + 2 warmup)"]
+    subgraph D ["Downstream (30x + 2 warmup)"]
         direction TB
         S["Setup ML"]
         B["Baseline"]
@@ -347,27 +347,27 @@ block-beta
     style dl fill:#e8f5e9,stroke:#2e7d32
 ```
 
-## Resultados de referência (Azure L4as_v4, 32 GB RAM, n=35)
+## Resultados de referência (Azure L4as_v4, 32 GB RAM, n=30)
 
 ```mermaid
 xychart-beta
     title "Latência por fase (segundos)"
     x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
     y-axis "Tempo (s)" 0 --> 200
-    bar [0.39, 0.16, 1.19, 15.23]
-    bar [0.43, 0.015, 0.92, 14.50]
-    bar [177.28, 0.79, 7.71, 16.92]
+    bar [0.41, 0.18, 1.191, 15.25]
+    bar [0.054, 0.016, 1.076, 15.38]
+    bar [179.01, 0.90, 7.793, 16.96]
 ```
 
 | Fase | DuckDB (s) | Polars (s) | Dask (s) | Ratio | Cohen's dz |
 |------|-----------|-----------|---------|-------|-----------|
-| Setup (n=35) | 0.39 ± 0.04 | 0.43 ± 0.03 | 177.28 ± 0.08 | **412x** | 704.2 |
-| Processing (n=1) | 0.16 | 0.015 | 0.79 | **52x** | — |
-| Baseline (n=35) | 1.19 ± 0.00 | 0.92 ± 0.01 | 7.71 ± 0.00 | **8x** | 441.0 |
-| Hierarchical (n=35) | 15.23 ± 0.01 | 14.50 ± 0.02 | 16.92 ± 0.01 | **1.2x** | 47.0 |
-| **Total** | **16.97** | **15.92** | **202.70** | **13x** | — |
+| Setup (n=30) | 0.41 ± 0.01 | 0.054 ± 0.001 | 179.01 ± 0.27 | **437x** | — |
+| Processing (n=1) | 0.18 | 0.016 | 0.90 | **56x** | — |
+| Baseline (n=30) | 1.191 ± 0.009 | 1.076 ± 0.008 | 7.793 ± 0.019 | **7x** | — |
+| Hierarchical (n=30) | 15.25 ± 0.03 | 15.38 ± 0.02 | 16.96 ± 0.03 | **1.1x** | — |
+| **Total** | **17.031** | **16.526** | **204.663** | **12x** | — |
 
-Ambiente: Azure Standard_L4as_v4 (4 vCPUs, 32 GB RAM, NVMe), Ubuntu 22.04, Python 3.10. IC 95% via t-distribution. Processing executa uma vez (upstream); demais fases repetidas 35 vezes com 2 warmup descartados. Ordem DL/DW/PL randomizada por iteração com `gc.collect()` entre execuções.
+Ambiente: Azure Standard_L4as_v4 (4 vCPUs, 32 GB RAM, NVMe), Ubuntu 22.04, Python 3.10. IC 95% via t-distribution. Processing executa uma vez (upstream); demais fases repetidas 30 vezes com 2 warmup descartados. Ordem DL/DW/PL randomizada por iteração com `gc.collect()` entre execuções.
 
 ## Legenda
 
@@ -415,6 +415,6 @@ outputs/
 python pipeline.py
 
 # Repetições e warmup configurados em scientific_config.py
-# (padrão: 35 repetições downstream + 2 warmup descartados)
+# (padrão: 30 repetições downstream + 2 warmup descartados)
 python pipeline.py
 ```
