@@ -60,7 +60,54 @@ class BaseArchitectureML(ABC):
         target_column: Nome da coluna target criada
         source_column: Coluna fonte para criar target
     """
-    
+
+    # --- Registro de paradigmas do framework (auto-descoberta via __init_subclass__) ---
+    # Nota: _registry não é thread-safe. Aceitável para registro em tempo de
+    # importação em pipeline de pesquisa single-threaded.
+    _registry: Dict[str, type] = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Registrar apenas classes completamente concretas (sem métodos abstratos restantes).
+        # Detalhe de implementação CPython: ABCMeta.__new__ dispara __init_subclass__
+        # (via type.__new__) antes de computar __abstractmethods__. Por isso,
+        # recomputamos os abstratos pendentes percorrendo o MRO manualmente.
+        # Premissa: todas as sobreposições de métodos abstratos aparecem em __dict__
+        # de alguma classe do MRO. Protocolos de atributos dinâmicos (__getattr__)
+        # não são suportados.
+        pending: set = set()
+        for klass in reversed(cls.__mro__):
+            for name, val in klass.__dict__.items():
+                if getattr(val, '__isabstractmethod__', False):
+                    pending.add(name)
+                elif name in pending:
+                    pending.discard(name)
+        if pending:
+            return
+        # Registro opt-in: apenas classes que definem explicitamente PARADIGM_META
+        # em seu próprio __dict__ são tratadas como paradigmas. Subclasses concretas
+        # sem PARADIGM_META (helpers, stubs de teste) são ignoradas silenciosamente.
+        if 'PARADIGM_META' not in cls.__dict__:
+            return
+        meta = cls.PARADIGM_META
+        if not meta.get('name'):
+            raise TypeError(
+                f"{cls.__name__} define PARADIGM_META mas está faltando "
+                f"a chave obrigatória 'name'."
+            )
+        existing = BaseArchitectureML._registry.get(meta['name'])
+        if existing is not None and existing is not cls:
+            raise TypeError(
+                f"O nome de paradigma '{meta['name']}' já está registrado por "
+                f"{existing.__name__}. {cls.__name__} não pode reutilizá-lo."
+            )
+        BaseArchitectureML._registry[meta['name']] = cls
+
+    @classmethod
+    def get_registered_paradigms(cls) -> Dict[str, type]:
+        """Retorna todas as classes de paradigmas concretos registrados."""
+        return dict(cls._registry)
+
     def __init__(self, architecture_name: str, output_base_path: str):
         """
         Inicializa a arquitetura base.
@@ -1009,56 +1056,3 @@ class BaseArchitectureML(ABC):
                 }
         
         return drift_analysis
-
-    def validate_scientific_equivalence(self, other_arch_results: Dict) -> Dict:
-        """
-        Valida a equivalência científica com os resultados de outra arquitetura.
-
-        Este método delega a validação para a classe BenchmarkValidator,
-        que é projetada para comparar os artefatos de dois pipelines.
-
-        Args:
-            other_arch_results: Dicionário de resultados da outra arquitetura.
-
-        Returns:
-            Dicionário com o relatório de validação de equivalência.
-        """
-        from core.benchmark_validator import BenchmarkValidator
-
-        print(f"\nValidando equivalência científica com {other_arch_results.get('architecture', 'outra arquitetura')}...")
-        
-        self_results = {
-            'architecture': self.architecture_name,
-            'output_base_path': self.output_base
-        }
-
-        validator = BenchmarkValidator(self_results, other_arch_results)
-        
-        equivalence_report = validator.validate_all()
-
-        report_path = f"{self.output_base}/scientific_equivalence_report.json"
-        with open(report_path, 'w') as f:
-            json.dump(equivalence_report, f, indent=2)
-        
-        print(f"   Relatório de equivalência salvo em: {report_path}")
-        return equivalence_report
-
-    def get_reproducibility_report(self) -> Dict:
-        """
-        Gera um relatório sobre as configurações de reprodutibilidade.
-
-        Returns:
-            Dicionário contendo as configurações de seed utilizadas.
-        """
-        report = {
-            'architecture': self.architecture_name,
-            'global_random_seed': self.config.get('random_seed'),
-            'numpy_seed_set': True,
-            'dask_seed_set': 'dask' in sys.modules,
-            'report_timestamp': datetime.now().isoformat()
-        }
-        print("\n🌱 Relatório de Reprodutibilidade:")
-        for key, value in report.items():
-            print(f"   - {key}: {value}")
-            
-        return report
