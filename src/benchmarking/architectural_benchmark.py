@@ -37,7 +37,7 @@ import sys
 import time
 from dataclasses import dataclass, asdict
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -57,64 +57,51 @@ def _project_root() -> str:
 
 
 PROJECT_ROOT = _project_root()
+SRC_DIR = os.path.join(PROJECT_ROOT, "src")
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
-from src.core.config import get_absolute_output_path, BENCHMARK_CONFIG
+from core.config import get_absolute_output_path, BENCHMARK_CONFIG
 
 
 # Importações tardias dos componentes do pipeline (evitar custo no import inicial)
 def _import_modules():
-    # Coleta
-    from src.collection.raw_data_collector import RawDataCollector
+    """Importa dinamicamente todos os módulos de paradigma via registro do framework."""
+    from core.paradigm_registry import discover_paradigms
+    import importlib
 
-    # Processamento
-    from src.collection.data_lake.processor import DataLakeProcessor
-    from src.collection.data_warehouse.processor import DataWarehouseProcessor
-    # Setup - imports diretos dos módulos
-    import src.architectures_ml.data_lake.setup as dl_setup
-    import src.architectures_ml.data_warehouse.setup as dw_setup
-    # Baseline
-    from src.architectures_ml.data_lake.models.baseline_analysis import (
-        BaselineModelAnalysisDataLake,
-    )
-    from src.architectures_ml.data_warehouse.models.baseline_analysis import (
-        BaselineModelAnalysisDataWarehouse,
-    )
+    paradigms = discover_paradigms()
+    modules = {}
 
-    # Hierárquicos
-    from src.architectures_ml.data_lake.models.hierarchical_model import (
-        HierarchicalModelDataLake,
-    )
-    from src.architectures_ml.data_warehouse.models.hierarchical_model import (
-        HierarchicalModelSQLFirst,
-    )
+    # Coleta (compartilhado, não específico por paradigma)
+    from collection.raw_data_collector import RawDataCollector
+    modules["RawDataCollector"] = RawDataCollector
 
-    # Polars DataFrame
-    from src.collection.polars_dataframe.processor import PolarsDataFrameProcessor
-    import src.architectures_ml.polars_dataframe.setup as pl_setup
-    from src.architectures_ml.polars_dataframe.models.baseline_analysis import (
-        BaselineModelAnalysisPolarsDataFrame,
-    )
-    from src.architectures_ml.polars_dataframe.models.hierarchical_model import (
-        HierarchicalModelPolarsDataFrame,
-    )
+    for name, meta in paradigms.items():
+        # Módulo de setup (possui função main())
+        setup_mod_path = meta['setup_script'].replace('/', '.')
+        if setup_mod_path.endswith('.py'):
+            setup_mod_path = setup_mod_path[:-3]
+        modules[f"{name}_setup_module"] = importlib.import_module(setup_mod_path)
 
-    return {
-        "RawDataCollector": RawDataCollector,
-        "DataLakeProcessor": DataLakeProcessor,
-        "DataWarehouseProcessor": DataWarehouseProcessor,
-        "PolarsDataFrameProcessor": PolarsDataFrameProcessor,
-        "dl_setup_module": dl_setup,
-        "dw_setup_module": dw_setup,
-        "pl_setup_module": pl_setup,
-        "BaselineModelAnalysisDataLake": BaselineModelAnalysisDataLake,
-        "BaselineModelAnalysisDataWarehouse": BaselineModelAnalysisDataWarehouse,
-        "BaselineModelAnalysisPolarsDataFrame": BaselineModelAnalysisPolarsDataFrame,
-        "HierarchicalModelDataLake": HierarchicalModelDataLake,
-        "HierarchicalModelSQLFirst": HierarchicalModelSQLFirst,
-        "HierarchicalModelPolarsDataFrame": HierarchicalModelPolarsDataFrame,
-    }
+        # Processador
+        proc_mod = importlib.import_module(meta['processor_module'])
+        modules[f"{name}_processor_class"] = getattr(proc_mod, meta['processor_class'])
+        modules[f"{name}_processor_run_method"] = meta['processor_run_method']
+
+        # Baseline
+        bl_mod = importlib.import_module(meta['baseline_module'])
+        modules[f"{name}_baseline_class"] = getattr(bl_mod, meta['baseline_class'])
+
+        # Hierárquico
+        hier_mod = importlib.import_module(meta['hierarchical_module'])
+        modules[f"{name}_hierarchical_class"] = getattr(hier_mod, meta['hierarchical_class'])
+
+    modules["_paradigm_names"] = list(paradigms.keys())
+    modules["_paradigm_metas"] = paradigms
+    return modules
 
 
 # ---------------------------------------------------------------------------
@@ -213,13 +200,13 @@ class BenchmarkRunner:
                 self._proc.cpu_percent(interval=None)
                 psutil.cpu_percent(interval=None)
             except Exception:
-                pass
+                pass  # Inicializa contadores de CPU; falha é inofensiva
             # IO inicial
             try:
                 self._io0 = self._proc.io_counters()
             except Exception:
                 self._io0 = None
-            self._start_ts = datetime.utcnow().isoformat()
+            self._start_ts = datetime.now(timezone.utc).isoformat()
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
             return self
@@ -228,7 +215,7 @@ class BenchmarkRunner:
             self._stop.set()
             if self._thread:
                 self._thread.join(timeout=2.0)
-            self._end_ts = datetime.utcnow().isoformat()
+            self._end_ts = datetime.now(timezone.utc).isoformat()
             self._write_summary()
 
         def _run_loop(self):
@@ -262,7 +249,7 @@ class BenchmarkRunner:
                     }
                     self._samples.append(sample)
                 except Exception:
-                    pass
+                    pass  # Thread de monitoramento: tolera falhas transitórias do psutil
                 self._stop.wait(self.interval_s)
 
         def _write_summary(self):
@@ -322,8 +309,8 @@ class BenchmarkRunner:
             try:
                 with open(self.log_path, "a") as f:
                     f.write(_json.dumps(rec) + "\n")
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[AVISO] Falha ao gravar log de recursos: {exc}")
 
     # --------------------------- utilitários de contagem -------------------
     def _count_rows_parquet(self, abs_path: str) -> int:
@@ -333,79 +320,7 @@ class BenchmarkRunner:
             df = pd.read_parquet(abs_path)
             return int(len(df))
         except Exception:
-            return 0
-
-    def _dl_master_path(self) -> str:
-        return get_absolute_output_path(
-            "ml_pipeline/architectures/data_lake/prep/master_data_data_lake.parquet"
-        )
-
-    def _dl_folds_path(self) -> str:
-        return get_absolute_output_path(
-            "ml_pipeline/architectures/data_lake/prep/temporal_folds_data_lake.json"
-        )
-
-    def _dw_db_path(self) -> str:
-        return get_absolute_output_path(
-            "collection/data_warehouse/worldbank_data.duckdb"
-        )
-
-    def _count_dl_split_rows(self, start: int, end: int) -> int:
-        import dask.dataframe as dd  # lazy import
-
-        master = self._dl_master_path()
-        if not os.path.exists(master):
-            return 0
-        ddf = dd.read_parquet(master)
-        try:
-            # Contar apenas registros com target não-nulo para comparabilidade com DW
-            filt = (
-                (ddf["year"] >= start)
-                & (ddf["year"] <= end)
-                & (
-                    ~ddf["dropout_rate_data_lake"].isna()
-                    if "dropout_rate_data_lake" in ddf.columns
-                    else True
-                )
-            )
-            return int(ddf[filt].map_partitions(len).sum().compute())
-        except Exception:
-            return 0
-
-    def _count_dw_split_rows(
-        self, start: int, end: int, only_target: bool = False
-    ) -> int:
-        # evita dependência direta; usa connection_manager do DW
-        try:
-            from src.collection.data_warehouse.connection_manager import DuckDBConnectionManager
-        except Exception:
-            return 0
-        db = self._dw_db_path()
-        if not os.path.exists(db):
-            return 0
-        conn = DuckDBConnectionManager(db)
-        try:
-            cond = f"year >= {start} AND year <= {end}"
-            if only_target:
-                cond += " AND dropout_rate_data_warehouse IS NOT NULL"
-            return int(
-                conn.execute_scalar(f"SELECT COUNT(*) FROM analytics_wide WHERE {cond}")
-            )
-        finally:
-            try:
-                conn.close_connection()
-            except Exception:
-                pass
-
-    def _pl_master_path(self) -> str:
-        return get_absolute_output_path(
-            "ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet"
-        )
-
-    def _pl_folds_path(self) -> str:
-        return get_absolute_output_path(
-            "ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json"
-        )
+            return 0  # Parquet corrompido/ilegível: contagem como zero linhas
 
     # --------------------------- fases medidas -----------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
@@ -421,242 +336,72 @@ class BenchmarkRunner:
             )
         return t1 - t0, rows
 
-    def _phase_processing_dl(self) -> Tuple[int, Optional[int]]:
-        Processor = self.modules["DataLakeProcessor"]
-        proc = Processor()
+    def _phase_processing_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
+        ProcessorClass = self.modules[f"{paradigm_name}_processor_class"]
+        run_method_name = self.modules[f"{paradigm_name}_processor_run_method"]
+        proc = ProcessorClass()
         t0 = time.perf_counter_ns()
-        res = proc.run_data_lake_processing()
+        res = getattr(proc, run_method_name)()
         t1 = time.perf_counter_ns()
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
-            # Data Lake retorna artefatos em res['output']
-            out = res.get("output", {}) if isinstance(res.get("output"), dict) else {}
-            path = (
-                out.get("primary_dataset")
-                or out.get("partitioned_dataset")
-                or res.get("output_path", "")
+            out_path = res.get("output_path", "")
+            if out_path:
+                rows = self._count_rows_parquet(out_path)
+        return t1 - t0, rows
+
+    def _phase_setup_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
+        setup_module = self.modules[f"{paradigm_name}_setup_module"]
+        t0 = time.perf_counter_ns()
+        res = setup_module.main()
+        t1 = time.perf_counter_ns()
+        rows = None
+        if isinstance(res, dict) and res.get("status") == "success":
+            master_path = get_absolute_output_path(
+                f"ml_pipeline/architectures/{paradigm_name}/prep/master_{paradigm_name}.parquet"
             )
-            rows = self._count_rows_parquet(path)
+            rows = self._count_rows_parquet(master_path)
         return t1 - t0, rows
 
-    def _phase_processing_dw(self) -> Tuple[int, Optional[int]]:
-        Processor = self.modules["DataWarehouseProcessor"]
-        proc = Processor()
-        t0 = time.perf_counter_ns()
-        res = proc.run_data_warehouse_processing()
-        t1 = time.perf_counter_ns()
-        rows = None
-        if isinstance(res, dict) and res.get("status") == "success":
-            rows = self._count_rows_parquet(res.get("output_path", ""))
-        return t1 - t0, rows
-
-    def _phase_setup_dl(self) -> Tuple[int, Optional[int]]:
-        setup_module = self.modules["dl_setup_module"]
-        t0 = time.perf_counter_ns()
-        # Chamar a função main() do módulo
-        res = setup_module.main()
-        t1 = time.perf_counter_ns()
-        rows = None
-        if isinstance(res, dict) and res.get("status") == "success":
-            # Contar observações do master Data Lake preparado
-            rows = self._count_rows_parquet(self._dl_master_path())
-        return t1 - t0, rows
-
-    def _phase_setup_dw(self) -> Tuple[int, Optional[int]]:
-        setup_module = self.modules["dw_setup_module"]
-        t0 = time.perf_counter_ns()
-        # Chamar a função main() do módulo
-        res = setup_module.main()
-        t1 = time.perf_counter_ns()
-        rows = None
-        if isinstance(res, dict) and res.get("status") == "success":
-            # Contar observações diretamente no banco (analytics_wide)
-            try:
-                from src.collection.data_warehouse.connection_manager import DuckDBConnectionManager
-
-                db = self._dw_db_path()
-                if os.path.exists(db):
-                    conn = DuckDBConnectionManager(db)
-                    try:
-                        rows = int(
-                            conn.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-                        )
-                    finally:
-                        try:
-                            conn.close_connection()
-                        except Exception:
-                            pass
-            except Exception:
-                rows = None
-        return t1 - t0, rows
-
-    def _phase_baseline_dl(self) -> Tuple[int, Optional[int]]:
-        # estimar registros usados pelos folds via master + folds
+    def _phase_baseline_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
+        AnalyzerClass = self.modules[f"{paradigm_name}_baseline_class"]
         start_ns = time.perf_counter_ns()
-        Analyzer = self.modules["BaselineModelAnalysisDataLake"]
-        analyzer = Analyzer()
+        analyzer = AnalyzerClass()
         analyzer.run_complete_analysis()
         end_ns = time.perf_counter_ns()
-
-        records = 0
-        try:
-            with open(self._dl_folds_path(), "r") as f:
-                folds_cfg = json.load(f)["folds"]
-            for fold in folds_cfg:
-                records += self._count_dl_split_rows(
-                    fold["train_start"], fold["train_end"]
-                )
-                records += self._count_dl_split_rows(fold["val_start"], fold["val_end"])
-                records += self._count_dl_split_rows(
-                    fold["test_start"], fold["test_end"]
-                )
-        except Exception:
-            records = None
-
+        records = self._count_fold_records(paradigm_name)
         return end_ns - start_ns, records
 
-    def _phase_baseline_dw(self) -> Tuple[int, Optional[int]]:
+    def _phase_hierarchical_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
+        ModelClass = self.modules[f"{paradigm_name}_hierarchical_class"]
         start_ns = time.perf_counter_ns()
-        Analyzer = self.modules["BaselineModelAnalysisDataWarehouse"]
-        analyzer = Analyzer()
-        analyzer.run_complete_analysis()
+        model = ModelClass()
+        model.run_hierarchical_analysis()
         end_ns = time.perf_counter_ns()
+        records = self._count_fold_records(paradigm_name)
+        return end_ns - start_ns, records
 
-        records = 0
+    def _count_fold_records(self, paradigm_name: str) -> Optional[int]:
+        """Conta o total de registros em todos os folds de um paradigma."""
+        folds_path = get_absolute_output_path(
+            f"ml_pipeline/architectures/{paradigm_name}/prep/temporal_folds_{paradigm_name}.json"
+        )
+        master_path = get_absolute_output_path(
+            f"ml_pipeline/architectures/{paradigm_name}/prep/master_{paradigm_name}.parquet"
+        )
         try:
-            folds_path = get_absolute_output_path(
-                "ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json"
-            )
             with open(folds_path, "r") as f:
                 folds_cfg = json.load(f)["folds"]
+            if not os.path.exists(master_path):
+                return None
+            df = pd.read_parquet(master_path, columns=["year"])
+            records = 0
             for fold in folds_cfg:
-                records += self._count_dw_split_rows(
-                    fold["train_start"], fold["train_end"], only_target=True
-                )
-                records += self._count_dw_split_rows(
-                    fold["val_start"], fold["val_end"], only_target=True
-                )
-                records += self._count_dw_split_rows(
-                    fold["test_start"], fold["test_end"], only_target=True
-                )
+                for s, e in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
+                    records += int(len(df[(df["year"] >= fold[s]) & (df["year"] <= fold[e])]))
+            return records
         except Exception:
-            records = None
-
-        return end_ns - start_ns, records
-
-    def _phase_hierarchical_dl(self) -> Tuple[int, Optional[int]]:
-        start_ns = time.perf_counter_ns()
-        Model = self.modules["HierarchicalModelDataLake"]
-        model = Model()
-        _ = model.run_hierarchical_analysis()
-        end_ns = time.perf_counter_ns()
-        # reusar mesma estimativa de contagem dos folds do baseline
-        records = 0
-        try:
-            with open(self._dl_folds_path(), "r") as f:
-                folds_cfg = json.load(f)["folds"]
-            for fold in folds_cfg:
-                records += self._count_dl_split_rows(
-                    fold["train_start"], fold["train_end"]
-                )
-                records += self._count_dl_split_rows(fold["val_start"], fold["val_end"])
-                records += self._count_dl_split_rows(
-                    fold["test_start"], fold["test_end"]
-                )
-        except Exception:
-            records = None
-        return end_ns - start_ns, records
-
-    def _phase_hierarchical_dw(self) -> Tuple[int, Optional[int]]:
-        start_ns = time.perf_counter_ns()
-        Model = self.modules["HierarchicalModelSQLFirst"]
-        model = Model()
-        _ = model.run_hierarchical_analysis()
-        end_ns = time.perf_counter_ns()
-        records = 0
-        try:
-            folds_path = get_absolute_output_path(
-                "ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json"
-            )
-            with open(folds_path, "r") as f:
-                folds_cfg = json.load(f)["folds"]
-            for fold in folds_cfg:
-                records += self._count_dw_split_rows(
-                    fold["train_start"], fold["train_end"], only_target=True
-                )
-                records += self._count_dw_split_rows(
-                    fold["val_start"], fold["val_end"], only_target=True
-                )
-                records += self._count_dw_split_rows(
-                    fold["test_start"], fold["test_end"], only_target=True
-                )
-        except Exception:
-            records = None
-        return end_ns - start_ns, records
-
-    # --- Polars DataFrame phases ---
-    def _phase_processing_pl(self) -> Tuple[int, Optional[int]]:
-        Processor = self.modules["PolarsDataFrameProcessor"]
-        proc = Processor()
-        t0 = time.perf_counter_ns()
-        res = proc.run_polars_dataframe_processing()
-        t1 = time.perf_counter_ns()
-        rows = None
-        if isinstance(res, dict) and res.get("status") == "success":
-            rows = self._count_rows_parquet(res.get("output_path", ""))
-        return t1 - t0, rows
-
-    def _phase_setup_pl(self) -> Tuple[int, Optional[int]]:
-        setup_module = self.modules["pl_setup_module"]
-        t0 = time.perf_counter_ns()
-        res = setup_module.main()
-        t1 = time.perf_counter_ns()
-        rows = None
-        if isinstance(res, dict) and res.get("status") == "success":
-            rows = self._count_rows_parquet(self._pl_master_path())
-        return t1 - t0, rows
-
-    def _count_pl_split_rows(self, start: int, end: int) -> int:
-        """Conta registros no intervalo [start, end] do master Polars."""
-        master = self._pl_master_path()
-        if not os.path.exists(master):
-            return 0
-        df = pd.read_parquet(master, columns=["year"])
-        return int(len(df[(df["year"] >= start) & (df["year"] <= end)]))
-
-    def _phase_baseline_pl(self) -> Tuple[int, Optional[int]]:
-        start_ns = time.perf_counter_ns()
-        Analyzer = self.modules["BaselineModelAnalysisPolarsDataFrame"]
-        analyzer = Analyzer()
-        analyzer.run_complete_analysis()
-        end_ns = time.perf_counter_ns()
-        records = 0
-        try:
-            with open(self._pl_folds_path(), "r") as f:
-                folds_cfg = json.load(f)["folds"]
-            for fold in folds_cfg:
-                for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
-                    records += self._count_pl_split_rows(fold[split[0]], fold[split[1]])
-        except Exception:
-            records = None
-        return end_ns - start_ns, records
-
-    def _phase_hierarchical_pl(self) -> Tuple[int, Optional[int]]:
-        start_ns = time.perf_counter_ns()
-        Model = self.modules["HierarchicalModelPolarsDataFrame"]
-        model = Model()
-        _ = model.run_hierarchical_analysis()
-        end_ns = time.perf_counter_ns()
-        records = 0
-        try:
-            with open(self._pl_folds_path(), "r") as f:
-                folds_cfg = json.load(f)["folds"]
-            for fold in folds_cfg:
-                for split in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
-                    records += self._count_pl_split_rows(fold[split[0]], fold[split[1]])
-        except Exception:
-            records = None
-        return end_ns - start_ns, records
+            return None  # Melhor esforço: contagem ausente não invalida a latência
 
     # --------------------------- execução ----------------------------------
     # Fases "upstream" (coleta + processamento) são infraestrutura compartilhada
@@ -697,14 +442,16 @@ class BenchmarkRunner:
                     records=records,
                     peak_rss_mb=mon.peak_rss_mb,
                 )
-            except Exception:
-                # registrar falha com duração nula
+            except Exception as exc:
+                import traceback
+                print(f"[ERRO DE BENCHMARK] {phase}/{arch}/{step_name}: {exc}")
+                traceback.print_exc()
                 return PhaseResult(
                     run_id=run_id,
                     phase=phase,
                     architecture=arch,
                     step=step_name,
-                    duration_ns=0,
+                    duration_ns=-1,
                     records=None,
                 )
 
@@ -722,30 +469,17 @@ class BenchmarkRunner:
                 results.append(r)
 
         if "processing" in self.phases:
-            r1 = measure(
-                self._phase_processing_dl, "processing", "data_lake", "processor"
-            )
-            r2 = measure(
-                self._phase_processing_dw,
-                "processing",
-                "data_warehouse",
-                "processor",
-            )
-            r3 = measure(
-                self._phase_processing_pl,
-                "processing",
-                "polars_dataframe",
-                "processor",
-            )
-            if r1:
-                results.append(r1)
-            if r2:
-                results.append(r2)
-            if r3:
-                results.append(r3)
+            paradigm_names = self.modules["_paradigm_names"]
+            for pn in paradigm_names:
+                r = measure(
+                    lambda _pn=pn: self._phase_processing_generic(_pn),
+                    "processing", pn, "processor"
+                )
+                if r:
+                    results.append(r)
 
         # --- Fase 2: downstream (setup → baseline → hierarchical) - repetida --
-        # Estas fases contêm a lógica arquitetural DW vs DL.
+        # Estas fases contêm a lógica arquitetural que diferencia os paradigmas.
         downstream_phases = [p for p in self.phases if p in self._DOWNSTREAM_PHASES]
         if not downstream_phases:
             return results
@@ -755,22 +489,21 @@ class BenchmarkRunner:
         # ordem das 3 arquiteturas em cada iteração.
         order_rng = random.Random(42)
 
-        # Mapeamento: (phase, arch) → step_fn
+        # Mapeamento dinâmico: phase → [(step_fn, arch, step_name), ...]
+        paradigm_names = self.modules["_paradigm_names"]
+
         phase_fns = {
             "setup": [
-                (self._phase_setup_dl, "data_lake", "setup"),
-                (self._phase_setup_dw, "data_warehouse", "setup"),
-                (self._phase_setup_pl, "polars_dataframe", "setup"),
+                (lambda _pn=pn: self._phase_setup_generic(_pn), pn, "setup")
+                for pn in paradigm_names
             ],
             "baseline": [
-                (self._phase_baseline_dl, "data_lake", "baseline_models"),
-                (self._phase_baseline_dw, "data_warehouse", "baseline_models"),
-                (self._phase_baseline_pl, "polars_dataframe", "baseline_models"),
+                (lambda _pn=pn: self._phase_baseline_generic(_pn), pn, "baseline_models")
+                for pn in paradigm_names
             ],
             "hierarchical": [
-                (self._phase_hierarchical_dl, "data_lake", "hierarchical_models"),
-                (self._phase_hierarchical_dw, "data_warehouse", "hierarchical_models"),
-                (self._phase_hierarchical_pl, "polars_dataframe", "hierarchical_models"),
+                (lambda _pn=pn: self._phase_hierarchical_generic(_pn), pn, "hierarchical_models")
+                for pn in paradigm_names
             ],
         }
 
@@ -873,7 +606,7 @@ class BenchmarkRunner:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Architectural Benchmark - DW vs DL")
+    p = argparse.ArgumentParser(description="Benchmark Arquitetural — comparação entre paradigmas")
     p.add_argument(
         "--repetitions",
         type=int,
@@ -908,10 +641,10 @@ if __name__ == "__main__":
     print(f"Resultados salvos:\n- CSV: {csv_path}\n- Resumo: {summary_path}")
     # Pós-processamento: significância + relatórios
     try:
-        from subprocess import run
+        from subprocess import run as subprocess_run
 
         # Significância e equivalência de baselines
-        run(
+        subprocess_run(
             [
                 sys.executable,
                 os.path.join(
@@ -923,7 +656,7 @@ if __name__ == "__main__":
             ],
             check=False,
         )
-        run(
+        subprocess_run(
             [
                 sys.executable,
                 os.path.join(
@@ -933,7 +666,7 @@ if __name__ == "__main__":
             check=False,
         )
         # Tamanhos de efeito e correções de múltiplas comparações
-        run(
+        subprocess_run(
             [
                 sys.executable,
                 os.path.join(
@@ -947,6 +680,6 @@ if __name__ == "__main__":
             PROJECT_ROOT, "src", "statistical_validation", "make_scorecard.py"
         )
         if os.path.exists(ms):
-            run([sys.executable, ms], check=False)
-    except Exception:
-        pass
+            subprocess_run([sys.executable, ms], check=False)
+    except Exception as exc:
+        print(f"[AVISO] Análise pós-benchmark falhou: {exc}")
