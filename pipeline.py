@@ -6,9 +6,9 @@ Fases:
   1) Coleta bruta (World Bank)
   2) Processamento arquitetural (Data Lake, Data Warehouse, Polars DataFrame)
   3) Setup ML (folds idênticos com gaps de 2 anos; seleção de features)
-  4) Baselines (3 paradigmas)
-  5) Hierárquicos (3 paradigmas)
-  6) Benchmark arquitetural (3 paradigmas)
+  4) Baselines (3 arquiteturas)
+  5) Hierárquicos (3 arquiteturas)
+  6) Benchmark arquitetural (3 arquiteturas)
   7) Testes estatísticos de validação
 """
 import argparse
@@ -23,17 +23,20 @@ from datetime import datetime, timezone
 
 try:
     from src.core.scientific_config import SCIENTIFIC_CONFIG
-except Exception:
+except Exception as exc:
+    print(f"[AVISO] Falha ao importar SCIENTIFIC_CONFIG: {exc}")
     SCIENTIFIC_CONFIG = {}
 
 try:
     from src.core.config import get_execution_metadata
-except Exception:
+except Exception as exc:
+    print(f"[AVISO] Falha ao importar get_execution_metadata: {exc}")
     get_execution_metadata = None
 
 try:
     from src.core.validation import TemporalValidator
-except Exception:
+except Exception as exc:
+    print(f"[AVISO] Falha ao importar TemporalValidator: {exc}")
     TemporalValidator = None
 
 def print_conclusion(msg: str) -> None:
@@ -109,6 +112,15 @@ def _snapshot_scientific_config(root: str) -> None:
     print_system(f"Snapshot científico registrado em {snapshot_path}")
 
 
+def _discover():
+    """Descoberta preguiçosa de paradigmas — importação aciona o registro."""
+    from src.core.paradigm_registry import discover_paradigms
+    paradigms = discover_paradigms()
+    if not paradigms:
+        raise RuntimeError("Nenhum paradigma descoberto — verifique src/architectures_ml/*/setup.py")
+    return paradigms
+
+
 def _validate_anti_leakage_gate(root: str) -> None:
     """Valida integridade temporal de todos os folds antes de prosseguir ao benchmark."""
     if TemporalValidator is None:
@@ -118,7 +130,7 @@ def _validate_anti_leakage_gate(root: str) -> None:
     embargo = int(SCIENTIFIC_CONFIG.get('embargo_years', 0))
     validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
 
-    for arch in ['data_lake', 'data_warehouse', 'polars_dataframe']:
+    for arch in _discover():
         folds_path = os.path.join(
             root, 'outputs', 'ml_pipeline', 'architectures', arch, 'prep',
             f'temporal_folds_{arch}.json'
@@ -136,13 +148,14 @@ def _validate_anti_leakage_gate(root: str) -> None:
 
 def main() -> None:
     # CLI básica (sem modos de folds; geração é sempre automática via config científica)
-    parser = argparse.ArgumentParser(description="Pipeline de pesquisa - DW vs DL")
+    parser = argparse.ArgumentParser(description="Pipeline de pesquisa - benchmarking arquitetural")
     _ = parser.parse_args()
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
 
     print_conclusion("INICIANDO PIPELINE METODOLÓGICO COMPLETO (RQ1–RQ3)")
     _snapshot_scientific_config(root)
+    paradigms = _discover()
     print_system("ETAPA 0 — SNAPSHOT DE REPRODUTIBILIDADE (P3: separação)")
     print_config("Snapshot de configuração e ambiente salvo em outputs/scientific_config_snapshot.json")
 
@@ -153,41 +166,24 @@ def main() -> None:
     run(f"{py} {root}/src/collection/raw_data_collector.py")
     print_success("ETAPA 1 CONCLUÍDA: Dados brutos coletados")
 
-    # Processamento arquitetural
-    print_system("PROCESSADOR DATA LAKE")
-    print_config("Arquitetura: Data Lake com Dask")
-    print_step("ETAPA 2a/9: Processando Data Lake...")
-    run(f"{py} {root}/src/collection/data_lake/processor.py")
+    # Processamento arquitetural (driven by paradigm discovery)
+    n_paradigms = len(paradigms)
+    for i, (arch, info) in enumerate(paradigms.items(), 1):
+        print_system(f"PROCESSADOR {arch.upper()}")
+        print_config(f"Arquitetura: {info['label']}")
+        print_step(f"ETAPA 2{chr(96+i)}/9: Processando {arch}...")
+        run(f"{py} {root}/{info['processor_script']}")
+    print_success(f"ETAPA 2 CONCLUÍDA: Processamento arquitetural completo ({n_paradigms} paradigmas)")
 
-    print_system("PROCESSADOR DATA WAREHOUSE")
-    print_config("Arquitetura: Data Warehouse com DuckDB")
-    print_step("ETAPA 2b/9: Processando Data Warehouse (DuckDB)...")
-    run(f"{py} {root}/src/collection/data_warehouse/processor.py")
-
-    print_system("PROCESSADOR POLARS DATAFRAME")
-    print_config("Arquitetura: Polars DataFrame com Lazy Evaluation")
-    print_step("ETAPA 2c/9: Processando Polars DataFrame...")
-    run(f"{py} {root}/src/collection/polars_dataframe/processor.py")
-    print_success("ETAPA 2 CONCLUÍDA: Processamento arquitetural completo (3 paradigmas)")
-
-    print_system("PROTOCOLO ANTI-LEAKAGE — VALIDAÇÃO TEMPORAL (RQ1)")
+    print_system("PROTOCOLO ANTI-LEAKAGE — VALIDAÇÃO TEMPORAL (O1)")
     print_config("Gaps temporais: 2 anos (P1: ordenação, P2: gap, P3: separação)")
-    # Setup ML (gaps 2 anos em ambas arquiteturas)
-    print_system("SETUP ML DATA LAKE")
-    print_config("Arquitetura: Data Lake (schema-on-read)")
-    print_step("ETAPA 3a/9: Configurando ML Data Lake...")
-    run(f"{py} {root}/src/architectures_ml/data_lake/setup.py")
-
-    print_system("SETUP ML DATA WAREHOUSE")
-    print_config("Arquitetura: Data Warehouse (schema-on-write)")
-    print_step("ETAPA 3b/9: Configurando ML Data Warehouse...")
-    run(f"{py} {root}/src/architectures_ml/data_warehouse/setup.py")
-
-    print_system("SETUP ML POLARS DATAFRAME")
-    print_config("Arquitetura: Polars DataFrame (lazy evaluation)")
-    print_step("ETAPA 3c/9: Configurando ML Polars DataFrame...")
-    run(f"{py} {root}/src/architectures_ml/polars_dataframe/setup.py")
-    print_success("ETAPA 3 CONCLUÍDA: Setup ML completo (3 paradigmas)")
+    # Setup ML (driven by paradigm discovery)
+    for i, (arch, info) in enumerate(paradigms.items(), 1):
+        print_system(f"SETUP ML {arch.upper()}")
+        print_config(f"Arquitetura: {info['label']}")
+        print_step(f"ETAPA 3{chr(96+i)}/9: Configurando ML {arch}...")
+        run(f"{py} {root}/{info['setup_script']}")
+    print_success(f"ETAPA 3 CONCLUÍDA: Setup ML completo ({n_paradigms} paradigmas)")
 
     # Gate anti-leakage: interromper pipeline se integridade temporal for violada
     print_system("GATE ANTI-LEAKAGE")
@@ -195,36 +191,26 @@ def main() -> None:
     _validate_anti_leakage_gate(root)
     print_success("GATE ANTI-LEAKAGE: Todos os folds passaram na validação")
 
-    # Baselines
-    print_system("MODELOS BASELINE DATA LAKE")
-    print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 4a/9: Executando Baselines Data Lake...")
-    run(f"{py} {root}/src/architectures_ml/data_lake/models/baseline_analysis.py")
+    # Baselines (driven by paradigm discovery)
+    for i, (arch, info) in enumerate(paradigms.items(), 1):
+        print_system(f"MODELOS BASELINE {arch.upper()}")
+        print_config("Modelos: Média, Tendência, Naive, Cross-Country")
+        print_step(f"ETAPA 4{chr(96+i)}/9: Executando Baselines {arch}...")
+        run(f"{py} {root}/{info['baseline_script']}")
+    print_success(f"ETAPA 4 CONCLUÍDA: Modelos baseline executados ({n_paradigms} paradigmas)")
 
-    print_system("MODELOS BASELINE DATA WAREHOUSE")
-    print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 4b/9: Executando Baselines Data Warehouse...")
-    run(f"{py} {root}/src/architectures_ml/data_warehouse/models/baseline_analysis.py")
-
-    print_system("MODELOS BASELINE POLARS DATAFRAME")
-    print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-    print_step("ETAPA 4c/9: Executando Baselines Polars DataFrame...")
-    run(f"{py} {root}/src/architectures_ml/polars_dataframe/models/baseline_analysis.py")
-    print_success("ETAPA 4 CONCLUÍDA: Modelos baseline executados (3 paradigmas)")
-
-    # Hierárquicos
+    # Hierárquicos (driven by paradigm discovery)
     print_system("MODELOS HIERÁRQUICOS")
     print_step("ETAPA 5/9: Executando Modelos Hierárquicos...")
-    run(f"{py} {root}/src/architectures_ml/data_lake/models/hierarchical_model.py")
-    run(f"{py} {root}/src/architectures_ml/data_warehouse/models/hierarchical_model.py")
-    run(f"{py} {root}/src/architectures_ml/polars_dataframe/models/hierarchical_model.py")
-    print_success("ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados (3 paradigmas)")
+    for arch, info in paradigms.items():
+        run(f"{py} {root}/{info['hierarchical_script']}")
+    print_success(f"ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados ({n_paradigms} paradigmas)")
 
     # Benchmark arquitetural
     print_system("BENCHMARK ARQUITETURAL (RQ3)")
     print_config("Comparação: schema-on-write vs schema-on-read vs lazy evaluation")
     print_step("ETAPA 6/9: Executando Benchmark Arquitetural...")
-    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 35 --warmup 2")
+    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
     print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado (3 paradigmas)")
 
     # Testes estatísticos de validação
