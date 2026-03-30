@@ -558,5 +558,5 @@ class TestPreprocessingIsolation:
         docstring = BaseArchitectureML.prepare_features.__doc__
         assert docstring is not None, "prepare_features deve ter docstring"
         assert 'P5' in docstring, "Docstring deve mencionar P5"
-        assert 'Semmelrock' in docstring, \
-            "Docstring deve referenciar Semmelrock et al. 2025"
+        assert 'Kaufman' in docstring, \
+            "Docstring deve referenciar Kaufman et al. 2012"
