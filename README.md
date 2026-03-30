@@ -30,7 +30,7 @@ flowchart LR
         PL["Polars DataFrame\n Polars "]:::polars
     end
 
-    subgraph downstream ["Downstream (35x)"]
+    subgraph downstream ["Downstream (30x)"]
         direction LR
         S["Setup\nML"]
         G{{"Anti-Leak\nGate"}}:::gate
@@ -209,7 +209,7 @@ block-beta
     style pl fill:#ffe0b2,stroke:#e65100
 ```
 
-### Benchmark (Azure L4as_v4, 32 GB RAM, n=35)
+### Benchmark (Azure L4as_v4, 32 GB RAM, n=30)
 
 ```mermaid
 ---
@@ -222,20 +222,20 @@ xychart-beta
     title "Latência por fase: DuckDB vs Dask vs Polars (segundos)"
     x-axis ["Setup", "Processing", "Baseline", "Hierarchical"]
     y-axis "Tempo (s)" 0 --> 200
-    bar [0.39, 0.16, 1.19, 15.23]
-    bar [177.28, 0.79, 7.71, 16.92]
-    bar [0.43, 0.02, 0.92, 14.50]
+    bar [0.41, 0.18, 1.19, 15.25]
+    bar [179.01, 0.90, 7.79, 16.96]
+    bar [0.054, 0.016, 1.08, 15.38]
 ```
 
-> DuckDB (azul) vs Dask (verde) vs Polars (laranja). Setup: **452x** (DW vs DL), **412x** (PL vs DL). Baseline: **6x** (DW vs DL), **8.6x** (PL vs DL). Hierarchical: **1.1x** (DW vs DL), **1.2x** (PL vs DL). Total: **12x** (DW vs DL), **12.3x** (PL vs DL).
+> DuckDB (azul) vs Dask (verde) vs Polars (laranja). Setup: **437x** (DW vs DL), **3315x** (PL vs DL). Baseline: **7x** (DW vs DL), **7x** (PL vs DL). Hierarchical: **~1.1x** (todos). Total: DuckDB 17.02 s, Dask 204.66 s, Polars 16.53 s — **DW 12x mais rápido** e **PL 12x mais rápido** que DL.
 
 ### Garantias do pipeline
 
 - **Anti-leakage automático (P1-P5)** em todas as 3 arquiteturas — ordenação temporal (P1), gap mínimo de 2 anos (P2), separação de features e detecção de proxy (P3), escopo temporal da seleção de features (P4), e escopo de preprocessing com scaling/imputação ajustados exclusivamente no treino (P5). Violações de P1-P4 geram `ValueError` e interrompem a execução; P5 é enforced por contrato e testes unitários. Cobre as categorias L1.1-L1.4, L2 e L3.2 da taxonomia de Kapoor & Narayanan (2023) e as 4 variantes de Semmelrock et al. (2025).
 - **HPO sem contaminação** — hiperparâmetros selecionados via grid search no conjunto de validação; modelo final retreinado no treino completo. Previne leakage L3.3.
 - **Equivalência estatística, não p-hacking** — comparação arquitetural via SESOI + IC 95% por bootstrap, com Wilcoxon e Hodges-Lehmann como suporte. Limiares SESOI definidos a priori: R² = 0.01 (metade do efeito pequeno de Cohen 1988), MASE = 0.05, WAPE = 0.05 (resolução prática de decisão, Lakens et al. 2018).
-- **Reprodutibilidade integral** — seeds centralizadas, `n_jobs=1`, snapshot de ambiente (packages, hardware, git commit) e 51 testes automatizados + 4 cenários de injeção de leakage.
-- **Extensível por design** — `BaseArchitectureML` (11 métodos abstratos, Template Method) permite adicionar novas arquiteturas herdando o enforcement anti-leakage automaticamente.
+- **Reprodutibilidade integral** — seeds centralizadas, `n_jobs=1`, snapshot de ambiente (packages, hardware, git commit) e 73 testes automatizados.
+- **Extensível por design** — `BaseArchitectureML` (11 métodos abstratos, Template Method) com auto-descoberta de paradigmas via `__init_subclass__`; novas arquiteturas são registradas automaticamente ao serem importadas, sem editar código existente.
 
 ### Limitações explícitas
 
@@ -252,9 +252,8 @@ pip install -r requirements.txt
 # Pipeline completo: coleta → validação → benchmark → artefatos LaTeX (3 arquiteturas: DW, DL, PL)
 python pipeline.py
 
-# Testes (51 unitários + 4 cenários de injeção de leakage, aplica a todas as 3 arquiteturas)
-pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
-python tests/test_leakage_injection.py
+# Testes (73 testes: unitários + framework discovery + injeção de leakage)
+pytest tests/
 ```
 
 O pipeline gera todos os artefatos em `outputs/` — folds temporais, resultados de benchmark, tabelas LaTeX publication-ready e um snapshot completo do ambiente para replicação.
@@ -265,6 +264,7 @@ O pipeline gera todos os artefatos em `outputs/` — folds temporais, resultados
 src/
 ├── core/                    # Base do framework
 │   ├── base_architecture.py # Classe abstrata (Template Method, 11 métodos)
+│   ├── paradigm_registry.py # Auto-descoberta de paradigmas via __init_subclass__
 │   ├── validation.py        # TemporalValidator + DataIntegrityValidator
 │   ├── scientific_config.py # Parâmetros centralizados (gaps, SESOI, seeds)
 │   └── models/baseline.py   # Estratégias RF, XGBoost, LightGBM
@@ -280,15 +280,16 @@ src/
 ├── benchmarking/            # Instrumentação e derivação de métricas
 └── statistical_validation/  # TOST, bootstrap, effect sizes, scorecard
 tests/
-├── test_unit_core.py        # 49 testes unitários
-├── test_lag_anti_leak.py    # 2 testes de integridade temporal
+├── test_unit_core.py        # Testes unitários
+├── test_framework_discovery.py # Testes de auto-descoberta de paradigmas
+├── test_lag_anti_leak.py    # Testes de integridade temporal
 └── test_leakage_injection.py # Validação negativa do gate (S1–S4)
 pipeline.py                  # Orquestra tudo
 ```
 
 ## Como adaptar para seu domínio
 
-1. **Nova arquitetura** — crie uma subclasse de `BaseArchitectureML` em `src/architectures_ml/`. O anti-leakage é herdado. Registre no `pipeline.py`. Polars foi implementado como primeira extensão de terceiros seguindo este padrão.
+1. **Nova arquitetura** — crie uma subclasse de `BaseArchitectureML` em `src/architectures_ml/<novo>/setup.py` com `PARADIGM_META` definido. O framework descobre automaticamente via `__init_subclass__` — nenhum arquivo existente precisa ser editado. Polars foi adicionado seguindo este padrão.
 
 2. **Novos parâmetros** — edite `src/core/scientific_config.py`: gaps temporais, limiares SESOI (`sesoi_r2`, `sesoi_mase`, `sesoi_wape`), embargo, bootstrap iterations.
 
