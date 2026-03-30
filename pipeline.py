@@ -153,7 +153,7 @@ def main() -> None:
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
 
-    print_conclusion("INICIANDO PIPELINE METODOLÓGICO COMPLETO (RQ1–RQ3)")
+    print_conclusion("INICIANDO PIPELINE METODOLÓGICO COMPLETO (O1–O3)")
     _snapshot_scientific_config(root)
     paradigms = _discover()
     print_system("ETAPA 0 — SNAPSHOT DE REPRODUTIBILIDADE (P3: separação)")
@@ -207,14 +207,14 @@ def main() -> None:
     print_success(f"ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados ({n_paradigms} paradigmas)")
 
     # Benchmark arquitetural
-    print_system("BENCHMARK ARQUITETURAL (RQ3)")
+    print_system("BENCHMARK ARQUITETURAL (O1)")
     print_config("Comparação: schema-on-write vs schema-on-read vs lazy evaluation")
     print_step("ETAPA 6/9: Executando Benchmark Arquitetural...")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
     print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado (3 paradigmas)")
 
     # Testes estatísticos de validação
-    print_system("EQUIVALÊNCIA PRÁTICA (RQ2)")
+    print_system("EQUIVALÊNCIA PRÁTICA (O2)")
     print_config("Validação: SESOI + IC95% com bootstrap e estatísticas robustas")
     print_step("ETAPA 7/9: Executando Testes Estatísticos...")
     
