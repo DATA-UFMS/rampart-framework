@@ -31,7 +31,23 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
     diferindo apenas pelo processamento SQL in-database. Todos os artefatos
     gerados (folds, estatísticas de target, matrizes de features) seguem o
     padrão do framework para permitir benchmark e equivalência prática."""
-    
+
+    PARADIGM_META = {
+        'name': 'data_warehouse',
+        'label': 'Data Warehouse com DuckDB',
+        'processor_module': 'collection.data_warehouse.processor',
+        'processor_class': 'DataWarehouseProcessor',
+        'processor_run_method': 'run_data_warehouse_processing',
+        'baseline_module': 'architectures_ml.data_warehouse.models.baseline_analysis',
+        'baseline_class': 'BaselineModelAnalysisDataWarehouse',
+        'hierarchical_module': 'architectures_ml.data_warehouse.models.hierarchical_model',
+        'hierarchical_class': 'HierarchicalModelSQLFirst',
+        'setup_script': 'src/architectures_ml/data_warehouse/setup.py',
+        'processor_script': 'src/collection/data_warehouse/processor.py',
+        'baseline_script': 'src/architectures_ml/data_warehouse/models/baseline_analysis.py',
+        'hierarchical_script': 'src/architectures_ml/data_warehouse/models/hierarchical_model.py',
+    }
+
     def __init__(self):
         """Inicializa paths, conexão DuckDB e logger científico."""
         # Inicialização da arquitetura base com herança científica
@@ -1270,7 +1286,7 @@ def main():
     Não adequado para:
         - Execução em produção (usar API específica)
         - Análises exploratórias (usar notebooks)
-        - Comparação arquitetural (usar benchmark_validator.py)
+        - Comparação arquitetural (usar architectural_benchmark.py)
     """
     print("="*80)
     print("TESTE PIPELINE ML DATA WAREHOUSE - METODOLOGIA CIENTÍFICA".center(80))
