@@ -265,6 +265,18 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
     complete = pd.concat(all_years, ignore_index=True)
     adapted = adapt_to_framework_schema(complete)
 
+    # Filtrar municípios sem dados de EM (NaN no target)
+    before = len(adapted)
+    adapted = adapted.dropna(subset=['lower_secondary_completion_rate'])
+    dropped = before - len(adapted)
+    if dropped > 0:
+        print(f"   Filtrados {dropped} registros sem dados de EM (NaN no target)")
+
+    # Preencher NaN em features numéricas com 0
+    # (municípios sem 3a série EM → aprov_em_3 = NaN → 0 = sem dados)
+    num_cols = adapted.select_dtypes(include='number').columns
+    adapted[num_cols] = adapted[num_cols].fillna(0)
+
     # Salvar
     parquet_path = os.path.join(output_dir, "complete_data.parquet")
     adapted.to_parquet(parquet_path, index=False)

@@ -972,7 +972,8 @@ class BaseArchitectureML(ABC):
             vazamento temporal em dados educacionais.
         """
         # P1: Verificar ordem temporal
-        if not (train_years[1] < val_years[0] < val_years[1] < test_years[0]):
+        # val/test podem ter 1 ano (start == end), portanto <=
+        if not (train_years[1] < val_years[0] <= val_years[1] < test_years[0]):
             raise ValueError(
                 f"Anti-leakage violation (P1 temporal ordering): "
                 f"Train: {train_years}, Val: {val_years}, Test: {test_years}"
