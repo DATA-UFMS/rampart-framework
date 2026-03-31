@@ -84,6 +84,8 @@ def _import_modules():
         setup_mod_path = meta['setup_script'].replace('/', '.')
         if setup_mod_path.endswith('.py'):
             setup_mod_path = setup_mod_path[:-3]
+        if setup_mod_path.startswith('src.'):
+            setup_mod_path = setup_mod_path[4:]
         modules[f"{name}_setup_module"] = importlib.import_module(setup_mod_path)
 
         # Processador
@@ -324,22 +326,28 @@ class BenchmarkRunner:
 
     # --------------------------- fases medidas -----------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
-        Collector = self.modules["RawDataCollector"]
-        collector = Collector()
+        dataset_name = os.environ.get("DATASET_NAME", "worldbank")
         t0 = time.perf_counter_ns()
-        ok = collector.run()
-        t1 = time.perf_counter_ns()
-        rows = None
-        if ok:
-            rows = self._count_rows_parquet(
-                get_absolute_output_path("collection/raw_data/complete_data.parquet")
+        if dataset_name == "inep_censo":
+            from collection.inep_collector import collect_inep_data
+            collect_inep_data(
+                output_dir=get_absolute_output_path("collection/raw_data")
             )
+        else:
+            Collector = self.modules["RawDataCollector"]
+            collector = Collector()
+            collector.run()
+        t1 = time.perf_counter_ns()
+        rows = self._count_rows_parquet(
+            get_absolute_output_path("collection/raw_data/complete_data.parquet")
+        )
         return t1 - t0, rows
 
     def _phase_processing_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
         ProcessorClass = self.modules[f"{paradigm_name}_processor_class"]
         run_method_name = self.modules[f"{paradigm_name}_processor_run_method"]
-        proc = ProcessorClass()
+        dataset_name = os.environ.get("DATASET_NAME", "worldbank")
+        proc = ProcessorClass(dataset_name=dataset_name)
         t0 = time.perf_counter_ns()
         res = getattr(proc, run_method_name)()
         t1 = time.perf_counter_ns()

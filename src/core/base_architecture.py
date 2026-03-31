@@ -96,11 +96,16 @@ class BaseArchitectureML(ABC):
                 f"a chave obrigatória 'name'."
             )
         existing = BaseArchitectureML._registry.get(meta['name'])
-        if existing is not None and existing is not cls:
-            raise TypeError(
-                f"O nome de paradigma '{meta['name']}' já está registrado por "
-                f"{existing.__name__}. {cls.__name__} não pode reutilizá-lo."
+        if existing is not None:
+            same_source = (
+                existing.__qualname__ == cls.__qualname__
+                and existing.__name__ == cls.__name__
             )
+            if not same_source:
+                raise TypeError(
+                    f"O nome de paradigma '{meta['name']}' já está registrado por "
+                    f"{existing.__name__}. {cls.__name__} não pode reutilizá-lo."
+                )
         BaseArchitectureML._registry[meta['name']] = cls
 
     @classmethod
