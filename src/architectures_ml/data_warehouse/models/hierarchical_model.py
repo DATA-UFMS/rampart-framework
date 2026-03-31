@@ -206,7 +206,8 @@ class HierarchicalModelSQLFirst:
         reference_data (= train), nunca do conjunto completo.
         Chamadas: _prepare_data(val, train, ...), _prepare_data(test, train, ...).
         """
-        X = data[available_features].fillna(reference_data[available_features].median())
+        # P5: imputar com mediana do treino; fallback 0 para features sem dados
+        X = data[available_features].fillna(reference_data[available_features].median()).fillna(0)
         y = data[self.target_col]
         countries = data['country_code']
         return X, y, countries

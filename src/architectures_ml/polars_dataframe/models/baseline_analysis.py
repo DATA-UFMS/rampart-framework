@@ -678,7 +678,9 @@ class BaselineModelAnalysisPolarsDataFrame:
             return results
 
         except Exception as e:
+            import traceback
             print(f"\nErro na análise Polars DataFrame: {e}")
+            traceback.print_exc()
             return {
                 'architecture': 'polars_dataframe',
                 'status': 'failed',

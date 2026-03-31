@@ -392,13 +392,15 @@ class BaselineModelAnalysisDataLake:
                 val_year = val_row['year']
                 
                 country_history = country_last_values[country]
-                country_history_filtered = country_history[country_history['year'] <= val_year - MIN_LAG]
-                
-                if len(country_history_filtered) > 0:
-                    naive_val = country_history_filtered[self.target_col].iloc[-1]
+                if len(country_history) > 0 and 'year' in country_history.columns:
+                    country_history_filtered = country_history[country_history['year'] <= val_year - MIN_LAG]
+                    if len(country_history_filtered) > 0:
+                        naive_val = country_history_filtered[self.target_col].iloc[-1]
+                    else:
+                        naive_val = global_mean
                 else:
                     naive_val = global_mean
-                
+
                 val_pred_naive.append(naive_val)
             
             # Predições para teste
@@ -421,13 +423,15 @@ class BaselineModelAnalysisDataLake:
                 test_year = test_row['year']
                 
                 country_history = test_country_values[country]
-                country_history_filtered = country_history[country_history['year'] <= test_year - MIN_LAG]
-                
-                if len(country_history_filtered) > 0:
-                    naive_test = country_history_filtered[self.target_col].iloc[-1]
+                if len(country_history) > 0 and 'year' in country_history.columns:
+                    country_history_filtered = country_history[country_history['year'] <= test_year - MIN_LAG]
+                    if len(country_history_filtered) > 0:
+                        naive_test = country_history_filtered[self.target_col].iloc[-1]
+                    else:
+                        naive_test = combined_mean
                 else:
                     naive_test = combined_mean
-                
+
                 test_pred_naive.append(naive_test)
             
             val_pred_naive = np.array(val_pred_naive)
@@ -977,7 +981,9 @@ class BaselineModelAnalysisDataLake:
             return results
             
         except Exception as e:
+            import traceback
             print(f"\nErro na análise Data Lake: {e}")
+            traceback.print_exc()
             return {
                 'architecture': 'data_lake',
                 'status': 'failed',
