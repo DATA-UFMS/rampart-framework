@@ -66,3 +66,14 @@ build/
 
 /test_output
 azure_setup.sh
+
+# Resultados Azure (dados, não código)
+azure_results_*/
+azure_run.sh
+azure_rerun.sh
+
+# Planos de superpowers
+docs/superpowers/
+
+# Prompts pessoais
+prompt_revisor_pesquisa.md

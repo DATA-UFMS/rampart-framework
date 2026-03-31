@@ -147,23 +147,36 @@ def _validate_anti_leakage_gate(root: str) -> None:
 
 
 def main() -> None:
-    # CLI básica (sem modos de folds; geração é sempre automática via config científica)
+    # CLI
     parser = argparse.ArgumentParser(description="Pipeline de pesquisa - benchmarking arquitetural")
-    _ = parser.parse_args()
+    parser.add_argument(
+        '--dataset', default='worldbank',
+        choices=['worldbank', 'inep_censo'],
+        help='Dataset a processar (default: worldbank)'
+    )
+    args = parser.parse_args()
+    dataset_name = args.dataset
+    os.environ['DATASET_NAME'] = dataset_name  # propaga via run() para subprocessos
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
 
-    print_conclusion("INICIANDO PIPELINE METODOLÓGICO COMPLETO (O1–O3)")
+    print_conclusion(f"INICIANDO PIPELINE METODOLÓGICO COMPLETO (O1–O3) — dataset: {dataset_name}")
     _snapshot_scientific_config(root)
     paradigms = _discover()
     print_system("ETAPA 0 — SNAPSHOT DE REPRODUTIBILIDADE (P3: separação)")
     print_config("Snapshot de configuração e ambiente salvo em outputs/scientific_config_snapshot.json")
 
-    # Coleta
-    print_system("PROCESSADOR DE DADOS BRUTOS")
-    print_config("Fonte: Banco Mundial (World Bank)")
-    print_step("ETAPA 1/9: Coletando dados brutos...")
-    run(f"{py} {root}/src/collection/raw_data_collector.py")
+    # Coleta (dataset-driven)
+    if dataset_name == 'worldbank':
+        print_system("PROCESSADOR DE DADOS BRUTOS")
+        print_config("Fonte: Banco Mundial (World Bank)")
+        print_step("ETAPA 1/9: Coletando dados brutos...")
+        run(f"{py} {root}/src/collection/raw_data_collector.py")
+    else:
+        print_system("PROCESSADOR DE DADOS BRUTOS")
+        print_config(f"Fonte: INEP Censo Escolar (Ensino Médio)")
+        print_step("ETAPA 1/9: Coletando dados brutos INEP...")
+        run(f"{py} {root}/src/collection/inep_collector.py")
     print_success("ETAPA 1 CONCLUÍDA: Dados brutos coletados")
 
     # Processamento arquitetural (driven by paradigm discovery)

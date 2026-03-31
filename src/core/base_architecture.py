@@ -127,10 +127,15 @@ class BaseArchitectureML(ABC):
         self.config = SCIENTIFIC_CONFIG
         setup_reproducibility()
 
-        # Dataset config (lazy import para evitar circular)
+        # Dataset config (lazy import, detecta via env var para subprocessos)
         if dataset_config is None:
-            from datasets.worldbank import WorldBankDatasetConfig
-            dataset_config = WorldBankDatasetConfig()
+            dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
+            if dataset_name == 'inep_censo':
+                from datasets.inep_censo import InepCensoDatasetConfig
+                dataset_config = InepCensoDatasetConfig()
+            else:
+                from datasets.worldbank import WorldBankDatasetConfig
+                dataset_config = WorldBankDatasetConfig()
         self.dataset_config = dataset_config
 
         # Configuração de target (derivada do dataset)
@@ -317,13 +322,16 @@ class BaseArchitectureML(ABC):
           - folds_max (opcional)
         """
         cfg = self.config
-        start_year = int(cfg.get('temporal_range_start', 2000))
-        end_year = int(cfg.get('temporal_range_end', 2023))
-        min_train = int(cfg.get('folds_min_train_years', 8))
-        val_len = int(cfg.get('folds_val_len_years', 2))
-        test_len = int(cfg.get('folds_test_len_years', 2))
+        # Override temporal range e walk-forward do dataset_config se disponível
+        ds = self.dataset_config
+        start_year = int(ds.temporal_range[0]) if ds else int(cfg.get('temporal_range_start', 2000))
+        end_year = int(ds.temporal_range[1]) if ds else int(cfg.get('temporal_range_end', 2023))
+        wf = ds.walk_forward_config if ds else {}
+        min_train = int(wf.get('min_train', cfg.get('folds_min_train_years', 8)))
+        val_len = int(wf.get('val_len', cfg.get('folds_val_len_years', 2)))
+        test_len = int(wf.get('test_len', cfg.get('folds_test_len_years', 2)))
         gap = int(cfg.get('temporal_gap_years', 2))
-        step = int(cfg.get('folds_step_years', 1))
+        step = int(wf.get('step', cfg.get('folds_step_years', 1)))
         max_folds = cfg.get('folds_max', None)
         try:
             max_folds = int(max_folds) if max_folds is not None else None
@@ -526,13 +534,12 @@ class BaseArchitectureML(ABC):
         de features usando dados que pertencem a validação/teste.
         """
         cfg = self.config
-        start_year = int(cfg.get('temporal_range_start', 2000))
-        min_train = int(cfg.get('folds_min_train_years', 8))
-        val_len = int(cfg.get('folds_val_len_years', 2))
+        ds = self.dataset_config
+        start_year = int(ds.temporal_range[0]) if ds else int(cfg.get('temporal_range_start', 2000))
+        wf = ds.walk_forward_config if ds else {}
+        min_train = int(wf.get('min_train', cfg.get('folds_min_train_years', 8)))
+        val_len = int(wf.get('val_len', cfg.get('folds_val_len_years', 2)))
         gap = int(cfg.get('temporal_gap_years', 2))
-        # Primeiro fold: test_start_min = start + min_train + val_len + 2*gap
-        # val_end = test_start_min - gap - 1
-        # train_end = val_start - gap - 1 = (val_end - val_len + 1) - gap - 1
         test_start_min = start_year + min_train + val_len + 2 * gap
         val_end = test_start_min - gap - 1
         val_start = val_end - val_len + 1

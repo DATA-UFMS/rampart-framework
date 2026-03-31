@@ -65,9 +65,12 @@ LOGGING_CONFIG = {
 VALIDATION_CONFIG = {
     'tolerance_numeric': 1e-9,  # Tolerância para comparações numéricas
     'tolerance_percentage': 0.01,  # Tolerância percentual
-    'required_columns': [  # Colunas obrigatórias no resultado final
+    'required_columns': [  # Colunas obrigatórias (World Bank default, override via DatasetConfig)
         'country_code', 'year', 'lower_secondary_completion_rate',
         'enrollment_rate_secondary_net'
+    ],
+    'required_columns_inep': [
+        'municipality_code', 'year', 'abandono_rate',
     ],
     'validate_collinearity': True,  # Validar filtragem de colinearidade
     'validate_correlations': True,  # Validar matriz de correlação

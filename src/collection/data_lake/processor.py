@@ -96,26 +96,22 @@ class DataLakeProcessor:
     Vide docstring do módulo para assunções e limitações metodológicas completas.
     """
     
-    def __init__(self):
+    def __init__(self, dataset_name: str = "worldbank"):
         """
         Inicializa processador Data Lake com configuração Dask otimizada para análises científicas.
-        
-        Configurações:
-            - Desabilita query-planning do Dask 2.0+ para manter comportamento determinístico
-            - Estabelece estrutura de diretórios seguindo convenções de projetos científicos
-            - Prepara caminhos absolutos para portabilidade entre ambientes
-        
-        Justificativa técnica:
-            Query-planning automático pode reordenar operações comprometendo reprodutibilidade
-            científica. Mantemos controle explícito sobre ordem de execução (Rocklin, 2015).
+
+        Args:
+            dataset_name: Nome do dataset ("worldbank" ou "inep_censo")
         """
         print("[SISTEMA] Inicializando Processador Data Lake Científico")
         print("=" * 60)
         print("[CONFIG] Arquitetura: Data Lake com Dask Distribuído")
         print("[CONFIG] Paradigma: Schema-on-read com lazy evaluation")
-        
+
+        self.dataset_name = dataset_name
         self.run_timestamp = datetime.now().isoformat()
-        self.complete_data_path = get_absolute_output_path('collection/raw_data/complete_data.parquet')
+        raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
+        self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/data_lake')
         self.processed_dir = f"{self.output_dir}/processed"
         

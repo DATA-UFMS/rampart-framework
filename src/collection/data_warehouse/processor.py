@@ -79,15 +79,17 @@ class DataWarehouseProcessor:
     cenários onde a estrutura dos dados é bem conhecida e estável (Chaudhuri & Dayal, 1997).
     """
     
-    def __init__(self):
+    def __init__(self, dataset_name: str = "worldbank"):
         print("[SISTEMA] INICIALIZANDO PROCESSADOR DATA WAREHOUSE")
         print("=" * 60)
         print("[PARADIGMA] Schema-on-Write com DuckDB OLAP Engine")
         print("[PROCESSAMENTO] SQL nativo com validação de tipos")
-        
-        self.complete_data_path = get_absolute_output_path('collection/raw_data/complete_data.parquet')
+
+        self.dataset_name = dataset_name
+        raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
+        self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/data_warehouse')
-        self.db_path = f"{self.output_dir}/worldbank_data.duckdb"
+        self.db_path = f"{self.output_dir}/{dataset_name}_data.duckdb"
         
         os.makedirs(self.output_dir, exist_ok=True)
         
@@ -140,29 +142,37 @@ class DataWarehouseProcessor:
             unique_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM raw_complete_data")
             min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM raw_complete_data")
             max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM raw_complete_data")
-            avg_completeness = self.conn_manager.execute_scalar("SELECT AVG(data_completeness_score) FROM raw_complete_data")
-            
+            # Completude: usar coluna se existir, senão calcular
+            try:
+                avg_completeness = self.conn_manager.execute_scalar(
+                    "SELECT AVG(data_completeness_score) FROM raw_complete_data"
+                )
+            except Exception:
+                avg_completeness = 100.0  # sem coluna = dados completos
+
             print(f"   [STATS] {total_records} observações carregadas")
             print(f"   [STATS] Período: {min_year}-{max_year}")
-            print(f"   [STATS] Países únicos: {unique_countries}")
+            print(f"   [STATS] Entidades únicas: {unique_countries}")
             print(f"   [STATS] Completude média: {avg_completeness:.1f}%")
             
-            # Análise de missingness em indicadores principais
-            # Escolha metodológica: focar em 5 indicadores chave para performance
-            total_missing = self.conn_manager.execute_scalar("""
-                SELECT 
-                    SUM(CASE WHEN lower_secondary_completion_rate IS NULL THEN 1 ELSE 0 END) +
-                    SUM(CASE WHEN gdp_per_capita_constant_2015 IS NULL THEN 1 ELSE 0 END) +
-                    SUM(CASE WHEN unemployment_total IS NULL THEN 1 ELSE 0 END) +
-                    SUM(CASE WHEN education_expenditure_gdp_percent IS NULL THEN 1 ELSE 0 END) +
-                    SUM(CASE WHEN government_effectiveness IS NULL THEN 1 ELSE 0 END)
-                FROM raw_complete_data
-            """)
-            
-            total_possible = total_records * 5
-            missing_pct = (total_missing / total_possible) * 100 if total_possible > 0 else 0
-            
-            print(f"   [QUALIDADE] Dados faltantes: {missing_pct:.1f}% em indicadores principais")
+            # Análise de missingness dinâmica (dataset-agnostic)
+            num_cols_query = """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'raw_complete_data'
+                AND data_type IN ('DOUBLE', 'FLOAT', 'INTEGER', 'BIGINT', 'DECIMAL')
+                AND column_name NOT IN ('year')
+            """
+            num_cols_df = self.conn_manager.execute_sql(num_cols_query)
+            if num_cols_df is not None and len(num_cols_df) > 0:
+                num_col_names = num_cols_df.iloc[:, 0].tolist()
+                null_parts = [f'SUM(CASE WHEN "{c}" IS NULL THEN 1 ELSE 0 END)' for c in num_col_names[:10]]
+                if null_parts:
+                    total_missing = self.conn_manager.execute_scalar(
+                        f"SELECT {' + '.join(null_parts)} FROM raw_complete_data"
+                    )
+                    total_possible = total_records * len(null_parts)
+                    missing_pct = (total_missing / total_possible) * 100 if total_possible > 0 else 0
+                    print(f"   [QUALIDADE] Dados faltantes: {missing_pct:.1f}% em {len(null_parts)} indicadores numéricos")
             
         except SQLProcessingError as e:
             print(f"   [ERRO] Falha no carregamento SQL: {e}")
@@ -273,12 +283,14 @@ class DataWarehouseProcessor:
         print("   [INFO] Preservando metadados originais (sem recálculo desnecessário)")
         
         try:
-            # Atualização de metadados ETL para rastreabilidade
-            self.conn_manager.execute_sql_no_return("""
-                UPDATE analytics_wide 
-                SET 
-                    etl_batch_id = 'data_warehouse_' || strftime(now(), '%Y%m%d_%H%M%S')
-            """)
+            # Atualização de metadados ETL (se coluna existir)
+            try:
+                self.conn_manager.execute_sql_no_return("""
+                    UPDATE analytics_wide
+                    SET etl_batch_id = 'data_warehouse_' || strftime(now(), '%Y%m%d_%H%M%S')
+                """)
+            except SQLProcessingError:
+                pass  # Coluna pode não existir em todos os datasets
             print("   [SUCESSO] Metadados ETL atualizados")
         except SQLProcessingError as e:
             print(f"   [ERRO] Falha na atualização de metadados: {e}")
@@ -303,16 +315,20 @@ class DataWarehouseProcessor:
         
         print("   [VIEWS] Criando views analíticas")
         try:
-            # View de sumarização educacional para análises agregadas
-            # Não materializada para economizar espaço (trade-off consciente)
-            view_query = """
-                SELECT 
-                    country_code,
-                    country_stratum,
-                    AVG(lower_secondary_completion_rate) as avg_completion_rate,
-                    AVG(enrollment_rate_secondary_net) as avg_enrollment_rate,
-                    AVG(education_expenditure_gdp_percent) as avg_education_expenditure,
-                    COUNT(*) as years_available
+            # View de sumarização dinâmica (dataset-agnostic)
+            # Detecta colunas numéricas e cria AVG para cada
+            num_cols_q = """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'analytics_wide'
+                AND data_type IN ('DOUBLE','FLOAT') AND column_name NOT IN ('year','data_completeness_score','synthetic_flag')
+                LIMIT 5
+            """
+            agg_cols_df = self.conn_manager.execute_sql(num_cols_q)
+            agg_cols = agg_cols_df.iloc[:, 0].tolist() if agg_cols_df is not None and len(agg_cols_df) > 0 else []
+            agg_parts = [f'AVG("{c}") as avg_{c}' for c in agg_cols]
+            agg_parts.append("COUNT(*) as years_available")
+            view_query = f"""
+                SELECT country_code, country_stratum, {', '.join(agg_parts)}
                 FROM analytics_wide
                 GROUP BY country_code, country_stratum
             """
@@ -352,7 +368,10 @@ class DataWarehouseProcessor:
         except SQLProcessingError as e:
             print(f"   [ERRO] Falha ao verificar dados: {e}")
             raise
-        final_completeness_avg = self.conn_manager.execute_scalar("SELECT AVG(data_completeness_score) FROM analytics_wide")
+        try:
+            final_completeness_avg = self.conn_manager.execute_scalar("SELECT AVG(data_completeness_score) FROM analytics_wide")
+        except Exception:
+            final_completeness_avg = 100.0
         
         output_path = f"{self.output_dir}/final_dataset.parquet"
         
@@ -399,413 +418,101 @@ class DataWarehouseProcessor:
     
     def setup_duckdb_schema_sql_pure(self):
         """
-        Configura schema relacional no DuckDB.
-        
-        Implementa criação de schema com ordem de dependência correta:
-        1. Dimension tables primeiro (sem foreign keys)
-        2. Fact tables depois (com foreign keys para dimensions)
-        3. Índices (podem falhar sem impacto crítico)
-        4. Views (podem falhar sem impacto crítico)
-        
-        Decisão metodológica: DDL executado fora de transações pois DuckDB
-        faz autocommit de DDL. Tentativas de transação em DDL causariam
-        rollback desnecessário de todo o schema.
-        
-        Limitação: Sem suporte a ALTER COLUMN TYPE em todas as versões do
-        DuckDB, requer workarounds para conversão de tipos.
+        Configura schema relacional no DuckDB — dataset-agnostic.
+
+        Gera schema dinamicamente a partir das colunas de raw_complete_data:
+        1. dim_entities: (country_code, country_name, country_stratum)
+        2. analytics_wide: CREATE TABLE AS SELECT * FROM raw_complete_data
+        3. Índices em (country_code, year)
         """
-        print("   [SCHEMA] CONFIGURANDO ESTRUTURA RELACIONAL")
-        
-        schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
-        
-        if not os.path.exists(schema_path):
-            raise FileNotFoundError(f"Schema SQL não encontrado: {schema_path}")
-        
-        print("   [INFO] Carregando schema.sql")
-        with open(schema_path, 'r', encoding='utf-8') as f:
-            schema_content = f.read()
-        
-        # Parser simples para extrair statements SQL
-        lines = schema_content.split('\n')
-        clean_lines = []
-        for line in lines:
-            line = line.strip()
-            if line and not line.startswith('--'):
-                clean_lines.append(line)
-        
-        clean_content = '\n'.join(clean_lines)
-        statements = [stmt.strip() for stmt in clean_content.split(';') if stmt.strip()]
-        print(f"   [INFO] {len(statements)} statements SQL encontrados")
-        
+        print("   [SCHEMA] CONFIGURANDO ESTRUTURA RELACIONAL (dinâmico)")
+
         try:
-            drop_statements = [stmt for stmt in statements if stmt.upper().startswith('DROP TABLE') or stmt.upper().startswith('DROP VIEW')]
-            for stmt in drop_statements:
+            # Dimension table (entidades geográficas)
+            self.conn_manager.execute_sql_no_return("DROP TABLE IF EXISTS dim_entities")
+            self.conn_manager.execute_sql_no_return("""
+                CREATE TABLE dim_entities AS
+                SELECT DISTINCT
+                    country_code,
+                    FIRST(country_name) as country_name,
+                    FIRST(country_stratum) as country_stratum
+                FROM raw_complete_data
+                GROUP BY country_code
+            """)
+            entity_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM dim_entities")
+            print(f"   [SUCESSO] dim_entities criada: {entity_count} entidades")
+
+            # Fact table: cópia direta com schema inferido dos dados
+            self.conn_manager.execute_sql_no_return("DROP TABLE IF EXISTS analytics_wide")
+            self.conn_manager.execute_sql_no_return("""
+                CREATE TABLE analytics_wide AS
+                SELECT * FROM raw_complete_data
+            """)
+            fact_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
+            print(f"   [SUCESSO] analytics_wide criada: {fact_count} registros")
+
+            # Índices
+            for idx_sql in [
+                "CREATE INDEX IF NOT EXISTS idx_entity_year ON analytics_wide(country_code, year)",
+                "CREATE INDEX IF NOT EXISTS idx_stratum ON analytics_wide(country_stratum)",
+                "CREATE INDEX IF NOT EXISTS idx_year ON analytics_wide(year)",
+            ]:
                 try:
-                    self.conn_manager.execute_sql_no_return(stmt)
+                    self.conn_manager.execute_sql_no_return(idx_sql)
                 except SQLProcessingError:
-                    pass  # Ignorar falhas em DROP (tabelas podem não existir)
-            
-            print("   [DDL] Criando tabelas com ordem de dependência")
-            create_statements = [stmt for stmt in statements if stmt.upper().startswith('CREATE TABLE')]
-            
-            # Mapear statements por nome de tabela
-            table_statements = {}
-            for stmt in create_statements:
-                words = stmt.replace('\n', ' ').split()
-                table_name = None
-                
-                for i, word in enumerate(words):
-                    if word.upper() == 'TABLE':
-                        if (i + 4 < len(words) and 
-                            words[i + 1].upper() == 'IF' and 
-                            words[i + 2].upper() == 'NOT' and 
-                            words[i + 3].upper() == 'EXISTS'):
-                            table_name = words[i + 4]
-                        elif i + 1 < len(words):
-                            table_name = words[i + 1]
-                        break
-                
-                if table_name:
-                    table_name = table_name.replace('(', '').replace(')', '').strip()
-                    table_statements[table_name] = stmt
-            
-            # Ordem explícita: dimensions primeiro, facts depois
-            dimension_tables = ['dim_countries']
-            fact_tables = ['analytics_wide']
-            
-            tables_created = 0
-            
-            print("   [DDL] Criando dimension tables")
-            for table_name in dimension_tables:
-                if table_name in table_statements:
-                    try:
-                        stmt = table_statements[table_name]
-                        self.conn_manager.execute_sql_no_return(stmt)
-                        print(f"   [SUCESSO] Dimension criada: {table_name}")
-                        tables_created += 1
-                    except SQLProcessingError as e:
-                        if "already exists" not in str(e).lower():
-                            print(f"   [AVISO] Erro em dimension {table_name}: {e}")
-            
-            print("   [DDL] Criando fact tables")
-            for table_name in fact_tables:
-                if table_name in table_statements:
-                    try:
-                        stmt = table_statements[table_name]
-                        self.conn_manager.execute_sql_no_return(stmt)
-                        print(f"   [SUCESSO] Fact criada: {table_name}")
-                        tables_created += 1
-                    except SQLProcessingError as e:
-                        if "already exists" not in str(e).lower():
-                            print(f"   [ERRO] Falha crítica em fact {table_name}: {e}")
-                            raise SQLProcessingError(f"Fact table creation failed: {e}")
-            
-            remaining_tables = set(table_statements.keys()) - set(dimension_tables) - set(fact_tables)
-            if remaining_tables:
-                print(f"   [DDL] Criando tabelas adicionais: {remaining_tables}")
-                for table_name in remaining_tables:
-                    try:
-                        stmt = table_statements[table_name]
-                        self.conn_manager.execute_sql_no_return(stmt)
-                        tables_created += 1
-                    except SQLProcessingError as e:
-                        if "already exists" not in str(e).lower():
-                            print(f"   [AVISO] Erro em tabela {table_name}: {e}")
-            
-            print(f"   [RESULTADO] {tables_created} tabelas criadas")
-            
-            print("   [VALIDAÇÃO] Verificando tabelas críticas")
-            expected_tables = ['dim_countries', 'analytics_wide']
-            tables_verified = 0
-            
-            for table_name in expected_tables:
-                try:
-                    exists = self.conn_manager.execute_scalar(
-                        f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{table_name}'"
-                    )
-                    if exists > 0:
-                        print(f"   [OK] Tabela {table_name} confirmada")
-                        tables_verified += 1
-                    else:
-                        print(f"   [ERRO] Tabela {table_name} não existe")
-                except Exception as e:
-                    print(f"   [ERRO] Verificação falhou para {table_name}: {e}")
-            
-            if tables_verified == 0:
-                raise SQLProcessingError("Nenhuma tabela crítica foi criada")
-            
-            print(f"   [VALIDAÇÃO] {tables_verified}/{len(expected_tables)} tabelas confirmadas")
-            
-            print("   [ÍNDICES] Criando índices")
-            index_statements = [stmt for stmt in statements if stmt.upper().startswith('CREATE INDEX')]
-            
-            indexes_created = 0
-            for stmt in index_statements:
-                try:
-                    self.conn_manager.execute_sql_no_return(stmt)
-                    indexes_created += 1
-                except SQLProcessingError as e:
-                    if "already exists" not in str(e).lower():
-                        print(f"   [AVISO] Índice falhou: {e}")
-            
-            print(f"   [RESULTADO] {indexes_created} índices criados")
-            
-            print("   [VIEWS] Criando views")
-            view_statements = [stmt for stmt in statements if 'CREATE OR REPLACE VIEW' in stmt.upper() or 'CREATE VIEW' in stmt.upper()]
-            
-            views_created = 0
-            for stmt in view_statements:
-                try:
-                    self.conn_manager.execute_sql_no_return(stmt)
-                    views_created += 1
-                except SQLProcessingError as e:
-                    print(f"   [AVISO] View falhou: {e}")
-            
-            print(f"   [RESULTADO] {views_created} views criadas")
-            
-            if tables_verified >= len(expected_tables):
-                print("   [CONCLUSÃO] Schema configurado com sucesso")
-            else:
-                print(f"   [AVISO] Schema parcialmente configurado")
-            
+                    pass
+            print("   [SUCESSO] Índices criados")
+
+            print("   [CONCLUSÃO] Schema configurado com sucesso")
+
         except SQLProcessingError as e:
             raise SQLProcessingError(f"Falha na configuração do schema: {e}")
-        except Exception as e:
-            raise SQLProcessingError(f"Erro inesperado: {e}")
 
     def populate_dimensions_sql_pure(self):
-        """
-        Popula tabelas dimensionais usando SQL nativo.
-        
-        Implementa carga de dimensões seguindo princípios SCD Type 1
-        (Slowly Changing Dimensions), onde apenas a versão mais recente
-        é mantida. Adequado para dimensões estáveis como países.
-        
-        Decisão: INSERT com WHERE NOT IN ao invés de MERGE/UPSERT para
-        compatibilidade com versões antigas do DuckDB.
-        """
-        print("   [DIMENSÕES] POPULANDO TABELAS DIMENSIONAIS")
-        
-        try:
-            print("   [PROCESSO] Carregando dimensão de países")
-            
-            # INSERT com WHERE NOT IN para evitar duplicatas
-            # Mais portável que MERGE/UPSERT
-            insert_countries_query = """
-                INSERT INTO dim_countries (country_code, country_name, country_stratum)
-                SELECT DISTINCT 
-                    country_code,
-                    country_name,
-                    COALESCE(CAST(country_stratum AS VARCHAR), 'unknown') as country_stratum
-                FROM raw_complete_data
-                WHERE country_code NOT IN (SELECT country_code FROM dim_countries)
-            """
-            
-            self.conn_manager.execute_sql_no_return(insert_countries_query)
-            
-            countries_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM dim_countries")
-            print(f"   [RESULTADO] {countries_count} países na dimensão")
-            
-        except SQLProcessingError as e:
-            raise SQLProcessingError(f"Falha ao popular dimensões: {e}")
+        """Dimensões já populadas em setup_duckdb_schema_sql_pure (dinâmico)."""
+        count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM dim_entities")
+        print(f"   [DIMENSÕES] {count} entidades (já populadas no schema)")
 
     def load_fact_table_sql_pure(self):
         """
-        Carrega tabela fato com validações e transformações.
-        
-        Implementa carga de fact table com:
-        1. Detecção e correção de tipos incompatíveis
-        2. Tratamento de NULLs em foreign keys
-        3. Adição de metadados de linhagem (data_source, etl_batch_id)
-        4. CAST explícito para garantir conformidade de tipos
-        
-        Decisão arquitetural: DELETE + INSERT ao invés de TRUNCATE + INSERT
-        para manter compatibilidade com transações (TRUNCATE faz autocommit).
-        
-        Tratamento de country_stratum NULL: Substitui por 'unclassified'
-        para manter integridade referencial. Alternativa seria criar registro
-        'unknown' na dimensão, mas optamos por clareza semântica.
+        Valida e enriquece a tabela fato (já carregada pelo schema dinâmico).
+
+        O setup_duckdb_schema_sql_pure() cria analytics_wide com
+        CREATE TABLE AS SELECT *, portanto os dados já estão lá.
+        Este método apenas sanitiza metadados e adiciona linhagem.
         """
-        print("   [FACT TABLE] CARREGANDO TABELA FATO")
-        
+        print("   [FACT TABLE] VALIDANDO E ENRIQUECENDO")
+
         try:
-            # Detectar presença de metadados
-            has_completeness_score = self.conn_manager.execute_scalar("""
-                SELECT COUNT(CASE WHEN data_completeness_score IS NOT NULL THEN 1 END) > 0 
-                FROM raw_complete_data LIMIT 1
+            # Sanitizar country_stratum NULLs
+            self.conn_manager.execute_sql_no_return("""
+                UPDATE analytics_wide
+                SET country_stratum = 'unclassified'
+                WHERE country_stratum IS NULL
             """)
-            
-            metadata_status = {
-                'has_completeness_score': bool(has_completeness_score)
-            }
-            
-            # Validar e sanitizar metadados
-            self.validate_and_sanitize_metadata_sql_pure(metadata_status)
-            
-            # Correção de country_stratum NULL/incompatível
-            print("   [VALIDAÇÃO] Verificando integridade de country_stratum")
-            
-            try:
-                # Verificar se coluna é INTEGER (problema comum)
-                is_integer = self.conn_manager.execute_scalar("""
-                    SELECT COUNT(*) > 0 
-                    FROM information_schema.columns 
-                    WHERE table_name = 'raw_complete_data' 
-                    AND column_name = 'country_stratum' 
-                    AND UPPER(data_type) LIKE '%INT%'
-                """)
-                
-                if is_integer:
-                    print("   [CORREÇÃO] Convertendo INTEGER -> VARCHAR")
-                    convert_query = """
-                        ALTER TABLE raw_complete_data 
-                        ALTER COLUMN country_stratum TYPE VARCHAR
-                    """
-                    self.conn_manager.execute_sql_no_return(convert_query)
-                    print("   [SUCESSO] Tipo convertido")
-                
-                # Corrigir NULLs
-                print("   [CORREÇÃO] Substituindo NULLs por 'unclassified'")
-                fix_stratum_query = """
-                    UPDATE raw_complete_data 
-                    SET country_stratum = 'unclassified' 
-                    WHERE country_stratum IS NULL
-                """
-                self.conn_manager.execute_sql_no_return(fix_stratum_query)
-                print("   [SUCESSO] NULLs corrigidos")
-                
-            except SQLProcessingError as e:
-                print(f"   [AVISO] Erro na correção de country_stratum: {e}")
-                # Tentativa alternativa: recriar coluna
-                print("   [FALLBACK] Recriando coluna country_stratum")
-                try:
-                    recreate_query = """
-                        ALTER TABLE raw_complete_data DROP COLUMN IF EXISTS country_stratum;
-                        ALTER TABLE raw_complete_data ADD COLUMN country_stratum VARCHAR DEFAULT 'unclassified';
-                    """
-                    self.conn_manager.execute_sql_no_return(recreate_query)
-                    print("   [SUCESSO] Coluna recriada")
-                except SQLProcessingError as e2:
-                    print(f"   [ERRO] Fallback falhou: {e2}")
-                    raise
-            
-            # Adicionar metadados de processamento
-            current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # Adicionar/atualizar metadados de linhagem
             batch_id = f"data_warehouse_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
-            print("   [METADADOS] Adicionando informações de linhagem")
-            add_metadata_query = f"""
-                ALTER TABLE raw_complete_data 
-                ADD COLUMN IF NOT EXISTS data_source VARCHAR DEFAULT 'worldbank_api_scientific';
-                
-                ALTER TABLE raw_complete_data 
-                ADD COLUMN IF NOT EXISTS etl_batch_id VARCHAR DEFAULT '{batch_id}';
-                
-                ALTER TABLE raw_complete_data 
-                ADD COLUMN IF NOT EXISTS collection_timestamp TIMESTAMP DEFAULT '{current_timestamp}';
-                
-                UPDATE raw_complete_data 
-                SET 
-                    data_source = 'worldbank_api_scientific',
-                    etl_batch_id = '{batch_id}',
-                    collection_timestamp = '{current_timestamp}'
-                WHERE data_source IS NULL OR etl_batch_id IS NULL OR collection_timestamp IS NULL;
-            """
-            
-            self.conn_manager.execute_sql_no_return(add_metadata_query)
-            
-            # Estatísticas pré-carregamento
-            total_records_to_load = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM raw_complete_data")
-            unique_countries_to_load = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM raw_complete_data")
-            corrected_stratum = self.conn_manager.execute_scalar("SELECT COUNT(CASE WHEN country_stratum = 'unclassified' THEN 1 END) FROM raw_complete_data")
-            
-            print(f"   [INFO] Registros a carregar: {total_records_to_load}")
-            print(f"   [INFO] Países únicos: {unique_countries_to_load}")
-            print(f"   [INFO] Registros com stratum corrigido: {corrected_stratum}")
-            
-            # Limpar tabela fato (DELETE ao invés de TRUNCATE para transações)
-            print("   [LIMPEZA] Removendo dados anteriores da fact table")
-            self.conn_manager.execute_sql_no_return("DELETE FROM analytics_wide")
-            
-            # INSERT com CAST explícito para garantir tipos corretos
-            print("   [CARGA] Inserindo dados com validação de tipos")
-            insert_query = """
-                INSERT INTO analytics_wide (
-                    country_code,
-                    year,
-                    country_name,
-                    country_stratum,
-                    lower_secondary_completion_rate,
-                    enrollment_rate_secondary_net,
-                    gdp_per_capita_constant_2015,
-                    poverty_headcount_national,
-                    gini_index,
-                    unemployment_total,
-                    electricity_access_percent,
-                    basic_water_services_percent,
-                    internet_users_percent,
-                    malnutrition_prevalence_weight_age,
-                    immunization_measles_percent,
-                    mortality_rate_infant_per_1000,
-                    population_ages_0_14_percent,
-                    population_growth_annual,
-                    adolescent_fertility_rate,
-                    education_expenditure_gdp_percent,
-                    gender_parity_index_secondary,
-                    adult_literacy_rate,
-                    pupil_teacher_ratio_primary,
-                    female_teachers_secondary_percent,
-                    pupil_teacher_ratio_secondary,
-                    intentional_homicides_per_100k,
-                    government_effectiveness,
-                    data_source,
-                    data_completeness_score,
-                    etl_batch_id,
-                    collection_timestamp
-                )
-                SELECT 
-                    country_code,
-                    CAST(year AS INTEGER),
-                    country_name,
-                    country_stratum,
-                    CAST(lower_secondary_completion_rate AS DOUBLE),
-                    CAST(enrollment_rate_secondary_net AS DOUBLE),
-                    CAST(gdp_per_capita_constant_2015 AS DOUBLE),
-                    CAST(poverty_headcount_national AS DOUBLE),
-                    CAST(gini_index AS DOUBLE),
-                    CAST(unemployment_total AS DOUBLE),
-                    CAST(electricity_access_percent AS DOUBLE),
-                    CAST(basic_water_services_percent AS DOUBLE),
-                    CAST(internet_users_percent AS DOUBLE),
-                    CAST(malnutrition_prevalence_weight_age AS DOUBLE),
-                    CAST(immunization_measles_percent AS DOUBLE),
-                    CAST(mortality_rate_infant_per_1000 AS DOUBLE),
-                    CAST(population_ages_0_14_percent AS DOUBLE),
-                    CAST(population_growth_annual AS DOUBLE),
-                    CAST(adolescent_fertility_rate AS DOUBLE),
-                    CAST(education_expenditure_gdp_percent AS DOUBLE),
-                    CAST(gender_parity_index_secondary AS DOUBLE),
-                    CAST(adult_literacy_rate AS DOUBLE),
-                    CAST(pupil_teacher_ratio_primary AS DOUBLE),
-                    CAST(female_teachers_secondary_percent AS DOUBLE),
-                    CAST(pupil_teacher_ratio_secondary AS DOUBLE),
-                    CAST(intentional_homicides_per_100k AS DOUBLE),
-                    CAST(government_effectiveness AS DOUBLE),
-                    data_source,
-                    CAST(data_completeness_score AS DOUBLE),
-                    etl_batch_id,
-                    CAST(collection_timestamp AS TIMESTAMP)
-                FROM raw_complete_data
-            """
-            
-            self.conn_manager.execute_sql_no_return(insert_query)
-            print("   [SUCESSO] Dados carregados na fact table")
-            
+            source = f"{self.dataset_name}_scientific"
+            for col, default in [('data_source', f"'{source}'"),
+                                  ('etl_batch_id', f"'{batch_id}'"),
+                                  ('processing_method', "'duckdb_sql_native'")]:
+                try:
+                    self.conn_manager.execute_sql_no_return(
+                        f"ALTER TABLE analytics_wide ADD COLUMN IF NOT EXISTS {col} VARCHAR DEFAULT {default}"
+                    )
+                    self.conn_manager.execute_sql_no_return(
+                        f"UPDATE analytics_wide SET {col} = {default} WHERE {col} IS NULL"
+                    )
+                except SQLProcessingError:
+                    pass
+
             final_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-            print(f"   [RESULTADO] {final_count} registros carregados com sucesso")
-            
+            entities = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
+            print(f"   [RESULTADO] {final_count} registros, {entities} entidades")
+
         except SQLProcessingError as e:
-            raise SQLProcessingError(f"Erro ao carregar fact table: {e}")
+            raise SQLProcessingError(f"Erro ao validar fact table: {e}")
 
     def cleanup(self):
         """

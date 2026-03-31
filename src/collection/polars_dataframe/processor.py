@@ -54,22 +54,22 @@ class PolarsDataFrameProcessor:
         4. Pivotagem automática: Conversão long→wide otimizada para Parquet
     """
 
-    def __init__(self):
+    def __init__(self, dataset_name: str = "worldbank"):
         """
         Inicializa processador Polars DataFrame.
 
-        Configurações:
-            - Polars lazy evaluation habilitada por padrão
-            - Estrutura de diretórios seguindo convenções científicas
-            - Caminhos absolutos para portabilidade
+        Args:
+            dataset_name: Nome do dataset ("worldbank" ou "inep_censo")
         """
         print("[SISTEMA] Inicializando Processador Polars DataFrame")
         print("=" * 60)
         print("[CONFIG] Arquitetura: Data Lake com Polars Lazy Evaluation")
         print("[CONFIG] Paradigma: Schema-on-read com query plan automático")
 
+        self.dataset_name = dataset_name
         self.run_timestamp = datetime.now().isoformat()
-        self.complete_data_path = get_absolute_output_path('collection/raw_data/complete_data.parquet')
+        raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
+        self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/polars_dataframe')
         self.processed_dir = f"{self.output_dir}/processed"
 
