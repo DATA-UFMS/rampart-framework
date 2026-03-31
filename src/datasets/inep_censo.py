@@ -18,8 +18,8 @@ class InepCensoDatasetConfig:
     name = "inep_censo"
     label = "INEP Censo Escolar - Ensino Médio (município × ano)"
 
-    # Temporal
-    temporal_range = (2007, 2020)
+    # Temporal (Indicadores Educacionais XLSX disponíveis: 2012-2023)
+    temporal_range = (2012, 2023)
     year_column = "year"
 
     # Entidade geográfica
@@ -74,10 +74,13 @@ class InepCensoDatasetConfig:
         "abandono_rate",  # target source
     ]
 
-    # Walk-forward: 2007-2020 (14 anos)
-    # min_train=5, val=1, test=1, gap=2, step=1 → 7 folds
+    # Walk-forward: 2012-2023 (12 anos)
+    # Com gap=2 (P2), min_train=3, val=1, test=1:
+    # Mínimo: 3 + 2 + 1 + 2 + 1 = 9 anos → (12-9)/1 + 1 = 4 folds
+    # min_train=3 é justificado: com 5570 municípios/ano, 3 anos dão
+    # ~16.7K observações de treino — suficiente para modelos lineares.
     walk_forward_config = {
-        "min_train": 5,
+        "min_train": 3,
         "val_len": 1,
         "test_len": 1,
         "gap": 2,

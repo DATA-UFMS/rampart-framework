@@ -142,13 +142,17 @@ class DataWarehouseProcessor:
             unique_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM raw_complete_data")
             min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM raw_complete_data")
             max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM raw_complete_data")
-            # Completude: usar coluna se existir, senão calcular
-            try:
+            # Completude: usar coluna se existir, senão assumir 100%
+            has_completeness = self.conn_manager.execute_scalar(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                "WHERE table_name='raw_complete_data' AND column_name='data_completeness_score'"
+            )
+            if has_completeness:
                 avg_completeness = self.conn_manager.execute_scalar(
                     "SELECT AVG(data_completeness_score) FROM raw_complete_data"
                 )
-            except Exception:
-                avg_completeness = 100.0  # sem coluna = dados completos
+            else:
+                avg_completeness = 100.0
 
             print(f"   [STATS] {total_records} observações carregadas")
             print(f"   [STATS] Período: {min_year}-{max_year}")
@@ -179,81 +183,23 @@ class DataWarehouseProcessor:
             raise
     
     def validate_and_sanitize_metadata_sql_pure(self, metadata_status: Dict[str, bool]) -> None:
-        """
-        Valida e sanitiza metadados usando SQL nativo.
-        
-        Implementa validação conservadora de metadados:
-        - NULL -> 0.0: Assunção conservadora de completude zero para valores ausentes
-        - Clipping [0,100]: Correção de valores impossíveis (ex: 105% de completude)
-        
-        Justificativa metodológica:
-        - UPDATE in-place evita duplicação de dados (eficiência de espaço)
-        - Validação via SQL garante aplicação uniforme de regras
-        - Preserva auditabilidade através de contagem de correções
-        
-        Args:
-            metadata_status: Flags indicando presença de colunas de metadados
-        
-        Limitação:
-            Correções são irreversíveis após UPDATE (sem histórico de mudanças).
-            Em produção, considerar tabela de audit trail.
-        """
+        """Valida metadados se existirem. Dataset-agnostic: pula colunas ausentes."""
         print("   [VALIDAÇÃO] SANITIZANDO METADADOS")
-        
-        validation_issues = 0
-        
-        if metadata_status['has_completeness_score']:
-            print("   [PROCESSO] Validando data_completeness_score")
-            
-            # Correção de NULLs - assunção conservadora
-            null_count = self.conn_manager.execute_scalar("""
-                SELECT COUNT(*) 
-                FROM raw_complete_data 
-                WHERE data_completeness_score IS NULL
+        if not metadata_status.get('has_completeness_score'):
+            print("   [INFO] Coluna data_completeness_score ausente — pulando")
+            return
+
+        try:
+            self.conn_manager.execute_sql_no_return(
+                "UPDATE raw_complete_data SET data_completeness_score = 0.0 WHERE data_completeness_score IS NULL"
+            )
+            self.conn_manager.execute_sql_no_return("""
+                UPDATE raw_complete_data SET data_completeness_score = LEAST(GREATEST(data_completeness_score, 0), 100)
             """)
-            
-            if null_count > 0:
-                print(f"   [CORREÇÃO] {null_count} NULLs -> 0.0 (assunção conservadora)")
-                update_nulls_query = """
-                    UPDATE raw_complete_data 
-                    SET data_completeness_score = 0.0 
-                    WHERE data_completeness_score IS NULL
-                """
-                self.conn_manager.execute_sql_no_return(update_nulls_query)
-                validation_issues += null_count
-            
-            # Correção de valores fora do range [0,100]
-            out_of_range = self.conn_manager.execute_scalar("""
-                SELECT COUNT(*) 
-                FROM raw_complete_data 
-                WHERE data_completeness_score < 0 OR data_completeness_score > 100
-            """)
-            
-            if out_of_range > 0:
-                print(f"   [CORREÇÃO] {out_of_range} valores fora de [0,100] -> clipping aplicado")
-                clip_query = """
-                    UPDATE raw_complete_data 
-                    SET data_completeness_score = CASE 
-                        WHEN data_completeness_score < 0 THEN 0.0
-                        WHEN data_completeness_score > 100 THEN 100.0
-                        ELSE data_completeness_score
-                    END
-                    WHERE data_completeness_score < 0 OR data_completeness_score > 100
-                """
-                self.conn_manager.execute_sql_no_return(clip_query)
-                validation_issues += out_of_range
-            
-            # Estatísticas pós-validação
-            mean_completeness = self.conn_manager.execute_scalar("SELECT ROUND(AVG(data_completeness_score), 1) FROM raw_complete_data")
-            min_completeness = self.conn_manager.execute_scalar("SELECT ROUND(MIN(data_completeness_score), 1) FROM raw_complete_data")
-            max_completeness = self.conn_manager.execute_scalar("SELECT ROUND(MAX(data_completeness_score), 1) FROM raw_complete_data")
-            
-            print(f"   [RESULTADO] Completude: μ={mean_completeness}%, min={min_completeness}%, max={max_completeness}%")
-        
-        if validation_issues > 0:
-            print(f"   [SUMÁRIO] {validation_issues} correções aplicadas")
-        else:
-            print("   [SUMÁRIO] Dados passaram validação sem correções")
+            avg = self.conn_manager.execute_scalar("SELECT ROUND(AVG(data_completeness_score), 1) FROM raw_complete_data")
+            print(f"   [RESULTADO] Completude média: {avg}%")
+        except SQLProcessingError as e:
+            print(f"   [AVISO] Validação de completude falhou: {e}")
 
     def process_sql_architecture(self):
         """
@@ -368,10 +314,13 @@ class DataWarehouseProcessor:
         except SQLProcessingError as e:
             print(f"   [ERRO] Falha ao verificar dados: {e}")
             raise
-        try:
-            final_completeness_avg = self.conn_manager.execute_scalar("SELECT AVG(data_completeness_score) FROM analytics_wide")
-        except Exception:
-            final_completeness_avg = 100.0
+        has_cs = self.conn_manager.execute_scalar(
+            "SELECT COUNT(*) FROM information_schema.columns "
+            "WHERE table_name='analytics_wide' AND column_name='data_completeness_score'"
+        )
+        final_completeness_avg = self.conn_manager.execute_scalar(
+            "SELECT AVG(data_completeness_score) FROM analytics_wide"
+        ) if has_cs else 100.0
         
         output_path = f"{self.output_dir}/final_dataset.parquet"
         
