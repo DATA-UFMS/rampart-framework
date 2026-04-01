@@ -41,7 +41,8 @@ SCIENTIFIC_CONFIG = {
     'correlation_sampling': True,
     'correlation_min_sample_size': 5000,
     # Limiar para detecção de proxy features (Kapoor & Narayanan 2023, tipo L2)
-    'proxy_correlation_threshold': 0.95,
+    # Alinhado com max_corr da seleção de features (defense-in-depth)
+    'proxy_correlation_threshold': 0.80,
 
     # Validação Temporal
     'temporal_gap_years': 2,

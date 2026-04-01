@@ -611,7 +611,8 @@ class BaseArchitectureML(ABC):
 
         # P3 estendido: detecção de features proxy do target
         # (Kapoor & Narayanan 2023, tipo L2; Kaufman et al. 2012)
-        PROXY_THRESHOLD = float(self.config.get('proxy_correlation_threshold', 0.95))
+        # Threshold alinhado com max_corr da seleção para evitar gap entre filtros
+        PROXY_THRESHOLD = float(self.config.get('proxy_correlation_threshold', 0.80))
         proxies = {
             feat: corr for feat, corr in correlations.items()
             if feat in final_features and abs(corr) > PROXY_THRESHOLD

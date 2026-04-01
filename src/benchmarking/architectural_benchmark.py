@@ -373,8 +373,8 @@ class BenchmarkRunner:
 
     def _phase_baseline_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
         AnalyzerClass = self.modules[f"{paradigm_name}_baseline_class"]
-        start_ns = time.perf_counter_ns()
         analyzer = AnalyzerClass()
+        start_ns = time.perf_counter_ns()
         analyzer.run_complete_analysis()
         end_ns = time.perf_counter_ns()
         records = self._count_fold_records(paradigm_name)
@@ -382,8 +382,8 @@ class BenchmarkRunner:
 
     def _phase_hierarchical_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
         ModelClass = self.modules[f"{paradigm_name}_hierarchical_class"]
-        start_ns = time.perf_counter_ns()
         model = ModelClass()
+        start_ns = time.perf_counter_ns()
         model.run_hierarchical_analysis()
         end_ns = time.perf_counter_ns()
         records = self._count_fold_records(paradigm_name)
@@ -425,8 +425,8 @@ class BenchmarkRunner:
     #   2. Registrar seus tempos como run_id=0 para referência
     #   3. Repetir apenas setup/baseline/hierarchical N vezes
 
-    _UPSTREAM_PHASES = {"collection", "processing"}
-    _DOWNSTREAM_PHASES = {"setup", "baseline", "hierarchical"}
+    _UPSTREAM_PHASES = {"collection"}
+    _DOWNSTREAM_PHASES = {"processing", "setup", "baseline", "hierarchical"}
 
     def run(self) -> List[PhaseResult]:
         results: List[PhaseResult] = []
@@ -476,15 +476,7 @@ class BenchmarkRunner:
             if r:
                 results.append(r)
 
-        if "processing" in self.phases:
-            paradigm_names = self.modules["_paradigm_names"]
-            for pn in paradigm_names:
-                r = measure(
-                    lambda _pn=pn: self._phase_processing_generic(_pn),
-                    "processing", pn, "processor"
-                )
-                if r:
-                    results.append(r)
+        # Processing agora é downstream (repetido N vezes para IC de latência)
 
         # --- Fase 2: downstream (setup → baseline → hierarchical) - repetida --
         # Estas fases contêm a lógica arquitetural que diferencia os paradigmas.
@@ -501,6 +493,10 @@ class BenchmarkRunner:
         paradigm_names = self.modules["_paradigm_names"]
 
         phase_fns = {
+            "processing": [
+                (lambda _pn=pn: self._phase_processing_generic(_pn), pn, "processor")
+                for pn in paradigm_names
+            ],
             "setup": [
                 (lambda _pn=pn: self._phase_setup_generic(_pn), pn, "setup")
                 for pn in paradigm_names

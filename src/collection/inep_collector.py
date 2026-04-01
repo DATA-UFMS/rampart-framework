@@ -272,10 +272,10 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
     if dropped > 0:
         print(f"   Filtrados {dropped} registros sem dados de EM (NaN no target)")
 
-    # Preencher NaN em features numéricas com 0
-    # (municípios sem 3a série EM → aprov_em_3 = NaN → 0 = sem dados)
-    num_cols = adapted.select_dtypes(include='number').columns
-    adapted[num_cols] = adapted[num_cols].fillna(0)
+    # NaN em features numéricas preservado intencionalmente:
+    # municípios sem 3ª série EM têm aprov_em_3=NaN (ausência legítima,
+    # não taxa zero). Imputação por mediana do treino ocorre nos modelos
+    # (P5: preprocessing scope restrito ao treino).
 
     # Salvar
     parquet_path = os.path.join(output_dir, "complete_data.parquet")

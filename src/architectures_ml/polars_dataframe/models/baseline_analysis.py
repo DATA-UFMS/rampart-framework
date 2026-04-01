@@ -23,7 +23,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from typing import Dict
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of freedom.*')
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
+warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
 # Adicionar path para configuração
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))

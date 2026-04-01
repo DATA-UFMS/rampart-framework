@@ -91,9 +91,9 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         print("=" * 70)
         print("[PARADIGMA] Lazy evaluation com expressions idiomáticas Polars")
 
-        # Configurações de paths Polars DataFrame
-        self.data_lake_path = get_absolute_output_path('collection/data_lake/processed/final_results.parquet')
-        self.fallback_path = get_absolute_output_path('collection/data_lake/raw')
+        # Configurações de paths Polars DataFrame (lê output do processador Polars, não do DL)
+        self.data_lake_path = get_absolute_output_path('collection/polars_dataframe/processed/final_results.parquet')
+        self.fallback_path = get_absolute_output_path('collection/polars_dataframe/raw')
 
         # Validadores científicos centralizados
         self.temporal_validator = TemporalValidator(min_gap_years=2)

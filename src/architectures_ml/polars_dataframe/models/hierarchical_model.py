@@ -21,7 +21,9 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import cross_val_score
 from typing import Dict
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of freedom.*')
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
+warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
 # Adicionar path para configuração
 core_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'core')
