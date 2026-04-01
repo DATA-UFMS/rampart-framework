@@ -30,7 +30,6 @@ class TestDatasetRegistry:
         assert wb.name == 'worldbank'
         assert wb.temporal_range == (2000, 2023)
         assert wb.entity_column == 'country_code'
-        assert wb.target_formula == 'invert'
 
     def test_get_inep(self):
         from core.dataset_config import get_dataset
@@ -38,7 +37,6 @@ class TestDatasetRegistry:
         assert inep.name == 'inep_censo'
         assert inep.temporal_range == (2012, 2023)
         assert inep.entity_column == 'municipality_code'
-        assert inep.target_formula == 'direct'
 
     def test_get_nonexistent_raises(self):
         from core.dataset_config import get_dataset

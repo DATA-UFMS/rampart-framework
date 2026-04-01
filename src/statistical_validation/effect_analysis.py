@@ -10,8 +10,7 @@ Métricas:
   - Hedges' g (correção small-sample) opcional
   - Eta squared (para t pareado: eta2 = t^2 / (t^2 + df))
   - Correções: Bonferroni e FDR (Benjamini-Hochberg)
-  - Power analysis post-hoc (aproximação via one-sample sobre diff):
-       statsmodels.stats.power.TTestPower
+  - Power analysis prospectiva via Monte Carlo (Wilcoxon signed-rank; Lehmann, 2006)
 
 Saídas:
   - outputs/statistics/effect_sizes_summary.json
@@ -28,7 +27,6 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from scipy import stats
-from statsmodels.stats.power import TTestPower
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -99,6 +97,21 @@ def hedges_g(d: float, n: int) -> float:
     return d * J
 
 
+def _effect_size_ci(diff: np.ndarray, n_boot: int = 3000, seed: int = 42, ci: float = 0.95) -> Tuple[float, float]:
+    """IC bootstrap para Cohen's d_z (Efron & Tibshirani, 1993)."""
+    rng = np.random.default_rng(seed)
+    ds = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(diff), size=len(diff))
+        d_boot = cohens_dz(diff[idx])
+        if math.isfinite(d_boot):
+            ds.append(d_boot)
+    if not ds:
+        return (float('nan'), float('nan'))
+    alpha = (1 - ci) / 2
+    return (float(np.quantile(ds, alpha)), float(np.quantile(ds, 1 - alpha)))
+
+
 def eta_squared_from_t(t_stat: float, n: int) -> float:
     # t pareado: df = n-1
     if not math.isfinite(t_stat) or n <= 1:
@@ -119,11 +132,33 @@ def benjamini_hochberg(pvals: List[float], alpha: float = 0.05) -> List[float]:
     return ranked.tolist()
 
 
+def _prospective_power_wilcoxon(n: int, effect_size: float, alpha: float = 0.05,
+                                 n_sim: int = 5000, seed: int = 42) -> float:
+    """Power prospectiva por simulação Monte Carlo para Wilcoxon signed-rank.
+
+    Gera pares com efeito d sob distribuição normal, aplica Wilcoxon,
+    e conta a fração de rejeições (Lehmann, 2006).
+    """
+    if n < 4 or abs(effect_size) < 1e-10:
+        return float('nan')
+    rng = np.random.default_rng(seed)
+    rejections = 0
+    for _ in range(n_sim):
+        x = rng.normal(0, 1, n)
+        y = rng.normal(effect_size, 1, n)
+        try:
+            _, p = stats.wilcoxon(x - y)
+            if p < alpha:
+                rejections += 1
+        except Exception:
+            pass
+    return rejections / n_sim
+
+
 def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
     df = load_benchmark(csv_path)
     phases = [p for p in sorted(df['phase'].unique()) if p != 'collection']
     results = {}
-    power = TTestPower()
 
     # Loop over each pair
     for arch_a, arch_b in ALL_PAIRS:
@@ -146,14 +181,13 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
             g = hedges_g(d, n)
             eta2 = eta_squared_from_t(float(t_stat), n)
             # power post-hoc (aprox.)
-            try:
-                power_est = float(power.solve_power(effect_size=d, nobs=n, alpha=0.05, alternative='two-sided'))
-            except Exception:
-                power_est = float("nan")
+            power_est = _prospective_power_wilcoxon(n, d)
+            d_ci_lo, d_ci_hi = _effect_size_ci(diff)
             rec = dict(
                 n=n,
                 mean_diff_s=float(np.mean(diff)),
                 cohen_dz=float(d),
+                cohen_dz_ci=(d_ci_lo, d_ci_hi),
                 hedges_g=float(g),
                 eta_squared=float(eta2),
                 t_stat=float(t_stat),
@@ -173,14 +207,13 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
             d = cohens_dz(diff)
             g = hedges_g(d, n)
             eta2 = eta_squared_from_t(float(t_stat), n)
-            try:
-                power_est = float(power.solve_power(effect_size=d, nobs=n, alpha=0.05, alternative='two-sided'))
-            except Exception:
-                power_est = float("nan")
+            power_est = _prospective_power_wilcoxon(n, d)
+            d_ci_lo, d_ci_hi = _effect_size_ci(diff)
             res['total_architectural'] = dict(
                 n=n,
                 mean_diff_s=float(np.mean(diff)),
                 cohen_dz=float(d),
+                cohen_dz_ci=(d_ci_lo, d_ci_hi),
                 hedges_g=float(g),
                 eta_squared=float(eta2),
                 t_stat=float(t_stat),
@@ -190,15 +223,24 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
             p_values.append(float(t_p))
             keys.append('total_architectural')
 
-        # Múltiplas comparações (Bonferroni e FDR por pair)
-        if p_values:
-            bonf = [min(1.0, p * len(p_values)) for p in p_values]
-            fdr = benjamini_hochberg(p_values)
-            for k, p_raw, p_bonf, p_fdr in zip(keys, p_values, bonf, fdr):
-                res[k]['p_bonferroni'] = float(p_bonf)
-                res[k]['p_fdr_bh'] = float(min(1.0, p_fdr))
-
         results[pair_key] = res
+
+    # Correção global para múltiplas comparações (todos os pares × fases)
+    all_p = []
+    all_refs = []  # (pair_key, phase_key)
+    for pk, res in results.items():
+        for fk, rec in res.items():
+            if 't_p' in rec:
+                all_p.append(rec['t_p'])
+                all_refs.append((pk, fk))
+
+    if all_p:
+        n_tests = len(all_p)
+        bonf = [min(1.0, p * n_tests) for p in all_p]
+        fdr = benjamini_hochberg(all_p)
+        for i, (pk, fk) in enumerate(all_refs):
+            results[pk][fk]['p_bonferroni'] = float(bonf[i])
+            results[pk][fk]['p_fdr_bh'] = float(min(1.0, fdr[i]))
 
     return results
 

@@ -42,11 +42,21 @@ DEFAULT_OUTPUT_LATEX = os.path.join(
 MetricConfig = Dict[str, Dict[str, float]]
 
 
+PAIR_CONFIGS = [
+    ("dl", "dw"),
+    ("dl", "pl"),
+    ("dw", "pl"),
+]
+
+
 def _collect_deltas() -> Dict[str, np.ndarray]:
+    """Coleta deltas pareados para os 3 pares × 3 métricas."""
     pairs = _load_baseline_pairs()
     metrics = {}
-    for metric in ("r2", "wape", "mase"):
-        metrics[metric] = _paired_deltas_for_metric(pairs, metric)
+    for arch_a, arch_b in PAIR_CONFIGS:
+        for metric in ("r2", "wape", "mase"):
+            key = f"{arch_a}_vs_{arch_b}_{metric}"
+            metrics[key] = _paired_deltas_for_metric(pairs, metric, arch_a=arch_a, arch_b=arch_b)
     return metrics
 
 
@@ -66,16 +76,20 @@ def _sensitivity_grid(
 
     rows: List[Dict[str, object]] = []
 
-    for metric, deltas in metrics.items():
+    for metric_key, deltas in metrics.items():
         if deltas.size == 0:
             continue
+        # Extrair métrica base (r2/wape/mase) da key composta (dl_vs_dw_r2)
+        base_metric = metric_key.rsplit('_', 1)[-1]
+        if base_metric not in base_deltas:
+            continue
         for scale, iters in product(delta_scales, bootstrap_iters):
-            sesoi = base_deltas[metric]["delta"] * scale
+            sesoi = base_deltas[base_metric]["delta"] * scale
             point, (ci_lo, ci_hi) = _bootstrap_ci(deltas, iters=iters, seed=seed)
             decision = _decision_equivalence(ci_lo, ci_hi, sesoi)
             rows.append(
                 {
-                    "metric": metric,
+                    "metric": metric_key,
                     "delta_scale": float(scale),
                     "sesoi": float(sesoi),
                     "bootstrap_iters": int(iters),

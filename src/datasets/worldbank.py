@@ -33,7 +33,6 @@ class WorldBankDatasetConfig:
 
     # Target
     target_source_column = "lower_secondary_completion_rate"
-    target_formula = "invert"  # dropout_rate = 100 - completion_rate
     target_expected_range = (0.0, 80.0)
     min_valid_count = 500
 

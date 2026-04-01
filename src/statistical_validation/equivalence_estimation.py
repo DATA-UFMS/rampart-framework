@@ -87,20 +87,34 @@ def _median_hodges_lehmann(deltas: np.ndarray) -> float:
 
 
 def _bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, Tuple[float, float]]:
+    """IC bootstrap BCa (Efron & Tibshirani, 1993) com fallback percentil."""
     if len(values) == 0 or np.all(np.isnan(values)):
         return float('nan'), (float('nan'), float('nan'))
-    rng = np.random.default_rng(seed)
     clean = values[~np.isnan(values)]
     if len(clean) == 0:
         return float('nan'), (float('nan'), float('nan'))
-    means = np.empty(iters, dtype=float)
-    n = len(clean)
-    for b in range(iters):
-        idx = rng.integers(0, n, size=n)
-        means[b] = np.mean(clean[idx])
     point = float(np.mean(clean))
-    alpha = (1 - ci) / 2
-    lo, hi = float(np.quantile(means, alpha)), float(np.quantile(means, 1 - alpha))
+
+    # Caso degenerado: variância zero (predições numericamente idênticas)
+    if np.std(clean) < np.finfo(float).eps * 100:
+        return point, (point, point)
+
+    try:
+        from scipy.stats import bootstrap as scipy_bootstrap
+        res = scipy_bootstrap(
+            (clean,), np.mean, n_resamples=iters,
+            confidence_level=ci, method='BCa',
+            random_state=np.random.default_rng(seed)
+        )
+        lo, hi = float(res.confidence_interval.low), float(res.confidence_interval.high)
+    except Exception:
+        # Fallback: percentil simples (n muito pequeno para BCa)
+        rng = np.random.default_rng(seed)
+        n = len(clean)
+        means = np.array([np.mean(clean[rng.integers(0, n, size=n)]) for _ in range(iters)])
+        alpha = (1 - ci) / 2
+        lo, hi = float(np.quantile(means, alpha)), float(np.quantile(means, 1 - alpha))
+
     return point, (lo, hi)
 
 

@@ -37,7 +37,6 @@ class InepCensoDatasetConfig:
     # Target: taxa de abandono por município/ano
     # abandono_rate = count(Deixou de frequentar) / count(matriculas) * 100
     target_source_column = "abandono_rate"
-    target_formula = "direct"  # já é taxa, não precisa inverter
     target_expected_range = (0.0, 100.0)
     min_valid_count = 5000
 

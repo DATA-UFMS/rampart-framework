@@ -29,7 +29,6 @@ class DatasetConfig(Protocol):
 
     # Target
     target_source_column: str
-    target_formula: str          # "invert" (100 - source) | "direct"
     target_expected_range: Tuple[float, float]
     min_valid_count: int
 
