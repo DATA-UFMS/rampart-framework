@@ -72,7 +72,8 @@ class BaselineModelAnalysisDataLake:
             raise FileNotFoundError(f"Folds Data Lake não encontrados: {self.folds_path}")
 
         print("Carregando dados Data Lake com Dask...")
-        self.ddf = dd.read_parquet(self.data_path).persist()
+        self.ddf = dd.read_parquet(self.data_path)
+        self._needs_persist = True
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
@@ -925,6 +926,9 @@ class BaselineModelAnalysisDataLake:
         Returns:
             Dict: Resultados consolidados da análise ou erro
         """
+        if getattr(self, '_needs_persist', False):
+            self.ddf = self.ddf.persist()
+            self._needs_persist = False
         print(f"Análise completa - arquitetura Data Lake")
         print("=" * 60)
         print(f"Comparação: Data Lake vs Data Warehouse para ML")

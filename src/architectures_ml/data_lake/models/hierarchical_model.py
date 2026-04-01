@@ -72,7 +72,8 @@ class HierarchicalModelDataLake:
             raise FileNotFoundError("Dados Data Lake não encontrados")
         
         print("Carregando dados Data Lake com processamento distribuído...")
-        self.ddf = dd.read_parquet(self.data_path, engine='pyarrow').persist()
+        self.ddf = dd.read_parquet(self.data_path, engine='pyarrow')
+        self._needs_persist = True
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
@@ -471,6 +472,9 @@ class HierarchicalModelDataLake:
     
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa para arquitetura Data Lake."""
+        if getattr(self, '_needs_persist', False):
+            self.ddf = self.ddf.persist()
+            self._needs_persist = False
         print("Análise Hierárquica Completa Data Lake (NORMAL)")
         print("=" * 60)
         print("Arquitetura: Data Lake para ML Hierárquico")
