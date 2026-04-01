@@ -89,9 +89,17 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
 
         dl_med = por_arq.get("data_lake", {}).get("p50")
         dw_med = por_arq.get("data_warehouse", {}).get("p50")
-        speedup = (dl_med / dw_med) if (dl_med is not None and dw_med is not None and dw_med > 0) else None
+        pl_med = por_arq.get("polars_dataframe", {}).get("p50")
 
-        resumo["per_phase"][fase] = {"architectures": por_arq, "speedup_dw_vs_dl_p50": speedup}
+        def _speedup(a, b):
+            return (a / b) if (a is not None and b is not None and b > 0) else None
+
+        resumo["per_phase"][fase] = {
+            "architectures": por_arq,
+            "speedup_dl_vs_dw_p50": _speedup(dl_med, dw_med),
+            "speedup_dl_vs_pl_p50": _speedup(dl_med, pl_med),
+            "speedup_dw_vs_pl_p50": _speedup(dw_med, pl_med),
+        }
 
     # Totais por execução (somando fases não-excluídas)
     totais = (

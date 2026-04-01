@@ -107,10 +107,6 @@ class TestInepAdapter:
         assert 'lower_secondary_completion_rate' in adapted.columns
         assert adapted['lower_secondary_completion_rate'].iloc[0] == pytest.approx(94.0)
 
-    def test_adapter_creates_enrollment_rate(self):
-        from collection.inep_collector import adapt_to_framework_schema
-        adapted = adapt_to_framework_schema(self._make_inep_df())
-        assert 'enrollment_rate_secondary_net' in adapted.columns
 
     def test_adapter_preserves_features(self):
         """Features INEP (aprov_ef, reprov_em, etc.) passam inalteradas."""

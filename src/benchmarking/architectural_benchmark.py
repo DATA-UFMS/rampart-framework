@@ -466,8 +466,8 @@ class BenchmarkRunner:
         # --- Fase 1: upstream (coleta + processamento) - executa UMA vez -------
         # Estas fases produzem dados determinísticos idênticos em toda execução.
         # Registram-se como run_id=0 para referência no CSV de resultados.
-        run_id = 0
-        print("Upstream: coleta e processamento (execução única)")
+        run_id = -1  # upstream separado do downstream (run_id >= 0)
+        print("Upstream: coleta (execução única)")
 
         if "collection" in self.phases:
             r = measure(

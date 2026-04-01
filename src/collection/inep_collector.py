@@ -186,12 +186,11 @@ def adapt_to_framework_schema(df: pd.DataFrame) -> pd.DataFrame:
 
     # Target: inverter abandono EM → completion rate
     adapted['lower_secondary_completion_rate'] = 100 - adapted['abandono_em']
-    adapted['enrollment_rate_secondary_net'] = adapted['lower_secondary_completion_rate']
 
     # Selecionar colunas finais
     keep_cols = ['country_code', 'country_name', 'country_stratum', 'year']
     keep_cols += [c for c in FEATURE_COLS if c in adapted.columns]
-    keep_cols += ['lower_secondary_completion_rate', 'enrollment_rate_secondary_net']
+    keep_cols += ['lower_secondary_completion_rate']
 
     # Remover duplicatas
     keep_cols = list(dict.fromkeys(keep_cols))
