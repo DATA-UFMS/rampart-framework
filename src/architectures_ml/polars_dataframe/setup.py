@@ -358,7 +358,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
         Implementação Polars:
             Utiliza .with_columns() com expressions para eficiência, criando
-            lags temporais via .sort() + .shift() agrupados por country_code.
+            lags temporais via join temporal (year+k) por country_code.
 
         """
         print("[TARGET] Construindo variável target com fundamentação educacional")
@@ -371,30 +371,29 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             (100 - pl.col(self.source_column)).alias(self.target_column)
         ])
 
-        # Criar lags temporais via sort + shift agrupado
+        # Lag temporal via join (valor de exatamente N anos atrás),
+        # não shift posicional que assume dados sem gaps anuais.
         print("[FEATURE] Criando lag features (dropout_rate_lag_2, lag_3)")
         try:
-            # Sort por country e year para lag seguro
-            df_sorted = df_with_target.sort(['country_code', 'year'])
+            base_lag = df_with_target.select(['country_code', 'year', self.target_column])
 
-            # Lag 2 anos
-            df_sorted = df_sorted.with_columns([
-                pl.col(self.target_column)
-                .shift(2)
-                .over('country_code')
-                .alias('dropout_rate_lag_2')
-            ])
+            # Lag 2 anos: join com year+2 traz o valor de 2 anos atrás
+            lag2 = base_lag.with_columns(
+                (pl.col('year') + 2).alias('year')
+            ).rename({self.target_column: 'dropout_rate_lag_2'})
+            df_with_target = df_with_target.join(
+                lag2, on=['country_code', 'year'], how='left'
+            )
 
-            # Lag 3 anos
-            df_sorted = df_sorted.with_columns([
-                pl.col(self.target_column)
-                .shift(3)
-                .over('country_code')
-                .alias('dropout_rate_lag_3')
-            ])
+            # Lag 3 anos: idem para 3 anos atrás
+            lag3 = base_lag.with_columns(
+                (pl.col('year') + 3).alias('year')
+            ).rename({self.target_column: 'dropout_rate_lag_3'})
+            df_with_target = df_with_target.join(
+                lag3, on=['country_code', 'year'], how='left'
+            )
 
-            df_with_target = df_sorted
-            print("[FEATURE] dropout_rate_lag_2 e dropout_rate_lag_3 criados (shift by country/year)")
+            print("[FEATURE] dropout_rate_lag_2 e dropout_rate_lag_3 criados (join temporal country/year-k)")
         except (pl.exceptions.ColumnNotFoundError, pl.exceptions.ComputeError, KeyError) as e:
             print(f"[AVISO] Falha ao criar dropout_rate_lag_2: {e}")
 

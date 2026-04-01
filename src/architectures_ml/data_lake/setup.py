@@ -557,7 +557,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # Exclusão sistemática de metadados, targets e features derivadas
         # Lag features (dropout_rate_lag_*) são adicionadas em prepare_features,
         # não devem participar do filtro de colinearidade — análogo ao DW,
-        # que cria lags via SQL LAG() somente em prepare_features.
+        # que cria lags via self-join temporal somente em prepare_features.
         exclude_cols = ['year', 'country_code', self.target_column, self.source_column]
         exclude_prefixes = ('dropout_rate_lag_',)
 

@@ -14,9 +14,8 @@ import sys
 import warnings
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import RidgeCV
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from sklearn.model_selection import cross_val_score
 from typing import Dict
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of freedom.*')
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
@@ -239,8 +238,8 @@ class HierarchicalModelSQLFirst:
             country_samples = len(country_y)
             country_sample_counts[country] = country_samples
             
-            # Shrinkage adaptativo (James-Stein)
-            shrinkage_factor = min(0.8, country_samples / (country_samples + 5.0))
+            # Shrinkage tipo James-Stein: k=5 como prior strength (Efron & Morris, 1975)
+            shrinkage_factor = country_samples / (country_samples + 5.0)
             raw_country_mean = country_y.mean()
             country_mean_shrunk = (shrinkage_factor * raw_country_mean + 
                                  (1 - shrinkage_factor) * global_mean)
@@ -261,36 +260,16 @@ class HierarchicalModelSQLFirst:
             features_count = residuals_X.shape[1]
             samples_count = len(residuals_y)
             
-            # Regularização adaptativa
-            feature_sample_ratio = features_count / samples_count
-            base_alpha = 20.0
-            complexity_penalty = 1 + (feature_sample_ratio ** 2) * 10
-            adaptive_alpha = min(200.0, base_alpha * complexity_penalty)
-            
-            # Cross-validation para α
-            final_alpha = adaptive_alpha
-            if samples_count > 30:
-                test_alphas = [adaptive_alpha * 0.5, adaptive_alpha, adaptive_alpha * 2.0]
-                best_score = -np.inf
-                
-                for alpha_test in test_alphas:
-                    try:
-                        ridge_test = Ridge(alpha=alpha_test)
-                        scores = cross_val_score(ridge_test, residuals_X, residuals_y, 
-                                               cv=min(3, samples_count//10), scoring='r2')
-                        mean_score = np.mean(scores)
-                        if mean_score > best_score:
-                            best_score = mean_score
-                            final_alpha = alpha_test
-                    except Exception:
-                        continue
-            
-            residual_model = Ridge(alpha=final_alpha)
-            residual_model.fit(residuals_X, residuals_y)
-            
+            # Seleção de alpha via CV interna (Hoerl & Kennard, 1970)
+            alphas = np.logspace(-1, 3, 20)  # 0.1 a 1000
+            ridge_cv = RidgeCV(alphas=alphas, cv=min(3, len(residuals_X)))
+            ridge_cv.fit(residuals_X, residuals_y)
+            final_alpha = ridge_cv.alpha_
+            residual_model = ridge_cv
+
             print(f"      Simple Hierarchical Data Warehouse:")
-            print(f"         {features_count} features × {samples_count} samples de resíduos")
-            print(f"         α adaptativo: {final_alpha:.1f} (base: {base_alpha}, ratio: {feature_sample_ratio:.3f})")
+            print(f"         {features_count} features x {samples_count} samples de resíduos")
+            print(f"         alpha selecionado por RidgeCV: {final_alpha:.2f}")
             print(f"         Shrinkage aplicado em {n_countries} países")
         else:
             residual_model = None
@@ -333,12 +312,12 @@ class HierarchicalModelSQLFirst:
             'y_true': y_test.tolist(),
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
             'country_sample_counts': {str(k): int(v) for k, v in country_sample_counts.items()},
-            'regularization_applied': f'Adaptativo: α={final_alpha:.1f} com Shrinkage e CV',
+            'regularization_applied': f'RidgeCV: alpha={final_alpha:.2f} (logspace 0.1-1000, cv interno)',
             'features_count': features_count,
             'regularization_details': {
-                'adaptive_alpha': float(final_alpha),
+                'ridgecv_alpha': float(final_alpha),
                 'shrinkage_applied': True,
-                'cv_optimization': samples_count > 30,
+                'alpha_selection': 'RidgeCV com logspace(-1, 3, 20)',
                 'residual_shrinkage': float(residual_shrinkage)
             }
         }
@@ -542,7 +521,7 @@ class HierarchicalModelSQLFirst:
         print("🖈  COMPARAÇÃO: Data Warehouse vs Data Lake para ML Hierárquico")
         print("⚙ OBJETIVO: Avaliar capacidade hierárquica arquitetural")
         print("▣ PATTERN: ML Data Warehouse Consumer com views básicas do setup")
-        print("▲ Regularização avançada: α adaptativo + Shrinkage + CV, Random Forest otimizado")
+        print("▲ Regularização: RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
         
         try:
             all_results = {
@@ -551,9 +530,9 @@ class HierarchicalModelSQLFirst:
                 'target': self.target_col,
                 'mode': 'normal',
                 'corrections_applied': {
-                    'simple_hierarchical': 'Adaptativo: α adaptativo + Shrinkage + CV',
+                    'simple_hierarchical': 'RidgeCV com alphas logspace(0.1, 1000) + Shrinkage James-Stein',
                     'random_forest': 'Regularizado: n_est=200, depth=6, split=15, leaf=8',
-                    'regularization_approach': 'Adaptativo com Shrinkage e Cross-Validation'
+                    'regularization_approach': 'RidgeCV (Hoerl & Kennard 1970) + Shrinkage (Efron & Morris 1975)'
                 },
                 'folds': []
             }

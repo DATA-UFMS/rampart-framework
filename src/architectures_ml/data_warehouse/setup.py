@@ -1171,11 +1171,12 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         for feat in features_to_transform:
             # Tranformação, log simétrico: sign(x) * ln(|x| + 1)
+            # Prefixo a. necessário pois a query usa self-join com alias
             transformation_sql = f"""
                 CASE
-                    WHEN {feat} IS NULL THEN NULL
-                    WHEN {feat} = 0 THEN 0.0
-                    ELSE SIGN({feat}) * LN(ABS({feat}) + 1)
+                    WHEN a.{feat} IS NULL THEN NULL
+                    WHEN a.{feat} = 0 THEN 0.0
+                    ELSE SIGN(a.{feat}) * LN(ABS(a.{feat}) + 1)
                 END AS {feat}_log_transform
             """
             transformed_features_sql.append(transformation_sql)
@@ -1189,26 +1190,32 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             print(f"[ENGENHARIA] {len(transformed_features_sql)} symmetric log transforms aplicadas")
         
         # Query SQL para view final cientificamente estruturada
+        # Lag temporal via self-join (valor de exatamente N anos atrás),
+        # não LAG() posicional que assume dados sem gaps anuais.
         feature_view_query = f"""
             CREATE OR REPLACE VIEW vw_selected_features AS
             SELECT
                 -- Metadados temporais e geográficos (essenciais para ML temporal)
-                country_code,
-                year,
-                {self.target_column},
-                -- Lags do target (2 e 3 anos) sem vazamento
-                LAG({self.target_column}, 2) OVER (PARTITION BY country_code ORDER BY year) AS dropout_rate_lag_2,
-                LAG({self.target_column}, 3) OVER (PARTITION BY country_code ORDER BY year) AS dropout_rate_lag_3,
-                
+                a.country_code,
+                a.year,
+                a.{self.target_column},
+                -- Lags do target (2 e 3 anos) via join temporal sem vazamento
+                lag2.{self.target_column} AS dropout_rate_lag_2,
+                lag3.{self.target_column} AS dropout_rate_lag_3,
+
                 -- Features originais pós-filtragem de colinearidade
-                {', '.join(all_features_sql)}
-                
+                {', '.join(['a.' + f for f in all_features_sql])}
+
                 {', -- Features transformadas (symmetric log)' if transformed_features_sql else ''}
                 {', '.join(transformed_features_sql) if transformed_features_sql else ''}
-                
-            FROM analytics_wide
-            WHERE {self.target_column} IS NOT NULL  -- Filtro essencial para ML supervisionado
-            ORDER BY country_code, year              -- Preserva ordem temporal para walk-forward
+
+            FROM analytics_wide a
+            LEFT JOIN analytics_wide lag2
+                ON a.country_code = lag2.country_code AND a.year = lag2.year + 2
+            LEFT JOIN analytics_wide lag3
+                ON a.country_code = lag3.country_code AND a.year = lag3.year + 3
+            WHERE a.{self.target_column} IS NOT NULL  -- Filtro essencial para ML supervisionado
+            ORDER BY a.country_code, a.year           -- Preserva ordem temporal para walk-forward
         """
         
         try:
