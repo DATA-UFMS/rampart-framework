@@ -35,7 +35,7 @@ class TestDatasetRegistry:
         from core.dataset_config import get_dataset
         inep = get_dataset('inep_censo')
         assert inep.name == 'inep_censo'
-        assert inep.temporal_range == (2012, 2023)
+        assert inep.temporal_range == (2007, 2024)
         assert inep.entity_column == 'municipality_code'
 
     def test_get_nonexistent_raises(self):

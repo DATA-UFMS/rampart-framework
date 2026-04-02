@@ -55,6 +55,7 @@ INEP_URLS = {
     2021: "https://download.inep.gov.br/informacoes_estatisticas/indicadores_educacionais/2021/tx_rend_municipios_2021.zip",
     2022: "https://download.inep.gov.br/informacoes_estatisticas/indicadores_educacionais/2022/tx_rend_municipios_2022.zip",
     2023: "https://download.inep.gov.br/informacoes_estatisticas/indicadores_educacionais/2023/tx_rend_municipios_2023.zip",
+    2024: "https://download.inep.gov.br/informacoes_estatisticas/indicadores_educacionais/2024/tx_rend_municipios_2024.zip",
 }
 
 # Nomes de colunas posicionais (61 colunas no XLSX pós-2013)
@@ -106,7 +107,7 @@ def download_year(year: int, cache_dir: str) -> str:
 
     os.makedirs(cache_dir, exist_ok=True)
     print(f"   Baixando {url} ...")
-    r = requests.get(url, stream=True, timeout=300)
+    r = requests.get(url, stream=True, timeout=300, verify=False)
     r.raise_for_status()
 
     with open(zip_path + ".tmp", "wb") as f:
@@ -122,15 +123,16 @@ def parse_year(zip_path: str, year: int) -> pd.DataFrame:
 
     Retorna 1 linha por município (filtro: localizacao=Total, dependencia=Total).
     """
-    # Extrair XLSX do ZIP
+    # Extrair planilha do ZIP (XLSX para 2012+, XLS para 2007-2011)
     with zipfile.ZipFile(zip_path, 'r') as zf:
-        xlsx_files = [n for n in zf.namelist()
-                      if n.lower().endswith('.xlsx') and not n.startswith('__')]
-        if not xlsx_files:
-            raise FileNotFoundError(f"Nenhum XLSX encontrado no ZIP para {year}")
-        xlsx_name = xlsx_files[0]
-        zf.extract(xlsx_name, os.path.dirname(zip_path))
-        xlsx_path = os.path.join(os.path.dirname(zip_path), xlsx_name)
+        excel_files = [n for n in zf.namelist()
+                       if (n.lower().endswith('.xlsx') or n.lower().endswith('.xls'))
+                       and not n.startswith('__') and not n.startswith('~')]
+        if not excel_files:
+            raise FileNotFoundError(f"Nenhuma planilha Excel encontrada no ZIP para {year}")
+        excel_name = excel_files[0]
+        zf.extract(excel_name, os.path.dirname(zip_path))
+        xlsx_path = os.path.join(os.path.dirname(zip_path), excel_name)
 
     # Ler XLSX — pular header multi-linha (varia entre anos: 8-10 linhas)
     for skiprows in [9, 8, 10, 7]:
