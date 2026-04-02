@@ -85,35 +85,32 @@ class DataLakeArchitectureML(BaseArchitectureML):
         output_base = get_absolute_output_path('ml_pipeline/architectures/data_lake')
         super().__init__(architecture_name='data_lake', output_base_path=output_base)
         
-        # Logger científico com contexto ML
         self.logger = get_logger(__name__, with_ml_context=True)
         self.logger.set_context(architecture='data_lake', module='setup')
         
-        print("Inicializando Pipeline ML Data Lake Científico")
-        print("=" * 70)
-        print("[PARADIGMA] Schema-on-read com processamento distribuído lazy")
+        print("Inicializando Pipeline ML Data Lake")
+        print("Schema-on-read com processamento distribuido lazy")
         
         # Configurações de paths Data Lake
         self.data_lake_path = get_absolute_output_path('collection/data_lake/processed/final_results.parquet')
         self.fallback_path = get_absolute_output_path('collection/data_lake/raw')
         
-        # Validadores científicos centralizados
         self.temporal_validator = TemporalValidator(min_gap_years=2)
         self.data_validator = DataIntegrityValidator()
         
-        print(f"[OUTPUT] Diretório base: {self.output_base}")
-        print(f"[INPUT] Dados primários: {self.data_lake_path}")
-        print(f"[FALLBACK] Dados raw: {self.fallback_path}")
-        print("[METODOLOGIA] Lazy evaluation sem camadas de cache adicionais")
+        print(f"  Diretorio base: {self.output_base}")
+        print(f"  Dados primarios: {self.data_lake_path}")
+        print(f"  Dados raw (fallback): {self.fallback_path}")
+        print("  Lazy evaluation sem camadas de cache adicionais")
     
     def setup_environment(self) -> None:
         """
-        Configura ambiente Dask com otimizações científicas para ML temporal.
+        Configura ambiente Dask com otimizações para ML temporal.
         
         Configurações aplicadas:
             1. Query planning: Habilitado para otimização automática de operações
             2. Memory management: Thresholds conservadores para estabilidade
-            3. Random seeds: Determinismo científico em operações estocásticas
+            3. Random seeds: Determinismo em operações estocásticas
             4. Worker limits: Prevenção de OOM em datasets grandes
             
         Justificativa dos parâmetros:
@@ -125,27 +122,22 @@ class DataLakeArchitectureML(BaseArchitectureML):
             - NumPy: Controla amostragem e transformações estatísticas
             - Dask: Garante determinismo em operações array distribuídas
             
-        Referência:
-            Rocklin, M. (2015). Dask: Computação paralela com algoritmos em bloco.
         """
-        print("[AMBIENTE] Configurando Dask para processamento científico distribuído")
+        print("Configurando Dask")
         
-        # Configurações Dask otimizadas para ML científico
         dask.config.set({'dataframe.query-planning': True})      # Otimização de queries
         dask.config.set({'distributed.worker.memory.target': 0.8})  # 80% RAM target
         dask.config.set({'distributed.worker.memory.spill': 0.9})   # 90% RAM spill
         
-        print("   ✓ Memory management: Conservative thresholds configurados")
-        print("   ✓ Query optimization: Habilitado para datasets >1GB")
-        
-        # Seeds para reprodutibilidade científica completa
+        print("  Memory management: conservative thresholds")
+        print("  Query optimization: habilitado para datasets >1GB")
+
+        # Dask não possui config nativa de seed global.
+        # A reprodutibilidade é garantida pela seed do numpy.
         random_seed = self.config['random_seed']
         np.random.seed(random_seed)
-        # Nota: Dask não possui config nativa de seed global.
-        # A reprodutibilidade é garantida pela seed do numpy.
 
-        print(f"   ✓ Reprodutibilidade: Seed {random_seed} configurado (NumPy)")
-        print("[STATUS] Ambiente Dask cientificamente configurado")
+        print(f"  Seed {random_seed} configurado (NumPy)")
     
     def load_data(self) -> dd.DataFrame:
         """
@@ -161,18 +153,17 @@ class DataLakeArchitectureML(BaseArchitectureML):
         Estratégia de carregamento hierárquica:
             1. Processed data: Dados pós-pipeline Data Lake (formato otimizado)
             2. Raw partitioned: Fallback para dados brutos particionados
-            3. Error handling: Logging detalhado para debugging científico
+            3. Error handling: Logging detalhado para debugging
             
         Vantagens Schema-on-Read:
             - Flexibilidade: Schema inferido dinamicamente durante carregamento
             - Performance: PyArrow engine otimizado para formatos colunares
             - Escalabilidade: Partições Dask permitem processamento >RAM disponível
             
-        Complexidade: O(1) devido à lazy evaluation vs O(n) carregamento eager
+        Leitura lazy -- materialização sob demanda.
         """
         self.logger.info("Iniciando carregamento Data Lake com schema-on-read")
-        print("\n[CARREGAMENTO] Executando estratégia Schema-on-Read hierárquica")
-        print("━" * 60)
+        print("\nCarregando dados (schema-on-read)")
         
         ddf = None
         data_source = None
@@ -180,25 +171,24 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # === Estratégia 1: Dados processados (otimizados) ===
         if os.path.exists(self.data_lake_path):
             try:
-                print("[TENTATIVA 1] Carregando dados processados...")
                 ddf = dd.read_parquet(self.data_lake_path, engine='pyarrow').persist()
                 data_source = "processed"
                 ncols = len(ddf.columns)
-                print(f"   ✓ Carregado: {ddf.npartitions} partições × {ncols} variáveis (persistido em memória)")
+                print(f"  Carregado: {ddf.npartitions} particoes x {ncols} variaveis")
             except Exception as e:
                 self.logger.warning(f"Erro ao carregar dados processados: {e}")
-                print(f"   ✗ Erro dados processados: {e}")
+                print(f"  [ERROR] Dados processados: {e}")
         
         # === Estratégia 2: Dados raw particionados (fallback) ===
         if ddf is None and os.path.exists(self.fallback_path):
             try:
-                print("[TENTATIVA 2] Fallback para dados raw particionados...")
+                print("  Fallback para dados raw particionados...")
                 ddf = self._load_from_partitioned_raw_distributed()
                 data_source = "raw_partitioned"
-                print("   ✓ Carregamento raw bem-sucedido com schema-on-read")
+                print("  Carregamento raw ok")
             except Exception as e:
                 self.logger.error(f"Erro ao carregar dados raw: {e}")
-                print(f"   ✗ Erro dados raw: {e}")
+                print(f"  [ERROR] Dados raw: {e}")
         
         # === Validação de carregamento ===
         if ddf is None:
@@ -208,8 +198,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 "Execute 'data_lake/processor.py' para gerar dados processados."
             )
     
-        # === Análise de adequação científica ===
-        print("[ANÁLISE] Computando estatísticas para adequação ML temporal")
+        # === Análise de adequação ===
         
         # Computação em lote para eficiência (única chamada Dask compute)
         stats_to_compute = {
@@ -220,21 +209,19 @@ class DataLakeArchitectureML(BaseArchitectureML):
         }
         computed_stats = dask.compute(stats_to_compute)[0]
         
-        # Análise de adequação para ML temporal
         years_span = computed_stats['year_max'] - computed_stats['year_min'] + 1
         avg_obs_per_country = computed_stats['total_rows'] / computed_stats['n_countries']
-        
-        print(f"[TEMPORAL] {computed_stats['year_min']}-{computed_stats['year_max']} ({years_span} anos)")
-        print(f"[GEOGRÁFICO] {computed_stats['n_countries']} países ({avg_obs_per_country:.1f} obs/país)")
-        print(f"[DIMENSÕES] {computed_stats['total_rows']:,} observações totais")
-        print(f"[FONTE] {data_source}")
-        
-        # Warnings científicos para adequação temporal
+
+        print(f"  {computed_stats['year_min']}-{computed_stats['year_max']} ({years_span} anos)")
+        print(f"  {computed_stats['n_countries']} paises ({avg_obs_per_country:.1f} obs/pais)")
+        print(f"  {computed_stats['total_rows']:,} observacoes totais")
+        print(f"  Fonte: {data_source}")
+
         if years_span < 10:
-            print("  ⚠ AVISO: Série temporal curta pode limitar validação walk-forward")
-        
+            print("  [WARN] Serie temporal curta pode limitar validacao walk-forward")
+
         if computed_stats['n_countries'] < 15:
-            print("  ⚠ AVISO: Poucos países podem afetar generalização geográfica")
+            print("  [WARN] Poucos paises podem afetar generalizacao geografica")
         
         self.logger.info(f"Dados carregados com sucesso via {data_source}")
         
@@ -243,7 +230,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
     @log_ml_pipeline('validation')
     def validate_data(self, ddf: dd.DataFrame) -> None:
         """
-        Executa validação científica distribuída com amostragem estratégica.
+        Executa validação distribuída com amostragem estratégica.
         
         Args:
             ddf: DataFrame Dask com dados educacionais carregados
@@ -259,32 +246,28 @@ class DataLakeArchitectureML(BaseArchitectureML):
             Validação executada após carregamento, permitindo flexibilidade
             na estrutura dos dados mas garantindo qualidade mínima para ML.
             
-        Critérios científicos:
+        Critérios:
             - Target coverage >50%: Poder estatístico adequado para ML
             - Range [0,100]: Consistência com definições educacionais
             - Schema compliance: Presença de identificadores temporais/geográficos
             
-        Amostragem justificada:
-            Para datasets >100k observações, validação completa seria
-            computacionalmente custosa. Amostra de 1000 obs oferece
-            95% confiança para detecção de problemas >0.5% (binomial).
+        Amostragem:
+            Para eficiência, amostra de min(1000, total_rows) observações.
         """
-        print("[VALIDAÇÃO] Executando verificação científica distribuída")
-        print("━" * 50)
+        print("Validando dados")
         
         # === Amostragem adaptativa para validação eficiente ===
         total_rows = int(ddf.index.size.compute())
         sample_size = min(1000, total_rows)  # Balanceia precisão vs eficiência
         
-        print(f"[AMOSTRAGEM] {sample_size:,}/{total_rows:,} observações ({sample_size/total_rows:.1%})")
-        
+        print(f"  Amostragem: {sample_size:,}/{total_rows:,} ({sample_size/total_rows:.1%})")
+
         # Criação de amostra preservando distribuição
         sample_df = ddf.head(sample_size, npartitions=ddf.npartitions)
         if hasattr(sample_df, 'compute'):
             sample_df = sample_df.compute()
         
         # === Validação centralizada com DataIntegrityValidator ===
-        print("[INTEGRIDADE] Aplicando validador centralizado...")
         is_valid, validation_report = self.data_validator.validate_dataframe(
             sample_df,
             target_col=self.source_column,
@@ -295,18 +278,16 @@ class DataLakeArchitectureML(BaseArchitectureML):
             warnings = validation_report.get('warnings', [])
             self.logger.warning(f"Problemas de integridade detectados: {len(warnings)} warnings")
             for warning in warnings[:3]:
-                print(f"  ⚠ {warning}")
-        
+                print(f"  [WARN] {warning}")
+
         # === Schema validation com fallback inteligente ===
-        print("[SCHEMA] Validando estrutura para ML temporal...")
         if self.source_column not in ddf.columns:
-            print(f"  → Coluna target '{self.source_column}' não encontrada")
-            
-            # Fallback baseado em correspondência semântica
+            print(f"  [WARN] Coluna target '{self.source_column}' nao encontrada")
+
             completion_cols = [col for col in ddf.columns if 'completion' in col.lower()]
             if completion_cols:
                 self.source_column = completion_cols[0]
-                print(f"  → Usando alternativa: {self.source_column}")
+                print(f"    Usando alternativa: {self.source_column}")
             else:
                 raise ValueError(
                     "Nenhuma variável educacional adequada encontrada.\n"
@@ -314,7 +295,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 )
         
         # === Análise de qualidade distribuída ===
-        print("[QUALIDADE] Computando estatísticas de adequação ML...")
         
         # Computação em lote otimizada (única chamada Dask)
         validation_stats = {
@@ -328,23 +308,21 @@ class DataLakeArchitectureML(BaseArchitectureML):
         }
         computed = dask.compute(validation_stats)[0]
         
-        # Análise de adequação científica
         total_rows = computed['total_rows']
         target_coverage = (computed['target_data'] / total_rows) * 100
-        
-        print(f"[COBERTURA] {computed['target_data']:,}/{total_rows:,} válidos ({target_coverage:.1f}%)")
-        print(f"[RANGE] [{computed['target_min']:.1f}%, {computed['target_max']:.1f}%]")
-        print(f"[MÉDIA] {computed['target_mean']:.1f}%")
-        
-        # Alertas científicos para qualidade
+
+        print(f"  Cobertura: {computed['target_data']:,}/{total_rows:,} validos ({target_coverage:.1f}%)")
+        print(f"  Range: [{computed['target_min']:.1f}%, {computed['target_max']:.1f}%]")
+        print(f"  Media: {computed['target_mean']:.1f}%")
+
         if target_coverage < 50:
-            print("  ⚠ CRÍTICO: Baixa cobertura de target (<50%) pode comprometer ML")
-        
+            print("  [WARN] Baixa cobertura de target (<50%) pode comprometer ML")
+
         if computed['over_100_count'] > 0:
-            print(f"  ⚠ AVISO: {computed['over_100_count']} valores >100% (dados inválidos)")
-        
+            print(f"  [WARN] {computed['over_100_count']} valores >100% (dados invalidos)")
+
         if computed['under_0_count'] > 0:
-            print(f"  ⚠ AVISO: {computed['under_0_count']} valores <0% (dados inválidos)")
+            print(f"  [WARN] {computed['under_0_count']} valores <0% (dados invalidos)")
         
         # === Validação de schema obrigatório ===
         required_cols = ['country_code', 'year']
@@ -355,7 +333,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 "Identificadores país-ano são obrigatórios para validação walk-forward."
             )
         
-        print("[STATUS] ✓ Validação científica concluída - equivalência Data Warehouse mantida")
+        print("  Validacao concluida")
     
     def create_target_implementation(self, ddf: dd.DataFrame) -> dd.DataFrame:
         """
@@ -367,7 +345,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         Returns:
             DataFrame Dask enriquecido com variável target dropout_rate_data_lake
             
-        Transformação científica:
+        Transformação:
             Dropout Rate = 100 - Completion Rate
             
         Justificativa educacional:
@@ -375,21 +353,17 @@ class DataLakeArchitectureML(BaseArchitectureML):
             dropout rate oferece interpretabilidade direta para políticas:
             - Valores altos = necessidade de intervenção urgente
             - Comparabilidade internacional padronizada
-            - Linearidade com fatores socioeconômicos (Psacharopoulos, 1994)
-            
+            - Comparabilidade internacional padronizada
+
         Paradigma Dask:
             Transformação aplicada lazily via .apply() com meta specification
-            para preservar tipos e otimizar grafo computacional. Operação
-            O(1) em termos de memória devido à lazy evaluation.
-            
-        Referência:
-            Psacharopoulos, G. (1994). Returns to investment in education.
+            para preservar tipos e otimizar grafo computacional.
         """
-        print("[TARGET] Construindo variável target com fundamentação educacional")
+        print("Construindo variavel target")
         
         def create_dropout_rate(completion_rate):
             """
-            Função pura para transformação completion → dropout rate.
+            Funcao pura para transformacao completion -> dropout rate.
             
             Args:
                 completion_rate: Taxa de conclusão (0-100%)
@@ -401,8 +375,8 @@ class DataLakeArchitectureML(BaseArchitectureML):
             """
             return 100 - completion_rate
         
-        print(f"[TRANSFORMAÇÃO] {self.source_column} → {self.target_column}")
-        print("[FÓRMULA] Dropout Rate = 100 - Completion Rate")
+        print(f"  {self.source_column} -> {self.target_column}")
+        print("  Dropout Rate = 100 - Completion Rate")
         
         # Transformação Dask distribuída com meta specification
         ddf_with_target = ddf.assign(
@@ -412,8 +386,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             )}
         )
         
-        print("[STATUS] ✓ Target criado via Dask lazy evaluation")
-        print("[EQUIVALÊNCIA] Transformação idêntica ao Data Warehouse (SQL)")
+        print("  Target criado via Dask lazy evaluation")
         try:
             base = ddf_with_target[['country_code', 'year', self.target_column]].rename(
                 columns={self.target_column: 'dropout_rate_t'}
@@ -426,21 +399,21 @@ class DataLakeArchitectureML(BaseArchitectureML):
             merged = dd.merge(merged, prev3[['country_code', 'year', 'dropout_rate_lag_3']],
                               on=['country_code', 'year'], how='left')
             ddf_with_target = merged
-            print("[FEATURE] dropout_rate_lag_2 e dropout_rate_lag_3 criados (join country/year-k)")
+            print("  dropout_rate_lag_2 e dropout_rate_lag_3 criados (join country/year-k)")
         except Exception as e:
-            print(f"[AVISO] Falha ao criar dropout_rate_lag_2: {e}")
+            print(f"  [WARN] Falha ao criar dropout_rate_lag_2: {e}")
         
         return ddf_with_target
     
     def _compute_target_statistics(self, ddf: dd.DataFrame) -> Dict[str, float]:
         """
-        Computa estatísticas descritivas científicas da variável target via Dask distribuído.
+        Computa estatísticas descritivas da variável target via Dask distribuído.
         
         Args:
             ddf: DataFrame Dask com variável target criada
             
         Returns:
-            Dicionário com estatísticas float64 para análise científica
+            Dicionário com estatísticas float64 para análise
             
         Estatísticas computadas:
             - Momentos: média, desvio padrão (não enviesado)
@@ -449,10 +422,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
         Otimização distribuída:
             Única chamada dask.compute() para minimizar materialização do
-            grafo computacional, crítico para datasets >10GB que não
-            cabem em memória (Rocklin, 2015).
-            
-        Complexidade: O(n/p) onde p = número de partições Dask
+            grafo computacional.
         """
         # Computação em lote otimizada para eficiência distribuída
         stats_batch = {
@@ -467,13 +437,13 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # Única chamada compute para máxima eficiência
         computed = dask.compute(stats_batch)[0]
         
-        # Conversão para float64 para consistência científica
+        # Conversão para float64 para consistência
         return {k: float(v) for k, v in computed.items()}
     
     def _validate_temporal_folds(self, ddf: dd.DataFrame, folds: List[Dict]) -> None:
         """Validação temporal  com TemporalValidator."""
-        print("   ↪ Validando folds temporais...")
-        
+        print("Validando folds temporais")
+
         # Validação via TemporalValidator centralizado
         for fold in folds:
             # Validar integridade temporal usando anos
@@ -517,10 +487,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
             computed_fold = dask.compute(fold_stats)[0]
             fold.update(computed_fold)
             
-            print(f"\n   ↪ FOLD {fold['fold_id']} - Validação:")
-            print(f"      Train: {fold['train_count']} obs, {fold['train_countries']} países")
-            print(f"      Val: {fold['val_count']} obs, {fold['val_countries']} países")
-            print(f"      Test: {fold['test_count']} obs, {fold['test_countries']} países")
+            print(f"\n  Fold {fold['fold_id']}:")
+            print(f"    Train: {fold['train_count']} obs, {fold['train_countries']} paises")
+            print(f"    Val: {fold['val_count']} obs, {fold['val_countries']} paises")
+            print(f"    Test: {fold['test_count']} obs, {fold['test_countries']} paises")
     
     def get_numeric_features(self, ddf: dd.DataFrame) -> List[str]:
         """
@@ -540,11 +510,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
             1. Tipos numéricos: int*, float*, complex (NumPy hierarchy)
             2. Exclusão automática: Identificadores temporais/geográficos, targets
             3. Preservação de ordem: Determinismo para reprodutibilidade
-            
-        Vantagem vs SQL:
-            Type inference dinâmico detecta features numéricas sem
-            necessidade de schema pré-definido, suportando evolução
-            estrutural comum em Data Lakes (Kleppmann, 2017).
             
         Limitações:
             - Não detecta variáveis categóricas numéricas (códigos, IDs)
@@ -573,7 +538,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
     def compute_feature_correlations(self, ddf: dd.DataFrame,
                                     features: List[str]) -> Dict[str, float]:
         """
-        Computa correlações de Pearson feature-target via amostragem científica.
+        Computa correlações de Pearson feature-target via amostragem.
         
         Args:
             ddf: DataFrame Dask com dados educacionais completos
@@ -587,7 +552,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             2. Pandas correlation: Cálculo preciso de correlação após materialização
             3. Equivalência SQL: Resultados idênticos ao Data Warehouse para benchmarking
             
-        Amostragem científica:
+        Amostragem:
             - Tamanho ótimo: min(10k, total_rows) baseado em Central Limit Theorem
             - Seed reprodutível: Garante determinismo entre execuções
             - Random sampling: Preserva distribuição populacional (Cochran, 1977)
@@ -597,18 +562,12 @@ class DataLakeArchitectureML(BaseArchitectureML):
             da amostra é necessária. Overhead computacional é aceitável pois
             correlação é step único na seleção de features.
             
-        Complexidade: O(s×f) onde s=sample_size, f=num_features
-        
-        Referências:
-            Cochran, W. G. (1977). Sampling techniques (3rd ed.). Wiley.
-            Pearson, K. (1895). Mathematical contributions to evolution.
         """
-        print("[CORRELAÇÃO] Computando associação linear via amostragem científica")
+        print("Analisando correlacoes feature-target")
         
         target_col = self.target_column
         correlations = {}
         
-        # === Amostragem científica reprodutível (configurável) ===
         total_rows = int(ddf.index.size.compute())
         use_sampling = bool(self.config.get('correlation_sampling', True))
         min_sample = int(self.config.get('correlation_min_sample_size', 5000))
@@ -621,20 +580,15 @@ class DataLakeArchitectureML(BaseArchitectureML):
             sample_size = total_rows
             sample_frac = 1.0
 
-        print(f"[AMOSTRAGEM] {sample_size:,}/{total_rows:,} observações ({sample_frac:.1%})")
-        print("[SEED] Configurando amostragem reprodutível...")
+        print(f"  Amostragem: {sample_size:,}/{total_rows:,} ({sample_frac:.1%})")
 
-        # Amostragem distribuída Dask com seed científico (ou full-scan)
         sample_ddf = ddf if sample_frac >= 0.9999 else ddf.sample(
             frac=sample_frac,
             random_state=self.config['random_seed']
         )
         sample_df = sample_ddf.compute()  # Materialização para Pandas
         
-        print(f"[MATERIALIZAÇÃO] Amostra de {len(sample_df):,} obs para análise Pandas")
-        
-        # === Cálculo de correlação preciso via Pandas ===
-        print(f"[PEARSON] Calculando correlações para {len(features)} features...")
+        print(f"  Amostra materializada: {len(sample_df):,} obs, {len(features)} features")
         
         successful_correlations = 0
         failed_features = []
@@ -645,10 +599,8 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 continue
                 
             try:
-                # Correlação de Pearson com tratamento 
                 corr = sample_df[feat].corr(sample_df[target_col])
                 
-                # Valor absoluto para ranking por força da associação
                 if pd.isna(corr):
                     correlations[feat] = 0.0
                 else:
@@ -660,20 +612,16 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 correlations[feat] = 0.0
                 failed_features.append(feat)
         
-        # === Relatório científico ===
-        print(f"[RESULTADO] {successful_correlations}/{len(features)} correlações bem-sucedidas")
-        
+        print(f"  {successful_correlations}/{len(features)} correlacoes calculadas")
+
         if failed_features:
-            print(f"[AVISOS] {len(failed_features)} features com erro: {failed_features[:3]}")
-        
-        # Estatísticas agregadas
+            print(f"  [WARN] {len(failed_features)} features com erro: {failed_features[:3]}")
+
         valid_correlations = [r for r in correlations.values() if r > 0]
         if valid_correlations:
             avg_corr = sum(valid_correlations) / len(valid_correlations)
             max_corr = max(valid_correlations)
-            print(f"[ESTATÍSTICAS] Correlação média: {avg_corr:.3f}, máxima: {max_corr:.3f}")
-        
-        print("[STATUS] ✓ Análise de correlação concluída com equivalência SQL")
+            print(f"  Correlacao media: {avg_corr:.3f}, maxima: {max_corr:.3f}")
         
         return correlations
     
@@ -697,59 +645,45 @@ class DataLakeArchitectureML(BaseArchitectureML):
         Algoritmo greedy:
             1. Primeira feature sempre aceita (baseline)
             2. Features subsequentes aceitas se max |r| < threshold
-            3. Ordem preservada para determinismo científico
+            3. Ordem preservada para determinismo
 
         Amostragem híbrida Dask-Pandas:
             - Dask: Amostragem distribuída eficiente para datasets >10GB
             - Pandas: Matriz de correlação precisa após materialização
             - Equivalência: Resultados idênticos ao Data Warehouse SQL
 
-        Referências:
-            Dormann, C. F., et al. (2013). Collinearity: a review of methods
-            to deal with it and a simulation study evaluating their performance.
         """
         if len(features) <= 1:
-            print("[COLLINEARITY] Menos de 2 features - análise desnecessária")
+            print("  Menos de 2 features - colinearidade desnecessaria")
             return features
 
-        print(f"[COLLINEARITY] Executando análise de multicolinearidade para {len(features)} features")
-        print("━" * 50)
+        print(f"Filtrando colinearidade: {len(features)} features")
 
-        # === Configuração de amostragem científica ===
+        # === Configuração de amostragem ===
         total_rows = float(ddf.index.size.compute())
 
-        # Critérios baseados em configuração científica
         min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
         sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
 
         min_sample_size = max(min_sample_absolute, int(total_rows * sample_fraction))
         sample_frac = min(min_sample_size / total_rows, 1.0)
 
-        print(f"[AMOSTRAGEM] {min_sample_size:,} registros ({sample_frac:.1%})")
-        print(f"[CRITÉRIO] max(config={min_sample_absolute}, {sample_fraction:.0%}×dataset)")
+        print(f"  Amostragem: {min_sample_size:,} registros ({sample_frac:.1%})")
 
         try:
             # === Amostragem distribuída Dask ===
-            print("[DASK] Executando amostragem distribuída...")
             corr_sample_ddf = ddf[features].sample(
                 frac=sample_frac,
                 random_state=self.config['random_seed']
             )
 
-            # === Materialização Pandas para correlação precisa ===
-            print("[PANDAS] Materializando amostra para análise de correlação...")
             corr_data = corr_sample_ddf.compute().dropna()
 
             actual_sample_size = len(corr_data)
-            print(f"[CONFIRMAÇÃO] {actual_sample_size:,} observações válidas pós-dropna")
+            print(f"  {actual_sample_size:,} observacoes validas pos-dropna")
 
             if actual_sample_size > 10:  # Mínimo estatístico
-                # === Construção de matriz de correlação ===
-                print("[MATRIZ] Computando correlações par-a-par...")
                 corr_matrix = corr_data.corr().abs()
-
-                # === Algoritmo greedy pairwise (equivalente Data Warehouse) ===
-                print(f"[ALGORITMO] Aplicando seleção greedy com threshold {threshold}")
 
                 selected = []
                 rejected_count = 0
@@ -776,32 +710,28 @@ class DataLakeArchitectureML(BaseArchitectureML):
                         else:
                             rejected_count += 1
                             if rejected_count <= 3:
-                                print(f"  → Rejeitado {feature}: r={max_corr:.3f} com {worst_pair}")
+                                print(f"    Rejeitado {feature}: r={max_corr:.3f} com {worst_pair}")
 
-                # === Relatório científico ===
                 reduction_rate = ((len(features) - len(selected)) / len(features)) * 100
-                print(f"\n[RESULTADO] Filtragem de colinearidade concluída:")
-                print(f"  → Features originais: {len(features)}")
-                print(f"  → Features selecionadas: {len(selected)}")
-                print(f"  → Redução: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
-                print(f"  → Equivalência: Algoritmo idêntico ao Data Warehouse SQL")
+                print(f"  Originais: {len(features)}, selecionadas: {len(selected)}, "
+                      f"removidas: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
 
                 return selected
 
             else:
-                print(f"[FALLBACK] Amostra inadequada ({actual_sample_size}≤10) - retornando top-10")
+                print(f"  Amostra inadequada ({actual_sample_size}<=10) - fallback top-10")
                 return features[:10]
 
         except Exception as e:
             self.logger.error(f"Erro na filtragem de colinearidade: {e}")
-            print(f"[ERRO] Filtragem de colinearidade falhou: {e}")
-            print("[FALLBACK] Retornando top-10 features como segurança")
+            print(f"[ERROR] Filtragem de colinearidade falhou: {e}")
+            print("  Fallback: retornando top-10 features")
             return features[:10]
     
     @log_ml_pipeline('feature_engineering')
     def prepare_features(self, ddf: dd.DataFrame, selected_features: List[str]) -> dd.DataFrame:
         """
-        Executa feature engineering científico com symmetric log transform distribuída.
+        Executa feature engineering com symmetric log transform distribuída.
         
         Args:
             ddf: DataFrame Dask com features selecionadas via filtragem de colinearidade
@@ -830,40 +760,35 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
         Equivalência arquitetural:
             Implementa mesmas transformações que Data Warehouse via SQL,
-            garantindo comparabilidade científica para benchmarking.
+            garantindo comparabilidade para benchmarking.
             
-        Logging científico:
+        Logging:
             Captura métricas de qualidade (missing%, dimensionalidade) para
             auditoria e reprodutibilidade do pipeline ML.
             
-        Referências:
-            Bellman, R. (1961). Adaptive control processes. Princeton.
         """
-        print("\n[FEATURE ENGINEERING] Executando transformações científicas distribuídas")
-        print("━" * 70)
+        print("\nFeature engineering")
 
         # === Cópia defensiva para preservar DataFrame original ===
-        print("[PREPARAÇÃO] Criando cópia de trabalho...")
         ddf_work = ddf.copy()
 
         # === Transformação, log simétrico: T(x) = sign(x) * ln(|x| + 1) ===
-        print("[TRANSFORMAÇÃO] Aplicando symmetric log transform a top-5 features")
         
         # Critério: Limitar escopo por curse of dimensionality
         features_to_transform = selected_features[:5] if len(selected_features) > 5 else selected_features
         transformed_count = 0
         
-        print(f"[ESCOPO] {len(features_to_transform)} features selecionadas para transformação:")
+        print(f"  Transformando {len(features_to_transform)} features (symmetric log):")
         
         # Aplicação de transformação feature por feature
         for feat in features_to_transform:
             if feat not in ddf_work.columns:
-                print(f"  → {feat}: AUSENTE (ignorado)")
+                print(f"    {feat}: AUSENTE (ignorado)")
                 continue
-            
+
             transform_col = f"{feat}_log_transform"
-            
-            print(f"  → {feat} → {transform_col}")
+
+            print(f"    {feat} -> {transform_col}")
             
             ddf_work[transform_col] = ddf_work[feat].apply(
                 lambda x: np.sign(x) * np.log(np.abs(x) + 1) if pd.notna(x) else np.nan,
@@ -871,10 +796,9 @@ class DataLakeArchitectureML(BaseArchitectureML):
             )
             transformed_count += 1
         
-        print(f"[RESULTADO] {transformed_count} symmetric log transforms aplicadas")
-        
+        print(f"  {transformed_count} log transforms aplicadas")
+
         # === Construção de dataset ML final ===
-        print("[ASSEMBLY] Construindo dataset final para modelagem...")
         
         # Metadados essenciais para ML temporal
         ml_features = ['country_code', 'year', self.target_column]
@@ -899,16 +823,13 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # Filtrar apenas colunas que existem no DataFrame
         ml_features = [col for col in ml_features if col in ddf_work.columns]
         
-        print(f"[DIMENSIONALIDADE] Dataset ML final:")
-        print(f"  → Metadados: 3 (country_code, year, target)")
-        print(f"  → Features originais: {len(selected_features)}")
-        print(f"  → Features transformadas: {len(transformed_cols)}")
-        print(f"  → Total variáveis: {len(ml_features)}")
+        print(f"  Dataset ML final: {len(ml_features)} variaveis "
+              f"({len(selected_features)} originais, {len(transformed_cols)} transformadas)")
         
         # === Seleção final com preservação de estrutura Dask ===
         result_ddf = ddf_work[ml_features]
         
-        # === Logging científico para auditoria ===
+        # === Logging para auditoria ===
         try:
             total_rows = int(ddf.index.size.compute())
             sample_size = min(100, total_rows)
@@ -929,26 +850,26 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 missing_pct=missing_pct
             )
             
-            print(f"[QUALIDADE] {missing_pct:.1f}% valores faltantes (amostra n={sample_size})")
+            print(f"  {missing_pct:.1f}% valores faltantes (amostra n={sample_size})")
             
         except Exception as e:
             self.logger.warning(f"Erro ao computar estatísticas de qualidade: {e}")
-            print(f"  ⚠ Aviso: Estatísticas de qualidade indisponíveis: {e}")
+            print(f"  [WARN] Estatisticas de qualidade indisponiveis: {e}")
         
-        print("[STATUS] ✓ Feature engineering concluído - dataset pronto para ML temporal")
+        print("  Feature engineering concluido")
         
         return result_ddf
     
     def save_folds(self, ddf: dd.DataFrame, folds: List[Dict]) -> None:
         """Salva folds"""
-        print("\n🖧 SALVANDO FOLDS...")
+        print("\nSalvando folds")
         
         for fold in folds:
             fold_id = fold['fold_id']
             fold_dir = f"{self.prep_dir}/folds/fold_{fold_id}"
             os.makedirs(fold_dir, exist_ok=True)
             
-            print(f"   ↪ Processando fold {fold_id}...")
+            print(f"  Processando fold {fold_id}...")
             
             train_filter = (
                 (ddf['year'] >= fold['train_start']) &
@@ -984,10 +905,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 self._safe_write_parquet_file(val_df, f'{fold_dir}/val_data_lake.parquet')
                 self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_lake.parquet')
                 
-                print(f"   ✔ Fold {fold_id} salvo: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
+                print(f"    Fold {fold_id}: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
                 
             except Exception as e:
-                print(f"   ✖ Erro ao salvar fold {fold_id}: {e}")
+                print(f"    [ERROR] Salvamento fold {fold_id}: {e}")
                 raise
             
             fold_metadata = {
@@ -997,16 +918,16 @@ class DataLakeArchitectureML(BaseArchitectureML):
             }
             self.save_fold_metadata(fold_metadata, fold_dir)
         
-        # Master data 
-        print("\n   ↪ Salvando master data...")
+        # Master data
+        print("\n  Salvando master data...")
         try:
             master_path = f"{self.prep_dir}/master_data_data_lake.parquet"
             master_df = ddf.compute().reset_index(drop=True)
             self._safe_write_parquet_file(master_df, master_path)
-            print(f"   ✔ Master data salvo: {len(master_df)} registros")
+            print(f"    Master data: {len(master_df)} registros")
             
         except Exception as e:
-            print(f"   ✖ Erro ao salvar master data: {e}")
+            print(f"    [ERROR] Salvamento master data: {e}")
             raise
         
         # Configuração master 
@@ -1017,7 +938,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         
         self.save_master_config(folds, total_obs, total_countries, (year_min, year_max))
         
-        print(f"   ✔ Data Lake: Folds salvos com paradigma Schema-on-Read")
+        print(f"  Data Lake: folds salvos")
     
     
     def _load_from_partitioned_raw_distributed(self) -> dd.DataFrame:
@@ -1031,7 +952,6 @@ class DataLakeArchitectureML(BaseArchitectureML):
 
         # Conversão para formato wide se necessário
         if 'indicator_name' in ddf.columns:
-            print("   Convertendo para formato wide (Schema-on-Read)...")
             ddf = self._convert_to_wide_format_distributed(ddf)
         
         return ddf
@@ -1059,11 +979,11 @@ class DataLakeArchitectureML(BaseArchitectureML):
             
             ddf_wide = dd.from_pandas(df_wide, npartitions=max(1, len(df_wide) // 10000))
             
-            print(f"   ✔ Conversão concluída: {len(ddf_wide.columns)} colunas")
+            print(f"    Conversao concluida: {len(ddf_wide.columns)} colunas")
             return ddf_wide
             
         except Exception as e:
-            print(f"   ✖ Erro na conversão wide: {e}")
+            print(f"    [ERROR] Conversao wide: {e}")
             return ddf
     
     def run_setup_with_monitoring(self) -> Dict[str, Any]:
@@ -1085,48 +1005,35 @@ class DataLakeArchitectureML(BaseArchitectureML):
 
 def main():
     """Executa o pipeline Data Lake end-to-end para validação local."""
-    print("="*80)
-    print("TESTE PIPELINE ML DATA LAKE - METODOLOGIA DISTRIBUÍDA CIENTÍFICA".center(80))
-    print("="*80)
-    
+    print("=" * 80)
+    print("Pipeline ML Data Lake")
+    print("=" * 80)
+
     try:
-        # Inicialização com configurações científicas otimizadas
-        print("\n[INICIALIZAÇÃO] Configurando pipeline Data Lake distribuído...")
         setup = DataLakeArchitectureML()
-        
-        # Execução com monitoramento científico completo
-        print("\n[EXECUÇÃO] Iniciando pipeline científico com monitoramento completo...")
         results = setup.run_setup_with_monitoring()
         
-        # Relatório científico detalhado
-        print("\n" + "="*80)
-        print("RELATÓRIO CIENTÍFICO DO PIPELINE DATA LAKE".center(80))
-        print("="*80)
-        
         if results.get('status') == 'success':
-            print("✓ Pipeline Data Lake executado com SUCESSO")
-            print(f"  → Paradigma: {results.get('paradigm', 'N/A')}")
-            print(f"  → Features selecionadas: {results.get('features_selected', 'N/A')}")
-            print(f"  → Folds temporais: {results.get('folds_created', 'N/A')}")
-            print(f"  → Processamento: {results.get('processing_time', 'N/A')}s")
+            print("Pipeline ok")
+            print(f"  Paradigma: {results.get('paradigm', 'N/A')}")
+            print(f"  Features selecionadas: {results.get('features_selected', 'N/A')}")
+            print(f"  Folds temporais: {results.get('folds_created', 'N/A')}")
+            print(f"  Processamento: {results.get('processing_time', 'N/A')}s")
         else:
-            print("✗ Pipeline Data Lake FALHOU")
+            print("[ERROR] Pipeline Data Lake falhou")
             if 'error' in results:
-                print(f"  → Erro: {results['error']}")
-            
-        print(f"\n[DETALHES] Resultados completos:")
+                print(f"  Erro: {results['error']}")
+
+        print(f"\nResultados:")
         for key, value in results.items():
             if key not in ['status', 'error']:
-                print(f"  → {key}: {value}")
+                print(f"  {key}: {value}")
                 
     except Exception as e:
-        print(f"\n✗ ERRO CRÍTICO no pipeline Data Lake: {e}")
-        print("   → Verificar se dados foram processados pelo data_lake/processor.py")
-        print("   → Verificar configuração Dask e disponibilidade de memória")
-        print("   → Consultar logs detalhados para debugging")
+        print(f"\n[ERROR] Pipeline Data Lake falhou: {e}")
+        print("  Verificar se dados foram processados pelo data_lake/processor.py")
         return {'success': False, 'error': str(e)}
     
-    print("\n" + "="*80)
 
 
 if __name__ == "__main__":

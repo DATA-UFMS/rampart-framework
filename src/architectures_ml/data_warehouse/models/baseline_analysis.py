@@ -26,7 +26,6 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
-# Adicionar path para configuração e módulos centralizados
 core_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'core')
 core_path = os.path.abspath(core_path)
 if core_path not in sys.path:
@@ -38,8 +37,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from config import get_absolute_output_path
-from models.baseline import BaselineModelFactory, BaselineEnsemble
-from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+from src.core.scientific_config import setup_reproducibility
 
 setup_reproducibility()
 
@@ -74,10 +72,6 @@ class BaselineModelAnalysisDataWarehouse:
     def __init__(self):
         """Inicializa a análise baseline para arquitetura Data Warehouse."""
         print("Inicializando análise baseline Data Warehouse")
-        print("=" * 70)
-        print("Pesquisa: Comparação de arquiteturas ML para dropout educacional")
-        print("Paradigma: Data Warehouse Consumer")
-        print("Pattern: ML Data Warehouse Consumer com Feature Store views")
         
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json")
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/models")
@@ -91,24 +85,20 @@ class BaselineModelAnalysisDataWarehouse:
         if not os.path.exists(self.db_path):
             raise FileNotFoundError(f"DuckDB Data Warehouse não encontrado: {self.db_path}")
         
-        print("Inicializando Connection Manager para ML workloads...")
         try:
             self.conn_manager = DuckDBConnectionManager(
                 db_path=self.db_path,
                 max_retries=3,
                 retry_delay=1.0
             )
-            print(f"   Connection Manager inicializado: {self.db_path}")
+            print(f"   Connection Manager: {self.db_path}")
         except Exception as e:
             raise RuntimeError(f"Falha ao inicializar Connection Manager: {e}")
-        
-        print("Carregando configuração dos folds...")
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
         
         self.target_col = 'dropout_rate_data_warehouse'
-        # Garantir que a coluna target exista no DW (compatibilidade)
         self._ensure_target_column()
         
         self._verify_feature_store_views()
@@ -125,7 +115,7 @@ class BaselineModelAnalysisDataWarehouse:
                 f"SELECT COUNT(*) > 0 FROM information_schema.columns WHERE table_name = 'analytics_wide' AND column_name = '{self.target_col}'"
             )
             if not exists:
-                print(f"   Target '{self.target_col}' ausente — criando coluna e populando...")
+                print(f"   Target '{self.target_col}' ausente - criando coluna...")
                 self.conn_manager.execute_sql_no_return(
                     f"ALTER TABLE analytics_wide ADD COLUMN IF NOT EXISTS {self.target_col} DOUBLE"
                 )
@@ -139,13 +129,13 @@ class BaselineModelAnalysisDataWarehouse:
                     END
                     """
                 )
-                print("   ✓ Target criado/populado em analytics_wide")
+                print("   Target criado/populado em analytics_wide")
         except SQLProcessingError as e:
             raise RuntimeError(f"Falha ao garantir coluna target: {e}")
     
     def _verify_feature_store_views(self):
         """Verificar se views temporais existem no Data Warehouse."""
-        print("   Verificando views temporais do Data Warehouse...")
+        print("   Verificando views temporais...")
         
         try:
             table_exists = self.conn_manager.execute_scalar(f"""
@@ -182,7 +172,7 @@ class BaselineModelAnalysisDataWarehouse:
     
     def _load_data_summary_from_views(self):
         """Carregar resumo dos dados via queries diretas às views."""
-        print("   Carregando resumo dos dados via Data Warehouse views...")
+        print("   Carregando resumo dos dados via views...")
         
         try:
             # Preferir feature store view (garante presença do target)
@@ -207,7 +197,7 @@ class BaselineModelAnalysisDataWarehouse:
             if not target_exists:
                 raise ValueError(f"Target {self.target_col} não encontrado na tabela analytics_wide")
             
-            print(f"   Target stats via SQL: μ={target_mean:.2f}%, σ={target_std:.2f}%")
+            print(f"   Target stats: mean={target_mean:.2f}%, std={target_std:.2f}%")
             
             if negative_target > 0:
                 print(f"   Target inválido: {negative_target} valores negativos detectados")
@@ -403,23 +393,23 @@ class BaselineModelAnalysisDataWarehouse:
             feature_count = len([col for col in df.columns if col not in ['country_code', 'year', self.target_col]])
             
             if view_exists:
-                print(f"      ✔ Dados carregados da view temporal: {len(df)} registros, {feature_count} features")
+                print(f"      Dados da view temporal: {len(df)} registros, {feature_count} features")
             else:
-                print(f"       🛈Dados carregados da tabela base: {len(df)} registros, {feature_count} features")
+                print(f"      Dados da tabela base: {len(df)} registros, {feature_count} features")
             
             return df
             
         except SQLProcessingError as e:
-            raise RuntimeError(f"✖ Erro ao carregar dados do fold {fold_id} split {split}: {e}")
+            raise RuntimeError(f"Erro ao carregar dados do fold {fold_id} split {split}: {e}")
     
     def cleanup(self):
         """Limpar recursos do gerenciador de conexões."""
         if hasattr(self, 'conn_manager') and self.conn_manager:
             try:
                 self.conn_manager.close_connection()
-                print("   ✔ Connection Manager fechado")
+                print("   Connection Manager fechado")
             except Exception as e:
-                print(f"    🛈Erro ao fechar Connection Manager: {e}")
+                print(f"   Erro ao fechar Connection Manager: {e}")
     
     def analyze_target_distribution(self) -> Dict:
         """
@@ -428,8 +418,7 @@ class BaselineModelAnalysisDataWarehouse:
         Returns:
             Dict: Estatísticas da distribuição do target incluindo temporal e por país
         """
-        print(f"\n↪ ANÁLISE DA DISTRIBUIÇÃO DO TARGET VIA DATA WAREHOUSE")
-        print("=" * 60)
+        print(f"\nAnálise da distribuição do target Data Warehouse")
         
         analysis = {}
         
@@ -469,7 +458,7 @@ class BaselineModelAnalysisDataWarehouse:
                     'missing_rate': float(missing_count / total_count if total_count > 0 else 0)
                 }
             
-            print(f"   🖈  Target Data Warehouse via DW ({self.target_col}):")
+            print(f"   Target ({self.target_col}):")
             print(f"      Média: {target_stats['mean']:.2f}%")
             print(f"      Desvio: {target_stats['std']:.2f}%")
             print(f"      Range: {target_stats['min']:.2f}% - {target_stats['max']:.2f}%")
@@ -503,7 +492,7 @@ class BaselineModelAnalysisDataWarehouse:
                 first_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE year = {first_year} AND {self.target_col} IS NOT NULL")
                 last_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE year = {last_year} AND {self.target_col} IS NOT NULL")
                 
-                print(f"\n   🛈 Evolução temporal Data Warehouse via DW:")
+                print(f"\n   Evolução temporal Data Warehouse:")
                 print(f"      Primeiro ano ({first_year}): {first_mean:.1f}%")
                 print(f"      Último ano ({last_year}): {last_mean:.1f}%")
                 
@@ -534,7 +523,7 @@ class BaselineModelAnalysisDataWarehouse:
                 max_dropout_country_code = self.conn_manager.execute_scalar(f"SELECT country_code FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code ORDER BY avg_dropout DESC LIMIT 1)")
                 country_variation = self.conn_manager.execute_scalar(f"SELECT STDDEV(avg_dropout) FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code)")
                 
-                print(f"\n    🜨 Variação por país via DW:")
+                print(f"\n   Variação por país:")
                 print(f"      Menor dropout: {min_dropout_mean:.1f}% ({min_dropout_country_code})")
                 print(f"      Maior dropout: {max_dropout_mean:.1f}% ({max_dropout_country_code})")
                 print(f"      Variação entre países: {country_variation:.1f}% (std)")
@@ -544,7 +533,7 @@ class BaselineModelAnalysisDataWarehouse:
             return analysis
             
         except SQLProcessingError as e:
-            print(f"   ✖ Erro na análise de distribuição: {e}")
+            print(f"   [ERROR] Análise de distribuição: {e}")
             return {
                 'architecture': 'data_warehouse',
                 'error': str(e),
@@ -556,30 +545,26 @@ class BaselineModelAnalysisDataWarehouse:
         Testar modelos baseline científicos via Data Warehouse.
         
         Correções metodológicas implementadas:
-        ✔ Lag mínimo de 2 anos para evitar vazamento temporal
-        ✔ Validação walk-forward científica correta
-        ✔ Gaps temporais apropriados entre conjuntos
+        - Lag mínimo de 2 anos para evitar vazamento temporal
+        - Validação walk-forward científica correta
+        - Gaps temporais apropriados entre conjuntos
         
         Returns:
             Dict: Resultados dos baselines com validação temporal rigorosa
         """
         print(f"\nBaselines com validação temporal")
-        print("=" * 60)
-        print("Metodologia: Vazamento temporal eliminado com lag >= 2 anos")
-        print("Validação: Walk-forward temporal com gaps")
         
         baseline_results = {}
         
         for fold_id, fold in enumerate(self.folds):
-            print(f"\nFold {fold_id} via Data Warehouse: Train({fold['train_start']}-{fold['train_end']}) → Val({fold['val_start']}-{fold['val_end']}) → Test({fold['test_start']}-{fold['test_end']})")
+            print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) -> Val({fold['val_start']}-{fold['val_end']}) -> Test({fold['test_start']}-{fold['test_end']})")
             
             try:
-                print(f"   Carregando dados do fold {fold_id}...")
                 train_data = self._load_ml_fold_data(fold_id, 'train')
                 val_data = self._load_ml_fold_data(fold_id, 'val')
                 test_data = self._load_ml_fold_data(fold_id, 'test')
-                
-                print(f"   Dados carregados: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
+
+                print(f"   Dados: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
                 print(f"   Gaps: Train-Val={fold['val_start']-fold['train_end']-1}yr, Val-Test={fold['test_start']-fold['val_end']-1}yr")
                 print(f"   Features disponíveis: {len(train_data.columns)} colunas")
                 
@@ -666,7 +651,7 @@ class BaselineModelAnalysisDataWarehouse:
             
             MIN_LAG = 2
             
-            print(f"      Processando Naive baseline via SQL...")
+            print(f"      Naive baseline...")
             
             val_pred_naive = []
             for _, val_row in val_clean.iterrows():
@@ -719,7 +704,7 @@ class BaselineModelAnalysisDataWarehouse:
                 'method': 'naive_persistence_with_scientific_lag'
             }
             
-            print(f"      Processando Cross-Country baseline via SQL...")
+            print(f"      Cross-Country baseline...")
             
             val_pred_cross = []
             for _, val_row in val_clean.iterrows():
@@ -775,9 +760,6 @@ class BaselineModelAnalysisDataWarehouse:
                 'method': 'cross_country_average_excluding_target'
             }
             
-            print(f"      Naive baseline concluído")
-            print(f"      Cross-Country baseline concluído")
-
             # Agregar WAPE/MASE para Naive
             try:
                 test_wape_naive = float((np.abs(y_test - test_pred_naive)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None
@@ -791,7 +773,6 @@ class BaselineModelAnalysisDataWarehouse:
                 'mase_scale_train': mase_scale
             })
             
-            # RESUMO CIENTÍFICO DO FOLD
             print(f"   Resultados (Val | Test):")
             print(f"      Global Mean:      R²={val_r2_global:.3f} | {test_r2_global:.3f}")
             print(f"      Linear Trend:     R²={val_r2_trend:.3f} | {test_r2_trend:.3f}")  
@@ -813,146 +794,23 @@ class BaselineModelAnalysisDataWarehouse:
                 'generalization_gap': generalization_gap
             }
             
-            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} → Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
+            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
             
             # Análise mais nuançada do gap de generalização
             abs_gap = abs(generalization_gap)
             if abs_gap <= 0.05:
-                print(f"      ✔ Excelente estabilidade: Gap muito baixo (≤0.05)")
+                print(f"      Excelente estabilidade: Gap muito baixo (<=0.05)")
             elif abs_gap <= 0.1:
-                print(f"      ✔ Boa estabilidade: Gap dentro do esperado (≤0.10)")
+                print(f"      Boa estabilidade: Gap dentro do esperado (<=0.10)")
             elif abs_gap <= 0.15:
-                print(f"      🖈  Gap moderado: Variação temporal aceitável ({abs_gap:.3f})")
+                print(f"      Gap moderado: Variação temporal aceitável ({abs_gap:.3f})")
             else:
-                print(f"       🛈Gap elevado: Possível instabilidade temporal ({abs_gap:.3f})")
+                print(f"      Gap elevado: Possível instabilidade temporal ({abs_gap:.3f})")
             
             baseline_results[f'fold_{fold_id}'] = fold_results
         
         return baseline_results
-    
-    def test_ml_models(self) -> Dict:
-        """
-        Testar modelos ML avançados usando módulo centralizado.
-        
-        Utiliza BaselineModelFactory para criar e treinar modelos
-        RandomForest, XGBoost e LightGBM com queries diretas ao DW.
-        
-        Returns:
-            Dict: Resultados dos modelos ML para todos os folds
-        """
-        print(f"\nModelos ML avançados via Data Warehouse")
-        print("=" * 60)
-        print("Modelos: RandomForest, XGBoost, LightGBM")
-        print("Backend: Queries diretas ao Data Warehouse")
-        
-        ml_results = {}
-        
-        available_models = BaselineModelFactory.get_available_models()
-        print(f"Modelos disponíveis: {', '.join(available_models)}")
-        
-        for fold_id, fold in enumerate(self.folds):
-            print(f"\nFold {fold_id}: ML Models Training via DW")
-            
-            try:
-                train_data = self._load_ml_fold_data(fold_id, 'train')
-                val_data = self._load_ml_fold_data(fold_id, 'val')
-                test_data = self._load_ml_fold_data(fold_id, 'test')
-                
-                if len(train_data) == 0 or len(test_data) == 0:
-                    print(f"   Fold {fold_id}: Dados insuficientes")
-                    continue
-                
-                print(f"   Dados: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
-                
-                # Selecionar features (excluir target e identificadores)
-                feature_cols = [col for col in train_data.columns
-                              if col not in [self.target_col, 'country_code', 'year']]
-                
-                X_train = train_data[feature_cols]
-                y_train = train_data[self.target_col]
-                X_val = val_data[feature_cols] if len(val_data) > 0 else None
-                y_val = val_data[self.target_col] if len(val_data) > 0 else None
-                X_test = test_data[feature_cols]
-                y_test = test_data[self.target_col]
-                
-                fold_ml_results = {}
-                
-                # Treinar cada modelo disponível
-                for model_type in ['rf', 'xgboost', 'lightgbm']:
-                    if model_type.upper().replace('_', '') in [m.upper() for m in available_models]:
-                        try:
-                            print(f"      Treinando {model_type}...")
-                            
-                            model = BaselineModelFactory.create_model(
-                                model_type=model_type,
-                                params=None,
-                            )
-                            
-                            # Treinar modelo
-                            model.train(X_train, y_train, X_val, y_val)
-                            
-                            # Avaliar no teste
-                            test_metrics = model.evaluate(X_test, y_test)
-                            
-                            # Obter feature importance se disponível
-                            feature_importance = model.get_feature_importance()
-                            
-                            fold_ml_results[model_type] = {
-                                'test_metrics': test_metrics,
-                                'feature_importance': feature_importance,
-                                'model_name': model.model_name
-                            }
-                            
-                            print(f"         R² Test: {test_metrics['r2']:.3f}, RMSE: {test_metrics['rmse']:.2f}")
-                            
-                        except Exception as e:
-                            print(f"         Erro ao treinar {model_type}: {e}")
-                            fold_ml_results[model_type] = {
-                                'error': str(e),
-                                'model_name': model_type
-                            }
-                
-                # Testar ensemble se houver múltiplos modelos
-                successful_models = [k for k, v in fold_ml_results.items() if 'error' not in v]
-                if len(successful_models) >= 2:
-                    try:
-                        print(f"      Treinando Ensemble...")
-                        
-                        ensemble_config = [(model_type, None, 1.0) for model_type in successful_models]
-                        ensemble = BaselineEnsemble(ensemble_config)
-                        
-                        # Treinar ensemble
-                        ensemble.train(X_train, y_train, X_val, y_val)
-                        
-                        # Avaliar ensemble
-                        ensemble_results = ensemble.evaluate(X_test, y_test)
-                        
-                        fold_ml_results['ensemble'] = {
-                            'test_metrics': ensemble_results['ensemble'],
-                            'individual_metrics': ensemble_results['individual'],
-                            'weights': ensemble_results['weights'],
-                            'models_used': successful_models
-                        }
-                        
-                        print(f"         Ensemble R² Test: {ensemble_results['ensemble']['r2']:.3f}")
-                        
-                    except Exception as e:
-                        print(f"         Erro ao criar ensemble: {e}")
-                
-                ml_results[f'fold_{fold_id}'] = fold_ml_results
-                
-                # Resumo do fold
-                print(f"   Resumo Fold {fold_id}:")
-                for model_name, results in fold_ml_results.items():
-                    if 'test_metrics' in results:
-                        print(f"      {model_name}: R²={results['test_metrics']['r2']:.3f}")
-                        
-            except Exception as e:
-                print(f"   Erro ao processar fold {fold_id}: {e}")
-                ml_results[f'fold_{fold_id}'] = {'error': str(e)}
-        
-        return ml_results
-    
+
     def analyze_predictability(self, baseline_results: Dict) -> Dict:
         """
         Analisar predictabilidade científica dos baselines Data Warehouse.
@@ -963,13 +821,7 @@ class BaselineModelAnalysisDataWarehouse:
         Returns:
             Dict: Análise de predictabilidade agregada com gaps de generalização
         """
-        print("\n🗲 ANÁLISE DE PREDICTABILIDADE CIENTÍFICA DATA WAREHOUSE")
-        print("=" * 60)
-        print(" 🢱 INTERPRETAÇÃO DOS GAPS DE GENERALIZAÇÃO:")
-        print("   • Gap = R²_validação - R²_teste")  
-        print("   • Gap pequeno (≤0.1): Modelo estável e confiável")
-        print("   • Gap moderado (0.1-0.2): Variação temporal esperada")
-        print("   • Gap alto (>0.2): Possível instabilidade ou overfitting")
+        print("\nAnálise de predictabilidade Data Warehouse")
         
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -1011,8 +863,7 @@ class BaselineModelAnalysisDataWarehouse:
                     'gaps': gaps
                 }
         
-        # ANÁLISE DETALHADA
-        print("   🖈  Performance out-of-sample (TEST SET) dos baselines científicos:")
+        print("   Performance out-of-sample (TEST SET) dos baselines:")
         for baseline, stats in all_test_scores.items():
             val_stats = all_val_scores[baseline]
             gap_stats = generalization_gaps[baseline]
@@ -1025,12 +876,11 @@ class BaselineModelAnalysisDataWarehouse:
             best_mean_val_r2 = all_val_scores[best_baseline_overall]['mean_r2']
             best_generalization_gap = generalization_gaps[best_baseline_overall]['mean_gap']
             
-            print(f"\n    ⚙ MELHOR BASELINE CIENTÍFICO: {best_baseline_overall}")
-            print(f"      🖈  Performance Validação: R² = {best_mean_val_r2:.3f}")
-            print(f"      ⚙ Performance Teste:     R² = {best_mean_test_r2:.3f}")
-            print(f"       🢱 Gap Generalização:     {best_generalization_gap:+.3f}")
+            print(f"\n   Melhor baseline: {best_baseline_overall}")
+            print(f"      Performance Validação: R² = {best_mean_val_r2:.3f}")
+            print(f"      Performance Teste:     R² = {best_mean_test_r2:.3f}")
+            print(f"      Gap Generalização:     {best_generalization_gap:+.3f}")
             
-            # DIAGNÓSTICO DE PREDICTABILIDADE
             predictability_analysis = {
                 'architecture': 'data_warehouse',
                 'methodology': 'scientific_baselines_with_temporal_lags',
@@ -1050,44 +900,42 @@ class BaselineModelAnalysisDataWarehouse:
                 }
             }
             
-            # CLASSIFICAÇÃO DE PREDICTABILIDADE
             if best_mean_test_r2 < 0:
                 predictability_analysis['predictability_level'] = 'very_low'
-                print(f"   ✖ PREDICTABILIDADE MUITO BAIXA: R²_test < 0")
-                print(f"       🢱 Interpretação: Modelo pior que baseline constante")
+                print(f"   Predictabilidade muito baixa: R²_test < 0")
+                print(f"      Interpretação: Modelo pior que baseline constante")
             elif best_mean_test_r2 < 0.05:
                 predictability_analysis['predictability_level'] = 'very_low'
-                print(f"    🛈PREDICTABILIDADE MUITO BAIXA: R²_test = {best_mean_test_r2:.3f}")
-                print(f"       🢱 Interpretação: Quase sem poder preditivo")
+                print(f"   Predictabilidade muito baixa: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretação: Quase sem poder preditivo")
             elif best_mean_test_r2 < 0.15:
                 predictability_analysis['predictability_level'] = 'low'
-                print(f"    🛈PREDICTABILIDADE BAIXA: R²_test = {best_mean_test_r2:.3f}")
-                print(f"       🢱 Interpretação: Poder preditivo limitado")
+                print(f"   Predictabilidade baixa: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretação: Poder preditivo limitado")
             elif best_mean_test_r2 < 0.35:
                 predictability_analysis['predictability_level'] = 'moderate'
-                print(f"   ✔ PREDICTABILIDADE MODERADA: R²_test = {best_mean_test_r2:.3f}")
-                print(f"       🢱 Interpretação: Poder preditivo razoável")
+                print(f"   Predictabilidade moderada: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretação: Poder preditivo razoável")
             else:
                 predictability_analysis['predictability_level'] = 'good'
-                print(f"   ✔ BOA PREDICTABILIDADE: R²_test = {best_mean_test_r2:.3f}")
-                print(f"       🢱 Interpretação: Bom poder preditivo")
+                print(f"   Boa predictabilidade: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretação: Bom poder preditivo")
             
-            # ANÁLISE DE ESTABILIDADE
             avg_generalization_gap = np.mean([gap_data['mean_gap'] for gap_data in generalization_gaps.values()])
             abs_avg_gap = abs(avg_generalization_gap)
-            
+
             if abs_avg_gap <= 0.05:
-                print(f"   ⚙ EXCELENTE ESTABILIDADE: Gap médio muito baixo ({avg_generalization_gap:+.3f})")
+                print(f"   Excelente estabilidade: Gap médio muito baixo ({avg_generalization_gap:+.3f})")
                 stability_level = "excellent"
             elif abs_avg_gap <= 0.1:
-                print(f"   ✔ BOA ESTABILIDADE: Gap médio dentro do esperado ({avg_generalization_gap:+.3f})")
+                print(f"   Boa estabilidade: Gap médio dentro do esperado ({avg_generalization_gap:+.3f})")
                 stability_level = "good"
             elif abs_avg_gap <= 0.15:
-                print(f"   🖈  ESTABILIDADE MODERADA: Variação temporal aceitável ({avg_generalization_gap:+.3f})")
+                print(f"   Estabilidade moderada: Variação temporal aceitável ({avg_generalization_gap:+.3f})")
                 stability_level = "moderate"
             else:
-                print(f"    🛈INSTABILIDADE DETECTADA: Gap médio elevado ({avg_generalization_gap:+.3f})")
-                print(f"       🢱 Possível overfitting ou forte variação temporal")
+                print(f"   Instabilidade detectada: Gap médio elevado ({avg_generalization_gap:+.3f})")
+                print(f"      Possível overfitting ou forte variação temporal")
                 stability_level = "low"
             
             publication_criteria = {
@@ -1096,28 +944,22 @@ class BaselineModelAnalysisDataWarehouse:
                 'stability_acceptable': abs_avg_gap <= 0.2  # Critério mais realista
             }
             
-            if all(publication_criteria.values()):
-                print(f"   ⚙ ADEQUADO PARA PUBLICAÇÃO: Metodologia rigorosa e estabilidade {stability_level}")
-                publication_ready = True
-            else:
+            if not all(publication_criteria.values()):
                 failed_criteria = [k for k, v in publication_criteria.items() if not v]
-                print(f"    🛈 REQUER ATENÇÃO: {', '.join(failed_criteria)}")
-                publication_ready = False
-            
+                print(f"   [WARN] Requer atenção: {', '.join(failed_criteria)}")
+
             predictability_analysis['stability_analysis'] = {
                 'avg_generalization_gap': float(avg_generalization_gap),
                 'stability_level': stability_level,
                 'publication_criteria': {k: bool(v) for k, v in publication_criteria.items()}
             }
-            predictability_analysis['publication_ready'] = bool(publication_ready)
             
         else:
             predictability_analysis = {
                 'architecture': 'data_warehouse',
                 'baseline_scores': {},
                 'predictability_level': 'unknown',
-                'scientific_validity': {'error': 'no_valid_results'},
-                'publication_ready': False
+                'scientific_validity': {'error': 'no_valid_results'}
             }
         
         return predictability_analysis
@@ -1135,7 +977,7 @@ class BaselineModelAnalysisDataWarehouse:
         Returns:
             Dict: Resultados completos salvos
         """
-        print(f"\n🖧  Salvando resultados ML Data Warehouse Consumer...")
+        print(f"\nSalvando resultados Data Warehouse...")
         
         full_results = {
             'architecture': 'data_warehouse_consumer',
@@ -1170,7 +1012,7 @@ class BaselineModelAnalysisDataWarehouse:
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
         
-        print(f"   ✔ Resultados Data Warehouse Consumer salvos: {results_file}")
+        print(f"   Resultados salvos: {results_file}")
         
         return full_results
     
@@ -1181,11 +1023,7 @@ class BaselineModelAnalysisDataWarehouse:
         Returns:
             Dict: Resultados completos da análise comparativa Data Warehouse vs Data Lake
         """
-        print(f"↪ ANÁLISE COMPLETA - ARQUITETURA DATA WAREHOUSE")
-        print("=" * 70)
-        print(f"🖈  COMPARAÇÃO: Data Warehouse vs Data Lake para ML")
-        print(f"⚙ OBJETIVO: Avaliar performance e capacidade arquitetural")
-        print(f"🗲  PATTERN: Direct view queries com Connection Manager")
+        print(f"Análise completa - arquitetura Data Warehouse")
         
         try:
             target_analysis = self.analyze_target_distribution()
@@ -1201,38 +1039,27 @@ class BaselineModelAnalysisDataWarehouse:
                                        predictability_analysis)
             
             # 5. Resumo final
-            print(f"\n⚙ RESUMO EXECUTIVO - ARQUITETURA DATA WAREHOUSE:")
-            print(f"   🖈  PESQUISA: Comparação de arquiteturas ML para dropout")
-            print(f"   🗲 Arquitetura: Data Warehouse Consumer")
-            print(f"   ⚙ Target: {self.target_col}")
-            print(f"   🖈  Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
-            print(f"    ⚙ Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
-            print(f"   🛈 R² Teste: {predictability_analysis.get('best_test_r2', 0):.3f}")
+            print(f"\nResumo - arquitetura Data Warehouse:")
+            print(f"   Target: {self.target_col}")
+            print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
+            print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
+            print(f"   R² Teste: {predictability_analysis.get('best_test_r2', 0):.3f}")
             
-            # Gap de generalização com contexto
             gap = predictability_analysis.get('generalization_gap', 0)
-            stability = predictability_analysis.get('stability_analysis', {}).get('stability_level', 'unknown')
-            
+
             if abs(gap) <= 0.05:
-                gap_status = f"🖈  Gap: {gap:+.3f} (EXCELENTE estabilidade)"
+                gap_status = f"Gap: {gap:+.3f} (excelente estabilidade)"
             elif abs(gap) <= 0.1:
-                gap_status = f"🖈  Gap: {gap:+.3f} (BOA estabilidade)"
+                gap_status = f"Gap: {gap:+.3f} (boa estabilidade)"
             elif abs(gap) <= 0.15:
-                gap_status = f"🖈  Gap: {gap:+.3f} (estabilidade moderada)"
+                gap_status = f"Gap: {gap:+.3f} (estabilidade moderada)"
             else:
-                gap_status = f"🖈  Gap: {gap:+.3f} (requer atenção)"
+                gap_status = f"Gap: {gap:+.3f} (requer atenção)"
                 
             print(f"   {gap_status}")
             
-            publication_status = predictability_analysis.get('publication_ready', False)
-            if publication_status:
-                print(f"    🢱 Status: ✔ ADEQUADO para publicação científica")
-            else:
-                print(f"    🢱 Status:  🛈 Requer atenção em alguns critérios")
-            
-            # Validações específicas do Data Warehouse
-            print(f"\n🗲 VALIDAÇÕES DATA WAREHOUSE:")
-
+            stability = predictability_analysis.get('stability_analysis', {}).get('stability_level', 'unknown')
+            print(f"   Estabilidade: {stability}")
             
             # Verificar se views temporais foram usadas
             views_used = 0
@@ -1253,30 +1080,23 @@ class BaselineModelAnalysisDataWarehouse:
                         fallbacks_used += 1
             
             if views_used > 0 and fallbacks_used == 0:
-                print(f"   Temporal Views: ✔ USADAS ({views_used} views)")
-                print(f"   🖈  Data Warehouse Pattern: ✔ COMPLETO")
+                print(f"   Temporal Views: {views_used} views usadas")
             elif views_used > 0 and fallbacks_used > 0:
-                print(f"   Temporal Views:  🛈PARCIAL ({views_used} views, {fallbacks_used} fallbacks)")
-                print(f"   🖈  Data Warehouse Pattern:  🛈INCOMPLETO")
+                print(f"   [WARN] Temporal Views: parcial ({views_used} views, {fallbacks_used} fallbacks)")
             else:
-                print(f"   Temporal Views: ✖ NÃO USADAS (apenas fallback)")
-                print(f"   🖈  Data Warehouse Pattern: ✖ FALLBACK USADO")
+                print(f"   [WARN] Temporal Views: nenhuma (apenas fallback)")
                 print(f"   Execute setup.py primeiro para criar views temporais")
-             
-            if predictability_analysis.get('scientific_validity', {}).get('temporal_leakage_prevented', False):
-                print(f"   ⚙ Vazamento temporal: PREVENIDO (lag ≥2 anos)")
-            else:
-                print(f"    🛈Vazamento temporal: POSSÍVEL")
-                
-            if predictability_analysis.get('scientific_validity', {}).get('validation_used_correctly', False):
-                print(f"   ✔ Validação científica: APLICADA corretamente")
-            else:
-                print(f"    🛈Validação: MAL IMPLEMENTADA")
+
+            if not predictability_analysis.get('scientific_validity', {}).get('temporal_leakage_prevented', False):
+                print(f"   [WARN] Vazamento temporal possível")
+
+            if not predictability_analysis.get('scientific_validity', {}).get('validation_used_correctly', False):
+                print(f"   [WARN] Validação mal implementada")
             
             return results
             
         except Exception as e:
-            print(f"\n✖ ERRO NA ANÁLISE DATA WAREHOUSE CONSUMER: {e}")
+            print(f"\n[ERROR] Análise Data Warehouse: {e}")
             return {
                 'architecture': 'data_warehouse_consumer',
                 'status': 'failed',
@@ -1286,14 +1106,15 @@ class BaselineModelAnalysisDataWarehouse:
             self.cleanup()
 
 if __name__ == "__main__":
-    print("↪ Executando análise baseline via ML Data Warehouse Consumer")
+    print("=" * 60)
     analyzer = None
     try:
         analyzer = BaselineModelAnalysisDataWarehouse()
         results = analyzer.run_complete_analysis()
-        print(f"\n⚙ Análise ML Data Warehouse Consumer concluída com sucesso!")
+        print(f"\nAnálise baseline Data Warehouse concluída!")
     except Exception as e:
-        print(f"\n✖ Erro na análise: {e}")
+        print(f"\n[ERROR] {e}")
         if analyzer:
             analyzer.cleanup()
         raise
+    print("=" * 60)

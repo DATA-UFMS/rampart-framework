@@ -12,7 +12,6 @@ import os
 import sys
 from typing import List, Dict, Any
 
-# Adicionar caminho para módulos core
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from core.base_architecture import BaseArchitectureML
@@ -27,7 +26,7 @@ from collection.data_warehouse.connection_manager import (
 class DataWarehouseArchitectureML(BaseArchitectureML):
     """Implementação do pipeline ML para a arquitetura Data Warehouse.
 
-    Reproduz o mesmo protocolo científico aplicado à arquitetura Data Lake,
+    Reproduz o mesmo protocolo aplicado à arquitetura Data Lake,
     diferindo apenas pelo processamento SQL in-database. Todos os artefatos
     gerados (folds, estatísticas de target, matrizes de features) seguem o
     padrão do framework para permitir benchmark e equivalência prática."""
@@ -49,22 +48,21 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
     }
 
     def __init__(self):
-        """Inicializa paths, conexão DuckDB e logger científico."""
-        # Inicialização da arquitetura base com herança científica
+        """Inicializa paths, conexão DuckDB e logger."""
+        # Inicialização da arquitetura base
         output_base = get_absolute_output_path('ml_pipeline/architectures/data_warehouse')
         super().__init__(architecture_name='data_warehouse', output_base_path=output_base)
         
-        print("Inicializando Pipeline ML Data Warehouse Científico")
-        print("=" * 70)
-        print("[PARADIGMA] SQL-first com validação temporal rigorosa")
+        print("Inicializando Pipeline ML Data Warehouse")
+        print("SQL-first com validacao temporal rigorosa")
         
         # Configurações específicas do Data Warehouse
         self.db_path = get_absolute_output_path('collection/data_warehouse/worldbank_data.duckdb')
         self.conn_manager = None
         
-        print(f"[OUTPUT] Diretório base: {self.output_base}")
-        print(f"[DATABASE] Data Warehouse: {self.db_path}")
-        print("[METODOLOGIA] Zero file I/O, processamento SQL nativo sem cache")
+        print(f"  Diretorio base: {self.output_base}")
+        print(f"  Data Warehouse: {self.db_path}")
+        print("  Zero file I/O, processamento SQL nativo sem cache")
     
     def setup_environment(self) -> None:
         """Abre a base DuckDB produzida na fase de coleta e inicializa o gerenciador.
@@ -80,39 +78,25 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 f"Execute 'data_warehouse/processor.py' antes deste pipeline ML."
             )
         
-        # Inicialização com parâmetros científicamente justificados
         self.conn_manager = DuckDBConnectionManager(
             self.db_path,
             max_retries=3,      
             retry_delay=1.0
         )
         
-        print("   ✓ Connection Manager configurado com robustez científica")
-        print("   ✓ ACID compliance habilitado para integridade transacional")
+        print("  Connection manager configurado")
+        print("  ACID compliance habilitado")
     
     def load_data(self) -> None:
         """
-        Executa carregamento de dados via SQL nativo com validação científica.
-        
+        Executa carregamento de dados via SQL nativo.
+
         Returns:
             None: Dados permanecem in-database seguindo paradigma Data Warehouse
-            
-        Metodologia:
-            Diferentemente de abordagens pandas/numpy, mantém dados no banco
-            para aproveitar otimizações OLAP nativas do DuckDB:
-            - Vectorized execution para agregações
-            - Columnar storage para queries analíticas
-            - Query optimization baseada em estatísticas de tabela
-        
-        Métricas coletadas:
-            - Dimensionalidade: Observações × variáveis para análise de escala
-            - Cobertura temporal: Range completo para validação walk-forward
-            - Cobertura geográfica: Países únicos para análise cross-section
-        
-        Complexidade: O(1) vs O(n) para carregamento pandas tradicional
+
+        Dados permanecem in-database -- materialização sob demanda via SQL.
         """
-        print("\n[CARREGAMENTO] Iniciando análise de dados via SQL nativo")
-        print("━" * 50)
+        print("\nAnalisando dados via SQL nativo")
         
         stats_query = """
             SELECT
@@ -128,7 +112,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         stats_result = self.conn_manager.execute_sql(stats_query).iloc[0]
         
-        # Extração com validação científica
         total_records = int(stats_result['total_records'])
         total_columns = int(stats_result['total_columns'])
         min_year = int(stats_result['min_year'])
@@ -136,29 +119,25 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         unique_countries = int(stats_result['unique_countries'])
         temporal_periods = int(stats_result['temporal_periods'])
         
-        # Análise de adequação para ML temporal
         years_span = max_year - min_year + 1
         avg_obs_per_country = total_records / unique_countries if unique_countries > 0 else 0
+
+        print(f"  {total_records:,} observacoes x {total_columns} variaveis")
+        print(f"  {min_year}-{max_year} ({years_span} anos, {temporal_periods} periodos)")
+        print(f"  {unique_countries} paises ({avg_obs_per_country:.1f} obs/pais)")
         
-        print(f"[DIMENSÕES] {total_records:,} observações × {total_columns} variáveis")
-        print(f"[TEMPORAL] {min_year}-{max_year} ({years_span} anos, {temporal_periods} períodos)")
-        print(f"[GEOGRÁFICO] {unique_countries} países ({avg_obs_per_country:.1f} obs/país)")
-        
-        # Validação para ML temporal
         if years_span < 10:
-            print(f"  ⚠ AVISO: Série temporal curta ({years_span} anos) pode limitar validação walk-forward")
-        
+            print(f"  [WARN] Serie temporal curta ({years_span} anos) pode limitar validacao walk-forward")
+
         if total_records < 100:
-            print(f"  ⚠ AVISO: Dataset pequeno ({total_records} obs) pode afetar poder estatístico")
-        
-        print("[STATUS] Dados carregados com sucesso (permanecem in-database)")
+            print(f"  [WARN] Dataset pequeno ({total_records} obs) pode afetar poder estatistico")
         
         # Paradigma Data Warehouse: dados nunca saem do banco
         return None
     
     def validate_data(self, data: Any) -> None:
         """
-        Executa validação científica de integridade e adequação dos dados.
+        Executa validação de integridade e adequação dos dados.
         
         Args:
             data: Ignorado - validação executada diretamente no banco de dados
@@ -178,13 +157,12 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             Implementa fallback automático para variáveis target alternativas
             baseado em correspondência semântica (completion rate variants).
         """
-        print("[VALIDAÇÃO] Executando verificações de integridade científica")
-        print("━" * 50)
+        print("Validando integridade dos dados")
         
         target_source_col = self.source_column
         
         # === 1. Validação de Schema ===
-        print("[1/4] Validação de schema")
+        print("  [1/4] Validacao de schema")
         column_exists = self.conn_manager.execute_scalar(f"""
             SELECT COUNT(*) > 0
             FROM information_schema.columns
@@ -193,10 +171,9 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         """)
         
         if not column_exists:
-            print(f"  ⚠ Coluna target '{target_source_col}' não encontrada")
-            print("  → Buscando variáveis alternativas...")
+            print(f"  [WARN] Coluna target '{target_source_col}' nao encontrada")
+            print("    Buscando variaveis alternativas...")
             
-            # Fallback inteligente baseado em correspondência semântica
             alternative_col = self.conn_manager.execute_scalar("""
                 SELECT column_name
                 FROM information_schema.columns
@@ -215,7 +192,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             
             if alternative_col:
                 self.source_column = alternative_col
-                print(f"  ✓ Usando variável alternativa: {self.source_column}")
+                print(f"    Usando variavel alternativa: {self.source_column}")
             else:
                 raise ValueError(
                     "Nenhuma variável educacional adequada encontrada. "
@@ -223,7 +200,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 )
         
         # === 2. Análise de Cobertura ===
-        print("[2/4] Análise de cobertura")
+        print("  [2/4] Analise de cobertura")
         coverage_stats = self.conn_manager.execute_sql(f"""
             SELECT
                 COUNT(*) as total_records,
@@ -239,21 +216,20 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         valid_target = int(coverage_stats['valid_target'])
         target_coverage = (valid_target / total_records) * 100 if total_records > 0 else 0
         
-        print(f"  → Cobertura target: {valid_target:,}/{total_records:,} ({target_coverage:.1f}%)")
-        print(f"  → Estatísticas: μ={coverage_stats['target_mean']:.1f}, σ={coverage_stats['target_std']:.1f}")
-        print(f"  → Range: [{coverage_stats['target_min']:.1f}, {coverage_stats['target_max']:.1f}]")
+        print(f"    Cobertura target: {valid_target:,}/{total_records:,} ({target_coverage:.1f}%)")
+        print(f"    Estatisticas: media={coverage_stats['target_mean']:.1f}, std={coverage_stats['target_std']:.1f}")
+        print(f"    Range: [{coverage_stats['target_min']:.1f}, {coverage_stats['target_max']:.1f}]")
         
-        # Critérios científicos de adequação
         if valid_target < 50:
-            print(f"  ⚠ CRÍTICO: Muito poucos dados válidos ({valid_target}<50)")
-            print("    → Pode comprometer poder estatístico dos modelos ML")
-        
+            print(f"    [WARN] Muito poucos dados validos ({valid_target}<50)")
+            print("      Pode comprometer poder estatistico dos modelos ML")
+
         if target_coverage < 20:
-            print(f"  ⚠ AVISO: Cobertura baixa ({target_coverage:.1f}%<20%)")
-            print("    → Risco de viés de seleção em predições")
+            print(f"    [WARN] Cobertura baixa ({target_coverage:.1f}%<20%)")
+            print("      Risco de vies de selecao em predicoes")
         
         # === 3. Consistência Temporal ===
-        print("[3/4] Consistência temporal")
+        print("  [3/4] Consistencia temporal")
         temporal_stats = self.conn_manager.execute_sql("""
             SELECT
                 COUNT(DISTINCT year) as unique_years,
@@ -267,22 +243,22 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         actual_years = int(temporal_stats['unique_years'])
         temporal_completeness = (actual_years / years_span) * 100
         
-        print(f"  → Span temporal: {temporal_stats['min_year']}-{temporal_stats['max_year']} ({years_span} anos)")
-        print(f"  → Completude temporal: {actual_years}/{years_span} anos ({temporal_completeness:.1f}%)")
-        
+        print(f"    Span temporal: {temporal_stats['min_year']}-{temporal_stats['max_year']} ({years_span} anos)")
+        print(f"    Completude temporal: {actual_years}/{years_span} anos ({temporal_completeness:.1f}%)")
+
         if temporal_completeness < 80:
-            print("  ⚠ AVISO: Gaps temporais significativos podem afetar validação walk-forward")
+            print("    [WARN] Gaps temporais significativos podem afetar validacao walk-forward")
         
         # === 4. Cobertura Geográfica ===
-        print("[4/4] Representatividade geográfica")
+        print("  [4/4] Representatividade geografica")
         unique_countries = int(temporal_stats['unique_countries'])
         obs_per_country = total_records / unique_countries if unique_countries > 0 else 0
         
-        print(f"  → Países únicos: {unique_countries}")
-        print(f"  → Observações médias/país: {obs_per_country:.1f}")
-        
+        print(f"    Paises unicos: {unique_countries}")
+        print(f"    Observacoes medias/pais: {obs_per_country:.1f}")
+
         if unique_countries < 10:
-            print("  ⚠ AVISO: Poucos países podem limitar generalização geográfica")
+            print("    [WARN] Poucos paises podem limitar generalizacao geografica")
         
         # === 5. Validação de Colunas Obrigatórias ===
         required_cols = ['country_code', 'year']
@@ -305,8 +281,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 f"Schema incompatível com análise temporal."
             )
         
-        print("[STATUS] ✓ Validação científica concluída com sucesso")
-    
+        print("  Validacao concluida")
+
     def create_target_implementation(self, data: Any) -> None:
         """
         Constrói variável target via transformação SQL com fundamentação educacional.
@@ -334,23 +310,14 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             - Mantém range [0,100] para interpretabilidade
             - Utiliza CASE statement para tratamento explícito de edge cases
         
-        Complexidade: O(n) single-pass sobre dataset completo
         """
-        print("[TARGET] Construindo variável target com fundamentação educacional")
-        print("━" * 50)
-        
-        print(f"[TRANSFORMAÇÃO] {self.source_column} → {self.target_column}")
-        print("[FÓRMULA] Dropout Rate = 100 - Completion Rate")
-        
-        # Schema evolution: Adiciona coluna se não existe
-        print("[SCHEMA] Adicionando coluna target ao Data Warehouse...")
+        print(f"Construindo target: {self.source_column} -> {self.target_column}")
+        print("  Dropout Rate = 100 - Completion Rate")
         self.conn_manager.execute_sql_no_return(f"""
             ALTER TABLE analytics_wide
             ADD COLUMN IF NOT EXISTS {self.target_column} DOUBLE
         """)
         
-        # Transformação cientificamente fundamentada
-        print("[CÁLCULO] Executando transformação via SQL transacional...")
         transformation_query = f"""
             UPDATE analytics_wide
             SET {self.target_column} =
@@ -380,12 +347,9 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         total_records = int(validation_stats['total_records'])
         success_rate = (valid_targets / total_records) * 100 if total_records > 0 else 0
         
-        print(f"[RESULTADO] Target criado com sucesso:")
-        print(f"  → Registros válidos: {valid_targets:,}/{total_records:,} ({success_rate:.1f}%)")
-        print(f"  → Dropout rate médio: {validation_stats['mean_dropout']:.1f}% ± {validation_stats['std_dropout']:.1f}%")
-        print(f"  → Range: [{validation_stats['min_dropout']:.1f}%, {validation_stats['max_dropout']:.1f}%]")
-        
-        print("[STATUS] ✓ Variável target construída e validada")
+        print(f"  Registros validos: {valid_targets:,}/{total_records:,} ({success_rate:.1f}%)")
+        print(f"  Dropout rate medio: {validation_stats['mean_dropout']:.1f}% +/- {validation_stats['std_dropout']:.1f}%")
+        print(f"  Range: [{validation_stats['min_dropout']:.1f}%, {validation_stats['max_dropout']:.1f}%]")
 
         # Retorna dados atualizados do banco para uso no pipeline
         return self.conn_manager.execute_sql("SELECT * FROM analytics_wide")
@@ -398,7 +362,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             data: Ignorado - análise executada diretamente no Data Warehouse
             
         Returns:
-            Dict contendo estatísticas descritivas científicas: momentos centrais,
+            Dict contendo estatísticas descritivas: momentos centrais,
             quartis, medidas de assimetria e adequação para modelagem ML
             
         Estatísticas calculadas:
@@ -410,8 +374,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         Otimização:
             Single query com múltiplas agregações para minimizar roundtrips
             ao banco de dados (1 query vs 6+ queries individuais).
-        
-        Complexidade: O(n) single-pass sobre dataset completo
         """
         comprehensive_stats_query = f"""
             WITH target_stats AS (
@@ -437,7 +399,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         stats_result = self.conn_manager.execute_sql(comprehensive_stats_query).iloc[0]
         
-        # Estruturação científica dos resultados
+        # Estruturação dos resultados
         statistics = {
             # Contagens e completude
             'total_records': int(stats_result.get('total_records', 0)),
@@ -478,7 +440,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
     
     def _validate_temporal_folds(self, data: Any, folds: List[Dict]) -> None:
         """
-        Executa validação científica rigorosa da estrutura de folds temporais.
+        Valida a estrutura de folds temporais.
         
         Args:
             data: Ignorado - análise executada via SQL no Data Warehouse
@@ -490,8 +452,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             3. Consistência temporal: Verificação de gaps anti-leakage
             4. Balanceamento: Distribuição equilibrada entre treino/validação/teste
             
-        Critérios científicos:
-            - Treino: Mínimo 30 obs (Central Limit Theorem, Gosset, 1908)
+        Critérios:
+            - Treino: Mínimo 30 obs (regra prática CLT)
             - Validação: Mínimo 15 obs (poder estatístico básico)
             - Teste: Mínimo 10 obs (avaliação out-of-sample mínima)
             - Geographic coverage: >50% países em cada fold para generalização
@@ -500,12 +462,11 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             Validação cruzada temporal (Bergmeir & Benítez, 2012) requer
             estrutura específica para evitar data leakage em séries temporais.
         """
-        print("[VALIDAÇÃO] Analisando estrutura científica dos folds temporais")
-        print("━" * 60)
+        print("Validando folds temporais")
         
         for i, fold in enumerate(folds):
             fold_id = fold['fold_id']
-            print(f"\n[FOLD {fold_id}] Validação científica:")
+            print(f"\n  Fold {fold_id}:")
             
             # Query otimizada para estatísticas completas do fold
             fold_stats_query = f"""
@@ -571,13 +532,11 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 fold[f'{split_type}_valid_targets'] = valid_targets
                 fold[f'{split_type}_target_mean'] = target_mean
                 
-                # Validação científica por critérios estatísticos
                 min_obs_required = {'train': 30, 'val': 15, 'test': 10}[split_type]
+
+                print(f"    {split_type.upper()}: {obs_count:,} obs, {country_count} paises, "
+                      f"{valid_targets} targets validos (media={target_mean:.1f}%)")
                 
-                print(f"  [{split_type.upper()}] {obs_count:,} obs, {country_count} países, "
-                      f"{valid_targets} targets válidos (μ={target_mean:.1f}%)")
-                
-                # Critério 1: Adequação estatística (CLT)
                 if obs_count < min_obs_required:
                     warning = f"{split_type}: Poucos dados ({obs_count}<{min_obs_required}) - poder estatístico limitado"
                     validation_warnings.append(warning)
@@ -607,7 +566,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             train_val_gap = val_start - train_end - 1
             val_test_gap = test_start - val_end - 1
             
-            print(f"  [GAPS] Treino→Val: {train_val_gap} anos pulados, Val→Teste: {val_test_gap} anos pulados")
+            print(f"    Gaps: Treino->Val: {train_val_gap} anos, Val->Teste: {val_test_gap} anos")
             
             MIN_GAP = 2
             if train_val_gap < MIN_GAP:
@@ -620,13 +579,11 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                     f"Gap validação-teste insuficiente ({val_test_gap}<{MIN_GAP} anos pulados)"
                 )
             
-            # Reportar warnings
             if validation_warnings:
-                print("  ⚠ WARNINGS CIENTÍFICOS:")
                 for warning in validation_warnings:
-                    print(f"    → {warning}")
+                    print(f"    [WARN] {warning}")
             else:
-                print("  ✓ Fold atende todos os critérios científicos")
+                print("    Fold ok")
     
     def save_folds(self, data: Any, folds: List[Dict]) -> None:
         """
@@ -636,14 +593,14 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             data: Ignorado (usa SQL direto)
             folds: Lista de folds
         """
-        print("\n🖧  CRIANDO TEMPORAL VIEWS DATA WAREHOUSE...")
+        print("\nCriando temporal views Data Warehouse")
         
         for fold in folds:
             fold_id = fold['fold_id']
             fold_dir = f"{self.prep_dir}/folds/fold_{fold_id}"
             os.makedirs(fold_dir, exist_ok=True)
             
-            print(f"   ↪ Criando temporal views para fold {fold_id}...")
+            print(f"  Criando temporal views para fold {fold_id}...")
             
             try:
                 train_view_query = f"""
@@ -672,16 +629,16 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 """
                 self.conn_manager.execute_sql_no_return(test_view_query)
                 
-                print(f"   ✔ Views criadas: vw_fold_{fold_id}_{{train,val,test}}")
+                print(f"    Views criadas: vw_fold_{fold_id}_{{train,val,test}}")
                 
                 train_count = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM vw_fold_{fold_id}_train")
                 val_count = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM vw_fold_{fold_id}_val")
                 test_count = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM vw_fold_{fold_id}_test")
                 
-                print(f"   🖈  Verificação: Train={train_count}, Val={val_count}, Test={test_count}")
+                print(f"    Verificacao: Train={train_count}, Val={val_count}, Test={test_count}")
                 
             except SQLProcessingError as e:
-                print(f"   ✖ ERRO: Criação de views falhou para fold {fold_id}: {e}")
+                print(f"    [ERROR] Criacao de views falhou para fold {fold_id}: {e}")
                 raise
             
             fold_metadata = {
@@ -702,10 +659,10 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 ORDER BY country_code, year
             """
             self.conn_manager.execute_sql_no_return(master_view_query)
-            print(f"   ✔ Master view criada: vw_master_data")
+            print(f"  Master view criada: vw_master_data")
             
         except SQLProcessingError as e:
-            print(f"   ✖ ERRO: Criação de master view falhou: {e}")
+            print(f"  [ERROR] Criacao de master view falhou: {e}")
             raise
         
         total_obs = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
@@ -715,7 +672,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         self.save_master_config(folds, total_obs, total_countries, (int(min_year), int(max_year)))
         
-        print(f"   ✔ Data Warehouse: Views temporais criadas, zero file I/O")
+        print(f"  Data Warehouse: Views temporais criadas, zero file I/O")
     
     def get_numeric_features(self, data: Any) -> List[str]:
         """
@@ -734,9 +691,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             3. Ordenação alfabética: Garantia de determinismo entre execuções
             
         Justificativa técnica:
-            Schema-based filtering é mais eficiente que data-type inference
-            em runtime, especialmente para datasets grandes (O(1) vs O(n)).
-            DuckDB information_schema query executa em <1ms vs scan completo.
+            Schema-based filtering via information_schema evita scan de dados.
         
         Limitações:
             - Não detecta variáveis categóricas numéricas (e.g., códigos país)
@@ -760,15 +715,13 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         result = self.conn_manager.execute_sql(numeric_features_query)
         numeric_features = result['column_name'].tolist()
         
-        print(f"[FEATURES] {len(numeric_features)} variáveis numéricas identificadas")
-        print(f"[EXCLUSÕES] Identificadores, targets e metadados removidos automaticamente")
-        
-        # Validação de adequação
+        print(f"  {len(numeric_features)} variaveis numericas identificadas")
+
         if len(numeric_features) < 5:
-            print("  ⚠ AVISO: Poucas features numéricas (<5) podem limitar capacidade preditiva")
-        
+            print("  [WARN] Poucas features numericas (<5) podem limitar capacidade preditiva")
+
         if len(numeric_features) > 100:
-            print("  ⚠ AVISO: Muitas features (>100) requerem seleção rigorosa (curse of dimensionality)")
+            print("  [WARN] Muitas features (>100) requerem selecao rigorosa (curse of dimensionality)")
         
         return numeric_features
     
@@ -803,11 +756,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             - Sensível a outliers extremos (não usa correlação robusta)
             - Assume distribuições contínuas (inadequado para categóricas)
         
-        Referência:
-            Pearson, K. (1895). Mathematical contributions to the theory of evolution.
         """
-        print(f"[CORRELAÇÃO] Analisando associação linear de {len(features)} features com target")
-        print("━" * 50)
+        print(f"Analisando correlacao de {len(features)} features com target")
         
         target_col = self.target_column
         correlations = {}
@@ -842,17 +792,16 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 """
                 self.conn_manager.execute_sql_no_return(sampling_query)
                 base_table = sample_view_name
-                print(f"[AMOSTRAGEM] {final_sample_size:,}/{total_rows:,} observações (~{final_sample_size/total_rows:.1%})")
+                print(f"  Amostragem: {final_sample_size:,}/{total_rows:,} observacoes (~{final_sample_size/total_rows:.1%})")
             except SQLProcessingError as e:
-                print(f"[AMOSTRAGEM] Falha ao criar view amostrada: {e}. Usando tabela completa.")
+                print(f"  [WARN] Falha ao criar view amostrada: {e}. Usando tabela completa.")
                 base_table = 'analytics_wide'
 
         # Análise batch para features com schema similar
-        print("[CÁLCULO] Executando análise de correlação via SQL otimizado...")
         
         for i, feat in enumerate(features):
             try:
-                # Query SQL scientificamente robusta para correlação de Pearson
+                # Correlação de Pearson via SQL
                 correlation_query = f"""
                     WITH feature_target_stats AS (
                         SELECT
@@ -895,24 +844,22 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                     correlation = float(result.iloc[0]['pearson_correlation'] or 0.0)
                     sample_size = int(result.iloc[0]['sample_size'] or 0)
                     
-                    # Validação científica da correlação
                     if sample_size < 10:
-                        print(f"  → {feat}: Amostra pequena (n={sample_size}), correlação não confiável")
+                        print(f"  {feat}: Amostra pequena (n={sample_size}), correlacao nao confiavel")
                         correlations[feat] = 0.0
                     else:
                         # Valor absoluto para ranking por força da associação
                         correlations[feat] = abs(correlation)
                         
-                        # Log para features altamente correlacionadas
                         if abs(correlation) > 0.7:
-                            print(f"  → {feat}: r={correlation:.3f} (ALTA correlação)")
+                            print(f"  {feat}: r={correlation:.3f} (alta)")
                         elif abs(correlation) > 0.3:
-                            print(f"  → {feat}: r={correlation:.3f} (correlação moderada)")
+                            print(f"  {feat}: r={correlation:.3f} (moderada)")
                 else:
                     correlations[feat] = 0.0
                     
             except SQLProcessingError as e:
-                print(f"  ✗ Erro no cálculo de correlação para {feat}: {e}")
+                print(f"  [ERROR] Correlacao para {feat}: {e}")
                 correlations[feat] = 0.0
                 failed_features.append(feat)
         
@@ -923,21 +870,18 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             except Exception:
                 pass
         
-        # Relatório estatístico
         valid_correlations = [r for r in correlations.values() if r > 0]
-        
+
         if valid_correlations:
             avg_correlation = sum(valid_correlations) / len(valid_correlations)
             max_correlation = max(valid_correlations)
             high_corr_count = sum(1 for r in valid_correlations if r > 0.5)
-            
-            print(f"\n[RESULTADO] Análise de correlação concluída:")
-            print(f"  → Correlação média: {avg_correlation:.3f}")
-            print(f"  → Correlação máxima: {max_correlation:.3f}")
-            print(f"  → Features altamente correlacionadas (|r|>0.5): {high_corr_count}")
-            
+
+            print(f"  Correlacao media: {avg_correlation:.3f}, maxima: {max_correlation:.3f}")
+            print(f"  Features com |r|>0.5: {high_corr_count}")
+
             if len(failed_features) > 0:
-                print(f"  → Features com falha no cálculo: {len(failed_features)}")
+                print(f"  Features com falha: {len(failed_features)}")
         
         return correlations
     
@@ -960,29 +904,23 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         Algoritmo greedy:
             1. Primeira feature sempre aceita (baseline)
             2. Features subsequentes aceitas se max |r| < threshold
-            3. Ordem preservada para determinismo científico
+            3. Ordem preservada para determinismo
 
         Amostragem justificada:
             Para datasets >10k observações, matriz de correlação completa
             pode ser computacionalmente custosa O(n²). Amostragem reduz a
             O(s²) onde s << n, mantendo precisão estatística adequada.
 
-        Referências:
-            Dormann, C. F., et al. (2013). Collinearity: a review of methods
-            to deal with it and a simulation study evaluating their performance.
         """
         if len(features) < 2:
-            print("[COLLINEARITY] Menos de 2 features - análise desnecessária")
+            print("  Menos de 2 features - colinearidade desnecessaria")
             return features
+
+        print(f"Filtrando colinearidade: {len(features)} features, threshold={threshold}")
         
-        print(f"[COLLINEARITY] Executando análise de multicolinearidade para {len(features)} features")
-        print("━" * 50)
-        print(f"[THRESHOLD] Correlação máxima permitida: {threshold}")
-        
-        # === Configuração de amostragem científica ===
+        # === Configuração de amostragem ===
         total_rows = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
         
-        # Critérios padronizados baseados em literatura estatística
         min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
         sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
         
@@ -995,18 +933,14 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         sample_percentage = (final_sample_size / total_rows) * 100
         
-        print(f"[AMOSTRAGEM] {final_sample_size:,}/{total_rows:,} observações ({sample_percentage:.1f}%)")
-        print(f"[CRITÉRIO] max(config={min_sample_absolute}, {sample_fraction:.0%}×dataset)")
+        print(f"  Amostragem: {final_sample_size:,}/{total_rows:,} ({sample_percentage:.1f}%)")
         
         # === Criação de view amostrada reprodutível ===
         sample_view_name = "vw_collinearity_sample"
         
         try:
-            # Configuração de seed para reprodutibilidade científica
             random_seed = self.config.get('random_seed', 42)
             seed_float = (random_seed % 100) / 100.0  # Normalização [0,1]
-            
-            print(f"[SEED] Configurando seed reprodutível: {random_seed} → {seed_float:.2f}")
             
             self.conn_manager.execute_sql_no_return(f"SELECT setseed({seed_float})")
             self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
@@ -1024,12 +958,10 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             """
             self.conn_manager.execute_sql_no_return(sampling_query)
             
-            # Verificação de amostragem bem-sucedida
             actual_sample_size = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM {sample_view_name}")
-            print(f"[CONFIRMAÇÃO] Amostra criada com {actual_sample_size:,} observações")
+            print(f"  Amostra: {actual_sample_size:,} observacoes")
             
             # === Construção de matriz de correlação ===
-            print("[CORRELAÇÃO] Construindo matriz de correlação par-a-par...")
             
             correlation_matrix = {}
             correlation_pairs_computed = 0
@@ -1062,13 +994,10 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                         correlation_pairs_computed += 1
                         
                     except SQLProcessingError as e:
-                        print(f"  ✗ Erro correlação {feat1}-{feat2}: {e}")
+                        print(f"  [ERROR] Correlacao {feat1}-{feat2}: {e}")
                         correlation_matrix[feat1][feat2] = 0.0
             
-            print(f"[MATRIZ] {correlation_pairs_computed}/{total_pairs} pares analisados")
-            
-            # === Algoritmo Greedy Pairwise ===
-            print(f"[SELEÇÃO] Aplicando algoritmo greedy com threshold {threshold}")
+            print(f"  {correlation_pairs_computed}/{total_pairs} pares analisados")
             
             selected_features = []
             rejected_features = []
@@ -1102,25 +1031,21 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                         'correlated_with': worst_correlated_feature
                     })
             
-            # === Relatório científico ===
             reduction_rate = ((len(features) - len(selected_features)) / len(features)) * 100
-            
-            print(f"\n[RESULTADO] Filtragem de colinearidade concluída:")
-            print(f"  → Features originais: {len(features)}")
-            print(f"  → Features selecionadas: {len(selected_features)}")
-            print(f"  → Features removidas: {len(rejected_features)} ({reduction_rate:.1f}%)")
-            
+
+            print(f"  Originais: {len(features)}, selecionadas: {len(selected_features)}, "
+                  f"removidas: {len(rejected_features)} ({reduction_rate:.1f}%)")
+
             if rejected_features:
-                print(f"  → Principais rejeições por multicolinearidade:")
-                for reject in rejected_features[:5]:  # Top 5 mais problemáticas
-                    print(f"    • {reject['feature']}: r={reject['max_correlation']:.3f} "
+                for reject in rejected_features[:5]:
+                    print(f"    Rejeitado {reject['feature']}: r={reject['max_correlation']:.3f} "
                           f"com {reject['correlated_with']}")
             
             return selected_features
             
         except Exception as e:
-            print(f"[ERRO] Falha na filtragem de colinearidade: {e}")
-            print(f"[FALLBACK] Retornando primeiras 10 features como segurança")
+            print(f"[ERROR] Falha na filtragem de colinearidade: {e}")
+            print(f"  Fallback: retornando primeiras 10 features")
             return features[:10]
             
         finally:
@@ -1132,7 +1057,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
     
     def prepare_features(self, data: Any, selected_features: List[str]) -> None:
         """
-        Constrói view final com features selecionadas e transformações científicas.
+        Constrói view final com features selecionadas e transformações.
         
         Args:
             data: Ignorado - processamento executado via SQL no Data Warehouse
@@ -1157,17 +1082,13 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             - Features originais: selected_features (pós-filtragem de colinearidade)
             - Features transformadas: {feature}_log_transform para top-5
         """
-        print(f"[FEATURES] Preparando view final com {len(selected_features)} features selecionadas")
-        print("━" * 50)
-
-        # === Tranformação, log simétrico: T(x) = sign(x) * ln(|x| + 1) ===
-        print("[TRANSFORMAÇÃO] Aplicando symmetric log transform a top-5 features")
+        print(f"Preparando view final com {len(selected_features)} features")
         
         # Critério: Limitar a top-5 features mais promissoras
         features_to_transform = selected_features[:5]
         transformed_features_sql = []
         
-        print(f"[ESCOPO] Transformando {len(features_to_transform)} features para normalização:")
+        print(f"  Transformando {len(features_to_transform)} features (symmetric log):")
         
         for feat in features_to_transform:
             # Tranformação, log simétrico: sign(x) * ln(|x| + 1)
@@ -1180,16 +1101,15 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                 END AS {feat}_log_transform
             """
             transformed_features_sql.append(transformation_sql)
-            print(f"  → {feat} → {feat}_log_transform")
-        
+            print(f"    {feat} -> {feat}_log_transform")
+
         # === Construção da Query de View ===
-        # Combinar features originais e transformadas
         all_features_sql = selected_features.copy()
-        
+
         if transformed_features_sql:
-            print(f"[ENGENHARIA] {len(transformed_features_sql)} symmetric log transforms aplicadas")
+            print(f"  {len(transformed_features_sql)} log transforms aplicadas")
         
-        # Query SQL para view final cientificamente estruturada
+        # Query SQL para view final estruturada
         # Lag temporal via self-join (valor de exatamente N anos atrás),
         # não LAG() posicional que assume dados sem gaps anuais.
         feature_view_query = f"""
@@ -1219,7 +1139,6 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         """
         
         try:
-            print("[SQL] Executando criação de view final...")
             self.conn_manager.execute_sql_no_return(feature_view_query)
             
             # === Validação e Relatório da View ===
@@ -1246,37 +1165,33 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             transformed_features = len(transformed_features_sql)
             total_features = original_features + transformed_features + 3  # +3 metadados
             
-            print(f"\n[RESULTADO] View vw_selected_features criada com sucesso:")
-            print(f"  → Observações: {total_records:,}")
-            print(f"  → Dimensionalidade: {total_features} variáveis")
-            print(f"    • Features originais: {original_features}")
-            print(f"    • Features transformadas: {transformed_features}")
-            print(f"    • Metadados: 3 (country_code, year, target)")
-            print(f"  → Cobertura: {unique_countries} países, {min_year}-{max_year}")
-            print(f"  → Target médio: {avg_target:.1f}%")
+            print(f"  View vw_selected_features criada:")
+            print(f"    {total_records:,} obs, {total_features} variaveis ({original_features} originais, "
+                  f"{transformed_features} transformadas)")
+            print(f"    {unique_countries} paises, {min_year}-{max_year}, target medio: {avg_target:.1f}%")
             
             # Análise de adequação para ML
             observations_per_feature = total_records / total_features if total_features > 0 else 0
             
             if observations_per_feature < 10:
-                print("  ⚠ AVISO: Poucos dados/feature - risco de overfitting")
+                print("    [WARN] Poucos dados/feature - risco de overfitting")
             elif observations_per_feature > 50:
-                print("  ✓ Adequado: Boa relação observações/features para ML")
+                print("    Boa relacao observacoes/features para ML")
             
         except SQLProcessingError as e:
-            print(f"  ✗ ERRO: Falha na criação da view de features: {e}")
+            print(f"  [ERROR] Falha na criacao da view de features: {e}")
             raise RuntimeError(f"Impossível criar view de features: {e}")
         
-        print("[STATUS] ✓ Pipeline de features concluído - dados prontos para modelagem ML")
+        print("  Features prontas para modelagem ML")
         # Paradigma Data Warehouse: dados permanecem no banco para eficiência
         return None
 
 
 def main():
     """
-    Função principal para execução e teste do pipeline ML Data Warehouse científico.
+    Função principal para execução e teste do pipeline ML Data Warehouse.
     
-    Executa pipeline completo de ML temporal seguindo metodologia científica:
+    Executa pipeline completo de ML temporal seguindo metodologia:
     1. Setup e validação de ambiente
     2. Carregamento e validação de dados
     3. Construção de variável target
@@ -1286,7 +1201,7 @@ def main():
     
     Adequado para:
         - Desenvolvimento e debugging do pipeline
-        - Validação científica da metodologia
+        - Validação da metodologia
         - Benchmark de performance arquitetural
         - Testes de integração antes de produção
         
@@ -1295,55 +1210,43 @@ def main():
         - Análises exploratórias (usar notebooks)
         - Comparação arquitetural (usar architectural_benchmark.py)
     """
-    print("="*80)
-    print("TESTE PIPELINE ML DATA WAREHOUSE - METODOLOGIA CIENTÍFICA".center(80))
-    print("="*80)
-    
+    print("=" * 80)
+    print("Pipeline ML Data Warehouse")
+    print("=" * 80)
+
     try:
-        # Inicialização do pipeline científico
-        print("\n[INICIALIZAÇÃO] Configurando pipeline ML Data Warehouse...")
         setup = DataWarehouseArchitectureML()
-        
-        # Execução completa do pipeline
-        print("\n[EXECUÇÃO] Iniciando pipeline científico completo...")
         results = setup.run_setup()
         
-        # Relatório final
-        print("\n" + "="*80)
-        print("RELATÓRIO FINAL DO PIPELINE".center(80))
-        print("="*80)
-        
-        # Aceita padrões de retorno com 'status' ou 'success'
         success_flag = results.get('success', None)
         status_flag = results.get('status', None)
         is_success = (success_flag is True) or (isinstance(status_flag, str) and status_flag.lower() == 'success')
         if is_success:
-            print("✓ Pipeline executado com SUCESSO")
-            print(f"  → Arquitetura: {results.get('architecture', 'N/A')}")
-            print(f"  → Features selecionadas: {results.get('features_selected', results.get('selected_features_count', 'N/A'))}")
-            print(f"  → Folds temporais: {results.get('folds_created', results.get('total_folds', 'N/A'))}")
+            print("Pipeline ok")
+            print(f"  Arquitetura: {results.get('architecture', 'N/A')}")
+            print(f"  Features selecionadas: {results.get('features_selected', results.get('selected_features_count', 'N/A'))}")
+            print(f"  Folds temporais: {results.get('folds_created', results.get('total_folds', 'N/A'))}")
             if isinstance(results.get('total_observations', None), (int, float)):
-                print(f"  → Observações processadas: {int(results.get('total_observations')):,}")
-            
+                print(f"  Observacoes processadas: {int(results.get('total_observations')):,}")
+
             if 'processing_time' in results and isinstance(results.get('processing_time'), (int, float)):
-                print(f"  → Tempo de processamento: {results['processing_time']:.2f}s")
+                print(f"  Tempo de processamento: {results['processing_time']:.2f}s")
         else:
-            print("✗ Pipeline FALHOU")
+            print("[ERROR] Pipeline falhou")
             if 'error' in results:
-                print(f"  → Erro: {results['error']}")
-            
-        print(f"\n[DETALHES] Resultados completos:")
+                print(f"  Erro: {results['error']}")
+
+        print(f"\nResultados:")
         for key, value in results.items():
-            if key not in ['success', 'error']: 
-                print(f"  → {key}: {value}")
+            if key not in ['success', 'error']:
+                print(f"  {key}: {value}")
                 
     except Exception as e:
-        print(f"\n✗ ERRO CRÍTICO no pipeline: {e}")
-        print("   → Verifique se Data Warehouse foi processado corretamente")
-        print("   → Execute data_warehouse/processor.py antes deste script")
+        print(f"\n[ERROR] Pipeline falhou: {e}")
+        print("  Verifique se Data Warehouse foi processado corretamente")
+        print("  Execute data_warehouse/processor.py antes deste script")
         return {'success': False, 'error': str(e)}
     
-    print("\n" + "="*80)
 
 
 if __name__ == "__main__":

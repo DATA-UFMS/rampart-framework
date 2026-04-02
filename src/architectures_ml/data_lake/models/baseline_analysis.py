@@ -28,11 +28,9 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
-# Adicionar path para configuração e módulos centralizados
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from src.core.config import get_absolute_output_path
-from src.core.models.baseline import BaselineModelFactory, BaselineEnsemble
-from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+from src.core.scientific_config import setup_reproducibility
 
 setup_reproducibility()
 
@@ -57,8 +55,6 @@ class BaselineModelAnalysisDataLake:
     def __init__(self):
         """Inicializa a análise baseline para arquitetura Data Lake."""
         print("Inicializando análise baseline Data Lake")
-        print("=" * 60)
-        print("Pesquisa: Comparação de arquiteturas ML para evasão educacional")
         
         self.data_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/master_data_data_lake.parquet")
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/temporal_folds_data_lake.json")
@@ -71,7 +67,7 @@ class BaselineModelAnalysisDataLake:
         if not os.path.exists(self.folds_path):
             raise FileNotFoundError(f"Folds Data Lake não encontrados: {self.folds_path}")
 
-        print("Carregando dados Data Lake com Dask...")
+        print("   Carregando dados com Dask...")
         self.ddf = dd.read_parquet(self.data_path)
         self._needs_persist = True
         with open(self.folds_path, 'r') as f:
@@ -83,7 +79,6 @@ class BaselineModelAnalysisDataLake:
     
     def _load_data_summary(self):
         """Carregar resumo dos dados usando batch compute otimizado."""
-        # Construir tarefas de forma segura para Dask.compute
         stats_tasks = {
             'total_rows': self.ddf.index.size,
             'year_min': self.ddf['year'].min(),
@@ -119,7 +114,7 @@ class BaselineModelAnalysisDataLake:
         if self.target_col not in self.ddf.columns:
             raise ValueError(f"Target {self.target_col} não encontrado nos dados Data Lake")
         
-        print(f"   Target stats: μ={target_stats['mean']:.2f}%, σ={target_stats['std']:.2f}%")
+        print(f"   Target stats: mean={target_stats['mean']:.2f}%, std={target_stats['std']:.2f}%")
         
         if imputed_cols:
             imputed_count = int(computed_stats['imputed_count'])
@@ -145,11 +140,9 @@ class BaselineModelAnalysisDataLake:
             Dict: Estatísticas da distribuição do target incluindo temporal e por país
         """
         print(f"\nAnálise da distribuição do target Data Lake")
-        print("=" * 50)
         
         analysis = {}
         
-        # Reusar estatísticas já computadas se disponíveis
         if hasattr(self, '_cached_basic_stats'):
             target_describe = self._cached_basic_stats['target_describe']
             year_min = self._cached_basic_stats['year_min']
@@ -253,14 +246,11 @@ class BaselineModelAnalysisDataLake:
             Dict: Resultados dos modelos baseline para todos os folds
         """
         print(f"\nBaselines com validação temporal")
-        print("=" * 60)
-        print("Metodologia: Vazamento temporal eliminado com lag >= 2 anos")
-        print("Validação: Walk-forward temporal com gaps")
         
         baseline_results = {}
         
         for fold_id, fold in enumerate(self.folds):
-            print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) → Val({fold['val_start']}-{fold['val_end']}) → Test({fold['test_start']}-{fold['test_end']})")
+            print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) ->Val({fold['val_start']}-{fold['val_end']}) ->Test({fold['test_start']}-{fold['test_end']})")
             
             train_ddf = self.ddf[(self.ddf['year'] >= fold['train_start']) & (self.ddf['year'] <= fold['train_end'])]
             val_ddf = self.ddf[(self.ddf['year'] >= fold['val_start']) & (self.ddf['year'] <= fold['val_end'])]
@@ -372,7 +362,7 @@ class BaselineModelAnalysisDataLake:
             # Baseline 3: Naive com Lag Científico
             MIN_LAG = 2
             
-            print(f"      Processando Naive baseline com Dask...")
+            print(f"      Naive baseline...")
             
             # Batch compute para val e test clean
             # val_clean_pd e test_clean_pd já computados acima
@@ -453,7 +443,7 @@ class BaselineModelAnalysisDataLake:
             }
             
             # Baseline 4: Cross-Country Average
-            print(f"      Processando Cross-Country baseline com Dask...")
+            print(f"      Cross-Country baseline...")
             
             val_pred_cross = []
             
@@ -539,9 +529,6 @@ class BaselineModelAnalysisDataLake:
                 'method': 'cross_country_average_excluding_target'
             }
             
-            print(f"      Naive baseline concluído")
-            print(f"      Cross-Country baseline concluído")
-
             # Métricas agregadas para Naive (inclui WAPE/MASE)
             try:
                 test_wape_naive = float((np.abs(y_test - test_pred_naive)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None
@@ -574,7 +561,7 @@ class BaselineModelAnalysisDataLake:
                 'generalization_gap': generalization_gap
             }
             
-            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} → Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
+            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
             
             abs_gap = abs(generalization_gap)
             if abs_gap <= 0.05:
@@ -589,136 +576,7 @@ class BaselineModelAnalysisDataLake:
             baseline_results[f'fold_{fold_id}'] = fold_results
         
         return baseline_results
-    
-    def test_ml_models(self) -> Dict:
-        """
-        Testar modelos ML avançados usando módulo centralizado.
-        
-        Utiliza BaselineModelFactory para criar e treinar modelos
-        RandomForest, XGBoost e LightGBM com suporte Dask.
-        
-        Returns:
-            Dict: Resultados dos modelos ML para todos os folds
-        """
-        print(f"\nModelos ML avançados com módulo centralizado")
-        print("=" * 60)
-        print("Modelos: RandomForest, XGBoost, LightGBM")
-        print("Backend: Dask para processamento distribuído")
-        
-        ml_results = {}
-        
-        available_models = BaselineModelFactory.get_available_models()
-        print(f"Modelos disponíveis: {', '.join(available_models)}")
-        
-        for fold_id, fold in enumerate(self.folds):
-            print(f"\nFold {fold_id}: ML Models Training")
-            
-            train_ddf = self.ddf[(self.ddf['year'] >= fold['train_start']) &
-                                (self.ddf['year'] <= fold['train_end'])]
-            val_ddf = self.ddf[(self.ddf['year'] >= fold['val_start']) &
-                              (self.ddf['year'] <= fold['val_end'])]
-            test_ddf = self.ddf[(self.ddf['year'] >= fold['test_start']) &
-                               (self.ddf['year'] <= fold['test_end'])]
-            
-            train_clean = train_ddf.dropna(subset=[self.target_col])
-            val_clean = val_ddf.dropna(subset=[self.target_col])
-            test_clean = test_ddf.dropna(subset=[self.target_col])
-            
-            train_size = int(train_clean.map_partitions(len).compute().sum())
-            val_size = int(val_clean.map_partitions(len).compute().sum())
-            test_size = int(test_clean.map_partitions(len).compute().sum())
-            
-            if train_size == 0 or test_size == 0:
-                print(f"   Fold {fold_id}: Dados insuficientes")
-                continue
-            
-            print(f"   Dados: Train={train_size}, Val={val_size}, Test={test_size}")
-            
-            # Selecionar features (excluir target e identificadores)
-            feature_cols = [col for col in train_clean.columns
-                          if col not in [self.target_col, 'country_code', 'year']]
-            
-            X_train = train_clean[feature_cols]
-            y_train = train_clean[self.target_col]
-            X_val = val_clean[feature_cols]
-            y_val = val_clean[self.target_col]
-            X_test = test_clean[feature_cols]
-            y_test = test_clean[self.target_col]
-            
-            fold_ml_results = {}
-            
-            # Treinar cada modelo disponível
-            for model_type in ['rf', 'xgboost', 'lightgbm']:
-                if model_type.upper().replace('_', '') in [m.upper() for m in available_models]:
-                    try:
-                        print(f"      Treinando {model_type}...")
-                        
-                        model = BaselineModelFactory.create_model(
-                            model_type=model_type,
-                            params=None,
-                        )
-                        
-                        # Treinar modelo
-                        model.train(X_train, y_train, X_val, y_val)
-                        
-                        # Avaliar no teste
-                        test_metrics = model.evaluate(X_test, y_test)
-                        
-                        # Obter feature importance se disponível
-                        feature_importance = model.get_feature_importance()
-                        
-                        fold_ml_results[model_type] = {
-                            'test_metrics': test_metrics,
-                            'feature_importance': feature_importance,
-                            'model_name': model.model_name
-                        }
-                        
-                        print(f"         R² Test: {test_metrics['r2']:.3f}, RMSE: {test_metrics['rmse']:.2f}")
-                        
-                    except Exception as e:
-                        print(f"         Erro ao treinar {model_type}: {e}")
-                        fold_ml_results[model_type] = {
-                            'error': str(e),
-                            'model_name': model_type
-                        }
-            
-            # Testar ensemble se houver múltiplos modelos
-            successful_models = [k for k, v in fold_ml_results.items() if 'error' not in v]
-            if len(successful_models) >= 2:
-                try:
-                    print(f"      Treinando Ensemble...")
-                    
-                    ensemble_config = [(model_type, None, 1.0) for model_type in successful_models]
-                    ensemble = BaselineEnsemble(ensemble_config)
-                    
-                    # Treinar ensemble
-                    ensemble.train(X_train, y_train, X_val, y_val)
-                    
-                    # Avaliar ensemble
-                    ensemble_results = ensemble.evaluate(X_test, y_test)
-                    
-                    fold_ml_results['ensemble'] = {
-                        'test_metrics': ensemble_results['ensemble'],
-                        'individual_metrics': ensemble_results['individual'],
-                        'weights': ensemble_results['weights'],
-                        'models_used': successful_models
-                    }
-                    
-                    print(f"         Ensemble R² Test: {ensemble_results['ensemble']['r2']:.3f}")
-                    
-                except Exception as e:
-                    print(f"         Erro ao criar ensemble: {e}")
-            
-            ml_results[f'fold_{fold_id}'] = fold_ml_results
-            
-            # Resumo do fold
-            print(f"   Resumo Fold {fold_id}:")
-            for model_name, results in fold_ml_results.items():
-                if 'test_metrics' in results:
-                    print(f"      {model_name}: R²={results['test_metrics']['r2']:.3f}")
-        
-        return ml_results
-    
+
     def analyze_predictability(self, baseline_results: Dict) -> Dict:
         """
         Análise científica de predictabilidade dos modelos baseline.
@@ -730,12 +588,6 @@ class BaselineModelAnalysisDataLake:
             Dict: Análise completa de predictabilidade com métricas de estabilidade
         """
         print("\nAnálise de predictabilidade Data Lake")
-        print("=" * 60)
-        print("Interpretação dos gaps de generalização:")
-        print("   • Gap = R²_validação - R²_teste")  
-        print("   • Gap pequeno (≤0.1): Modelo estável e confiável")
-        print("   • Gap moderado (0.1-0.2): Variação temporal esperada")
-        print("   • Gap alto (>0.2): Possível instabilidade ou overfitting")
         
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -855,28 +707,22 @@ class BaselineModelAnalysisDataLake:
                 'stability_acceptable': abs_avg_gap <= 0.2
             }
             
-            if all(publication_criteria.values()):
-                print(f"   Adequado para publicação: Metodologia rigorosa e estabilidade {stability_level}")
-                publication_ready = True
-            else:
+            if not all(publication_criteria.values()):
                 failed_criteria = [k for k, v in publication_criteria.items() if not v]
-                print(f"   Requer atenção: {', '.join(failed_criteria)}")
-                publication_ready = False
-            
+                print(f"   [WARN] Requer atenção: {', '.join(failed_criteria)}")
+
             predictability_analysis['stability_analysis'] = {
                 'avg_generalization_gap': float(avg_generalization_gap),
                 'stability_level': stability_level,
                 'publication_criteria': {k: bool(v) for k, v in publication_criteria.items()}
             }
-            predictability_analysis['publication_ready'] = bool(publication_ready)
             
         else:
             predictability_analysis = {
                 'architecture': 'data_lake',
                 'baseline_scores': {},
                 'predictability_level': 'unknown',
-                'scientific_validity': {'error': 'no_valid_results'},
-                'publication_ready': False
+                'scientific_validity': {'error': 'no_valid_results'}
             }
         
         return predictability_analysis
@@ -930,9 +776,6 @@ class BaselineModelAnalysisDataLake:
             self.ddf = self.ddf.persist()
             self._needs_persist = False
         print(f"Análise completa - arquitetura Data Lake")
-        print("=" * 60)
-        print(f"Comparação: Data Lake vs Data Warehouse para ML")
-        print(f"Objetivo: Avaliar performance e capacidade arquitetural")
         
         try:
             target_analysis = self.analyze_target_distribution()
@@ -962,27 +805,8 @@ class BaselineModelAnalysisDataLake:
                 
             print(f"   {gap_status}")
             
-            publication_status = predictability_analysis.get('publication_ready', False)
-            if publication_status:
-                print(f"   Status: Adequado para publicação científica")
-            else:
-                print(f"   Status: Requer atenção em alguns critérios")
-            
-            print(f"\nValidações Data Lake:")
-            print(f"   Dados Parquet: Carregados com Dask")
-            print(f"   Processamento: Flexível e distribuível")
-            print(f"   Schema dinâmico: Aplicado durante análise")
-            print(f"   Pipeline ML: Independente de infraestrutura")
-            
-            if predictability_analysis.get('scientific_validity', {}).get('temporal_leakage_prevented', False):
-                print(f"   Vazamento temporal: Prevenido (lag >= 2 anos)")
-            else:
-                print(f"   Vazamento temporal: Possível")
-                
-            if predictability_analysis.get('scientific_validity', {}).get('validation_used_correctly', False):
-                print(f"   Validação científica: Aplicada corretamente")
-            else:
-                print(f"   Validação: Mal implementada")
+            stability = predictability_analysis.get('stability_analysis', {}).get('stability_level', 'unknown')
+            print(f"   Estabilidade: {stability}")
             
             return results
             

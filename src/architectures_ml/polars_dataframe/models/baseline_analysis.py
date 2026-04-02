@@ -27,11 +27,9 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
-# Adicionar path para configuração
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from src.core.config import get_absolute_output_path
-from src.core.models.baseline import BaselineModelFactory, BaselineEnsemble
-from src.core.scientific_config import RANDOM_SEED, SCIENTIFIC_CONFIG, setup_reproducibility
+from src.core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
 
@@ -58,8 +56,6 @@ class BaselineModelAnalysisPolarsDataFrame:
         Inicializa a análise baseline para arquitetura Polars DataFrame.
         """
         print("Inicializando análise baseline Polars DataFrame")
-        print("=" * 60)
-        print("Pesquisa: Comparação de arquiteturas ML para evasão educacional")
 
         self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet")
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json")
@@ -72,7 +68,7 @@ class BaselineModelAnalysisPolarsDataFrame:
         if not os.path.exists(self.folds_path):
             raise FileNotFoundError(f"Folds Polars DataFrame não encontrados: {self.folds_path}")
 
-        print("Carregando dados Polars DataFrame com lazy evaluation...")
+        print("   Carregando dados com LAZY EVALUATION...")
         self.df_lazy = pl.scan_parquet(self.data_path)
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
@@ -85,7 +81,7 @@ class BaselineModelAnalysisPolarsDataFrame:
         """
         Carrega resumo dos dados usando computação seletiva com Polars.
         """
-        print("[RESUMO] Computando estatísticas dos dados...")
+        print("   Computando estatísticas...")
 
         # Computar estatísticas críticas
         stats_df = self.df_lazy.select([
@@ -117,7 +113,7 @@ class BaselineModelAnalysisPolarsDataFrame:
         if self.target_col not in self.df_lazy.collect_schema().names():
             raise ValueError(f"Target {self.target_col} não encontrado nos dados Polars DataFrame")
 
-        print(f"   Target stats: μ={stats['target_mean']:.2f}%, σ={stats['target_std']:.2f}%")
+        print(f"   Target stats: mean={stats['target_mean']:.2f}%, std={stats['target_std']:.2f}%")
 
         if stats['negative_target'] > 0:
             print(f"   Aviso: {stats['negative_target']} valores negativos no target")
@@ -134,7 +130,6 @@ class BaselineModelAnalysisPolarsDataFrame:
             Dict: Estatísticas da distribuição do target
         """
         print(f"\nAnálise da distribuição do target Polars DataFrame")
-        print("=" * 50)
 
         analysis = {}
 
@@ -224,15 +219,12 @@ class BaselineModelAnalysisPolarsDataFrame:
             Dict: Resultados dos modelos baseline para todos os folds
         """
         print(f"\nBaselines com validação temporal")
-        print("=" * 60)
-        print("Metodologia: Vazamento temporal eliminado com lag >= 2 anos")
-        print("Validação: Walk-forward temporal com gaps")
 
         baseline_results = {}
 
         for fold_id, fold in enumerate(self.folds):
-            print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) → "
-                  f"Val({fold['val_start']}-{fold['val_end']}) → "
+            print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) ->"
+                  f"Val({fold['val_start']}-{fold['val_end']}) ->"
                   f"Test({fold['test_start']}-{fold['test_end']})")
 
             # Filtros lazy
@@ -394,7 +386,6 @@ class BaselineModelAnalysisPolarsDataFrame:
                 country = row['country_code']
                 val_year = row['year']
 
-                country_train = train_clean[train_clean['country_code'] == country]
                 year_data = train_clean[train_clean['year'] <= val_year - MIN_LAG]
 
                 if len(year_data) > 0:
@@ -475,7 +466,7 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'generalization_gap': generalization_gap
             }
 
-            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} → Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
+            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
 
             # Registrar resultados do fold
             baseline_results[f'fold_{fold_id}'] = fold_results
@@ -495,7 +486,6 @@ class BaselineModelAnalysisPolarsDataFrame:
             Dict: Análise completa de predictabilidade com métricas de estabilidade
         """
         print("\nAnálise de predictabilidade Polars DataFrame")
-        print("=" * 60)
 
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -597,7 +587,9 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'stability_level': stability_level,
                 'publication_criteria': {k: bool(v) for k, v in publication_criteria.items()}
             }
-            predictability_analysis['publication_ready'] = bool(all(publication_criteria.values()))
+            if not all(publication_criteria.values()):
+                failed_criteria = [k for k, v in publication_criteria.items() if not v]
+                print(f"   [WARN] Requer atenção: {', '.join(failed_criteria)}")
 
             print(f"\n   Melhor baseline: {best_baseline_overall}")
             print(f"      Performance Teste: R² = {best_mean_test_r2:.3f}")
@@ -608,8 +600,7 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'architecture': 'polars_dataframe',
                 'baseline_scores': {},
                 'predictability_level': 'unknown',
-                'scientific_validity': {'error': 'no_valid_results'},
-                'publication_ready': False
+                'scientific_validity': {'error': 'no_valid_results'}
             }
 
         return predictability_analysis
@@ -627,7 +618,7 @@ class BaselineModelAnalysisPolarsDataFrame:
         Returns:
             Dict: Resultados completos consolidados
         """
-        print(f"\nSalvando resultados Polars DataFrame...")
+        print(f"\nSalvando resultados...")
 
         full_results = {
             'architecture': 'polars_dataframe',
@@ -662,7 +653,6 @@ class BaselineModelAnalysisPolarsDataFrame:
             Dict: Resultados consolidados da análise ou erro
         """
         print(f"Análise completa - arquitetura Polars DataFrame")
-        print("=" * 60)
 
         try:
             target_analysis = self.analyze_target_distribution()
@@ -671,7 +661,7 @@ class BaselineModelAnalysisPolarsDataFrame:
             results = self.save_results(target_analysis, baseline_results,
                                         predictability_analysis)
 
-            print(f"\nResumo executivo - arquitetura Polars DataFrame:")
+            print(f"\nResumo - arquitetura Polars DataFrame:")
             print(f"   Target: {self.target_col}")
             print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
             print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")

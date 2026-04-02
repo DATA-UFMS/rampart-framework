@@ -25,7 +25,6 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
-# Adicionar path para configuração
 core_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'core')
 core_path = os.path.abspath(core_path)
 if core_path not in sys.path:
@@ -50,12 +49,9 @@ class HierarchicalModelDataLake:
     
     def __init__(self):
         print("Inicializando Modelo Hierárquico Data Lake")
-        print("=" * 60)
-        print("Arquitetura: Data Lake com processamento distribuído")
 
         self.target_col = 'dropout_rate_data_lake'
 
-        print("Modo: Folds Normais (setup básico)")
         self._setup_normal_mode()
 
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/models/hierarchical_results")
@@ -71,7 +67,7 @@ class HierarchicalModelDataLake:
         if not os.path.exists(self.data_path) or not os.path.exists(self.folds_path):
             raise FileNotFoundError("Dados Data Lake não encontrados")
         
-        print("Carregando dados Data Lake com processamento distribuído...")
+        print("   Carregando dados com Dask...")
         self.ddf = dd.read_parquet(self.data_path, engine='pyarrow')
         self._needs_persist = True
         with open(self.folds_path, 'r') as f:
@@ -90,18 +86,17 @@ class HierarchicalModelDataLake:
         computed_stats = dask.compute(stats_batch)[0]
         
         n_records = self.ddf.shape[0].compute()
-        print(f"Dados carregados: {n_records} registros, {self.ddf.npartitions} partições")
-        print(f"Período: {computed_stats['year_min']}-{computed_stats['year_max']}")
-        print(f"Países: {computed_stats['n_countries']}")
-        print(f"Target: {self.target_col}")
-        print(f"Folds: {len(self.folds)}")
+        print(f"   Dados: {n_records} registros, {self.ddf.npartitions} partições")
+        print(f"   Período: {computed_stats['year_min']}-{computed_stats['year_max']}")
+        print(f"   Países: {computed_stats['n_countries']}")
+        print(f"   Target: {self.target_col}")
+        print(f"   Folds: {len(self.folds)}")
         
         if self.target_col not in self.ddf.columns:
             raise ValueError(f"Target {self.target_col} não encontrado nos dados")
         
 
         
-        # Alinhar features com seleção científica salva no setup
         selection_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/feature_selection_data_lake.json")
         if os.path.exists(selection_path):
             try:
@@ -132,7 +127,6 @@ class HierarchicalModelDataLake:
         conjunto completo. Chamadas usam _prepare_data(val, train),
         _prepare_data(test, train).
         """
-        # Batch compute para medianas/médias
         medians_batch = {}
         means_batch = {}
         
@@ -168,7 +162,6 @@ class HierarchicalModelDataLake:
         for feature, median_val in medians.items():
             X_ddf = X_ddf.assign(**{feature: X_ddf[feature].fillna(median_val)})
         
-        # Batch compute para dados finais
         final_data = {
             'X': X_ddf,
             'y': data_ddf[self.target_col],
@@ -210,14 +203,12 @@ class HierarchicalModelDataLake:
                                  (1 - shrinkage_factor) * global_mean)
             country_means[country] = country_mean_shrunk
             
-            # Calcular resíduos
             country_X = X_train[country_mask]
             country_residuals = country_y - country_mean_shrunk
-            
+
             country_residuals_X.append(country_X)
             country_residuals_y.extend(country_residuals)
-        
-        # Treinar modelo para resíduos
+
         if len(country_residuals_X) > 0:
             residuals_X = pd.concat(country_residuals_X, ignore_index=True)
             residuals_y = np.array(country_residuals_y)
@@ -242,33 +233,31 @@ class HierarchicalModelDataLake:
             samples_count = 0
             final_alpha = 0.0
         
-        # Predição no teste
         predictions = []
         for idx, (_, row) in enumerate(X_test.iterrows()):
             country = countries_test.iloc[idx]
-            
+
             if country in country_means:
                 base_pred = country_means[country]
             else:
                 base_pred = global_mean
-            
+
             if residual_model is not None:
                 row_features = row.values.reshape(1, -1)
                 residual_pred = residual_model.predict(row_features)[0]
                 final_pred = base_pred + (residual_shrinkage * residual_pred)
             else:
                 final_pred = base_pred
-            
+
             predictions.append(final_pred)
-        
+
         predictions = np.array(predictions)
-        
-        # Métricas
+
         mse = mean_squared_error(y_test, predictions)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_test, predictions)
         r2 = r2_score(y_test, predictions)
-        
+
         return {
             'model_name': 'simple_hierarchical',
             'architecture': 'data_lake',
@@ -294,16 +283,14 @@ class HierarchicalModelDataLake:
         """
         Random Forest hierárquico com country effects como features.
         """
-        # Calcular médias por país
         country_means = {}
         global_mean = y_train.mean()
-        
+
         for country in countries_train.unique():
             country_mask = countries_train == country
             country_y = y_train[country_mask]
             country_means[country] = country_y.mean()
-        
-        # Adicionar country effects como features
+
         X_train_augmented = X_train.copy()
         X_test_augmented = X_test.copy()
         
@@ -313,7 +300,6 @@ class HierarchicalModelDataLake:
         X_train_augmented['country_effect'] = train_country_effects
         X_test_augmented['country_effect'] = test_country_effects
         
-        # Random Forest regularizado
         rf_model = RandomForestRegressor(
             n_estimators=200,
             max_depth=max_depth,
@@ -329,16 +315,14 @@ class HierarchicalModelDataLake:
         
         print(f"      Random Forest: {X_train_augmented.shape[1]} features totais ({X_train_augmented.shape[1]-1} base + 1 country_effect) × {X_train_augmented.shape[0]} samples")
         
-        # Métricas
         mse = mean_squared_error(y_test, predictions)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_test, predictions)
         r2 = r2_score(y_test, predictions)
-        
-        # Importância de features
+
         feature_names = list(X_train_augmented.columns)
         feature_importance = dict(zip(feature_names, rf_model.feature_importances_))
-        
+
         return {
             'model_name': 'random_forest_hierarchical',
             'architecture': 'data_lake',
@@ -400,16 +384,13 @@ class HierarchicalModelDataLake:
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
         X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
         
-        print(f"   EXECUTANDO MODELOS HIERÁRQUICOS:")
-        print(f"   CONTADOR DE FEATURES: {len(self.available_features)} features disponíveis")
-        print(f"   Dados preparados - Train: {X_train_scaled.shape}, Val: {X_val_scaled.shape}, Test: {X_test_scaled.shape}")
-        print(f"   DIMENSÕES: Train={X_train_scaled.shape}, Val={X_val_scaled.shape}, Test={X_test_scaled.shape}")
-        print(f"   PAÍSES: Train={countries_train.nunique()}, Val={countries_val.nunique()}, Test={countries_test.nunique()}")
+        print(f"   {len(self.available_features)} features, Train={X_train_scaled.shape}, Val={X_val_scaled.shape}, Test={X_test_scaled.shape}")
+        print(f"   Países: Train={countries_train.nunique()}, Val={countries_val.nunique()}, Test={countries_test.nunique()}")
         
         # Modelos hierárquicos
         # HPO: seleção de hiperparâmetros via grid search no conjunto de
         # validação. Modelo final retreinado no treino completo para avaliação
-        # no teste. Previne leakage L3.3 (Kapoor & Narayanan 2023).
+        # no teste. Previne leakage (Kapoor & Narayanan, 2023).
         models = {}
 
         # 1. Simple Hierarchical (tuning de residual_shrinkage por validação)
@@ -438,7 +419,7 @@ class HierarchicalModelDataLake:
         models['random_forest_hierarchical'] = {'val': val_rf, 'test': test_rf}
         
         # Análise dos gaps
-        print(f"\n   RESULTADOS HIERÁRQUICOS (Val → Test):")
+        print(f"\n   Resultados hierárquicos (Val -> Test):")
         simple_gap = val_simple['r2'] - test_simple['r2']
         rf_gap = val_rf['r2'] - test_rf['r2']
         rf_country_imp = val_rf.get('country_effect_importance', 0)
@@ -475,12 +456,8 @@ class HierarchicalModelDataLake:
         if getattr(self, '_needs_persist', False):
             self.ddf = self.ddf.persist()
             self._needs_persist = False
-        print("Análise Hierárquica Completa Data Lake (NORMAL)")
-        print("=" * 60)
-        print("Arquitetura: Data Lake para ML Hierárquico")
-        print("Objetivo: Avaliar capacidade hierárquica arquitetural")
-        print("Pattern: Data Lake com processamento flexível")
-        print("Configuração: RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
+        print("Análise hierárquica Data Lake")
+        print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
 
         all_results = {
             'architecture': 'data_lake',
@@ -516,11 +493,7 @@ class HierarchicalModelDataLake:
             return all_results
         
         # Performance agregada
-        print("PERFORMANCE AGREGADA SCHEMA-ON-READ (NORMAL):")
-        print("INTERPRETAÇÃO GAPS HIERÁRQUICOS:")
-        print("   • Gap ≤0.15: Excelente - objetivo das correções atingido")
-        print("   • Gap 0.15-0.2: Bom - aceitável para dados educacionais")
-        print("   • Gap >0.2: Necessita ajustes adicionais")
+        print("Performance agregada SCHEMA-ON-READ:")
         
         for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
             val_r2s = [fold['models'][model_name]['val']['r2'] for fold in all_results['folds'] 
@@ -544,7 +517,7 @@ class HierarchicalModelDataLake:
                 if abs_gap <= 0.15:
                     print(f"      Regularização efetiva - Gap dentro da meta científica")
                 elif abs_gap <= 0.2:
-                    print(f"      MELHORIA SIGNIFICATIVA - Gap aceitável")
+                    print(f"      Gap aceitável")
                 else:
                     print(f"      Necessita regularização adicional")
                 
@@ -555,12 +528,7 @@ class HierarchicalModelDataLake:
                     'generalization_gap': float(gap_mean)
                 }
         
-        # Resumo executivo
-        print("RESUMO EXECUTIVO - HIERÁRQUICO SCHEMA-ON-READ:")
-        print("   PESQUISA: Modelos hierárquicos para arquitetura Data Lake")
-        print("   Arquitetura: Data Lake (Processamento Distribuído)")
-        print("   Pattern: Processamento flexível com Parquet")
-        print("   Versão: Corrigida com regularização científica")
+        print("Resumo hierárquico SCHEMA-ON-READ")
         
         # Melhor modelo
         if 'simple_hierarchical_summary' in all_results and 'random_forest_hierarchical_summary' in all_results:
@@ -583,8 +551,6 @@ class HierarchicalModelDataLake:
         return all_results
 
 if __name__ == "__main__":
-    print("Modo selecionado: Folds Normais")
     model = HierarchicalModelDataLake()
     results = model.run_hierarchical_analysis()
     print("\nAnálise hierárquica Data Lake concluída!")
-    print("   Regularização avançada aplicada com abordagem científica")

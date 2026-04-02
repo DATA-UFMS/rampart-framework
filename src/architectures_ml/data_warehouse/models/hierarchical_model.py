@@ -21,7 +21,6 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
-# Configuração de caminhos
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 sys.path.insert(0, project_root)
 
@@ -61,14 +60,11 @@ class HierarchicalModelSQLFirst:
     """
     
     def __init__(self):
-        print("◇ INICIALIZANDO ML DATA WAREHOUSE CONSUMER - HIERARCHICAL MODEL")
-        print("=" * 70)
-        print("🖈  PESQUISA: Comparação de Arquiteturas ML para Dropout Educacional")
-        print("▣ ARQUITETURA: Data Warehouse com ML Consumer pattern")
+        print("Inicializando Modelo Hierárquico Data Warehouse")
 
         self.target_col = 'dropout_rate_data_warehouse'
 
-        print("▣ PATTERN: ML Data Warehouse Consumer com views básicas do setup")
+        print("   Pattern: ML Consumer com views")
         
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json")
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/models/hierarchical_results")
@@ -81,18 +77,15 @@ class HierarchicalModelSQLFirst:
         if not os.path.exists(self.db_path):
             raise FileNotFoundError(f"DuckDB Data Warehouse não encontrado: {self.db_path}")
         
-        print("◆ Inicializando Connection Manager para ML workloads...")
         try:
             self.conn_manager = DuckDBConnectionManager(
                 db_path=self.db_path,
                 max_retries=3,
                 retry_delay=1.0
             )
-            print(f"   ✓ Connection Manager inicializado: {self.db_path}")
+            print(f"   Connection Manager: {self.db_path}")
         except Exception as e:
-            raise RuntimeError(f"✗ Falha ao inicializar Connection Manager: {e}")
-
-        print("🖈  Carregando configuração dos folds...")
+            raise RuntimeError(f"Falha ao inicializar Connection Manager: {e}")
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
@@ -102,33 +95,32 @@ class HierarchicalModelSQLFirst:
     
     def _verify_views(self):
         """Verificar se views necessárias existem no Data Warehouse."""
-        print("   □ Verificando views básicas do setup Data Warehouse...")
+        print("   Verificando views...")
 
         try:
             count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
             if count > 0:
-                print(f"   ✓ Views do setup verificadas: dados acessíveis ({count} registros)")
+                print(f"   Views verificadas: {count} registros")
             else:
-                raise RuntimeError("✗ Views do setup vazias")
+                raise RuntimeError("Views do setup vazias")
         except SQLProcessingError as e:
-            raise RuntimeError(f"✗ Erro ao verificar views do setup: {e}")
+            raise RuntimeError(f"Erro ao verificar views do setup: {e}")
     
     def _load_data_summary(self):
         """Carregar resumo dos dados via queries diretas às views."""
-        print("   🖈  Carregando resumo dos dados via Data Warehouse views...")
+        print("   Carregando resumo dos dados...")
         
         try:
-            # Estatísticas básicas via SQL
             total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
             min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM analytics_wide")
             max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM analytics_wide")
             total_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
             
-            print(f"   ✓ Dados via views: {total_records} observações")
-            print(f"   🛆 Período: {min_year}-{max_year}")
-            print(f"    🜨 Países: {total_countries}")
-            print(f"   ⚙ Target: {self.target_col}")
-            print(f"   ↪ Folds: {len(self.folds)}")
+            print(f"   Dados: {total_records} observações")
+            print(f"   Período: {min_year}-{max_year}")
+            print(f"   Países: {total_countries}")
+            print(f"   Target: {self.target_col}")
+            print(f"   Folds: {len(self.folds)}")
             
             target_exists = self.conn_manager.execute_scalar(f"""
                 SELECT COUNT(*) > 0 
@@ -140,15 +132,13 @@ class HierarchicalModelSQLFirst:
             if not target_exists:
                 raise ValueError(f"Target {self.target_col} não encontrado na tabela analytics_wide")
             
-            # Estatísticas do target via SQL
             target_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE {self.target_col} IS NOT NULL")
             target_std = self.conn_manager.execute_scalar(f"SELECT STDDEV({self.target_col}) FROM analytics_wide WHERE {self.target_col} IS NOT NULL")
             target_min = self.conn_manager.execute_scalar(f"SELECT MIN({self.target_col}) FROM analytics_wide WHERE {self.target_col} IS NOT NULL")
             target_max = self.conn_manager.execute_scalar(f"SELECT MAX({self.target_col}) FROM analytics_wide WHERE {self.target_col} IS NOT NULL")
             
-            print(f"   🛈 Target stats via SQL: μ={target_mean:.2f}%, σ={target_std:.2f}%")
-            print(f"   ▲ Regularização aplicada: Random Forest otimizado")
-            print(f"   ✓ Target válido: range [{target_min:.2f}%, {target_max:.2f}%]")
+            print(f"   Target stats: mean={target_mean:.2f}%, std={target_std:.2f}%")
+            print(f"   Target range: [{target_min:.2f}%, {target_max:.2f}%]")
                 
         except SQLProcessingError as e:
             raise RuntimeError(f"Erro ao carregar resumo via views: {e}")
@@ -180,11 +170,11 @@ class HierarchicalModelSQLFirst:
         selection_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/feature_selection_data_warehouse.json")
 
         if os.path.exists(selection_path):
-            # Modo Normal: carregar features selecionadas cientificamente
+            # Modo Normal: carregar features selecionadas
             with open(selection_path, 'r') as f:
                 selection_data = json.load(f)
             available_features = selection_data['selected_features']
-            print(f"   ✔ FEATURES CIENTÍFICAS: {len(available_features)} features do feature selection")
+            print(f"   {len(available_features)} features do feature selection")
             print(f"   Método: {selection_data.get('selection_method', 'N/A')}")
         else:
             raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
@@ -245,14 +235,12 @@ class HierarchicalModelSQLFirst:
                                  (1 - shrinkage_factor) * global_mean)
             country_means[country] = country_mean_shrunk
             
-            # Calcular resíduos
             country_X = X_train[country_mask]
             country_residuals = country_y - country_mean_shrunk
-            
+
             country_residuals_X.append(country_X)
             country_residuals_y.extend(country_residuals)
-        
-        # Treinar modelo para resíduos
+
         if len(country_residuals_X) > 0:
             residuals_X = pd.concat(country_residuals_X, ignore_index=True)
             residuals_y = np.array(country_residuals_y)
@@ -277,28 +265,26 @@ class HierarchicalModelSQLFirst:
             samples_count = 0
             final_alpha = 0.0
         
-        # Predição no teste
         predictions = []
         for idx, (_, row) in enumerate(X_test.iterrows()):
             country = countries_test.iloc[idx]
-            
+
             if country in country_means:
                 base_pred = country_means[country]
             else:
                 base_pred = global_mean
-            
+
             if residual_model is not None:
                 row_features = row.values.reshape(1, -1)
                 residual_pred = residual_model.predict(row_features)[0]
                 final_pred = base_pred + (residual_shrinkage * residual_pred)
             else:
                 final_pred = base_pred
-            
+
             predictions.append(final_pred)
-        
+
         predictions = np.array(predictions)
-        
-        # Métricas
+
         mse = mean_squared_error(y_test, predictions)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_test, predictions)
@@ -329,16 +315,14 @@ class HierarchicalModelSQLFirst:
         """
         Random Forest hierárquico com country effects como features.
         """
-        # Calcular médias por país
         country_means = {}
         global_mean = y_train.mean()
-        
+
         for country in countries_train.unique():
             country_mask = countries_train == country
             country_y = y_train[country_mask]
             country_means[country] = country_y.mean()
-        
-        # Adicionar country effects como features
+
         X_train_augmented = X_train.copy()
         X_test_augmented = X_test.copy()
         
@@ -348,7 +332,7 @@ class HierarchicalModelSQLFirst:
         X_train_augmented['country_effect'] = train_country_effects
         X_test_augmented['country_effect'] = test_country_effects
         
-        # Random Forest regularizado (mesmos parâmetros do Data Lake para comparação justa)
+        # Mesmos hiperparâmetros do Data Lake para comparação justa
         rf_model = RandomForestRegressor(
             n_estimators=200,
             max_depth=max_depth,
@@ -362,16 +346,14 @@ class HierarchicalModelSQLFirst:
         rf_model.fit(X_train_augmented, y_train)
         predictions = rf_model.predict(X_test_augmented)
         
-        # Métricas
         mse = mean_squared_error(y_test, predictions)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_test, predictions)
         r2 = r2_score(y_test, predictions)
-        
-        # Importância de features
+
         feature_names = list(X_train_augmented.columns)
         feature_importance = dict(zip(feature_names, rf_model.feature_importances_))
-        
+
         return {
             'model_name': 'random_forest_hierarchical',
             'architecture': 'data_warehouse',
@@ -389,17 +371,15 @@ class HierarchicalModelSQLFirst:
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
         """Executar análise completa para um fold via ML Data Warehouse Consumer pattern."""
         fold_id = fold_info['fold_id']
-        print(f"\n↪ ANALISANDO FOLD {fold_id} VIA DATA WAREHOUSE: Train({fold_info['train_start']}-{fold_info['train_end']}) → Val({fold_info['val_start']}-{fold_info['val_end']}) → Test({fold_info['test_start']}-{fold_info['test_end']})")
+        print(f"\nFold {fold_id}: Train({fold_info['train_start']}-{fold_info['train_end']}) -> Val({fold_info['val_start']}-{fold_info['val_end']}) -> Test({fold_info['test_start']}-{fold_info['test_end']})")
         
         try:
             train_data = self._load_ml_fold_data(fold_id, 'train')
             val_data = self._load_ml_fold_data(fold_id, 'val')
             test_data = self._load_ml_fold_data(fold_id, 'test')
             
-            print(f"   🖈  Dados via DW views: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
-            print(f"    Gaps: Train-Val={fold_info['val_start']-fold_info['train_end']-1}yr, Val-Test={fold_info['test_start']-fold_info['val_end']-1}yr")
-
-            print(f"   □ Setup Data Warehouse: Views básicas com {len(train_data.columns)} features")
+            print(f"   Dados: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
+            print(f"   Gaps: Train-Val={fold_info['val_start']-fold_info['train_end']-1}yr, Val-Test={fold_info['test_start']-fold_info['val_end']-1}yr")
 
         except Exception as e:
             print(f"   Erro ao carregar dados do fold {fold_id}: {e}")
@@ -435,12 +415,12 @@ class HierarchicalModelSQLFirst:
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
         X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
         
-        print(f"   🗲 EXECUTANDO MODELOS HIERÁRQUICOS:")
+        print(f"   Executando modelos hierárquicos:")
         
         # Modelos hierárquicos
         # HPO: seleção de hiperparâmetros via grid search no conjunto de
         # validação. Modelo final retreinado no treino completo para avaliação
-        # no teste. Previne leakage L3.3 (Kapoor & Narayanan 2023).
+        # no teste. Previne leakage (Kapoor & Narayanan, 2023).
         models = {}
 
         # 1. Simple Hierarchical (tuning de residual_shrinkage)
@@ -483,29 +463,29 @@ class HierarchicalModelSQLFirst:
         models['random_forest_hierarchical'] = {'val': val_rf, 'test': test_rf}
         
         # Análise dos gaps
-        print(f"   🗲 RESULTADOS HIERÁRQUICOS (Val → Test):")
+        print(f"   Resultados hierárquicos (Val -> Test):")
         simple_gap = val_simple['r2'] - test_simple['r2']
         rf_gap = val_rf['r2'] - test_rf['r2']
         rf_country_imp = val_rf.get('country_effect_importance', 0)
         
-        print(f"      🖈  Simple Hierarchical: Val R²={val_simple['r2']:.3f}, Test R²={test_simple['r2']:.3f}, Gap={simple_gap:+.3f}")
-        print(f"      ▲ Random Forest:       Val R²={val_rf['r2']:.3f}, Test R²={test_rf['r2']:.3f}, Gap={rf_gap:+.3f}")
+        print(f"      Simple Hierarchical: Val R²={val_simple['r2']:.3f}, Test R²={test_simple['r2']:.3f}, Gap={simple_gap:+.3f}")
+        print(f"      Random Forest:       Val R²={val_rf['r2']:.3f}, Test R²={test_rf['r2']:.3f}, Gap={rf_gap:+.3f}")
         print(f"         Country Effect: {rf_country_imp:.3f} (Target: 0.2-0.4)")
         
         # Interpretação dos gaps
         if abs(simple_gap) <= 0.15:
-            print(f"      ✓ Simple: Gap corrigido - dentro da meta científica")
+            print(f"      Simple: Gap dentro da meta")
         elif abs(simple_gap) <= 0.2:
-            print(f"      🖈  Simple: Gap moderado - aceitável para dados educacionais")
+            print(f"      Simple: Gap moderado")
         else:
-            print(f"       🛈Simple: Gap ainda elevado - necessita regularização adicional")
-            
+            print(f"      Simple: Gap elevado")
+
         if abs(rf_gap) <= 0.15:
-            print(f"      ✓ RF: Gap corrigido - excelente regularização aplicada")
-        elif abs(rf_gap) <= 0.2: 
-            print(f"      🖈  RF: Gap moderado - regularização adequada")
+            print(f"      RF: Gap dentro da meta")
+        elif abs(rf_gap) <= 0.2:
+            print(f"      RF: Gap moderado")
         else:
-            print(f"       🛈RF: Gap ainda elevado - considerar regularização adicional")
+            print(f"      RF: Gap elevado")
         
         return {
             'fold_id': fold_id,
@@ -516,12 +496,8 @@ class HierarchicalModelSQLFirst:
     
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa via ML Data Warehouse Consumer."""
-        print("↪ ANÁLISE HIERÁRQUICA COMPLETA VIA DATA WAREHOUSE")
-        print("=" * 70)
-        print("🖈  COMPARAÇÃO: Data Warehouse vs Data Lake para ML Hierárquico")
-        print("⚙ OBJETIVO: Avaliar capacidade hierárquica arquitetural")
-        print("▣ PATTERN: ML Data Warehouse Consumer com views básicas do setup")
-        print("▲ Regularização: RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
+        print("Análise hierárquica Data Warehouse")
+        print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
         
         try:
             all_results = {
@@ -553,11 +529,7 @@ class HierarchicalModelSQLFirst:
             
             # Performance agregada
             if all_results['folds']:
-                print(f"\n🗲 PERFORMANCE AGREGADA DATA WAREHOUSE:")
-                print(" 🢱 INTERPRETAÇÃO GAPS HIERÁRQUICOS:")
-                print("   • Gap ≤0.15: Excelente - objetivo das correções atingido")
-                print("   • Gap 0.15-0.2: Bom - aceitável para dados educacionais") 
-                print("   • Gap >0.2: Necessita ajustes adicionais")
+                print(f"\nPerformance agregada Data Warehouse:")
                 
                 for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
                     val_r2s = []
@@ -574,7 +546,7 @@ class HierarchicalModelSQLFirst:
                         test_std = np.std(test_r2s)
                         gap_mean = val_mean - test_mean
                         
-                        print(f"\n   🖈  {model_name}:")
+                        print(f"\n   {model_name}:")
                         print(f"      Val:  R² = {val_mean:.3f}")
                         print(f"      Test: R² = {test_mean:.3f} ± {test_std:.3f}")
                         print(f"      Gap:  {gap_mean:+.3f}")
@@ -582,24 +554,19 @@ class HierarchicalModelSQLFirst:
                         # Análise do gap
                         abs_gap = abs(gap_mean)
                         if abs_gap <= 0.15:
-                            print(f"      ✓ Regularização efetiva - Gap dentro da meta científica")
+                            print(f"      Regularização efetiva - gap dentro da meta")
                         elif abs_gap <= 0.2:
-                            print(f"      🖈  MELHORIA SIGNIFICATIVA - Gap aceitável")
+                            print(f"      Gap aceitável")
                         else:
-                            print(f"       🛈Necessita regularização adicional")
+                            print(f"      Necessita regularização adicional")
                 
-                # Resumo executivo
-                print(f"\n⚙ RESUMO EXECUTIVO - HIERÁRQUICO DATA WAREHOUSE:")
-                print(f"   🖈  PESQUISA: Modelos hierárquicos para arquitetura Data Warehouse")
-                print(f"   ◇ Arquitetura: Data Warehouse Consumer")
-                print(f"   ▣ Pattern: Direct view queries com Connection Manager")
-                print(f"   ▲ Versão: Corrigida com regularização científica")
+                print(f"\nResumo hierárquico Data Warehouse")
             
             results_file = f"{self.results_path}/hierarchical_analysis_data_warehouse_results.json"
             with open(results_file, 'w') as f:
                 json.dump(all_results, f, indent=2)
             
-            print(f"\n🖧  Resultados Data Warehouse salvos: {results_file}")
+            print(f"\nResultados salvos: {results_file}")
             
             return all_results
             
@@ -615,9 +582,9 @@ class HierarchicalModelSQLFirst:
             if hasattr(self, 'conn_manager') and self.conn_manager:
                 try:
                     self.conn_manager.close_connection()
-                    print("   ✓ Connection Manager fechado")
+                    print("   Connection Manager fechado")
                 except Exception as e:
-                    print(f"    🛈Erro ao fechar Connection Manager: {e}")
+                    print(f"   Erro ao fechar Connection Manager: {e}")
 
 if __name__ == "__main__":
     import argparse
@@ -628,7 +595,6 @@ if __name__ == "__main__":
     try:
         model = HierarchicalModelSQLFirst()
         results = model.run_hierarchical_analysis()
-        print(f"\n⚙ Análise hierárquica Data Warehouse concluída!")
-        print(f"   Regularização avançada aplicada")
+        print(f"\nAnálise hierárquica Data Warehouse concluída!")
     except Exception as e:
-        print(f"\n✗ Erro na execução: {e}")
+        print(f"\n[ERROR] {e}")

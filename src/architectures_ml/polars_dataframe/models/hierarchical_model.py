@@ -24,7 +24,6 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
-# Adicionar path para configuração
 core_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'core')
 core_path = os.path.abspath(core_path)
 if core_path not in sys.path:
@@ -45,8 +44,8 @@ class HierarchicalModelPolarsDataFrame:
     """
     Modelo Hierárquico para Arquitetura Polars DataFrame.
 
-    Implementa modelos hierárquicos com leitura lazy e processamento eficiente
-    de memória, mantendo princípios arquiteturais Data Lake.
+    Implementa modelos hierárquicos com leitura lazy Polars e processamento
+    eficiente de memória.
     """
 
     def __init__(self):
@@ -54,12 +53,9 @@ class HierarchicalModelPolarsDataFrame:
         Inicializa modelo hierárquico Polars DataFrame.
         """
         print("Inicializando Modelo Hierárquico Polars DataFrame")
-        print("=" * 60)
-        print("Arquitetura: Polars DataFrame com lazy evaluation")
 
         self.target_col = 'dropout_rate_polars_dataframe'
 
-        print("Modo: Folds Normais (setup básico)")
         self._setup_normal_mode()
 
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/models/hierarchical_results")
@@ -77,7 +73,7 @@ class HierarchicalModelPolarsDataFrame:
         if not os.path.exists(self.data_path) or not os.path.exists(self.folds_path):
             raise FileNotFoundError("Dados Polars DataFrame não encontrados")
 
-        print("Carregando dados Polars DataFrame com lazy evaluation...")
+        print("   Carregando dados com LAZY EVALUATION...")
         self.df_lazy = pl.scan_parquet(self.data_path)
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
@@ -108,7 +104,6 @@ class HierarchicalModelPolarsDataFrame:
         if self.target_col not in self.df_lazy.collect_schema().names():
             raise ValueError(f"Target {self.target_col} não encontrado nos dados")
 
-        # Alinhar features com seleção científica salva no setup
         selection_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/feature_selection_polars_dataframe.json")
         if os.path.exists(selection_path):
             try:
@@ -201,14 +196,12 @@ class HierarchicalModelPolarsDataFrame:
                                  (1 - shrinkage_factor) * global_mean)
             country_means[country] = country_mean_shrunk
 
-            # Calcular resíduos
             country_X = X_train[country_mask]
             country_residuals = country_y - country_mean_shrunk
 
             country_residuals_X.append(country_X)
             country_residuals_y.extend(country_residuals)
 
-        # Treinar modelo para resíduos
         if len(country_residuals_X) > 0:
             residuals_X = pd.concat(country_residuals_X, ignore_index=True)
             residuals_y = np.array(country_residuals_y)
@@ -232,7 +225,6 @@ class HierarchicalModelPolarsDataFrame:
             samples_count = 0
             final_alpha = 0.0
 
-        # Predição no teste
         predictions = []
         for idx, (_, row) in enumerate(X_test.iterrows()):
             country = countries_test.iloc[idx]
@@ -253,7 +245,6 @@ class HierarchicalModelPolarsDataFrame:
 
         predictions = np.array(predictions)
 
-        # Métricas
         mse = mean_squared_error(y_test, predictions)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_test, predictions)
@@ -284,7 +275,6 @@ class HierarchicalModelPolarsDataFrame:
         """
         Random Forest hierárquico com country effects como features.
         """
-        # Calcular médias por país
         country_means = {}
         global_mean = y_train.mean()
 
@@ -293,7 +283,6 @@ class HierarchicalModelPolarsDataFrame:
             country_y = y_train[country_mask]
             country_means[country] = country_y.mean()
 
-        # Adicionar country effects como features
         X_train_augmented = X_train.copy()
         X_test_augmented = X_test.copy()
 
@@ -303,7 +292,6 @@ class HierarchicalModelPolarsDataFrame:
         X_train_augmented['country_effect'] = train_country_effects
         X_test_augmented['country_effect'] = test_country_effects
 
-        # Random Forest regularizado
         rf_model = RandomForestRegressor(
             n_estimators=200,
             max_depth=max_depth,
@@ -320,13 +308,11 @@ class HierarchicalModelPolarsDataFrame:
         print(f"      Random Forest: {X_train_augmented.shape[1]} features totais "
               f"({X_train_augmented.shape[1]-1} base + 1 country_effect) × {X_train_augmented.shape[0]} samples")
 
-        # Métricas
         mse = mean_squared_error(y_test, predictions)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_test, predictions)
         r2 = r2_score(y_test, predictions)
 
-        # Importância de features
         feature_names = list(X_train_augmented.columns)
         feature_importance = dict(zip(feature_names, rf_model.feature_importances_))
 
@@ -397,16 +383,13 @@ class HierarchicalModelPolarsDataFrame:
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
         X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
 
-        print(f"   EXECUTANDO MODELOS HIERÁRQUICOS:")
-        print(f"   CONTADOR DE FEATURES: {len(self.available_features)} features disponíveis")
-        print(f"   Dados preparados - Train: {X_train_scaled.shape}, Val: {X_val_scaled.shape}, Test: {X_test_scaled.shape}")
-        print(f"   DIMENSÕES: Train={X_train_scaled.shape}, Val={X_val_scaled.shape}, Test={X_test_scaled.shape}")
-        print(f"   PAÍSES: Train={countries_train.nunique()}, Val={countries_val.nunique()}, Test={countries_test.nunique()}")
+        print(f"   {len(self.available_features)} features, Train={X_train_scaled.shape}, Val={X_val_scaled.shape}, Test={X_test_scaled.shape}")
+        print(f"   Países: Train={countries_train.nunique()}, Val={countries_val.nunique()}, Test={countries_test.nunique()}")
 
         # Modelos hierárquicos
         # HPO: seleção de hiperparâmetros via grid search no conjunto de
         # validação. Modelo final retreinado no treino completo para avaliação
-        # no teste. Previne leakage L3.3 (Kapoor & Narayanan 2023).
+        # no teste. Previne leakage (Kapoor & Narayanan, 2023).
         models = {}
 
         # 1. Simple Hierarchical (tuning de residual_shrinkage por validação)
@@ -435,7 +418,7 @@ class HierarchicalModelPolarsDataFrame:
         models['random_forest_hierarchical'] = {'val': val_rf, 'test': test_rf}
 
         # Análise dos gaps
-        print(f"\n   RESULTADOS HIERÁRQUICOS (Val → Test):")
+        print(f"\n   Resultados hierárquicos (Val -> Test):")
         simple_gap = val_simple['r2'] - test_simple['r2']
         rf_gap = val_rf['r2'] - test_rf['r2']
         rf_country_imp = val_rf.get('country_effect_importance', 0)
@@ -471,12 +454,8 @@ class HierarchicalModelPolarsDataFrame:
         """
         Executar análise hierárquica completa para arquitetura Polars DataFrame.
         """
-        print("Análise Hierárquica Completa Polars DataFrame (NORMAL)")
-        print("=" * 60)
-        print("Arquitetura: Polars DataFrame para ML Hierárquico")
-        print("Objetivo: Avaliar capacidade hierárquica arquitetural")
-        print("Pattern: Polars lazy com sklearn para modelos")
-        print("Configuração: RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
+        print("Análise hierárquica Polars DataFrame")
+        print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
 
         all_results = {
             'architecture': 'polars_dataframe',
@@ -512,11 +491,7 @@ class HierarchicalModelPolarsDataFrame:
             return all_results
 
         # Performance agregada
-        print("PERFORMANCE AGREGADA SCHEMA-ON-READ (NORMAL):")
-        print("INTERPRETAÇÃO GAPS HIERÁRQUICOS:")
-        print("   • Gap ≤0.15: Excelente - objetivo das correções atingido")
-        print("   • Gap 0.15-0.2: Bom - aceitável para dados educacionais")
-        print("   • Gap >0.2: Necessita ajustes adicionais")
+        print("Performance agregada LAZY EVALUATION:")
 
         for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
             val_r2s = [fold['models'][model_name]['val']['r2'] for fold in all_results['folds']
@@ -540,7 +515,7 @@ class HierarchicalModelPolarsDataFrame:
                 if abs_gap <= 0.15:
                     print(f"      Regularização efetiva - Gap dentro da meta científica")
                 elif abs_gap <= 0.2:
-                    print(f"      MELHORIA SIGNIFICATIVA - Gap aceitável")
+                    print(f"      Gap aceitável")
                 else:
                     print(f"      Necessita regularização adicional")
 
@@ -551,12 +526,7 @@ class HierarchicalModelPolarsDataFrame:
                     'generalization_gap': float(gap_mean)
                 }
 
-        # Resumo executivo
-        print("RESUMO EXECUTIVO - HIERÁRQUICO SCHEMA-ON-READ:")
-        print("   PESQUISA: Modelos hierárquicos para arquitetura Polars DataFrame")
-        print("   Arquitetura: Polars DataFrame (Lazy Evaluation)")
-        print("   Pattern: Leitura lazy com Polars, sklearn para treinamento")
-        print("   Versão: Corrigida com regularização científica")
+        print("Resumo hierárquico LAZY EVALUATION")
 
         # Melhor modelo
         if 'simple_hierarchical_summary' in all_results and 'random_forest_hierarchical_summary' in all_results:
@@ -580,8 +550,6 @@ class HierarchicalModelPolarsDataFrame:
 
 
 if __name__ == "__main__":
-    print("Modo selecionado: Folds Normais")
     model = HierarchicalModelPolarsDataFrame()
     results = model.run_hierarchical_analysis()
     print("\nAnálise hierárquica Polars DataFrame concluída!")
-    print("   Regularização avançada aplicada com abordagem científica")

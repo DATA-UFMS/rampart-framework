@@ -6,13 +6,12 @@ carregamento via pl.scan_parquet() (LazyFrame), criação de folds temporais com
 anti-leak, alinhamento de features com as arquiteturas Data Lake e Data Warehouse,
 e geração de artefatos em `outputs/ml_pipeline/architectures/polars_dataframe/`.
 
-Mantém simetria metodológica com DL e DW para comparação científica rigorosa,
+Mantém simetria metodológica com DL e DW para comparação rigorosa,
 diferindo apenas na implementação específica de Polars usando expressions e
 lazy evaluation para otimização de memória."""
 
 import os
 import sys
-import json
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -36,7 +35,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
     O processamento utiliza Polars com lazy evaluation (LazyFrames) para otimização
     de memória e expressions idiomáticas para transformações, diferindo no paradigma
-    mas mantendo equivalência científica nos resultados finais.
+    mas mantendo equivalência nos resultados finais.
     """
 
     PARADIGM_META = {
@@ -83,58 +82,49 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         output_base = get_absolute_output_path('ml_pipeline/architectures/polars_dataframe')
         super().__init__(architecture_name='polars_dataframe', output_base_path=output_base)
 
-        # Logger científico com contexto ML
         self.logger = get_logger(__name__, with_ml_context=True)
         self.logger.set_context(architecture='polars_dataframe', module='setup')
 
-        print("Inicializando Pipeline ML Polars DataFrame Científico")
-        print("=" * 70)
-        print("[PARADIGMA] Lazy evaluation com expressions idiomáticas Polars")
+        print("Inicializando Pipeline ML Polars DataFrame")
+        print("Lazy evaluation com expressions Polars")
 
-        # Configurações de paths Polars DataFrame (lê output do processador Polars, não do DL)
-        self.data_lake_path = get_absolute_output_path('collection/polars_dataframe/processed/final_results.parquet')
+        self.parquet_path = get_absolute_output_path('collection/polars_dataframe/processed/final_results.parquet')
         self.fallback_path = get_absolute_output_path('collection/polars_dataframe/raw')
 
-        # Validadores científicos centralizados
         self.temporal_validator = TemporalValidator(min_gap_years=2)
         self.data_validator = DataIntegrityValidator()
 
-        print(f"[OUTPUT] Diretório base: {self.output_base}")
-        print(f"[INPUT] Dados primários: {self.data_lake_path}")
-        print(f"[FALLBACK] Dados raw: {self.fallback_path}")
-        print("[METODOLOGIA] Lazy evaluation com expressões idiomáticas Polars")
+        print(f"  Diretorio base: {self.output_base}")
+        print(f"  Dados primarios: {self.parquet_path}")
+        print(f"  Dados raw (fallback): {self.fallback_path}")
+        print("  Lazy evaluation com expressoes Polars")
 
     def setup_environment(self) -> None:
         """
-        Configura ambiente Polars com otimizações científicas para ML temporal.
+        Configura ambiente Polars com otimizações para ML temporal.
 
         Configurações aplicadas:
             1. String cache: Habilitado para otimização de memória
             2. Streaming: Modo lazy para datasets >1GB
-            3. Random seeds: Determinismo científico em operações estocásticas
+            3. Random seeds: Determinismo em operações estocásticas
 
         Justificativa dos parâmetros:
             - String cache: Reduz overhead de strings em datasets educacionais
             - Lazy evaluation: Otimização automática de operações
             - Seeds: Controla amostragem e transformações estatísticas
 
-        Referência:
-            Polars documentation: https://docs.pola.rs/api/python/
         """
-        print("[AMBIENTE] Configurando Polars para processamento científico otimizado")
+        print("Configurando Polars")
 
-        # Configurações Polars para eficiência científica
         pl.enable_string_cache()
 
-        print("   ✓ String cache: Habilitado para otimização de memória")
-        print("   ✓ Lazy evaluation: Otimização automática de expressões")
+        print("  String cache habilitado")
+        print("  Lazy evaluation habilitado")
 
-        # Seeds para reprodutibilidade científica completa
         random_seed = self.config['random_seed']
         np.random.seed(random_seed)
 
-        print(f"   ✓ Reprodutibilidade: Seed {random_seed} configurado (NumPy)")
-        print("[STATUS] Ambiente Polars cientificamente configurado")
+        print(f"  Seed {random_seed} configurado (NumPy)")
 
     def load_data(self) -> pl.DataFrame:
         """
@@ -149,59 +139,56 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         Estratégia de carregamento hierárquica:
             1. Processed data: Dados pós-pipeline Data Lake (Parquet otimizado)
             2. Raw partitioned: Fallback para dados brutos particionados
-            3. Error handling: Logging detalhado para debugging científico
+            3. Error handling: Logging detalhado para debugging
 
         Vantagens Polars:
             - Lazy evaluation via scan_parquet() para datasets >RAM
             - Apache Arrow engine nativo para performance
             - Expressões idiomáticas para transformações eficientes
 
-        Nota: load_data retorna DataFrame coletado (necessário para compatibilidade
-        com base class). Lazy evaluation utilizada internamente em transformações.
+        load_data retorna DataFrame coletado (necessario para compatibilidade
+        com base class). Lazy evaluation utilizada internamente em transformacoes.
         """
         self.logger.info("Iniciando carregamento com lazy evaluation Polars")
-        print("\n[CARREGAMENTO] Executando estratégia lazy loading hierárquica")
-        print("━" * 60)
+        print("\nCarregando dados (lazy loading)")
 
         lf = None
         data_source = None
 
         # === Estratégia 1: Dados processados (otimizados) ===
-        if os.path.exists(self.data_lake_path):
+        if os.path.exists(self.parquet_path):
             try:
-                print("[TENTATIVA 1] Carregando dados processados com scan_parquet...")
-                lf = pl.scan_parquet(self.data_lake_path)
+                lf = pl.scan_parquet(self.parquet_path)
                 data_source = "processed"
-                print(f"   ✓ LazyFrame carregado (materialization adiada)")
+                print(f"  LazyFrame carregado")
             except (OSError, pl.exceptions.ComputeError, pl.exceptions.SchemaError) as e:
                 self.logger.warning(f"Erro ao carregar dados processados: {e}")
-                print(f"   ✗ Erro dados processados: {e}")
+                print(f"  [ERROR] Dados processados: {e}")
 
         # === Estratégia 2: Dados raw particionados (fallback) ===
         if lf is None and os.path.exists(self.fallback_path):
             try:
-                print("[TENTATIVA 2] Fallback para dados raw particionados...")
+                print("  Fallback para dados raw particionados...")
                 # Usar glob para arquivos parquet particionados
                 import glob
                 parquet_files = glob.glob(f"{self.fallback_path}/**/*.parquet", recursive=True)
                 if parquet_files:
                     lf = pl.scan_parquet(f"{self.fallback_path}/*.parquet")
                     data_source = "raw_partitioned"
-                    print("   ✓ Carregamento raw bem-sucedido com lazy evaluation")
+                    print("  Carregamento raw ok")
             except (OSError, pl.exceptions.ComputeError, pl.exceptions.SchemaError) as e:
                 self.logger.error(f"Erro ao carregar dados raw: {e}")
-                print(f"   ✗ Erro dados raw: {e}")
+                print(f"  [ERROR] Dados raw: {e}")
 
         # === Validação de carregamento ===
         if lf is None:
             raise FileNotFoundError(
                 "Dados Polars DataFrame não encontrados em nenhuma fonte.\n"
-                f"Verificar: {self.data_lake_path} ou {self.fallback_path}\n"
-                "Execute 'data_lake/processor.py' para gerar dados processados."
+                f"Verificar: {self.parquet_path} ou {self.fallback_path}\n"
+                "Execute 'polars_dataframe/processor.py' para gerar dados processados."
             )
 
-        # === Análise de adequação científica (lazy) ===
-        print("[ANÁLISE] Computando estatísticas para adequação ML temporal")
+        # === Análise de adequação ===
 
         # Operações lazy, computadas uma única vez
         stats_lf = lf.select([
@@ -218,17 +205,16 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         years_span = year_max - year_min + 1
         avg_obs_per_country = total_rows / n_countries if n_countries > 0 else 0
 
-        print(f"[TEMPORAL] {year_min}-{year_max} ({years_span} anos)")
-        print(f"[GEOGRÁFICO] {n_countries} países ({avg_obs_per_country:.1f} obs/país)")
-        print(f"[DIMENSÕES] {total_rows:,} observações totais")
-        print(f"[FONTE] {data_source}")
+        print(f"  {year_min}-{year_max} ({years_span} anos)")
+        print(f"  {n_countries} paises ({avg_obs_per_country:.1f} obs/pais)")
+        print(f"  {total_rows:,} observacoes totais")
+        print(f"  Fonte: {data_source}")
 
-        # Warnings científicos para adequação temporal
         if years_span < 10:
-            print("  ⚠ AVISO: Série temporal curta pode limitar validação walk-forward")
+            print("  [WARN] Serie temporal curta pode limitar validacao walk-forward")
 
         if n_countries < 15:
-            print("  ⚠ AVISO: Poucos países podem afetar generalização geográfica")
+            print("  [WARN] Poucos paises podem afetar generalizacao geografica")
 
         self.logger.info(f"Dados carregados com sucesso via {data_source}")
 
@@ -238,7 +224,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
     @log_ml_pipeline('validation')
     def validate_data(self, df: pl.DataFrame) -> None:
         """
-        Executa validação científica com amostragem estratégica Polars.
+        Executa validação com amostragem estratégica Polars.
 
         Args:
             df: DataFrame Polars com dados educacionais carregados
@@ -250,26 +236,24 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             4. Range validation: Detecção de valores impossíveis
             5. Fallback inteligente: Busca automática de variáveis alternativas
 
-        Critérios científicos:
+        Critérios:
             - Target coverage >50%: Poder estatístico adequado para ML
             - Range [0,100]: Consistência com definições educacionais
             - Schema compliance: Presença de identificadores temporais/geográficos
         """
-        print("[VALIDAÇÃO] Executando verificação científica com Polars")
-        print("━" * 50)
+        print("Validando dados")
 
         # === Amostragem adaptativa para validação eficiente ===
         total_rows = len(df)
         sample_size = min(1000, total_rows)
 
-        print(f"[AMOSTRAGEM] {sample_size:,}/{total_rows:,} observações ({sample_size/total_rows:.1%})")
+        print(f"  Amostragem: {sample_size:,}/{total_rows:,} ({sample_size/total_rows:.1%})")
 
         # Amostragem com seed reprodutível
         sample_df = df.sample(n=sample_size, seed=self.config['random_seed'])
         sample_pd = sample_df.to_pandas()
 
         # === Validação centralizada com DataIntegrityValidator ===
-        print("[INTEGRIDADE] Aplicando validador centralizado...")
         is_valid, validation_report = self.data_validator.validate_dataframe(
             sample_pd,
             target_col=self.source_column,
@@ -280,26 +264,23 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             warnings = validation_report.get('warnings', [])
             self.logger.warning(f"Problemas de integridade detectados: {len(warnings)} warnings")
             for warning in warnings[:3]:
-                print(f"  ⚠ {warning}")
+                print(f"  [WARN] {warning}")
 
         # === Schema validation com fallback inteligente ===
-        print("[SCHEMA] Validando estrutura para ML temporal...")
         if self.source_column not in df.columns:
-            print(f"  → Coluna target '{self.source_column}' não encontrada")
+            print(f"  [WARN] Coluna target '{self.source_column}' nao encontrada")
 
-            # Fallback baseado em correspondência semântica
             completion_cols = [col for col in df.columns if 'completion' in col.lower()]
             if completion_cols:
                 self.source_column = completion_cols[0]
-                print(f"  → Usando alternativa: {self.source_column}")
+                print(f"    Usando alternativa: {self.source_column}")
             else:
                 raise ValueError(
                     "Nenhuma variável educacional adequada encontrada.\n"
                     "Verificar presença de colunas com 'completion' no nome."
                 )
 
-        # === Análise de qualidade distribuída via Polars ===
-        print("[QUALIDADE] Computando estatísticas de adequação ML...")
+        # === Análise de qualidade via Polars ===
 
         # Computações via Polars expressions
         stats_lf = df.lazy().select([
@@ -315,22 +296,20 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         computed = stats_lf.collect().row(0)
         target_data, target_min, target_max, target_mean, over_100_count, under_0_count, total_rows_check = computed
 
-        # Análise de adequação científica
         target_coverage = (target_data / total_rows_check) * 100 if total_rows_check > 0 else 0
 
-        print(f"[COBERTURA] {target_data:,}/{total_rows_check:,} válidos ({target_coverage:.1f}%)")
-        print(f"[RANGE] [{target_min:.1f}%, {target_max:.1f}%]")
-        print(f"[MÉDIA] {target_mean:.1f}%")
+        print(f"  Cobertura: {target_data:,}/{total_rows_check:,} validos ({target_coverage:.1f}%)")
+        print(f"  Range: [{target_min:.1f}%, {target_max:.1f}%]")
+        print(f"  Media: {target_mean:.1f}%")
 
-        # Alertas científicos para qualidade
         if target_coverage < 50:
-            print("  ⚠ CRÍTICO: Baixa cobertura de target (<50%) pode comprometer ML")
+            print("  [WARN] Baixa cobertura de target (<50%) pode comprometer ML")
 
         if over_100_count > 0:
-            print(f"  ⚠ AVISO: {over_100_count} valores >100% (dados inválidos)")
+            print(f"  [WARN] {over_100_count} valores >100% (dados invalidos)")
 
         if under_0_count > 0:
-            print(f"  ⚠ AVISO: {under_0_count} valores <0% (dados inválidos)")
+            print(f"  [WARN] {under_0_count} valores <0% (dados invalidos)")
 
         # === Validação de schema obrigatório ===
         required_cols = ['country_code', 'year']
@@ -341,7 +320,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 "Identificadores país-ano são obrigatórios para validação walk-forward."
             )
 
-        print("[STATUS] ✓ Validação científica concluída - equivalência DL/DW mantida")
+        print("  Validacao concluida")
 
     def create_target_implementation(self, df: pl.DataFrame) -> pl.DataFrame:
         """
@@ -353,7 +332,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         Returns:
             DataFrame Polars enriquecido com variável target dropout_rate_polars_dataframe
 
-        Transformação científica:
+        Transformação:
             Dropout Rate = 100 - Completion Rate
 
         Implementação Polars:
@@ -361,10 +340,8 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             lags temporais via join temporal (year+k) por country_code.
 
         """
-        print("[TARGET] Construindo variável target com fundamentação educacional")
-
-        print(f"[TRANSFORMAÇÃO] {self.source_column} → {self.target_column}")
-        print("[FÓRMULA] Dropout Rate = 100 - Completion Rate")
+        print(f"Construindo target: {self.source_column} -> {self.target_column}")
+        print("  Dropout Rate = 100 - Completion Rate")
 
         # Transformação via Polars expression
         df_with_target = df.with_columns([
@@ -373,7 +350,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
         # Lag temporal via join (valor de exatamente N anos atrás),
         # não shift posicional que assume dados sem gaps anuais.
-        print("[FEATURE] Criando lag features (dropout_rate_lag_2, lag_3)")
+        print("  Criando lag features (dropout_rate_lag_2, lag_3)")
         try:
             base_lag = df_with_target.select(['country_code', 'year', self.target_column])
 
@@ -393,24 +370,23 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 lag3, on=['country_code', 'year'], how='left'
             )
 
-            print("[FEATURE] dropout_rate_lag_2 e dropout_rate_lag_3 criados (join temporal country/year-k)")
+            print("  dropout_rate_lag_2 e dropout_rate_lag_3 criados (join temporal country/year-k)")
         except (pl.exceptions.ColumnNotFoundError, pl.exceptions.ComputeError, KeyError) as e:
-            print(f"[AVISO] Falha ao criar dropout_rate_lag_2: {e}")
+            print(f"  [WARN] Falha ao criar dropout_rate_lag_2: {e}")
 
-        print("[STATUS] ✓ Target criado via Polars expressions idiomáticas")
-        print("[EQUIVALÊNCIA] Transformação idêntica ao Data Lake e Data Warehouse")
+        print("  Target criado via Polars expressions")
 
         return df_with_target
 
     def _compute_target_statistics(self, df: pl.DataFrame) -> Dict[str, float]:
         """
-        Computa estatísticas descritivas científicas da variável target via Polars.
+        Computa estatísticas descritivas da variável target via Polars.
 
         Args:
             df: DataFrame Polars com variável target criada
 
         Returns:
-            Dicionário com estatísticas float64 para análise científica
+            Dicionário com estatísticas float64 para análise
 
         Estatísticas computadas:
             - Momentos: média, desvio padrão
@@ -433,7 +409,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         computed = stats_lf.collect().row(0)
         mean_val, std_val, min_val, max_val, missing_count, valid_count = computed
 
-        # Conversão para float64 para consistência científica
+        # Conversão para float64 para consistência
         return {
             'mean': float(mean_val) if mean_val is not None else 0.0,
             'std': float(std_val) if std_val is not None else 0.0,
@@ -445,7 +421,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
     def _validate_temporal_folds(self, df: pl.DataFrame, folds: List[Dict]) -> None:
         """Validação temporal com TemporalValidator via Polars."""
-        print("   ↪ Validando folds temporais...")
+        print("Validando folds temporais")
 
         for fold in folds:
             # Validar integridade temporal usando anos
@@ -499,10 +475,10 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             fold['val_countries'] = int(fold_row[4]) if fold_row[4] is not None else 0
             fold['test_countries'] = int(fold_row[5]) if fold_row[5] is not None else 0
 
-            print(f"\n   ↪ FOLD {fold['fold_id']} - Validação:")
-            print(f"      Train: {fold['train_count']} obs, {fold['train_countries']} países")
-            print(f"      Val: {fold['val_count']} obs, {fold['val_countries']} países")
-            print(f"      Test: {fold['test_count']} obs, {fold['test_countries']} países")
+            print(f"\n  Fold {fold['fold_id']}:")
+            print(f"    Train: {fold['train_count']} obs, {fold['train_countries']} paises")
+            print(f"    Val: {fold['val_count']} obs, {fold['val_countries']} paises")
+            print(f"    Test: {fold['test_count']} obs, {fold['test_countries']} paises")
 
     def get_numeric_features(self, df: pl.DataFrame) -> List[str]:
         """
@@ -563,16 +539,15 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             2. Pandas correlation: Cálculo preciso de correlação após conversão
             3. Equivalência: Resultados idênticos ao DL/DW para benchmarking
 
-        Amostragem científica:
+        Amostragem:
             - Tamanho ótimo: min(10k, total_rows) baseado em Central Limit Theorem
             - Seed reprodutível: Garante determinismo entre execuções
         """
-        print("[CORRELAÇÃO] Computando associação linear via amostragem científica")
+        print("Analisando correlacoes feature-target")
 
         target_col = self.target_column
         correlations = {}
 
-        # === Amostragem científica reprodutível ===
         total_rows = len(df)
         use_sampling = bool(self.config.get('correlation_sampling', True))
         min_sample = int(self.config.get('correlation_min_sample_size', 5000))
@@ -585,20 +560,16 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             sample_size = total_rows
             sample_frac = 1.0
 
-        print(f"[AMOSTRAGEM] {sample_size:,}/{total_rows:,} observações ({sample_frac:.1%})")
-        print("[SEED] Configurando amostragem reprodutível...")
+        print(f"  Amostragem: {sample_size:,}/{total_rows:,} ({sample_frac:.1%})")
 
-        # Amostragem Polars com seed científico
         if sample_frac >= 0.9999:
             sample_df = df
         else:
             sample_df = df.sample(fraction=sample_frac, seed=self.config['random_seed'])
 
-        # Converter para Pandas para correlação
         sample_pd = sample_df.to_pandas()
 
-        print(f"[MATERIALIZAÇÃO] Amostra de {len(sample_pd):,} obs para análise Pandas")
-        print(f"[PEARSON] Calculando correlações para {len(features)} features...")
+        print(f"  Amostra materializada: {len(sample_pd):,} obs, {len(features)} features")
 
         successful_correlations = 0
         failed_features = []
@@ -609,10 +580,8 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 continue
 
             try:
-                # Correlação de Pearson com tratamento
                 corr = sample_pd[feat].corr(sample_pd[target_col])
 
-                # Valor absoluto para ranking
                 if pd.isna(corr):
                     correlations[feat] = 0.0
                 else:
@@ -624,20 +593,16 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 correlations[feat] = 0.0
                 failed_features.append(feat)
 
-        # === Relatório científico ===
-        print(f"[RESULTADO] {successful_correlations}/{len(features)} correlações bem-sucedidas")
+        print(f"  {successful_correlations}/{len(features)} correlacoes calculadas")
 
         if failed_features:
-            print(f"[AVISOS] {len(failed_features)} features com erro: {failed_features[:3]}")
+            print(f"  [WARN] {len(failed_features)} features com erro: {failed_features[:3]}")
 
-        # Estatísticas agregadas
         valid_correlations = [r for r in correlations.values() if r > 0]
         if valid_correlations:
             avg_corr = sum(valid_correlations) / len(valid_correlations)
             max_corr = max(valid_correlations)
-            print(f"[ESTATÍSTICAS] Correlação média: {avg_corr:.3f}, máxima: {max_corr:.3f}")
-
-        print("[STATUS] ✓ Análise de correlação concluída com equivalência DL/DW")
+            print(f"  Correlacao media: {avg_corr:.3f}, maxima: {max_corr:.3f}")
 
         return correlations
 
@@ -660,36 +625,32 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         Algoritmo greedy:
             1. Primeira feature sempre aceita (baseline)
             2. Features subsequentes aceitas se max |r| < threshold
-            3. Ordem preservada para determinismo científico
+            3. Ordem preservada para determinismo
 
         Amostragem híbrida Polars-Pandas:
-            - Polars: Amostragem distribuída eficiente para datasets >10GB
+            - Polars: Amostragem eficiente via Polars
             - Pandas: Matriz de correlação precisa após materialização
             - Equivalência: Resultados idênticos ao DL/DW SQL
         """
         if len(features) <= 1:
-            print("[COLLINEARITY] Menos de 2 features - análise desnecessária")
+            print("  Menos de 2 features - colinearidade desnecessaria")
             return features
 
-        print(f"[COLLINEARITY] Executando análise de multicolinearidade para {len(features)} features")
-        print("━" * 50)
+        print(f"Filtrando colinearidade: {len(features)} features")
 
-        # === Configuração de amostragem científica ===
+        # === Configuração de amostragem ===
         total_rows = len(df)
 
-        # Critérios baseados em configuração científica
         min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
         sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
 
         min_sample_size = max(min_sample_absolute, int(total_rows * sample_fraction))
         sample_frac = min(min_sample_size / total_rows, 1.0)
 
-        print(f"[AMOSTRAGEM] {min_sample_size:,} registros ({sample_frac:.1%})")
-        print(f"[CRITÉRIO] max(config={min_sample_absolute}, {sample_fraction:.0%}×dataset)")
+        print(f"  Amostragem: {min_sample_size:,} registros ({sample_frac:.1%})")
 
         try:
             # === Amostragem Polars ===
-            print("[POLARS] Executando amostragem...")
             if sample_frac >= 0.9999:
                 corr_sample_df = df.select(features)
             else:
@@ -698,20 +659,13 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                     seed=self.config['random_seed']
                 )
 
-            # === Materialização Pandas para correlação precisa ===
-            print("[PANDAS] Materializando amostra para análise de correlação...")
             corr_data = corr_sample_df.to_pandas().dropna()
 
             actual_sample_size = len(corr_data)
-            print(f"[CONFIRMAÇÃO] {actual_sample_size:,} observações válidas pós-dropna")
+            print(f"  {actual_sample_size:,} observacoes validas pos-dropna")
 
             if actual_sample_size > 10:  # Mínimo estatístico
-                # === Construção de matriz de correlação ===
-                print("[MATRIZ] Computando correlações par-a-par...")
                 corr_matrix = corr_data.corr().abs()
-
-                # === Algoritmo greedy pairwise ===
-                print(f"[ALGORITMO] Aplicando seleção greedy com threshold {threshold}")
 
                 selected = []
                 rejected_count = 0
@@ -738,26 +692,22 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                         else:
                             rejected_count += 1
                             if rejected_count <= 3:
-                                print(f"  → Rejeitado {feature}: r={max_corr:.3f} com {worst_pair}")
+                                print(f"    Rejeitado {feature}: r={max_corr:.3f} com {worst_pair}")
 
-                # === Relatório científico ===
                 reduction_rate = ((len(features) - len(selected)) / len(features)) * 100
-                print(f"\n[RESULTADO] Filtragem de colinearidade concluída:")
-                print(f"  → Features originais: {len(features)}")
-                print(f"  → Features selecionadas: {len(selected)}")
-                print(f"  → Redução: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
-                print(f"  → Equivalência: Algoritmo idêntico ao DL/DW")
+                print(f"  Originais: {len(features)}, selecionadas: {len(selected)}, "
+                      f"removidas: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
 
                 return selected
 
             else:
-                print(f"[FALLBACK] Amostra inadequada ({actual_sample_size}≤10) - retornando top-10")
+                print(f"  Amostra inadequada ({actual_sample_size}<=10) - fallback top-10")
                 return features[:10]
 
         except (ValueError, TypeError, np.linalg.LinAlgError) as e:
             self.logger.error(f"Erro na filtragem de colinearidade: {e}")
-            print(f"[ERRO] Filtragem de colinearidade falhou: {e}")
-            print("[FALLBACK] Retornando top-10 features como segurança")
+            print(f"[ERROR] Filtragem de colinearidade falhou: {e}")
+            print("  Fallback: retornando top-10 features")
             return features[:10]
 
     def prepare_features(self, df: pl.DataFrame, selected_features: List[str]) -> pl.DataFrame:
@@ -785,30 +735,24 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             - Features originais: selected_features (pós-filtragem)
             - Features transformadas: {feature}_log_transform (top-5)
         """
-        print("\n[FEATURE ENGINEERING] Executando transformações científicas Polars")
-        print("━" * 70)
-
-        print("[PREPARAÇÃO] Inicializando transformações...")
-
-        # === Transformação: log simétrico via Polars expressions ===
-        print("[TRANSFORMAÇÃO] Aplicando symmetric log transform a top-5 features")
+        print("\nFeature engineering")
 
         # Critério: Limitar escopo por curse of dimensionality
         features_to_transform = selected_features[:5] if len(selected_features) > 5 else selected_features
         transformed_count = 0
 
-        print(f"[ESCOPO] {len(features_to_transform)} features selecionadas para transformação:")
+        print(f"  Transformando {len(features_to_transform)} features (symmetric log):")
 
         # Aplicação de transformação via expressions Polars
         new_cols = []
         for feat in features_to_transform:
             if feat not in df.columns:
-                print(f"  → {feat}: AUSENTE (ignorado)")
+                print(f"    {feat}: AUSENTE (ignorado)")
                 continue
 
             transform_col = f"{feat}_log_transform"
 
-            print(f"  → {feat} → {transform_col}")
+            print(f"    {feat} -> {transform_col}")
 
             # Symmetric log transform: sign(x) * ln(|x| + 1)
             new_cols.append(
@@ -823,10 +767,9 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         if new_cols:
             df = df.with_columns(new_cols)
 
-        print(f"[RESULTADO] {transformed_count} symmetric log transforms aplicadas")
+        print(f"  {transformed_count} log transforms aplicadas")
 
         # === Construção de dataset ML final ===
-        print("[ASSEMBLY] Construindo dataset final para modelagem...")
 
         # Metadados essenciais para ML temporal
         ml_features = ['country_code', 'year', self.target_column]
@@ -848,16 +791,13 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         ml_features = list(dict.fromkeys(ml_features))
         ml_features = [col for col in ml_features if col in df.columns]
 
-        print(f"[DIMENSIONALIDADE] Dataset ML final:")
-        print(f"  → Metadados: 3 (country_code, year, target)")
-        print(f"  → Features originais: {len(selected_features)}")
-        print(f"  → Features transformadas: {len(transformed_cols)}")
-        print(f"  → Total variáveis: {len(ml_features)}")
+        print(f"  Dataset ML final: {len(ml_features)} variaveis "
+              f"({len(selected_features)} originais, {len(transformed_cols)} transformadas)")
 
         # === Seleção final ===
         result_df = df.select(ml_features)
 
-        print("[STATUS] ✓ Feature engineering concluído - dataset pronto para ML temporal")
+        print("  Feature engineering concluido")
 
         return result_df
 
@@ -869,14 +809,14 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             df: DataFrame Polars processado
             folds: Lista de configurações de folds
         """
-        print("\n🖧 SALVANDO FOLDS POLARS DATAFRAME...")
+        print("\nSalvando folds Polars DataFrame")
 
         for fold in folds:
             fold_id = fold['fold_id']
             fold_dir = f"{self.prep_dir}/folds/fold_{fold_id}"
             os.makedirs(fold_dir, exist_ok=True)
 
-            print(f"   ↪ Processando fold {fold_id}...")
+            print(f"  Processando fold {fold_id}...")
 
             # Filtros via Polars expressions
             train_filter = (
@@ -906,10 +846,10 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 self._safe_write_parquet_file(val_df, f'{fold_dir}/val_data_polars_dataframe.parquet')
                 self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_polars_dataframe.parquet')
 
-                print(f"   ✔ Fold {fold_id} salvo: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
+                print(f"    Fold {fold_id}: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
 
             except Exception as e:
-                print(f"   ✖ Erro ao salvar fold {fold_id}: {e}")
+                print(f"    [ERROR] Salvamento fold {fold_id}: {e}")
                 raise
 
             fold_metadata = {
@@ -920,14 +860,14 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             self.save_fold_metadata(fold_metadata, fold_dir)
 
         # Master data
-        print("\n   ↪ Salvando master data...")
+        print("\n  Salvando master data...")
         try:
             master_path = f"{self.prep_dir}/master_data_polars_dataframe.parquet"
             self._safe_write_parquet_file(df, master_path)
-            print(f"   ✔ Master data salvo: {len(df)} registros")
+            print(f"    Master data: {len(df)} registros")
 
         except Exception as e:
-            print(f"   ✖ Erro ao salvar master data: {e}")
+            print(f"    [ERROR] Salvamento master data: {e}")
             raise
 
         # Configuração master
@@ -938,42 +878,32 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
         self.save_master_config(folds, total_obs, total_countries, (year_min, year_max))
 
-        print(f"   ✔ Polars DataFrame: Folds salvos com paradigma lazy evaluation")
+        print(f"  Polars DataFrame: folds salvos")
 
 
 def main():
     """Executa o pipeline Polars DataFrame end-to-end para validação local."""
     print("=" * 80)
-    print("TESTE PIPELINE ML POLARS DATAFRAME - METODOLOGIA LAZY EVALUATION CIENTÍFICA".center(80))
+    print("Pipeline ML Polars DataFrame")
     print("=" * 80)
 
     try:
-        # Inicialização com configurações científicas otimizadas
-        print("\n[INICIALIZAÇÃO] Configurando pipeline Polars DataFrame...")
         setup = PolarsDataFrameArchitectureML()
-
-        # Execução do pipeline científico
-        print("\n[EXECUÇÃO] Iniciando pipeline científico...")
         results = setup.run_setup()
 
-        # Relatório científico detalhado
-        print("\n" + "=" * 80)
-        print("RELATÓRIO CIENTÍFICO DO PIPELINE POLARS DATAFRAME".center(80))
-        print("=" * 80)
-
         if results.get('status') == 'success':
-            print("✓ Pipeline Polars DataFrame executado com SUCESSO")
-            print(f"  - Features selecionadas: {results.get('features_selected', 'N/A')}")
-            print(f"  - Folds criados: {results.get('folds_created', 'N/A')}")
-            print(f"  - Timestamp: {results.get('setup_timestamp', 'N/A')}")
+            print("Pipeline ok")
+            print(f"  Features selecionadas: {results.get('features_selected', 'N/A')}")
+            print(f"  Folds criados: {results.get('folds_created', 'N/A')}")
+            print(f"  Timestamp: {results.get('setup_timestamp', 'N/A')}")
         else:
-            print(f"✗ Pipeline falhou: {results.get('error', 'Erro desconhecido')}")
+            print(f"[ERROR] Pipeline falhou: {results.get('error', 'Erro desconhecido')}")
             return results
 
         return results
 
     except Exception as e:
-        print(f"\n✗ ERRO CRÍTICO: {e}")
+        print(f"\n[ERROR] Pipeline falhou: {e}")
         import traceback
         traceback.print_exc()
         return {

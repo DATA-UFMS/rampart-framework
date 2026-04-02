@@ -1,9 +1,9 @@
 """
 Arquitetura ML Polars DataFrame para comparação com Data Lake (Dask) e Data Warehouse (DuckDB).
 
-Este módulo implementa o pipeline de ML scientificamente rigoroso para a arquitetura
-Polars DataFrame, mantendo equivalência metodológica com as implementações Data Lake
-e Data Warehouse para benchmarking justo em contexto de pesquisa SBBD 2026.
+Este módulo implementa o pipeline de ML para a arquitetura Polars DataFrame,
+mantendo equivalência metodológica com as implementações Data Lake e Data Warehouse
+para benchmarking justo.
 
 Paradigma:
     Lazy evaluation com expressions idiomáticas Polars, focando em otimização de
@@ -21,11 +21,6 @@ Protocolo anti-leakage (P1-P5):
 Classes exportadas:
     - PolarsDataFrameArchitectureML: Implementação do pipeline ML
 """
-
-# O registro de paradigmas é gerenciado pelo mecanismo de auto-descoberta do framework
-# (BaseArchitectureML.__init_subclass__). Imports antecipados removidos para evitar
-# problemas de identidade dupla de módulo quando paradigm_registry e importlib
-# usam caminhos diferentes.
 
 __all__ = ['PolarsDataFrameArchitectureML', 'main']
 __version__ = '1.0.0'
