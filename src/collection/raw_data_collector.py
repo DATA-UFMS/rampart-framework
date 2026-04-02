@@ -85,12 +85,8 @@ class RawDataCollector:
     """
     
     def __init__(self):
-        print("[SISTEMA] COLETA DE DADOS")
-        print("=" * 80)
+        print("Coleta de dados")
         
-        # Mapeamento indicador->categoria baseado em análise de volatilidade histórica
-        # Indicadores com CV > 0.30 classificados como voláteis (usar mediana)
-        # Decisão metodológica: mediana mais robusta a outliers em distribuições assimétricas
         self.indicator_categories = {
             'education': {
                 'indicators': [
@@ -99,10 +95,7 @@ class RawDataCollector:
                     'adult_literacy_rate', 'pupil_teacher_ratio_primary',
                     'female_teachers_secondary_percent', 'pupil_teacher_ratio_secondary'
                 ],
-                'temporal_weight': 0.8,  # Alta autocorrelação em séries educacionais
-                'geographic_weight': 0.2,
-                'use_robust_imputation': False,
-                'expected_bias_range': (0, 5)  # Meta: bias < 5% para indicadores estáveis
+                'use_robust_imputation': False
             },
             'health': {
                 'indicators': [
@@ -110,19 +103,13 @@ class RawDataCollector:
                     'malnutrition_prevalence_weight_age', 'basic_water_services_percent',
                     'adolescent_fertility_rate'
                 ],
-                'temporal_weight': 0.7,
-                'geographic_weight': 0.3,
-                'use_robust_imputation': False,
-                'expected_bias_range': (2, 8)
+                'use_robust_imputation': False
             },
             'economic': {
                 'indicators': [
                     'gdp_per_capita_constant_2015', 'unemployment_total'
                 ],
-                'temporal_weight': 0.3,  # Baixa autocorrelação devido a choques econômicos
-                'geographic_weight': 0.7,  # Spillovers regionais dominam (Aroca et al., 2005)
-                'use_robust_imputation': True,  # Distribuições assimétricas com caudas pesadas
-                'expected_bias_range': (15, 25)  # Tolerância maior devido à volatilidade
+                'use_robust_imputation': True  # Distribuições assimétricas com caudas pesadas
             },
             'social': {
                 'indicators': [
@@ -131,10 +118,7 @@ class RawDataCollector:
                     'internet_users_percent', 'population_ages_0_14_percent', 
                     'population_growth_annual'
                 ],
-                'temporal_weight': 0.5,
-                'geographic_weight': 0.5,
-                'use_robust_imputation': True,
-                'expected_bias_range': (8, 15)
+                'use_robust_imputation': True
             }
         }
         
@@ -152,9 +136,8 @@ class RawDataCollector:
         self.output_dir = get_absolute_output_path('collection/raw_data')
         os.makedirs(self.output_dir, exist_ok=True)
         
-        print(f"[CONFIG] {len(self.indicators)} indicadores configurados")
-        print(f"[CONFIG] {len(self.countries)} países da América Latina")
-        print(f"[OUTPUT] Diretório de saída: {self.output_dir}")
+        print(f"{len(self.indicators)} indicadores, {len(self.countries)} paises")
+        print(f"Diretorio de saida: {self.output_dir}")
     
     def get_indicator_category_config(self, indicator_name: str) -> Dict:
         """
@@ -229,7 +212,7 @@ class RawDataCollector:
         Returns:
             DataFrame com dados coletados ou vazio se falha total
         """
-        print(f"[COLLECT] Processando {indicator_name}")
+        print(f"Processando {indicator_name}")
         
         all_data = []
         countries_str = ';'.join(self.countries)
@@ -260,19 +243,19 @@ class RawDataCollector:
                             })
                     break
                 else:
-                    print(f"      [INFO] Sem dados retornados (tentativa {attempt + 1})")
+                    print(f"      Sem dados retornados (tentativa {attempt + 1})")
                     
             except requests.exceptions.RequestException as e:
-                print(f"      [ERRO] Erro na tentativa {attempt + 1}: {e}")
+                print(f"      [ERROR] Erro na tentativa {attempt + 1}: {e}")
                 if attempt < max_retries - 1:
                     time.sleep(2 ** attempt)  # Backoff exponencial
                     
         if all_data:
             df = pd.DataFrame(all_data)
-            print(f"      [SUCESSO] {len(df)} registros coletados")
+            print(f"      {len(df)} registros coletados")
             return df
         else:
-            print(f"      [ERRO] Falha na coleta após {max_retries} tentativas")
+            print(f"      [ERROR] Falha na coleta apos {max_retries} tentativas")
             return pd.DataFrame()
     
     def collect_all_indicators(self) -> pd.DataFrame:
@@ -289,7 +272,7 @@ class RawDataCollector:
         Raises:
             Exception: Se nenhum indicador foi coletado (falha total de conectividade)
         """
-        print("\n[PROCESSO] COLETANDO DADOS DO WORLD BANK")
+        print("\nColetando dados do World Bank")
         
         all_dataframes = []
         failed_indicators = []
@@ -303,10 +286,10 @@ class RawDataCollector:
                 
         if all_dataframes:
             final_df = pd.concat(all_dataframes, ignore_index=True)
-            print(f"\n[RESULTADO] {len(final_df)} registros totais coletados")
-            
+            print(f"\n{len(final_df)} registros totais coletados")
+
             if failed_indicators:
-                print(f"[AVISO] Falhas na coleta: {failed_indicators}")
+                print(f"[WARN] Falhas na coleta: {failed_indicators}")
                 
             return final_df
         else:
@@ -329,8 +312,7 @@ class RawDataCollector:
         Returns:
             DataFrame com correções aplicadas apenas a impossibilidades lógicas
         """
-        print("\n[VALIDAÇÃO] ANÁLISE INTELIGENTE DE OUTLIERS")
-        print("[MÉTODO] Corrigindo apenas valores logicamente impossíveis")
+        print("\nValidacao de outliers: corrigindo apenas valores logicamente impossiveis")
         
         df_corrected = df.copy()
         corrections_log = {
@@ -377,14 +359,14 @@ class RawDataCollector:
                         'total_corrections': int(total_corrections)
                     })
                     
-                    print(f"[CORREÇÃO] {column}: {total_corrections} valores corrigidos")
+                    print(f"{column}: {total_corrections} valores corrigidos")
         
         log_path = f"{self.output_dir}/range_validation_log.json"
         with open(log_path, 'w') as f:
             json.dump(corrections_log, f, indent=2)
         
-        print(f"[RESULTADO] {corrections_log['total_corrections_made']} correções totais aplicadas")
-        print(f"[OUTPUT] Log de validação salvo em: {log_path}")
+        print(f"{corrections_log['total_corrections_made']} correcoes totais aplicadas")
+        print(f"Log de validacao salvo: {log_path}")
         
         return df_corrected
     
@@ -402,7 +384,7 @@ class RawDataCollector:
         Returns:
             DataFrame com metadados de estratificação e qualidade
         """
-        print("\n[PROCESSO] ADICIONANDO METADADOS CIENTÍFICOS")
+        print("\nAdicionando metadados")
         
         country_strata_map = {}
         for stratum_name, countries_in_stratum in COUNTRY_STRATA.items():
@@ -414,7 +396,7 @@ class RawDataCollector:
         
         df['data_source'] = 'world_bank_api'
         df['collection_method'] = 'raw_single_collection'
-        df['is_original'] = True  # Flag para distinguir de valores imputados
+        df['is_original'] = True
         
         indicator_names = list(ALL_INDICATORS.values())
         indicator_cols = [c for c in df.columns if c in indicator_names]
@@ -423,8 +405,8 @@ class RawDataCollector:
         else:
             df['data_completeness_score'] = 100.0
         
-        print(f"[SUCESSO] Metadados científicos adicionados")
-        print(f"[INFO] Distribuição por estratos: {df['country_stratum'].value_counts().to_dict()}")
+        print(f"Metadados adicionados")
+        print(f"Distribuicao por estratos: {df['country_stratum'].value_counts().to_dict()}")
         
         return df
     
@@ -447,8 +429,7 @@ class RawDataCollector:
         Returns:
             Análise estruturada com métricas por dimensão e diagnóstico
         """
-        print("\n[ANÁLISE] PADRÕES CIENTÍFICOS DE DADOS FALTANTES")
-        print("[PROCESSO] Calculando estatísticas por indicador, temporal e geográfica")
+        print("\nAnalisando padroes de dados faltantes")
         
         numeric_columns = df_wide.select_dtypes(include=[np.number]).columns
         total_observations = len(df_wide)
@@ -493,7 +474,6 @@ class RawDataCollector:
                         'missing_percentage': float(missing_percentage)
                     }
         
-        # Teste heurístico MCAR vs MAR via correlação de padrões
         missing_matrix = df_wide[numeric_columns].isna()
         missing_correlations = missing_matrix.corr().values
         np.fill_diagonal(missing_correlations, np.nan)
@@ -502,7 +482,6 @@ class RawDataCollector:
         # Threshold 0.3 baseado em simulações Monte Carlo (não mostrado)
         mcar_interpretation = "possible_mcar" if avg_missing_correlation < 0.3 else "possible_mar"
         
-        # Dependência temporal via autocorrelação LAG-1
         temporal_dependency = {}
         for col in numeric_columns[:5]:  # Sample para performance
             if col in df_wide.columns:
@@ -514,8 +493,7 @@ class RawDataCollector:
         overall_missing_percentage = (df_wide[numeric_columns].isna().sum().sum() / 
                                      (len(df_wide) * len(numeric_columns))) * 100
         
-        print(f"[RESULTADO] {overall_missing_percentage:.1f}% de dados faltantes")
-        print(f"[INTERPRETAÇÃO] Padrão identificado: {mcar_interpretation}")
+        print(f"{overall_missing_percentage:.1f}% de dados faltantes, padrao: {mcar_interpretation}")
         
         return {
             'analysis_timestamp': datetime.now().isoformat(),
@@ -559,8 +537,7 @@ class RawDataCollector:
         Returns:
             Métricas detalhadas por indicador e categoria
         """
-        print("\n[ANÁLISE] MÉTRICAS DE QUALIDADE DA IMPUTAÇÃO")
-        print("[MÉTODO] Análise científica por categoria de indicador")
+        print("\nMetricas de qualidade da imputacao")
         
         metrics_by_indicator = {}
         metrics_by_category = {}
@@ -631,7 +608,7 @@ class RawDataCollector:
             metrics_by_category[category]['variance_preservations'].append(variance_preservation)
             metrics_by_category[category]['imputation_rates'].append(imputation_rate)
             
-            print(f"[MÉTRICA] {col}: bias {mean_bias:.1f}%, variância {variance_preservation:.1f}%")
+            print(f"{col}: bias {mean_bias:.1f}%, variancia {variance_preservation:.1f}%")
         
         category_summary = {}
         for category, data in metrics_by_category.items():
@@ -643,7 +620,7 @@ class RawDataCollector:
                 'indicators': data['indicators']
             }
         
-        print(f"[RESULTADO] Métricas calculadas para {len(metrics_by_indicator)} indicadores")
+        print(f"Metricas calculadas para {len(metrics_by_indicator)} indicadores")
         
         return {
             'analysis_timestamp': datetime.now().isoformat(),
@@ -691,8 +668,7 @@ class RawDataCollector:
         Returns:
             DataFrame imputado com preservação de variabilidade
         """
-        print("\n[IMPUTAÇÃO] APLICANDO METODOLOGIA HIERÁRQUICA")
-        print("[HIERARQUIA] Temporal (LAG) → Geográfica (estratificada) → Global (mínima)")
+        print("\nImputacao hierarquica: temporal -> geografica -> global")
         
         df_imputed = df_wide.copy()
         financial_log_transforms = {}
@@ -700,19 +676,18 @@ class RawDataCollector:
         imputation_log = {}
         
         for column in numeric_columns:
-            print(f"\n[PROCESSO] Indicador: {column}")
+            print(f"\nIndicador: {column}")
             
             original_na_mask = df_imputed[column].isna()
             
             if not original_na_mask.any():
-                print(f"      [INFO] Sem valores faltantes")
+                print(f"      Sem valores faltantes")
                 continue
             
             category = self.indicator_to_category.get(column, 'social')
             
-            # Transformação para estabilizar variância em indicadores financeiros
             if column in {'gdp_per_capita_constant_2015', 'intentional_homicides_per_100k'}:
-                print(f"      [MÉTODO] Aplicando transformação para estabilização de variância")
+                print(f"      Aplicando transformacao para estabilizacao de variancia")
                 non_na_mask = df_imputed[column].notna()
                 if non_na_mask.any():
                     values = df_imputed.loc[non_na_mask, column].copy()
@@ -721,13 +696,13 @@ class RawDataCollector:
                     if min_value <= 0:
                         # Yeo-Johnson para valores negativos/zero (Box & Cox generalizado)
                         from scipy.stats import yeojohnson
-                        print(f"      [LOG] {column}: Usando Yeo-Johnson (min={min_value:.2f})")
+                        print(f"      {column}: Yeo-Johnson (min={min_value:.2f})")
                         try:
                             transformed, lambda_param = yeojohnson(values)
                             df_imputed.loc[non_na_mask, column] = transformed
                             financial_log_transforms[column] = {'method': 'yeojohnson', 'lambda': lambda_param}
                         except Exception as e:
-                            print(f"      [LOG] Erro em Yeo-Johnson: {e}, usando log1p com shift")
+                            print(f"      Erro em Yeo-Johnson: {e}, usando log1p com shift")
                             shift = abs(min_value) + 1
                             df_imputed.loc[non_na_mask, column] = np.log1p(values + shift)
                             financial_log_transforms[column] = {'method': 'log1p_shifted', 'shift': shift}
@@ -735,7 +710,6 @@ class RawDataCollector:
                         df_imputed.loc[non_na_mask, column] = np.log1p(values)
                         financial_log_transforms[column] = {'method': 'log1p'}
             
-            # ETAPA 1: IMPUTAÇÃO TEMPORAL (LAG-ONLY, SEM LEAD)
             df_sorted = df_imputed.sort_values(['country_code', 'year']).copy()
             lag1 = df_sorted.groupby('country_code')[column].shift(1)
             mask_temporal = df_sorted[column].isna() & lag1.notna()
@@ -768,24 +742,22 @@ class RawDataCollector:
             
             df_imputed = df_sorted.sort_index()
             
-            # ETAPA 2: IMPUTAÇÃO GEOGRÁFICA
             category_config = self.get_indicator_category_config(column)
             is_zero_centered = self.is_zero_centered_indicator(column)
             use_robust = category_config['use_robust_imputation']
             
             if is_zero_centered:
-                print(f"      [MÉTODO] Indicador centrado em zero: usando MEDIANA")
+                print(f"      Indicador centrado em zero: usando mediana")
             elif use_robust:
-                print(f"      [MÉTODO] Indicador volátil: usando MEDIANA robusta")
+                print(f"      Indicador volatil: usando mediana robusta")
             else:
-                print(f"      [MÉTODO] Indicador estável: usando MÉDIA")
+                print(f"      Indicador estavel: usando media")
                 
             stratum_values = self._apply_geographic_imputation(df_imputed, column)
             geographic_mask = df_imputed[column].isna() & stratum_values.notna()
             df_imputed.loc[geographic_mask, column] = stratum_values[geographic_mask]
             geographic_count = geographic_mask.sum()
             
-            # ETAPA 3: IMPUTAÇÃO GLOBAL
             global_mask = df_imputed[column].isna()
             if global_mask.any():
                 if is_zero_centered or use_robust:
@@ -797,14 +769,12 @@ class RawDataCollector:
             else:
                 global_count = 0
             
-            # ETAPA 4: RUÍDO PARA PRESERVAR VARIABILIDADE
-            print(f"      [MÉTODO] Adicionando ruído calibrado pela volatilidade")
+            print(f"      Adicionando ruido calibrado pela volatilidade")
             
             original_std = df_imputed.loc[~original_na_mask, column].std()
             imputed_mask = original_na_mask & df_imputed[column].notna()
             
             if imputed_mask.any() and original_std > 0:
-                # Fator de ruído baseado em análise de sensibilidade
                 noise_factor = 0.15 if category == 'economic' else 0.05
                 if column in {'unemployment_total', 'intentional_homicides_per_100k', 
                              'gdp_per_capita_constant_2015'}:
@@ -819,14 +789,14 @@ class RawDataCollector:
             
             # Reverter transformações
             if column in financial_log_transforms:
-                print(f"      [MÉTODO] Revertendo transformação")
+                print(f"      Revertendo transformacao")
                 transform_info = financial_log_transforms[column]
                 non_na_mask = df_imputed[column].notna()
                 
                 if isinstance(transform_info, dict):
                     if transform_info['method'] == 'yeojohnson':
                         lmbda = transform_info['lambda']
-                        print(f"      [INFO] Revertendo Yeo-Johnson (λ={lmbda:.4f})")
+                        print(f"      Revertendo Yeo-Johnson (lambda={lmbda:.4f})")
                         y = df_imputed.loc[non_na_mask, column].values.astype(float)
                         x = np.zeros_like(y)
                         for _i, _y in enumerate(y):
@@ -856,7 +826,7 @@ class RawDataCollector:
             }
             
             total_imputed = temporal_count + geographic_count + global_count
-            print(f"      [RESULTADO] {total_imputed} valores imputados")
+            print(f"      {total_imputed} valores imputados")
         
         log_path = f"{self.output_dir}/scientific_imputation_log.json"
         with open(log_path, 'w') as f:
@@ -867,7 +837,7 @@ class RawDataCollector:
                 'reference': 'Honaker & King (2010)'
             }, f, indent=2)
         
-        print(f"\n[SUCESSO] Imputação concluída - log salvo: {log_path}")
+        print(f"\nImputacao concluida - log salvo: {log_path}")
         return df_imputed
     
     def perform_leave_one_out_validation(self, df_wide: pd.DataFrame) -> Dict:
@@ -884,8 +854,7 @@ class RawDataCollector:
         Returns:
             Métricas de validação por indicador
         """
-        print("\n[VALIDAÇÃO] VALIDAÇÃO CRUZADA LEAVE-ONE-OUT")
-        print("[MÉTODO] Testando qualidade em valores conhecidos removidos")
+        print("\nValidacao cruzada leave-one-out")
         
         validation_results = {}
         numeric_columns = df_wide.select_dtypes(include=[np.number]).columns
@@ -897,13 +866,13 @@ class RawDataCollector:
         ]]
         
         for indicator in validation_indicators:
-            print(f"[PROCESSO] Validando: {indicator}")
+            print(f"Validando: {indicator}")
             
             observed_mask = df_wide[indicator].notna()
             observed_values = df_wide.loc[observed_mask, indicator]
             
             if len(observed_values) < 10:
-                print(f"      [AVISO] Dados insuficientes ({len(observed_values)} valores)")
+                print(f"      [WARN] Dados insuficientes ({len(observed_values)} valores)")
                 continue
             
             # Remover 10% dos valores observados
@@ -957,9 +926,9 @@ class RawDataCollector:
                     'validation_bias': float(pred_subset.mean() - true_subset.mean())
                 }
                 
-                print(f"      [MÉTRICA] MAE: {mae:.3f} | RMSE: {rmse:.3f} | MAPE: {mape:.1f}%")
+                print(f"      MAE: {mae:.3f} | RMSE: {rmse:.3f} | MAPE: {mape:.1f}%")
             else:
-                print(f"      [ERRO] Não foi possível imputar valores de teste")
+                print(f"      [ERROR] Nao foi possivel imputar valores de teste")
         
         # Agregação por categoria
         if validation_results:
@@ -986,7 +955,7 @@ class RawDataCollector:
         else:
             category_summary = {}
         
-        print(f"[RESULTADO] Validação concluída para {len(validation_results)} indicadores")
+        print(f"Validacao concluida para {len(validation_results)} indicadores")
         
         return {
             'validation_timestamp': datetime.now().isoformat(),
@@ -1010,8 +979,7 @@ class RawDataCollector:
         Returns:
             Comparação entre métodos com identificação do mais robusto
         """
-        print("\n[ANÁLISE] ANÁLISE DE SENSIBILIDADE DA IMPUTAÇÃO")
-        print("[MÉTODO] Comparando métodos alternativos")
+        print("\nAnalise de sensibilidade da imputacao")
         
         numeric_columns = [col for col in df_wide.columns if col in [
             'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
@@ -1102,9 +1070,9 @@ class RawDataCollector:
         else:
             aggregate_sensitivity = {}
         
-        print(f"[RESULTADO] Análise concluída para {len(sensitivity_results)} indicadores")
+        print(f"Analise concluida para {len(sensitivity_results)} indicadores")
         if aggregate_sensitivity:
-            print(f"[INTERPRETAÇÃO] Método mais robusto: {aggregate_sensitivity['most_robust_method']}")
+            print(f"Metodo mais robusto: {aggregate_sensitivity['most_robust_method']}")
         
         return {
             'analysis_timestamp': datetime.now().isoformat(),
@@ -1123,7 +1091,7 @@ class RawDataCollector:
         Formato Parquet escolhido por eficiência de armazenamento (50% menor que CSV)
         e preservação de tipos. JSON para metadados garante legibilidade humana.
         """
-        print("\n[OUTPUT] SALVANDO DADOS COMPLETOS")
+        print("\nSalvando dados completos")
         
         numeric_cols = df_wide.select_dtypes(include=[np.number]).columns
         df_wide['data_completeness_score'] = df_wide[numeric_cols].notna().mean(axis=1) * 100
@@ -1137,7 +1105,7 @@ class RawDataCollector:
             else:
                 os.remove(long_path)
         df_long.to_parquet(long_path, index=False)
-        print(f"[ARQUIVO] Dados formato long salvos: {long_path}")
+        print(f"Dados formato long salvos: {long_path}")
         
         wide_path = f"{self.output_dir}/complete_data.parquet"
         os.makedirs(os.path.dirname(wide_path), exist_ok=True)
@@ -1148,31 +1116,31 @@ class RawDataCollector:
             else:
                 os.remove(wide_path)
         df_wide.to_parquet(wide_path, index=False)
-        print(f"[ARQUIVO] Dados completos salvos: {wide_path}")
+        print(f"Dados completos salvos: {wide_path}")
         
         if missingness_analysis:
             missingness_path = f"{self.output_dir}/scientific_missingness_analysis.json"
             with open(missingness_path, 'w') as f:
                 json.dump(missingness_analysis, f, indent=2)
-            print(f"[ARQUIVO] Análise de missingness salva: {missingness_path}")
+            print(f"Analise de missingness salva: {missingness_path}")
         
         if quality_metrics:
             quality_path = f"{self.output_dir}/scientific_imputation_quality.json"
             with open(quality_path, 'w') as f:
                 json.dump(quality_metrics, f, indent=2)
-            print(f"[ARQUIVO] Métricas de qualidade salvas: {quality_path}")
+            print(f"Metricas de qualidade salvas: {quality_path}")
         
         if sensitivity_analysis:
             sensitivity_path = f"{self.output_dir}/scientific_sensitivity_analysis.json"
             with open(sensitivity_path, 'w') as f:
                 json.dump(sensitivity_analysis, f, indent=2)
-            print(f"[ARQUIVO] Análise de sensibilidade salva: {sensitivity_path}")
+            print(f"Analise de sensibilidade salva: {sensitivity_path}")
         
         if validation_results:
             validation_path = f"{self.output_dir}/scientific_cross_validation.json"
             with open(validation_path, 'w') as f:
                 json.dump(validation_results, f, indent=2)
-            print(f"[ARQUIVO] Validação cruzada salva: {validation_path}")
+            print(f"Validacao cruzada salva: {validation_path}")
         
         metadata = {
             'collection_timestamp': datetime.now().isoformat(),
@@ -1190,7 +1158,6 @@ class RawDataCollector:
                 'quality_metrics_calculated': quality_metrics is not None,
                 'sensitivity_analysis_performed': sensitivity_analysis is not None,
                 'methodology_validated': True,
-                'publication_ready': True
             },
             'references': [
                 'Rubin, D.B. (1987). Multiple Imputation for Nonresponse in Surveys',
@@ -1204,11 +1171,9 @@ class RawDataCollector:
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
         
-        print(f"[ARQUIVO] Metadados científicos salvos: {metadata_path}")
-        print(f"[ESTATÍSTICA] Formato long: {len(df_long)} registros")
-        print(f"[ESTATÍSTICA] Dados completos: {len(df_wide)} registros")
-        print(f"[QUALIDADE] Completude: {metadata['data_completeness']:.1f}%")
-        print(f"[STATUS] Validação científica: Completa")
+        print(f"Metadados salvos: {metadata_path}")
+        print(f"Formato long: {len(df_long)} registros, dados completos: {len(df_wide)} registros")
+        print(f"Completude: {metadata['data_completeness']:.1f}%")
     
     def _cache_is_valid(self) -> bool:
         """Verifica se cache local de dados brutos existe e é válido.
@@ -1231,7 +1196,6 @@ class RawDataCollector:
         for fpath in required_files:
             if not os.path.exists(fpath):
                 return False
-        # Cache válido por 24h (dados World Bank são anuais)
         import time as _time
         age_hours = (_time.time() - os.path.getmtime(required_files[0])) / 3600
         return age_hours < 24
@@ -1266,29 +1230,27 @@ class RawDataCollector:
             - Log detalhado de imputações aplicadas
             - Metadados completos com referências
 
-        Validações incluídas:
-            ✔ Eliminação de data leakage (temporal LAG-only)
-            ✔ Estratificação geográfica por categoria
-            ✔ Tratamento especial para indicadores centrados em zero
-            ✔ Preservação de variabilidade com ruído controlado
-            ✔ Balanceamento temporal/geográfico por categoria
-            ✔ Imputação robusta para indicadores voláteis
-            ✔ Validação cruzada científica
-            ✔ Análise de padrões de missingness
-            ✔ Métricas de qualidade por categoria
-            ✔ Análise de sensibilidade metodológica
+        Validacoes incluidas:
+            - Eliminacao de data leakage (temporal LAG-only)
+            - Estratificacao geografica por categoria
+            - Tratamento especial para indicadores centrados em zero
+            - Preservacao de variabilidade com ruido controlado
+            - Balanceamento temporal/geografico por categoria
+            - Imputacao robusta para indicadores volateis
+            - Validacao cruzada cientifica
+            - Analise de padroes de missingness
+            - Metricas de qualidade por categoria
+            - Analise de sensibilidade metodologica
 
         Tempo estimado: 5-10 minutos (primeira execução) / <1s (com cache)
         """
         # Verificar cache local antes de chamar API
         if not force_recollect and self._cache_is_valid():
-            print("\n[CACHE] Dados brutos encontrados localmente (< 24h)")
-            print(f"[CACHE] Usando: {self.output_dir}/complete_data.parquet")
-            print("[CACHE] Para forçar re-coleta, use force_recollect=True")
+            print(f"\nCache valido: {self.output_dir}/complete_data.parquet")
+            print("Para forcar re-coleta, use force_recollect=True")
             return True
 
-        print("\n[SISTEMA] EXECUTANDO COLETA DE DADOS BRUTOS")
-        print("=" * 80)
+        print("\nExecutando coleta de dados brutos")
 
         try:
             # 1. Coletar dados
@@ -1328,23 +1290,12 @@ class RawDataCollector:
             self.save_data(df_long, df_wide_final, missingness_analysis, quality_metrics,
                           sensitivity_analysis, validation_results)
             
-            print("\n[CONCLUSÃO] COLETA E VALIDAÇÃO CONCLUÍDA COM SUCESSO")
-            print("=" * 80)
-            print("[VALIDADO] Dados coletados e imputados sem data leakage")
-            print("[VALIDADO] Estratificação geográfica por categoria implementada")
-            print("[VALIDADO] Mediana para indicadores centrados em zero")
-            print("[VALIDADO] Preservação de variabilidade com ruído controlado")
-            print("[VALIDADO] Balanceamento temporal/geográfico por categoria")
-            print("[VALIDADO] Imputação robusta para indicadores voláteis")
-            print("[VALIDADO] Validação cruzada leave-one-out executada")
-            print("[VALIDADO] Análise de missingness realizada")
-            print("[VALIDADO] Métricas de qualidade por categoria calculadas")
-            print("[VALIDADO] Análise de sensibilidade executada")
+            print("\nColeta e validacao concluida")
             
             return True
             
         except Exception as e:
-            print(f"\n[SISTEMA] ERRO NA COLETA: {e}")
+            print(f"\n[ERROR] Erro na coleta: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -1353,4 +1304,4 @@ class RawDataCollector:
 if __name__ == "__main__":
     collector = RawDataCollector()
     success = collector.run()
-    print(f"\n[STATUS] Execução: {'SUCESSO' if success else 'FALHA'}")
+    print(f"\nExecucao: {'ok' if success else 'falha'}")

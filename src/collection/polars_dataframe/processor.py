@@ -6,7 +6,7 @@ Implementa pipeline de processamento com Polars mantendo princípios arquitetura
 Data Lake: leitura lazy, transformações eficientes de memória e schema-on-read.
 
 Fundamentação Teórica:
-    O paradigma Data Lake (Dixon, 2010; Terrizzano et al., 2015) prioriza a preservação
+    O paradigma Data Lake (Terrizzano et al., 2015) prioriza a preservação
     de dados brutos e semântica schema-on-read. Polars oferece lazy evaluation nativa,
     diferentemente de Pandas eager, permitindo otimizações automáticas de query plan.
 
@@ -27,14 +27,9 @@ import os
 import sys
 import json
 import shutil
-import warnings
 from datetime import datetime
 from typing import Dict
 
-# Supressão justificada de warnings para casos extremos
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of freedom.*')
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero.*')
-warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from src.core.config import get_absolute_output_path
@@ -53,7 +48,7 @@ class PolarsDataFrameProcessor:
         1. Lazy evaluation nativa: Polars constrói query plans otimizados automaticamente
         2. Schema-on-read: Estrutura imposta no momento da análise, não na ingestão
         3. Transformações eficientes: Operações vetorizadas em Rust compiled
-        4. Pivotagem automática: Conversão long→wide otimizada para Parquet
+        4. Pivotagem automática: Conversão long->wide otimizada para Parquet
     """
 
     def __init__(self, dataset_name: str = "worldbank"):
@@ -63,13 +58,10 @@ class PolarsDataFrameProcessor:
         Args:
             dataset_name: Nome do dataset ("worldbank" ou "inep_censo")
         """
-        print("[SISTEMA] Inicializando Processador Polars DataFrame")
-        print("=" * 60)
-        print("[CONFIG] Arquitetura: Data Lake com Polars Lazy Evaluation")
-        print("[CONFIG] Paradigma: Schema-on-read com query plan automático")
+        print("Inicializando processador Polars DataFrame")
+        print("Arquitetura: Data Lake com Polars, schema-on-read")
 
         self.dataset_name = dataset_name
-        self.run_timestamp = datetime.now().isoformat()
         raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
         self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/polars_dataframe')
@@ -78,8 +70,8 @@ class PolarsDataFrameProcessor:
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.processed_dir, exist_ok=True)
 
-        print(f"[INPUT] Fonte de dados: {self.complete_data_path}")
-        print(f"[OUTPUT] Diretório de processamento: {self.processed_dir}")
+        print(f"Fonte de dados: {self.complete_data_path}")
+        print(f"Diretorio de processamento: {self.processed_dir}")
 
     def load_complete_data(self) -> pl.LazyFrame:
         """
@@ -96,7 +88,7 @@ class PolarsDataFrameProcessor:
             2. Computação seletiva: Estatísticas críticas computadas seletivamente
             3. Indicadores centralizados: Garante consistência entre arquiteturas
         """
-        print("[CARREGAMENTO] Iniciando leitura lazy de dados educacionais completos")
+        print("Leitura lazy de dados educacionais completos")
 
         if not os.path.exists(self.complete_data_path):
             raise FileNotFoundError(
@@ -104,11 +96,9 @@ class PolarsDataFrameProcessor:
                 f"Execute 'raw_data_collector.py' antes deste processador."
             )
 
-        # Leitura lazy - constrói query plan sem materialização
         df_lazy = pl.scan_parquet(self.complete_data_path)
 
-        # Computação seletiva mínima para estatísticas essenciais
-        n_rows = df_lazy.select(pl.lit(1)).collect().shape[0]  # Fallback
+        n_rows = df_lazy.select(pl.lit(1)).collect().shape[0]
         n_cols = len(df_lazy.collect_schema().names())
 
         # Computar apenas estatísticas críticas
@@ -122,11 +112,11 @@ class PolarsDataFrameProcessor:
         year_max = stats['year_max'][0]
         n_countries = stats['n_countries'][0]
 
-        print(f"[DIMENSÕES] {n_rows:,} observações × {n_cols} variáveis")
-        print(f"[COBERTURA TEMPORAL] {year_min}-{year_max} ({year_max-year_min+1} anos)")
-        print(f"[COBERTURA GEOGRÁFICA] {n_countries} países latino-americanos")
+        print(f"{n_rows:,} observacoes x {n_cols} variaveis")
+        print(f"Cobertura temporal: {year_min}-{year_max} ({year_max-year_min+1} anos)")
+        entity_label = "municípios brasileiros" if self.dataset_name == "inep_censo" else "países"
+        print(f"Cobertura geografica: {n_countries} {entity_label}")
 
-        # Análise de completude usando indicadores validados
         indicator_names = list(ALL_INDICATORS.values())
         scientific_indicators = [col for col in df_lazy.collect_schema().names()
                                 if col in indicator_names]
@@ -142,9 +132,9 @@ class PolarsDataFrameProcessor:
             missing_count = missing_stats['total_missing'][0] * len(scientific_indicators)
             missing_pct = (missing_count / total_cells) * 100 if total_cells > 0 else 0
 
-            print(f"[COMPLETUDE] {total_cells - missing_count:,}/{total_cells:,} células válidas ({100-missing_pct:.1f}%)")
+            print(f"Completude: {total_cells - missing_count:,}/{total_cells:,} celulas validas ({100-missing_pct:.1f}%)")
 
-        print("[STATUS] LazyFrame Polars preparado com query plan otimizado")
+        print("LazyFrame Polars preparado")
 
         return df_lazy
 
@@ -163,14 +153,14 @@ class PolarsDataFrameProcessor:
             2. Resultado final: (país, ano, indicador1, indicador2, ...)
             3. Usa unpivot (Polars) equivalente a melt reverso
         """
-        print("[TRANSFORMAÇÃO] Iniciando pivotagem long→wide com lazy evaluation")
+        print("Pivotagem long->wide")
 
         # Verificar se já está em formato wide
         schema = df_lazy.collect_schema()
 
         # Se tem 'indicator_name' ou 'indicator', precisa fazer pivot
         if 'indicator_name' in schema or 'indicator' in schema:
-            print("[PIVOTAGEM] Detectado formato longo - convertendo para largo")
+            print("Detectado formato longo - convertendo para largo")
 
             # Identificar coluna de indicador
             indicator_col = 'indicator_name' if 'indicator_name' in schema else 'indicator'
@@ -187,10 +177,10 @@ class PolarsDataFrameProcessor:
                 aggregate_function='first'  # Não deve ter duplicatas
             )
 
-            print(f"[PIVOTAGEM] Transformação concluída - colunas: {len(df_wide.collect_schema().names())}")
+            print(f"Pivotagem concluida - colunas: {len(df_wide.collect_schema().names())}")
 
         else:
-            print("[PIVOTAGEM] Dados já em formato largo - preservando estrutura")
+            print("Dados ja em formato largo - preservando estrutura")
             df_wide = df_lazy
 
         return df_wide
@@ -210,21 +200,18 @@ class PolarsDataFrameProcessor:
             2. Formato Parquet: Compatibilidade com ecossistema
             3. Metadados JSON: Estatísticas de qualidade e auditoria
         """
-        print("[EXPORTAÇÃO] Materializando dados processados")
+        print("Materializando dados processados")
 
         output_path = f"{self.processed_dir}/final_results.parquet"
 
-        # Limpeza defensiva
         if os.path.exists(output_path):
             if os.path.isdir(output_path):
                 shutil.rmtree(output_path)
             else:
                 os.remove(output_path)
 
-        print(f"[EXPORT 1/2] Salvando dataset: {output_path}")
-        print("[COMPRESSÃO] Snappy (3:1, otimizado para análise iterativa)")
+        print(f"Salvando dataset: {output_path}")
 
-        # Materialização com otimizações Polars
         df_collected = df_lazy.collect()
         df_collected.write_parquet(output_path, compression='snappy')
 
@@ -266,10 +253,8 @@ class PolarsDataFrameProcessor:
         with open(stats_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-        print(f"\n[ARTEFATOS GERADOS]")
-        print(f"  1. Dataset processado: {output_path}")
-        print(f"  2. Metadados JSON: {stats_path}")
-        print(f"[DIMENSÕES] {n_rows:,} registros × {n_cols} colunas")
+        print(f"Artefatos: {output_path}, {stats_path}")
+        print(f"{n_rows:,} registros x {n_cols} colunas")
 
         return output_path
 
@@ -282,44 +267,26 @@ class PolarsDataFrameProcessor:
 
         Pipeline sequencial:
             1. Carregamento lazy de dados completos
-            2. Transformação long→wide
+            2. Transformação long->wide
             3. Materialização e persistência
 
-        Garantias de robustez:
-            - Tratamento defensivo de exceções com traceback
-            - Logging detalhado para debugging
-            - Retorno estruturado para integração em pipelines
         """
-        print("="*70)
-        print(" PROCESSAMENTO POLARS DATAFRAME - LAZY EVALUATION ".center(70))
-        print("="*70)
-
         start_time = datetime.now()
 
         try:
-            # Estágio 1: Carregamento lazy
-            print("\n[ESTÁGIO 1/3] Carregamento de Dados")
-            print("-" * 40)
+            print("\n[1/3] Carregamento de dados")
             df_lazy = self.load_complete_data()
 
-            # Estágio 2: Transformação
-            print("\n[ESTÁGIO 2/3] Transformação Long→Wide")
-            print("-" * 40)
+            print("\n[2/3] Transformacao long->wide")
             df_wide = self.pivot_long_to_wide(df_lazy)
 
-            # Estágio 3: Exportação
-            print("\n[ESTÁGIO 3/3] Materialização e Persistência")
-            print("-" * 40)
+            print("\n[3/3] Materializacao e persistencia")
             output_path = self.export_processed_data(df_wide)
 
-            # Cálculo de tempo
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
 
-            print("\n" + "="*70)
-            print(" ✓ PROCESSAMENTO POLARS DATAFRAME CONCLUÍDO COM SUCESSO ".center(70))
-            print("="*70)
-            print(f"\n[TEMPO TOTAL] {processing_time:.2f} segundos")
+            print(f"\nProcessamento Polars DataFrame concluido em {processing_time:.2f}s")
 
             return {
                 'status': 'success',
@@ -339,11 +306,8 @@ class PolarsDataFrameProcessor:
             }
 
         except FileNotFoundError as e:
-            print("\n" + "="*70)
-            print(" ✗ ERRO: DADOS DE ENTRADA NÃO ENCONTRADOS ".center(70))
-            print("="*70)
-            print(f"\n[CAUSA] {str(e)}")
-            print("[SOLUÇÃO] Execute 'raw_data_collector.py' antes deste processador")
+            print(f"\n[ERROR] Dados de entrada nao encontrados: {e}")
+            print("Execute 'raw_data_collector.py' antes deste processador")
 
             return {
                 'status': 'failed',
@@ -357,11 +321,7 @@ class PolarsDataFrameProcessor:
             import traceback
             tb = traceback.format_exc()
 
-            print("\n" + "="*70)
-            print(" ✗ ERRO NO PROCESSAMENTO POLARS DATAFRAME ".center(70))
-            print("="*70)
-            print(f"\n[EXCEÇÃO] {e.__class__.__name__}: {str(e)}")
-            print("\n[TRACEBACK COMPLETO]")
+            print(f"\n[ERROR] {e.__class__.__name__}: {str(e)}")
             print(tb)
 
             return {
@@ -376,4 +336,4 @@ class PolarsDataFrameProcessor:
 if __name__ == "__main__":
     processor = PolarsDataFrameProcessor()
     results = processor.run_polars_dataframe_processing()
-    print(f"[STATUS] Execução: {results.get('status', 'failed').upper()}")
+    print(f"Execucao: {results.get('status', 'failed')}")

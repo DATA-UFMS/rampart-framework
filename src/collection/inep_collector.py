@@ -24,7 +24,6 @@ import zipfile
 from datetime import datetime
 from typing import Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 import requests
 
@@ -158,7 +157,7 @@ def parse_year(zip_path: str, year: int) -> pd.DataFrame:
     # Filtrar: Total/Total (1 linha por município)
     total = df[(df['localizacao'] == 'Total') & (df['dependencia'] == 'Total')].copy()
 
-    # Converter numéricas (-- → NaN)
+    # Converter numéricas (-- -> NaN)
     num_cols = [c for c in total.columns if c not in
                 ['regiao', 'uf', 'nome_municipio', 'localizacao', 'dependencia']]
     for col in num_cols:
@@ -170,7 +169,7 @@ def parse_year(zip_path: str, year: int) -> pd.DataFrame:
 
 def adapt_to_framework_schema(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Mapeia colunas INEP → schema do framework (country_code/year/etc.).
+    Mapeia colunas INEP -> schema do framework (country_code/year/etc.).
 
     O framework calcula dropout_rate = 100 - lower_secondary_completion_rate.
     Portanto: lower_secondary_completion_rate = 100 - abandono_em.
@@ -186,7 +185,7 @@ def adapt_to_framework_schema(df: pd.DataFrame) -> pd.DataFrame:
     # Criar country_stratum a partir da UF
     adapted['country_stratum'] = adapted['uf']
 
-    # Target: inverter abandono EM → completion rate
+    # Target: inverter abandono EM -> completion rate
     adapted['lower_secondary_completion_rate'] = 100 - adapted['abandono_em']
 
     # Selecionar colunas finais
@@ -225,11 +224,8 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
 
     os.makedirs(output_dir, exist_ok=True)
 
-    print("=" * 60)
-    print("COLETA INEP — INDICADORES EDUCACIONAIS (TAXAS DE RENDIMENTO)")
-    print(f"Anos: {years[0]}-{years[-1]} ({len(years)} anos)")
+    print(f"Coleta INEP - Taxas de Rendimento, {years[0]}-{years[-1]} ({len(years)} anos)")
     print(f"Output: {output_dir}")
-    print("=" * 60)
 
     all_years = []
     metadata = {
@@ -301,12 +297,10 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
     with open(meta_path, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\n{'='*60}")
-    print(f"COLETA CONCLUÍDA: {len(adapted):,} obs "
-          f"({n_mun} municípios × {n_years} anos)")
+    print(f"\nColeta concluida: {len(adapted):,} obs "
+          f"({n_mun} municipios x {n_years} anos)")
     print(f"Parquet: {parquet_path}")
     print(f"SHA-256: {sha256}")
-    print(f"{'='*60}")
 
     return metadata
 

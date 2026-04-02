@@ -80,10 +80,8 @@ class DataWarehouseProcessor:
     """
     
     def __init__(self, dataset_name: str = "worldbank"):
-        print("[SISTEMA] INICIALIZANDO PROCESSADOR DATA WAREHOUSE")
-        print("=" * 60)
-        print("[PARADIGMA] Schema-on-Write com DuckDB OLAP Engine")
-        print("[PROCESSAMENTO] SQL nativo com validação de tipos")
+        print("Inicializando processador Data Warehouse")
+        print("Schema-on-write com DuckDB OLAP, SQL nativo")
 
         self.dataset_name = dataset_name
         raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
@@ -93,13 +91,11 @@ class DataWarehouseProcessor:
         
         os.makedirs(self.output_dir, exist_ok=True)
         
-        # Connection manager com retry policy para resiliência
-        # Valores baseados em análise empírica de latência do DuckDB
         self.conn_manager = DuckDBConnectionManager(self.db_path, max_retries=3, retry_delay=1.0)
         
-        print(f"[CONFIG] Dados de entrada: {self.complete_data_path}")
-        print(f"[CONFIG] Database DuckDB: {self.db_path}")
-        print(f"[OUTPUT] Diretório de saída: {self.output_dir}")
+        print(f"Dados de entrada: {self.complete_data_path}")
+        print(f"Database DuckDB: {self.db_path}")
+        print(f"Diretorio de saida: {self.output_dir}")
     
     def load_complete_data_sql_pure(self) -> None:
         """
@@ -122,27 +118,25 @@ class DataWarehouseProcessor:
             Schema-on-write força validação imediata de tipos, detectando
             problemas de qualidade antes do processamento analítico.
         """
-        print("[PROCESSO] CARREGANDO DADOS VIA SQL NATIVO")
+        print("Carregando dados via SQL nativo")
         
         if not os.path.exists(self.complete_data_path):
             raise FileNotFoundError(f"Dados não encontrados: {self.complete_data_path}")
         
         try:
-            # CREATE OR REPLACE garante idempotência (pode executar múltiplas vezes)
             load_query = f"""
                 CREATE OR REPLACE TABLE raw_complete_data AS
                 SELECT * FROM read_parquet('{self.complete_data_path}')
             """
             
             self.conn_manager.execute_sql_no_return(load_query)
-            print("   [SUCESSO] Dados carregados no DuckDB")
+            print("   Dados carregados no DuckDB")
             
             # Estatísticas descritivas para validação
             total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM raw_complete_data")
             unique_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM raw_complete_data")
             min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM raw_complete_data")
             max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM raw_complete_data")
-            # Completude: usar coluna se existir, senão assumir 100%
             has_completeness = self.conn_manager.execute_scalar(
                 "SELECT COUNT(*) FROM information_schema.columns "
                 "WHERE table_name='raw_complete_data' AND column_name='data_completeness_score'"
@@ -154,10 +148,8 @@ class DataWarehouseProcessor:
             else:
                 avg_completeness = 100.0
 
-            print(f"   [STATS] {total_records} observações carregadas")
-            print(f"   [STATS] Período: {min_year}-{max_year}")
-            print(f"   [STATS] Entidades únicas: {unique_countries}")
-            print(f"   [STATS] Completude média: {avg_completeness:.1f}%")
+            print(f"   {total_records} observacoes, periodo {min_year}-{max_year}, "
+                  f"{unique_countries} entidades, completude {avg_completeness:.1f}%")
             
             # Análise de missingness dinâmica (dataset-agnostic)
             num_cols_query = """
@@ -176,31 +168,12 @@ class DataWarehouseProcessor:
                     )
                     total_possible = total_records * len(null_parts)
                     missing_pct = (total_missing / total_possible) * 100 if total_possible > 0 else 0
-                    print(f"   [QUALIDADE] Dados faltantes: {missing_pct:.1f}% em {len(null_parts)} indicadores numéricos")
+                    print(f"   Dados faltantes: {missing_pct:.1f}% em {len(null_parts)} indicadores numericos")
             
         except SQLProcessingError as e:
-            print(f"   [ERRO] Falha no carregamento SQL: {e}")
+            print(f"   [ERROR] Falha no carregamento SQL: {e}")
             raise
     
-    def validate_and_sanitize_metadata_sql_pure(self, metadata_status: Dict[str, bool]) -> None:
-        """Valida metadados se existirem. Dataset-agnostic: pula colunas ausentes."""
-        print("   [VALIDAÇÃO] SANITIZANDO METADADOS")
-        if not metadata_status.get('has_completeness_score'):
-            print("   [INFO] Coluna data_completeness_score ausente — pulando")
-            return
-
-        try:
-            self.conn_manager.execute_sql_no_return(
-                "UPDATE raw_complete_data SET data_completeness_score = 0.0 WHERE data_completeness_score IS NULL"
-            )
-            self.conn_manager.execute_sql_no_return("""
-                UPDATE raw_complete_data SET data_completeness_score = LEAST(GREATEST(data_completeness_score, 0), 100)
-            """)
-            avg = self.conn_manager.execute_scalar("SELECT ROUND(AVG(data_completeness_score), 1) FROM raw_complete_data")
-            print(f"   [RESULTADO] Completude média: {avg}%")
-        except SQLProcessingError as e:
-            print(f"   [AVISO] Validação de completude falhou: {e}")
-
     def process_sql_architecture(self):
         """
         Processa arquitetura Data Warehouse com otimizações para OLAP.
@@ -225,8 +198,7 @@ class DataWarehouseProcessor:
             - Índices em colunas de filtro frequente (year, stratum)
             - Evita sobre-indexação que degrada performance de escrita
         """
-        print("[PROCESSO] OTIMIZANDO PARA WORKLOADS ANALÍTICOS")
-        print("   [INFO] Preservando metadados originais (sem recálculo desnecessário)")
+        print("Otimizando para workloads analiticos")
         
         try:
             # Atualização de metadados ETL (se coluna existir)
@@ -237,32 +209,26 @@ class DataWarehouseProcessor:
                 """)
             except SQLProcessingError:
                 pass  # Coluna pode não existir em todos os datasets
-            print("   [SUCESSO] Metadados ETL atualizados")
+            print("   Metadados ETL atualizados")
         except SQLProcessingError as e:
-            print(f"   [ERRO] Falha na atualização de metadados: {e}")
+            print(f"   [ERROR] Falha na atualizacao de metadados: {e}")
             raise
         
-        print("   [OTIMIZAÇÃO] Criando índices para consultas analíticas")
+        print("   Criando indices para consultas analiticas")
         try:
-            # Índices escolhidos baseados em padrões de consulta típicos
             index_queries = [
-                # Índice composto para queries temporais por país
                 "CREATE INDEX IF NOT EXISTS idx_country_year ON analytics_wide(country_code, year)",
-                # Índice para agregações por estrato econômico
                 "CREATE INDEX IF NOT EXISTS idx_stratum_year ON analytics_wide(country_stratum, year)",
-                # Índice simples para filtros temporais
                 "CREATE INDEX IF NOT EXISTS idx_year ON analytics_wide(year)"
             ]
             self.conn_manager.execute_transaction(index_queries)
-            print("   [SUCESSO] Índices criados")
+            print("   Indices criados")
         except SQLProcessingError as e:
-            print(f"   [ERRO] Falha na criação de índices: {e}")
+            print(f"   [ERROR] Falha na criacao de indices: {e}")
             raise
         
-        print("   [VIEWS] Criando views analíticas")
+        print("   Criando views analiticas")
         try:
-            # View de sumarização dinâmica (dataset-agnostic)
-            # Detecta colunas numéricas e cria AVG para cada
             num_cols_q = """
                 SELECT column_name FROM information_schema.columns
                 WHERE table_name = 'analytics_wide'
@@ -279,12 +245,12 @@ class DataWarehouseProcessor:
                 GROUP BY country_code, country_stratum
             """
             self.conn_manager.create_view('vw_education_summary', view_query)
-            print("   [SUCESSO] Views analíticas criadas")
+            print("   Views analiticas criadas")
         except SQLProcessingError as e:
-            print(f"   [ERRO] Falha na criação de views: {e}")
+            print(f"   [ERROR] Falha na criacao de views: {e}")
             raise
         
-        print("   [CONCLUSÃO] Otimizações aplicadas com sucesso")
+        print("   Otimizacoes aplicadas")
     
     def export_processed_data(self) -> str:
         """
@@ -295,24 +261,20 @@ class DataWarehouseProcessor:
         - Preservação de tipos e metadados de coluna
         - Ordenação por (country_code, year) para otimizar leituras subsequentes
         
-        Decisão arquitetural: Manter pureza SQL sem fallback para pandas.
-        Justificativa: Garantir reprodutibilidade e evitar inconsistências
-        entre processamento SQL e manipulação DataFrame.
-        
         Returns:
             Caminho do arquivo Parquet exportado
-            
+
         Raises:
-            SQLProcessingError: Se exportação falhar (sem fallback intencional)
+            SQLProcessingError: Se exportação falhar
         """
-        print("[EXPORTAÇÃO] SALVANDO DADOS PROCESSADOS")
+        print("Salvando dados processados")
         
         # Estatísticas finais para metadados
         try:
             total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-            print(f"   [INFO] Exportando {total_records} registros")
+            print(f"   Exportando {total_records} registros")
         except SQLProcessingError as e:
-            print(f"   [ERRO] Falha ao verificar dados: {e}")
+            print(f"   [ERROR] Falha ao verificar dados: {e}")
             raise
         has_cs = self.conn_manager.execute_scalar(
             "SELECT COUNT(*) FROM information_schema.columns "
@@ -325,7 +287,6 @@ class DataWarehouseProcessor:
         output_path = f"{self.output_dir}/final_dataset.parquet"
         
         try:
-            # COPY TO com ordenação para otimizar leituras futuras
             export_query = f"""
                 COPY (
                     SELECT * FROM analytics_wide 
@@ -334,14 +295,12 @@ class DataWarehouseProcessor:
             """
             
             self.conn_manager.execute_sql_no_return(export_query)
-            print(f"   [SUCESSO] Dataset exportado: {output_path}")
+            print(f"   Dataset exportado: {output_path}")
             
         except SQLProcessingError as e:
-            # Sem fallback intencional - manter pureza arquitetural
-            print(f"   [ERRO CRÍTICO] Exportação SQL falhou: {e}")
-            raise SQLProcessingError(f"Export falhou - arquitetura SQL pura: {e}")
+            print(f"   [ERROR] Exportacao SQL falhou: {e}")
+            raise SQLProcessingError(f"Export falhou: {e}")
         
-        # Persistir metadados de processamento
         stats = {
             'architecture': 'data_warehouse',
             'paradigm': 'schema_on_write',
@@ -357,11 +316,9 @@ class DataWarehouseProcessor:
         with open(stats_path, 'w') as f:
             json.dump(stats, f, indent=2)
         
-        print(f"   [OUTPUT] Dataset: {output_path}")
-        print(f"   [OUTPUT] Database: {self.db_path}")
-        print(f"   [OUTPUT] Metadados: {stats_path}")
-        print(f"   [STATS] Total: {total_records} registros")
-        print(f"   [STATS] Completude: {final_completeness_avg:.1f}%")
+        print(f"   Dataset: {output_path}")
+        print(f"   Database: {self.db_path}")
+        print(f"   {total_records} registros, completude {final_completeness_avg:.1f}%")
         
         return output_path
     
@@ -374,7 +331,7 @@ class DataWarehouseProcessor:
         2. analytics_wide: CREATE TABLE AS SELECT * FROM raw_complete_data
         3. Índices em (country_code, year)
         """
-        print("   [SCHEMA] CONFIGURANDO ESTRUTURA RELACIONAL (dinâmico)")
+        print("   Configurando estrutura relacional (dinamico)")
 
         try:
             # Dimension table (entidades geográficas)
@@ -389,7 +346,7 @@ class DataWarehouseProcessor:
                 GROUP BY country_code
             """)
             entity_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM dim_entities")
-            print(f"   [SUCESSO] dim_entities criada: {entity_count} entidades")
+            print(f"   dim_entities criada: {entity_count} entidades")
 
             # Fact table: cópia direta com schema inferido dos dados
             self.conn_manager.execute_sql_no_return("DROP TABLE IF EXISTS analytics_wide")
@@ -398,7 +355,7 @@ class DataWarehouseProcessor:
                 SELECT * FROM raw_complete_data
             """)
             fact_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-            print(f"   [SUCESSO] analytics_wide criada: {fact_count} registros")
+            print(f"   analytics_wide criada: {fact_count} registros")
 
             # Índices
             for idx_sql in [
@@ -410,9 +367,9 @@ class DataWarehouseProcessor:
                     self.conn_manager.execute_sql_no_return(idx_sql)
                 except SQLProcessingError:
                     pass
-            print("   [SUCESSO] Índices criados")
+            print("   Indices criados")
 
-            print("   [CONCLUSÃO] Schema configurado com sucesso")
+            print("   Schema configurado")
 
         except SQLProcessingError as e:
             raise SQLProcessingError(f"Falha na configuração do schema: {e}")
@@ -420,7 +377,7 @@ class DataWarehouseProcessor:
     def populate_dimensions_sql_pure(self):
         """Dimensões já populadas em setup_duckdb_schema_sql_pure (dinâmico)."""
         count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM dim_entities")
-        print(f"   [DIMENSÕES] {count} entidades (já populadas no schema)")
+        print(f"   {count} entidades (ja populadas no schema)")
 
     def load_fact_table_sql_pure(self):
         """
@@ -430,7 +387,7 @@ class DataWarehouseProcessor:
         CREATE TABLE AS SELECT *, portanto os dados já estão lá.
         Este método apenas sanitiza metadados e adiciona linhagem.
         """
-        print("   [FACT TABLE] VALIDANDO E ENRIQUECENDO")
+        print("   Validando e enriquecendo fact table")
 
         try:
             # Sanitizar country_stratum NULLs
@@ -458,7 +415,7 @@ class DataWarehouseProcessor:
 
             final_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
             entities = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
-            print(f"   [RESULTADO] {final_count} registros, {entities} entidades")
+            print(f"   {final_count} registros, {entities} entidades")
 
         except SQLProcessingError as e:
             raise SQLProcessingError(f"Erro ao validar fact table: {e}")
@@ -472,9 +429,9 @@ class DataWarehouseProcessor:
         """
         try:
             self.conn_manager.close_connection()
-            print("   [CLEANUP] Conexões fechadas")
+            print("   Conexoes fechadas")
         except Exception as e:
-            print(f"   [AVISO] Erro no cleanup: {e}")
+            print(f"   [WARN] Erro no cleanup: {e}")
     
     def run_data_warehouse_processing(self) -> Dict:
         """
@@ -483,7 +440,7 @@ class DataWarehouseProcessor:
         Pipeline de 6 etapas:
         1. Carga de dados Parquet -> tabela temporária
         2. Configuração de schema relacional (DDL)
-        3. População de dimensões (SCD Type 1)
+        3. População de dimensões
         4. Carga de fact table com validações
         5. Otimizações para OLAP (índices, views)
         6. Exportação final para Parquet
@@ -496,50 +453,32 @@ class DataWarehouseProcessor:
             - SQLProcessingError: Erros de processamento SQL
             - Exception: Erros inesperados com traceback completo
         """
-        print("\n[SISTEMA] EXECUTANDO PIPELINE DATA WAREHOUSE")
-        print("=" * 60)
-        
+        print("\nExecutando pipeline Data Warehouse")
+
         try:
-            # ETAPA 1: Carregar dados
-            print("\n[ETAPA 1/6] Carregando dados completos")
+            print("\n[1/6] Carregando dados completos")
             self.load_complete_data_sql_pure()
             record_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM raw_complete_data")
-            print(f"[CONCLUSÃO] {record_count} registros carregados")
-            
-            # ETAPA 2: Configurar schema
-            print("\n[ETAPA 2/6] Configurando schema relacional")
+            print(f"{record_count} registros carregados")
+
+            print("\n[2/6] Configurando schema relacional")
             self.setup_duckdb_schema_sql_pure()
-            print("[CONCLUSÃO] Schema configurado")
-            
-            # ETAPA 3: Popular dimensões
-            print("\n[ETAPA 3/6] Populando tabelas dimensionais")
+
+            print("\n[3/6] Populando tabelas dimensionais")
             self.populate_dimensions_sql_pure()
-            print("[CONCLUSÃO] Dimensões populadas")
-            
-            # ETAPA 4: Carregar fact table
-            print("\n[ETAPA 4/6] Carregando fact table")
+
+            print("\n[4/6] Carregando fact table")
             self.load_fact_table_sql_pure()
-            print("[CONCLUSÃO] Fact table carregada")
-            
-            # ETAPA 5: Otimizações
-            print("\n[ETAPA 5/6] Aplicando otimizações OLAP")
+
+            print("\n[5/6] Aplicando otimizacoes OLAP")
             self.process_sql_architecture()
-            print("[CONCLUSÃO] Otimizações aplicadas")
-            
-            # ETAPA 6: Exportar dados
-            print("\n[ETAPA 6/6] Exportando dados processados")
+
+            print("\n[6/6] Exportando dados processados")
             output_path = self.export_processed_data()
-            print("[CONCLUSÃO] Dados exportados")
-    
+
             self.cleanup()
-            
-            print("\n[SUCESSO] PIPELINE CONCLUÍDO")
-            print("=" * 60)
-            print("[PARADIGMA] Schema-on-Write aplicado")
-            print("[PROCESSAMENTO] 100% SQL nativo")
-            print("[OTIMIZAÇÕES] Índices e views criados")
-            print(f"[OUTPUT] Dataset: {output_path}")
-            print(f"[OUTPUT] Database: {self.db_path}")
+
+            print(f"\nPipeline concluido: {output_path}")
             
             return {
                 'status': 'success',
@@ -550,7 +489,7 @@ class DataWarehouseProcessor:
             }
             
         except FileNotFoundError as e:
-            print(f"\n[ERRO] Arquivo não encontrado: {e}")
+            print(f"\n[ERROR] Arquivo nao encontrado: {e}")
             self.cleanup()
             return {
                 'status': 'failed',
@@ -560,7 +499,7 @@ class DataWarehouseProcessor:
             }
             
         except SQLProcessingError as e:
-            print(f"\n[ERRO] Processamento SQL falhou: {e}")
+            print(f"\n[ERROR] Processamento SQL falhou: {e}")
             self.cleanup()
             return {
                 'status': 'failed',
@@ -571,8 +510,7 @@ class DataWarehouseProcessor:
             
         except Exception as e:
             import traceback
-            print(f"\n[ERRO] Erro inesperado: {e}")
-            print("[DEBUG] Traceback completo:")
+            print(f"\n[ERROR] Erro inesperado: {e}")
             print(traceback.format_exc())
             self.cleanup()
             return {
@@ -586,4 +524,4 @@ class DataWarehouseProcessor:
 if __name__ == "__main__":
     processor = DataWarehouseProcessor()
     results = processor.run_data_warehouse_processing()
-    print(f"\n[FINAL] Status: {results.get('status', 'failed')}")
+    print(f"\nStatus: {results.get('status', 'failed')}")

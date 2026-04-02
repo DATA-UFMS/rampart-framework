@@ -2,9 +2,8 @@
 """
 Gerenciador de Conexões DuckDB para Arquitetura Data Warehouse.
 
-Implementa gerenciamento robusto de conexões persistentes com DuckDB,
+Implementa gerenciamento de conexões persistentes com DuckDB,
 incluindo suporte transacional, retry automático e tratamento de erros.
-Projetado para garantir integridade e performance em pipelines científicos.
 """
 
 import duckdb
@@ -22,17 +21,13 @@ class SQLProcessingError(Exception):
 class DuckDBConnectionManager:
     """
     Gerenciador de conexões DuckDB com suporte transacional e recuperação automática.
-    
+
     Características:
-    - Conexões persistentes com pooling inteligente
+    - Conexões persistentes
     - Retry automático com backoff exponencial
     - Suporte completo a transações ACID
-    - Logging detalhado para auditoria científica
+    - Logging detalhado para auditoria
     - Context managers para gerenciamento seguro de recursos
-    
-    Metodologia:
-        Implementa padrões Enterprise para garantir robustez e
-        reprodutibilidade em pipelines de dados científicos.
     """
     
     def __init__(self, db_path: str, max_retries: int = 3, retry_delay: float = 1.0):
@@ -193,7 +188,6 @@ class DuckDBConnectionManager:
             Executa múltiplas consultas SQL em uma única transação.
 
             Args:
-                connection: Conexão ativa com o banco de dados.
                 queries: Lista de strings contendo comandos SQL.
                 params_list: (Opcional) Lista de listas de parâmetros correspondentes a cada query.
 
