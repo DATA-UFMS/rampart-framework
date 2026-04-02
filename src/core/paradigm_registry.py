@@ -45,7 +45,7 @@ def discover_paradigms(*, force: bool = False) -> dict:
                     try:
                         importlib.import_module(module_name)
                     except Exception as e:
-                        print(f"[AVISO] Não foi possível importar {module_name}: {e}")
+                        print(f"[WARN] Não foi possível importar {module_name}: {e}")
         _discovered = True
 
     return {

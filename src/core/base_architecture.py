@@ -4,12 +4,11 @@ Classe base abstrata para arquiteturas ML.
 
 Este módulo define a estrutura comum para todas as arquiteturas de ML,
 garantindo consistência metodológica e facilitando manutenção sem duplicação.
-Preserva 100% da lógica científica original de cada arquitetura.
+Preserva a lógica de cada arquitetura.
 """
 
 from abc import ABC, abstractmethod
 import os
-import sys
 import json
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
@@ -20,7 +19,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
-# Optional: Polars support (lazy import for backward compatibility)
 try:
     import polars as pl
     _HAS_POLARS = True
@@ -42,7 +40,7 @@ class BaseArchitectureML(ABC):
         P3 — Separação de features: exclusão de derivadas do target
              e detecção de proxy (|correlação| > threshold).
         P4 — Escopo temporal da seleção: feature selection restrita
-             ao período de treino do primeiro fold (Kapoor L1.3).
+             ao período de treino do primeiro fold (Kapoor & Narayanan, 2023).
         P5 — Escopo de preprocessing: transformações estatísticas
              (scaling, imputação) ajustadas exclusivamente no treino
              (Kaufman et al. 2012).
@@ -51,7 +49,7 @@ class BaseArchitectureML(ABC):
         Hiperparâmetros são selecionados via grid search no conjunto
         de validação, nunca no teste. O modelo final é retreinado no
         treino completo com os hiperparâmetros selecionados. Isso
-        previne leakage tipo L3.3 (Kapoor & Narayanan 2023).
+        previne leakage por otimização no conjunto de teste (Kapoor & Narayanan, 2023).
 
     Attributes:
         architecture_name: Nome da arquitetura (data_lake, data_warehouse)
@@ -61,9 +59,6 @@ class BaseArchitectureML(ABC):
         source_column: Coluna fonte para criar target
     """
 
-    # --- Registro de paradigmas do framework (auto-descoberta via __init_subclass__) ---
-    # Nota: _registry não é thread-safe. Aceitável para registro em tempo de
-    # importação em pipeline de pesquisa single-threaded.
     _registry: Dict[str, type] = {}
 
     def __init_subclass__(cls, **kwargs):
@@ -121,8 +116,7 @@ class BaseArchitectureML(ABC):
         Args:
             architecture_name: Identificador da arquitetura
             output_base_path: Caminho base para outputs
-            dataset_config: DatasetConfig (default: worldbank para
-                backward compatibility)
+            dataset_config: DatasetConfig (default: worldbank)
         """
         self.architecture_name = architecture_name
         self.output_base = output_base_path
@@ -215,15 +209,10 @@ class BaseArchitectureML(ABC):
         Returns:
             Dados com variável target criada e validada
             
-        Note:
-            Utiliza inversão simples pois raw_data_collector já
-            garantiu que valores estão no range [0,100].
+        Inversão simples --- raw_data_collector garante range [0,100].
         """
-        print(f"\nCriando target {self.architecture_name}...")
-        print(f"   Usando fonte: {self.source_column}")
-        print(f"   Target: {self.target_column}")
+        print(f"\nCriando target {self.architecture_name}: {self.source_column} -> {self.target_column}")
         
-        # Delegar implementação específica
         data_with_target = self.create_target_implementation(data)
         
         self._save_target_statistics(data_with_target)
@@ -259,7 +248,6 @@ class BaseArchitectureML(ABC):
             'creation_timestamp': datetime.now().isoformat()
         })
         
-        # Validações científicas comuns
         expected_range = list(self.dataset_config.target_expected_range)
         if stats['mean'] < expected_range[0] or stats['mean'] > expected_range[1]:
             print(f"   Aviso: Média de dropout ({stats['mean']:.2f}%) "
@@ -267,7 +255,7 @@ class BaseArchitectureML(ABC):
 
         if stats['valid_count'] < self.dataset_config.min_valid_count:
             print(f"   Aviso: Poucos dados válidos ({stats['valid_count']}) "
-                  f"para ML robusto")
+                  f"para ML")
         
         stats_path = f"{self.prep_dir}/target_statistics.json"
         with open(stats_path, 'w') as f:
@@ -288,10 +276,8 @@ class BaseArchitectureML(ABC):
         Returns:
             Lista de configurações de folds com metadados completos
             
-        Note:
-            Aplica gaps temporais de 2 anos entre train/val e val/test
-            para prevenção rigorosa de vazamento temporal.
-            Metodologia adequada para conferences/journals ML.
+        Aplica gaps temporais de 2 anos entre train/val e val/test
+        para prevenção de vazamento temporal.
         """
         print("\nCriando folds temporais...")
         gap = int(self.config.get('temporal_gap_years', 2))
@@ -305,7 +291,6 @@ class BaseArchitectureML(ABC):
         validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
         validator.enforce_walk_forward(folds)
 
-        # Validar folds se dados fornecidos
         if data is not None:
             if hasattr(data, 'reset_index'):
                 data = data.reset_index(drop=True)
@@ -405,7 +390,7 @@ class BaseArchitectureML(ABC):
                 f"val_len={val_len}, test_len={test_len}, gap={gap}"
             )
 
-        print(f"   ✓ Folds auto-gerados: {len(folds)} (gap={gap}, val={val_len}, test={test_len})")
+        print(f"   Folds auto-gerados: {len(folds)} (gap={gap}, val={val_len}, test={test_len})")
         return folds
     
     @abstractmethod
@@ -459,7 +444,6 @@ class BaseArchitectureML(ABC):
             Lista de nomes de colunas a excluir
         """
         base_excluded = list(self.dataset_config.excluded_columns)
-        # Sempre excluir o target column gerado
         if self.target_column not in base_excluded:
             base_excluded.append(self.target_column)
         return base_excluded
@@ -505,7 +489,7 @@ class BaseArchitectureML(ABC):
         if len(selected) < 5:
             selected = [
                 feat for feat, corr in correlations.items()
-                if corr >= min_corr * 0.67  # relaxa para 2/3 do limiar
+                if corr >= min_corr * 0.67
             ]
             print(f"   Critério relaxado: {len(selected)} features")
         
@@ -535,7 +519,7 @@ class BaseArchitectureML(ABC):
         Calcula train_end do primeiro fold a partir da config científica.
 
         Usado para restringir feature selection ao período de treino,
-        prevenindo leakage tipo L1.3 (Kapoor & Narayanan, 2023): seleção
+        prevenindo leakage temporal (Kapoor & Narayanan, 2023): seleção
         de features usando dados que pertencem a validação/teste.
         """
         cfg = self.config
@@ -562,10 +546,10 @@ class BaseArchitectureML(ABC):
         4. Remove multicolinearidade via filtragem pairwise
         5. Detecta features proxy do target (P3 estendido)
 
-        Nota: preprocessing (scaling, imputação) ocorre em prepare_features()
+        Preprocessing (scaling, imputação) ocorre em prepare_features()
         e nos modelos, com enforcement de P5 (escopo de preprocessing).
 
-        P4 (Kapoor & Narayanan 2023, tipo L1.3; Kaufman et al. 2012):
+        P4 (Kapoor & Narayanan, 2023; Kaufman et al., 2012):
         Correlações são computadas usando apenas dados até train_end do
         primeiro fold, impedindo que informação de períodos de validação
         ou teste influencie a seleção de features.
@@ -582,11 +566,10 @@ class BaseArchitectureML(ABC):
         all_features = self.get_numeric_features(data)
         feature_cols = [col for col in all_features if col not in exclude_cols]
 
-        print(f"   Removidas {len(exclude_cols)} variáveis (vazamento/metadados)")
-        print(f"   Analisando {len(feature_cols)} features candidatas...")
+        print(f"   {len(feature_cols)} candidatas ({len(exclude_cols)} excluidas)")
 
         # P4: Restringir ao período de treino para evitar leakage na seleção
-        # (Kapoor & Narayanan 2023, tipo L1.3; Kaufman et al. 2012)
+        # (Kapoor & Narayanan, 2023; Kaufman et al., 2012)
         train_end = self._first_fold_train_end()
         data_train_only = self._filter_by_year(data, max_year=train_end)
         n_total = self._count_rows(data)
@@ -610,7 +593,7 @@ class BaseArchitectureML(ABC):
             )
 
         # P3 estendido: detecção de features proxy do target
-        # (Kapoor & Narayanan 2023, tipo L2; Kaufman et al. 2012)
+        # (Kapoor & Narayanan, 2023; Kaufman et al., 2012)
         # Threshold alinhado com max_corr da seleção para evitar gap entre filtros
         PROXY_THRESHOLD = float(self.config.get('proxy_correlation_threshold', 0.80))
         proxies = {
@@ -621,7 +604,7 @@ class BaseArchitectureML(ABC):
             raise ValueError(
                 f"Anti-leakage violation (P3 proxy detection): "
                 f"features with |correlation| > {PROXY_THRESHOLD} with target "
-                f"suggest proxy leakage (Kapoor L2): {proxies}"
+                f"suggest proxy leakage (Kapoor & Narayanan, 2023): {proxies}"
             )
 
         # Estatísticas de seleção
@@ -644,8 +627,7 @@ class BaseArchitectureML(ABC):
         with open(selection_path, 'w') as f:
             json.dump(selection_stats, f, indent=2)
         
-        print(f"   Feature selection salva: {selection_path}")
-        print(f"   Features selecionadas: {len(final_features)}")
+        print(f"   Features selecionadas: {len(final_features)} -> {selection_path}")
         
         return selection_stats
     
@@ -775,7 +757,6 @@ class BaseArchitectureML(ABC):
             Dicionário com resultados do setup
         """
         print(f"Executando setup {self.architecture_name}")
-        print("=" * 60)
         
         try:
             # Setup do ambiente específico
@@ -803,8 +784,7 @@ class BaseArchitectureML(ABC):
             # Salvar folds
             self.save_folds(data_processed, folds)
             
-            print(f"\nSetup {self.architecture_name} concluído!")
-            print("=" * 60)
+            print(f"\nSetup {self.architecture_name} concluido")
             
             return {
                 'architecture': self.architecture_name,
@@ -816,7 +796,6 @@ class BaseArchitectureML(ABC):
             
         except Exception as e:
             print(f"\nErro no setup {self.architecture_name}: {e}")
-            print("=" * 60)
             
             return {
                 'architecture': self.architecture_name,
@@ -824,135 +803,6 @@ class BaseArchitectureML(ABC):
                 'error': str(e),
                 'setup_timestamp': datetime.now().isoformat()
             }
-    
-    def compute_performance_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict:
-        """
-        Calcula métricas de performance padrão para avaliação de modelos.
-        
-        Método compartilhado para cálculo consistente de métricas entre
-        todas as arquiteturas, garantindo comparabilidade científica.
-        
-        Args:
-            y_true: Valores reais do target
-            y_pred: Valores preditos pelo modelo
-            
-        Returns:
-            Dicionário com métricas calculadas:
-            - mae: Mean Absolute Error
-            - mse: Mean Squared Error
-            - rmse: Root Mean Squared Error
-            - r2: Coeficiente de determinação R²
-            - mape: Mean Absolute Percentage Error (se aplicável)
-        """
-        mae = mean_absolute_error(y_true, y_pred)
-        mse = mean_squared_error(y_true, y_pred)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(y_true, y_pred)
-        
-        # MAPE apenas quando não há zeros no y_true
-        mask = y_true != 0
-        if mask.any():
-            mape = np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100
-        else:
-            mape = np.nan
-        
-        return {
-            'mae': float(mae),
-            'mse': float(mse),
-            'rmse': float(rmse),
-            'r2': float(r2),
-            'mape': float(mape) if not np.isnan(mape) else None
-        }
-    
-    def validate_data_integrity(self, data: Any, required_columns: List[str] = None) -> Dict[str, Any]:
-        """
-        Valida integridade dos dados com verificações científicas.
-        
-        Args:
-            data: Dados para validação
-            required_columns: Colunas obrigatórias
-            
-        Returns:
-            Dicionário com resultados da validação
-        """
-        integrity_issues = []
-        
-        # Verificar colunas obrigatórias
-        if required_columns:
-            if hasattr(data, 'columns'):
-                missing_cols = [col for col in required_columns if col not in data.columns]
-                if missing_cols:
-                    integrity_issues.append(f"Colunas faltantes: {missing_cols}")
-        
-        # Verificar dados nulos excessivos
-        if hasattr(data, 'isna'):
-            null_ratio = data.isna().mean()
-            high_null_cols = null_ratio[null_ratio > 0.9].index.tolist()
-            if high_null_cols:
-                integrity_issues.append(f"Colunas com >90% nulos: {high_null_cols}")
-        
-        return {
-            'integrity_check': 'passed' if not integrity_issues else 'failed',
-            'issues': integrity_issues,
-            'validation_timestamp': datetime.now().isoformat()
-        }
-    
-    def log_pipeline_step(self, step_name: str, details: Dict = None) -> None:
-        """
-        Registra etapa do pipeline com detalhes.
-        
-        Args:
-            step_name: Nome da etapa
-            details: Detalhes adicionais
-        """
-        log_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'architecture': self.architecture_name,
-            'step': step_name,
-            'details': details or {}
-        }
-        
-        # Log para arquivo se existir diretório
-        if os.path.exists(self.prep_dir):
-            log_file = f"{self.prep_dir}/pipeline_log.jsonl"
-            with open(log_file, 'a') as f:
-                f.write(json.dumps(log_entry) + '\n')
-        
-        print(f"   [{step_name}] logged at {log_entry['timestamp']}")
-    
-    def validate_temporal_integrity(self, train_data: Any, val_data: Any,
-                                   test_data: Any) -> Tuple[bool, str]:
-        """
-        Valida integridade temporal dos splits para prevenir vazamento.
-        
-        Versão alternativa que recebe os dados diretamente ao invés de apenas anos.
-        
-        Args:
-            train_data: Dados de treino
-            val_data: Dados de validação
-            test_data: Dados de teste
-            
-        Returns:
-            Tupla (is_valid, message)
-        """
-        # Extrair anos dos dados
-        if hasattr(train_data, '__getitem__') and 'year' in train_data:
-            train_years = (train_data['year'].min(), train_data['year'].max())
-            val_years = (val_data['year'].min(), val_data['year'].max())
-            test_years = (test_data['year'].min(), test_data['year'].max())
-            
-            is_valid = self.validate_temporal_integrity_years(
-                train_years, val_years, test_years
-            )
-            
-            if is_valid:
-                return True, "Integridade temporal validada"
-            else:
-                return False, "Violação de integridade temporal detectada"
-        
-        raise ValueError(
-            "Anti-leakage violation: column 'year' not found, cannot verify temporal integrity"
-        )
     
     def validate_temporal_integrity_years(self, train_years: Tuple[int, int],
                                    val_years: Tuple[int, int],
@@ -973,9 +823,8 @@ class BaseArchitectureML(ABC):
         Returns:
             True se a integridade temporal está preservada, False caso contrário
             
-        Note:
-            Requer gap mínimo de 2 anos entre splits para prevenir
-            vazamento temporal em dados educacionais.
+        Requer gap mínimo de 2 anos entre splits para prevenir
+        vazamento temporal em dados educacionais.
         """
         # P1: Verificar ordem temporal
         # val/test podem ter 1 ano (start == end), portanto <=
@@ -1003,67 +852,6 @@ class BaseArchitectureML(ABC):
                 f"val-test gap={val_test_gap} < {MIN_GAP}"
             )
 
-        print(f"   ✓ Integridade temporal validada")
-        print(f"   Gaps: train-val={train_val_gap}yr, val-test={val_test_gap}yr")
+        print(f"   Integridade temporal OK (gaps: train-val={train_val_gap}yr, val-test={val_test_gap}yr)")
 
         return True
-    
-    def calculate_feature_importance(self, model: Any, feature_names: List[str]) -> Dict[str, float]:
-        """
-        Calcula importância das features de forma padronizada.
-        
-        Args:
-            model: Modelo treinado com atributo feature_importances_
-            feature_names: Lista com nomes das features
-            
-        Returns:
-            Dicionário com importância normalizada de cada feature
-        """
-        if hasattr(model, 'feature_importances_'):
-            importances = model.feature_importances_
-            # Normalizar para somar 1
-            total = importances.sum()
-            importances_norm = importances / total if total != 0 else importances
-            
-            return {
-                feature: float(importance)
-                for feature, importance in zip(feature_names, importances_norm)
-            }
-        return {}
-    
-    def detect_data_drift(self, reference_data: Any, current_data: Any,
-                         features: List[str], threshold: float = 0.1) -> Dict:
-        """
-        Detecta drift nos dados comparando distribuições.
-        
-        Args:
-            reference_data: Dados de referência (treino)
-            current_data: Dados atuais (produção/teste)
-            features: Lista de features para análise
-            threshold: Threshold para detecção de drift
-            
-        Returns:
-            Dicionário com análise de drift por feature
-        """
-        drift_analysis = {}
-        
-        for feature in features:
-            # Extrair valores da feature (específico da arquitetura)
-            # Implementação básica - subclasses podem sobrescrever
-            if hasattr(reference_data, '__getitem__'):
-                ref_values = reference_data[feature]
-                curr_values = current_data[feature]
-                
-                # Teste Kolmogorov-Smirnov
-                ks_stat, p_value = stats.ks_2samp(ref_values, curr_values)
-                
-                drift_detected = p_value < threshold
-                
-                drift_analysis[feature] = {
-                    'ks_statistic': float(ks_stat),
-                    'p_value': float(p_value),
-                    'drift_detected': drift_detected,
-                    'threshold': threshold
-                }
-        
-        return drift_analysis

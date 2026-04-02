@@ -6,7 +6,7 @@ datasets (World Bank, INEP Censo Escolar, etc.), permitindo que o
 framework opere de forma dataset-agnostica.
 """
 
-from typing import Any, Dict, List, Optional, Tuple, runtime_checkable, Protocol
+from typing import Any, Dict, List, Tuple, runtime_checkable, Protocol
 
 
 @runtime_checkable

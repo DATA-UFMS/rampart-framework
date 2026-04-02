@@ -5,19 +5,19 @@ Módulo centralizado de validação para arquiteturas ML.
 Centraliza toda lógica de validação temporal, integridade de dados e
 métricas científicas, eliminando duplicação entre arquiteturas.
 
-Protocolo anti-leakage completo (P1-P5):
+Protocolo anti-leakage (P1-P5):
     P1 — Ordenação temporal: train_end < val_start < val_end < test_start.
     P2 — Gap mínimo: N anos entre splits (default 2), configurável via
          temporal_gap_years. Embargo opcional para dados sub-anuais.
     P3 — Separação de features: lista de exclusão (derivadas do target,
          metadados) + detecção de proxy (|r| > 0.95 com target).
     P4 — Escopo de seleção: feature selection restrita ao período de
-         treino do primeiro fold (Kapoor & Narayanan 2023, L1.3).
+         treino do primeiro fold (Kapoor & Narayanan, 2023).
     P5 — Escopo de preprocessing: scaling e imputação ajustados
          exclusivamente nos dados de treino (Kaufman et al. 2012).
 
 HPO: grid search no conjunto de validação; modelo final retreinado
-no treino completo. Previne leakage L3.3 (Kapoor & Narayanan 2023).
+no treino completo. Previne leakage por otimização no teste (Kapoor & Narayanan, 2023).
 
 Enforcement: violações de P1/P2 geram ValueError via enforce_walk_forward().
 Violações de P3/P4 geram ValueError em run_feature_selection().
@@ -26,7 +26,7 @@ P5 é enforced por contrato (docstring + testes unitários).
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any
 from datetime import datetime
 
 
@@ -201,77 +201,6 @@ class TemporalValidator:
                 f"Errors: {errors}"
             )
     
-    def validate_gap(self, start_year: int, end_year: int) -> bool:
-        """
-        Valida se o gap entre dois anos é suficiente.
-        
-        Args:
-            start_year: Ano inicial
-            end_year: Ano final
-            
-        Returns:
-            True se gap é suficiente, False caso contrário
-        """
-        gap = end_year - start_year
-        return gap >= self.min_gap_years
-    
-    def check_temporal_leakage(self, train_years: Tuple[int, int],
-                              test_years: Tuple[int, int]) -> bool:
-        """
-        Verifica se há vazamento temporal entre treino e teste.
-        
-        Args:
-            train_years: Tupla (início, fim) do treino
-            test_years: Tupla (início, fim) do teste
-            
-        Returns:
-            True se há vazamento, False caso contrário
-        """
-        # Há vazamento se test começar antes do treino terminar
-        return test_years[0] <= train_years[1]
-    
-    def validate_temporal_split(self, train_data: pd.DataFrame,
-                              val_data: pd.DataFrame,
-                              test_data: pd.DataFrame) -> Tuple[bool, str]:
-        """
-        Valida split temporal usando DataFrames.
-        
-        Args:
-            train_data: Dados de treino
-            val_data: Dados de validação
-            test_data: Dados de teste
-            
-        Returns:
-            Tupla (is_valid, message)
-        """
-        # Extrair anos dos dados
-        if 'year' in train_data.columns:
-            train_years = (train_data['year'].min(), train_data['year'].max())
-            val_years = (val_data['year'].min(), val_data['year'].max())
-            test_years = (test_data['year'].min(), test_data['year'].max())
-            
-            # Verificar ordem temporal
-            if train_years[1] >= val_years[0]:
-                return False, f"Sobreposição train-val: {train_years[1]} >= {val_years[0]}"
-            
-            if val_years[1] >= test_years[0]:
-                return False, f"Sobreposição val-test: {val_years[1]} >= {test_years[0]}"
-            
-            # Verificar gaps
-            train_val_gap = val_years[0] - train_years[1] - 1
-            val_test_gap = test_years[0] - val_years[1] - 1
-            
-            if train_val_gap < self.min_gap_years:
-                return False, f"Gap train-val insuficiente: {train_val_gap} < {self.min_gap_years}"
-            
-            if val_test_gap < self.min_gap_years:
-                return False, f"Gap val-test insuficiente: {val_test_gap} < {self.min_gap_years}"
-            
-            return True, "Split temporal válido"
-        
-        import warnings
-        warnings.warn("Coluna 'year' ausente: validação temporal não realizada", stacklevel=2)
-        return False, "Coluna 'year' não encontrada — validação temporal impossível"
 
 
 class DataIntegrityValidator:
@@ -281,10 +210,6 @@ class DataIntegrityValidator:
     Verifica qualidade, completude e consistência dos dados
     antes do treinamento de modelos.
     """
-    
-    def __init__(self):
-        """Inicializa validador de integridade."""
-        self.validation_results = {}
     
     def validate_target_distribution(self, target_values: np.ndarray,
                                     expected_range: Tuple[float, float] = (0, 100),
@@ -328,7 +253,6 @@ class DataIntegrityValidator:
             validation['out_of_range_count'] = int(out_of_range)
             validation['out_of_range_rate'] = float(out_of_range / len(clean_values) * 100)
             
-            # Verificar valores negativos (não deveria existir para dropout)
             negative_count = np.sum(clean_values < 0)
             validation['negative_values'] = int(negative_count)
             
@@ -352,60 +276,6 @@ class DataIntegrityValidator:
         validation['is_valid'] = len(validation.get('warnings', [])) == 0
         
         return validation
-    
-    def validate_feature_quality(self, features_df: pd.DataFrame,
-                                max_missing_rate: float = 0.5,
-                                min_variance: float = 0.01) -> Dict:
-        """
-        Valida qualidade das features para ML.
-        
-        Args:
-            features_df: DataFrame com features
-            max_missing_rate: Taxa máxima de missing aceitável
-            min_variance: Variância mínima para feature ser útil
-            
-        Returns:
-            Dicionário com análise de qualidade
-        """
-        quality_report = {
-            'total_features': len(features_df.columns),
-            'features_analyzed': [],
-            'high_missing_features': [],
-            'low_variance_features': [],
-            'constant_features': [],
-            'recommended_to_remove': []
-        }
-        
-        for col in features_df.columns:
-            feature_analysis = {
-                'name': col,
-                'dtype': str(features_df[col].dtype),
-                'missing_rate': features_df[col].isna().mean(),
-                'unique_values': features_df[col].nunique(),
-                'variance': features_df[col].var() if features_df[col].dtype in ['float64', 'int64'] else None
-            }
-            
-            # Verificar problemas
-            if feature_analysis['missing_rate'] > max_missing_rate:
-                quality_report['high_missing_features'].append(col)
-                quality_report['recommended_to_remove'].append(col)
-            
-            if feature_analysis['unique_values'] == 1:
-                quality_report['constant_features'].append(col)
-                quality_report['recommended_to_remove'].append(col)
-            
-            elif feature_analysis['variance'] is not None and feature_analysis['variance'] < min_variance:
-                quality_report['low_variance_features'].append(col)
-            
-            quality_report['features_analyzed'].append(feature_analysis)
-        
-        # Remover duplicatas das recomendações
-        quality_report['recommended_to_remove'] = list(set(quality_report['recommended_to_remove']))
-        
-        quality_report['quality_score'] = 1.0 - (len(quality_report['recommended_to_remove']) / 
-                                                 quality_report['total_features'])
-        
-        return quality_report
     
     def validate_dataframe(self, df: pd.DataFrame,
                           target_col: str = None,
@@ -431,13 +301,11 @@ class DataIntegrityValidator:
             'errors': []
         }
         
-        # Verificar se DataFrame está vazio
         if df.empty:
             validation_report['is_valid'] = False
             validation_report['errors'].append("DataFrame está vazio")
             return False, validation_report
         
-        # Verificar dados faltantes
         missing_counts = df.isnull().sum()
         missing_rates = (missing_counts / len(df)) * 100
         
@@ -465,20 +333,17 @@ class DataIntegrityValidator:
             if not target_validation['is_valid']:
                 validation_report['warnings'].extend(target_validation.get('warnings', []))
         
-        # Verificar colunas numéricas com variância zero
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         for col in numeric_cols:
             if df[col].var() == 0:
                 validation_report['warnings'].append(f"Coluna '{col}' tem variância zero")
         
-        # Verificar valores infinitos
         inf_counts = np.isinf(df.select_dtypes(include=[np.number])).sum()
         for col, count in inf_counts.items():
             if count > 0:
                 validation_report['warnings'].append(f"Coluna '{col}' tem {count} valores infinitos")
                 validation_report['is_valid'] = False
         
-        # Verificar duplicatas
         duplicates = df.duplicated().sum()
         if duplicates > 0:
             validation_report['warnings'].append(f"DataFrame tem {duplicates} linhas duplicadas")
@@ -498,274 +363,3 @@ class DataIntegrityValidator:
         
         return validation_report['is_valid'], validation_report
     
-    def check_data_leakage(self, train_data: Any, test_data: Any,
-                          id_columns: List[str] = None) -> Dict:
-        """
-        Verifica possível vazamento de dados entre train e test.
-        
-        Args:
-            train_data: Dados de treino
-            test_data: Dados de teste
-            id_columns: Colunas de identificação para verificar duplicatas
-            
-        Returns:
-            Dicionário com análise de vazamento
-        """
-        leakage_report = {
-            'leakage_detected': False,
-            'duplicate_rows': 0,
-            'duplicate_ids': [],
-            'temporal_overlap': False
-        }
-        
-        # Verificar duplicatas de IDs se fornecidos
-        if id_columns and hasattr(train_data, '__getitem__'):
-            train_ids = set()
-            test_ids = set()
-            
-            for col in id_columns:
-                if col in train_data and col in test_data:
-                    train_ids.update(train_data[col])
-                    test_ids.update(test_data[col])
-            
-            overlap = train_ids.intersection(test_ids)
-            if overlap:
-                leakage_report['leakage_detected'] = True
-                leakage_report['duplicate_ids'] = list(overlap)[:10]  # Primeiros 10
-                leakage_report['duplicate_count'] = len(overlap)
-        
-        # Verificar overlap temporal se houver coluna 'year'
-        if hasattr(train_data, '__getitem__') and 'year' in train_data and 'year' in test_data:
-            train_years = set(train_data['year'])
-            test_years = set(test_data['year'])
-            
-            if train_years.intersection(test_years):
-                leakage_report['temporal_overlap'] = True
-                leakage_report['leakage_detected'] = True
-                leakage_report['overlapping_years'] = sorted(list(train_years.intersection(test_years)))
-        
-        return leakage_report
-
-
-class MetricsValidator:
-    """
-    Validador de métricas para garantir confiabilidade dos resultados.
-    """
-    
-    def __init__(self):
-        """Inicializa validador de métricas."""
-        self.metrics_history = []
-    
-    def validate_metrics_consistency(self, metrics: Dict,
-                                    expected_ranges: Dict = None) -> Dict:
-        """
-        Valida consistência e razoabilidade das métricas.
-        
-        Args:
-            metrics: Dicionário com métricas calculadas
-            expected_ranges: Ranges esperados para cada métrica
-            
-        Returns:
-            Dicionário com validação das métricas
-        """
-        if expected_ranges is None:
-            # Ranges padrão para regressão de dropout
-            expected_ranges = {
-                'r2': (-1, 1),
-                'mape': (0, 100),
-                'rmse': (0, 50),
-                'mae': (0, 50)
-            }
-        
-        validation = {
-            'metrics_validated': [],
-            'out_of_range': [],
-            'suspicious_values': [],
-            'is_valid': True
-        }
-        
-        for metric_name, value in metrics.items():
-            if value is None or np.isnan(value):
-                validation['suspicious_values'].append({
-                    'metric': metric_name,
-                    'issue': 'null_or_nan'
-                })
-                validation['is_valid'] = False
-                continue
-            
-            # Verificar range
-            if metric_name in expected_ranges:
-                min_val, max_val = expected_ranges[metric_name]
-                if value < min_val or value > max_val:
-                    validation['out_of_range'].append({
-                        'metric': metric_name,
-                        'value': value,
-                        'expected_range': expected_ranges[metric_name]
-                    })
-                    validation['is_valid'] = False
-            
-            # Verificações específicas
-            if metric_name == 'r2' and value < -0.5:
-                validation['suspicious_values'].append({
-                    'metric': 'r2',
-                    'value': value,
-                    'issue': 'muito_negativo_indica_modelo_muito_ruim'
-                })
-            
-            if metric_name == 'mape' and value > 50:
-                validation['suspicious_values'].append({
-                    'metric': 'mape',
-                    'value': value,
-                    'issue': 'erro_percentual_muito_alto'
-                })
-            
-            validation['metrics_validated'].append({
-                'metric': metric_name,
-                'value': value,
-                'valid': True
-            })
-        
-        # Armazenar no histórico
-        self.metrics_history.append({
-            'timestamp': datetime.now().isoformat(),
-            'metrics': metrics,
-            'validation': validation
-        })
-        
-        return validation
-    
-    def check_overfitting(self, train_metrics: Dict, test_metrics: Dict,
-                         threshold: float = 0.15) -> Dict:
-        """
-        Verifica sinais de overfitting comparando métricas train vs test.
-        
-        Args:
-            train_metrics: Métricas no conjunto de treino
-            test_metrics: Métricas no conjunto de teste
-            threshold: Diferença máxima aceitável
-            
-        Returns:
-            Dicionário com análise de overfitting
-        """
-        overfitting_analysis = {
-            'overfitting_detected': False,
-            'gaps': {},
-            'severity': 'none'
-        }
-        
-        # Calcular gaps para métricas comuns
-        common_metrics = set(train_metrics.keys()).intersection(set(test_metrics.keys()))
-        
-        for metric in common_metrics:
-            if train_metrics[metric] is not None and test_metrics[metric] is not None:
-                # Para R2, maior é melhor
-                if metric == 'r2':
-                    gap = train_metrics[metric] - test_metrics[metric]
-                # Para erros, menor é melhor
-                else:
-                    gap = test_metrics[metric] - train_metrics[metric]
-                
-                overfitting_analysis['gaps'][metric] = gap
-                
-                if abs(gap) > threshold:
-                    overfitting_analysis['overfitting_detected'] = True
-        
-        # Classificar severidade
-        if overfitting_analysis['overfitting_detected']:
-            max_gap = max(abs(g) for g in overfitting_analysis['gaps'].values())
-            
-            if max_gap > 0.3:
-                overfitting_analysis['severity'] = 'high'
-            elif max_gap > 0.2:
-                overfitting_analysis['severity'] = 'medium'
-            else:
-                overfitting_analysis['severity'] = 'low'
-        
-        return overfitting_analysis
-
-
-# Funções auxiliares para uso direto
-def validate_temporal_splits(train_years: Tuple[int, int],
-                            val_years: Tuple[int, int],
-                            test_years: Tuple[int, int],
-                            min_gap: int = 2) -> bool:
-    """
-    Função conveniente para validação rápida de splits temporais.
-    
-    Args:
-        train_years: (início, fim) do período de treino
-        val_years: (início, fim) do período de validação
-        test_years: (início, fim) do período de teste
-        min_gap: Gap mínimo entre períodos
-        
-    Returns:
-        True se splits são válidos, False caso contrário
-    """
-    validator = TemporalValidator(min_gap_years=min_gap)
-    
-    fold = {
-        'train_start': train_years[0],
-        'train_end': train_years[1],
-        'val_start': val_years[0],
-        'val_end': val_years[1],
-        'test_start': test_years[0],
-        'test_end': test_years[1]
-    }
-    
-    is_valid, errors = validator.validate_fold_integrity(fold)
-
-    if not is_valid:
-        raise ValueError(
-            f"Anti-leakage violation in temporal split: {errors}"
-        )
-
-    return is_valid
-
-
-def generate_validation_report(data: pd.DataFrame, 
-                              target_col: str,
-                              feature_cols: List[str]) -> Dict:
-    """
-    Gera relatório completo de validação dos dados.
-    
-    Args:
-        data: DataFrame com os dados
-        target_col: Nome da coluna target
-        feature_cols: Lista de colunas de features
-        
-    Returns:
-        Dicionário com relatório completo de validação
-    """
-    data_validator = DataIntegrityValidator()
-    
-    report = {
-        'timestamp': datetime.now().isoformat(),
-        'data_shape': data.shape,
-        'target_analysis': {},
-        'features_analysis': {},
-        'recommendations': []
-    }
-    
-    # Validar target
-    if target_col in data.columns:
-        report['target_analysis'] = data_validator.validate_target_distribution(
-            data[target_col].values,
-            name=target_col
-        )
-    
-    # Validar features
-    if feature_cols:
-        features_df = data[feature_cols]
-        report['features_analysis'] = data_validator.validate_feature_quality(features_df)
-        
-        # Adicionar recomendações
-        if report['features_analysis']['recommended_to_remove']:
-            report['recommendations'].append(
-                f"Remover {len(report['features_analysis']['recommended_to_remove'])} features problemáticas"
-            )
-    
-    # Adicionar warnings do target
-    if 'warnings' in report['target_analysis']:
-        report['recommendations'].extend(report['target_analysis']['warnings'])
-    
-    return report

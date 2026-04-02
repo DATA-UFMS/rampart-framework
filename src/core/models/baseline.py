@@ -7,11 +7,9 @@ através do Strategy Pattern.
 """
 
 import os
-import json
 import sys
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 from abc import ABC, abstractmethod
 
@@ -22,7 +20,6 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 from src.core.scientific_config import RANDOM_SEED
 
-# Importações condicionais para modelos
 try:
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -93,7 +90,6 @@ class BaselineModelStrategy(ABC):
         """
         y_pred = self.predict(X)
 
-        # Converter para numpy se necessário
         if hasattr(y_true, 'values'):
             y_true = y_true.values
         if hasattr(y_pred, 'values'):
@@ -124,7 +120,6 @@ class RandomForestStrategy(BaselineModelStrategy):
         """
         super().__init__("RandomForest", params)
 
-        # Parâmetros padrão otimizados para educação
         default_params = {
             'n_estimators': 100,
             'max_depth': 15,
@@ -154,7 +149,6 @@ class RandomForestStrategy(BaselineModelStrategy):
         self.model = RandomForestRegressor(**self.params)
         self.model.fit(X_train, y_train)
 
-        # Registrar histórico
         training_info = {
             'timestamp': datetime.now().isoformat(),
             'train_samples': len(X_train),
@@ -177,7 +171,7 @@ class RandomForestStrategy(BaselineModelStrategy):
     def get_feature_importance(self) -> Optional[Dict[str, float]]:
         """Retorna importância das features do Random Forest.
 
-        Nota: nomes genéricos (feature_0..N) porque o modelo
+        Nomes genéricos (feature_0..N) porque o modelo
         recebe numpy arrays sem metadata de colunas.
         """
         if self.model is None or not hasattr(self.model, 'feature_importances_'):
@@ -200,7 +194,6 @@ class XGBoostStrategy(BaselineModelStrategy):
         """
         super().__init__("XGBoost", params)
 
-        # Parâmetros padrão otimizados
         default_params = {
             'n_estimators': 100,
             'max_depth': 6,
@@ -240,7 +233,6 @@ class XGBoostStrategy(BaselineModelStrategy):
             verbose=False
         )
 
-        # Registrar histórico
         training_info = {
             'timestamp': datetime.now().isoformat(),
             'train_samples': len(X_train) if hasattr(X_train, '__len__') else X_train.shape[0],
@@ -288,7 +280,6 @@ class LightGBMStrategy(BaselineModelStrategy):
         """
         super().__init__("LightGBM", params)
 
-        # Parâmetros padrão otimizados
         default_params = {
             'n_estimators': 100,
             'max_depth': -1,
@@ -333,7 +324,6 @@ class LightGBMStrategy(BaselineModelStrategy):
             callbacks=[lgb.log_evaluation(0)]
         )
 
-        # Registrar histórico
         training_info = {
             'timestamp': datetime.now().isoformat(),
             'train_samples': len(X_train) if hasattr(X_train, '__len__') else X_train.shape[0],
@@ -422,59 +412,13 @@ class BaselineModelFactory:
 
         return models
 
-    @staticmethod
-    def get_default_params(model_type: str) -> Dict:
-        """
-        Retorna parâmetros padrão para um tipo de modelo.
-
-        Args:
-            model_type: Tipo do modelo
-
-        Returns:
-            Dicionário com parâmetros padrão
-        """
-        model_type = model_type.lower()
-
-        if model_type in ['rf', 'randomforest', 'random_forest']:
-            return {
-                'n_estimators': 100,
-                'max_depth': 15,
-                'min_samples_split': 20,
-                'min_samples_leaf': 10,
-                'max_features': 'sqrt',
-                'random_state': RANDOM_SEED
-            }
-        elif model_type in ['xgb', 'xgboost']:
-            return {
-                'n_estimators': 100,
-                'max_depth': 6,
-                'learning_rate': 0.1,
-                'subsample': 0.8,
-                'colsample_bytree': 0.8,
-                'objective': 'reg:squarederror',
-                'random_state': RANDOM_SEED
-            }
-        elif model_type in ['lgb', 'lightgbm', 'lgbm']:
-            return {
-                'n_estimators': 100,
-                'num_leaves': 31,
-                'learning_rate': 0.1,
-                'feature_fraction': 0.8,
-                'bagging_fraction': 0.8,
-                'objective': 'regression',
-                'metric': 'rmse',
-                'random_state': RANDOM_SEED
-            }
-        else:
-            return {}
 
 
 class BaselineEnsemble:
     """
     Ensemble de modelos baseline para melhor performance.
 
-    Combina predições de múltiplos modelos usando média ponderada
-    ou voting para robustez aumentada.
+    Combina predições de múltiplos modelos usando média ponderada.
     """
 
     def __init__(self, models: List[Tuple[str, Optional[Dict], float]]):
@@ -492,7 +436,6 @@ class BaselineEnsemble:
             self.models.append(model)
             self.weights.append(weight)
 
-        # Normalizar pesos
         total_weight = sum(self.weights)
         self.weights = [w / total_weight for w in self.weights]
 
@@ -540,7 +483,6 @@ class BaselineEnsemble:
         Returns:
             Dicionário com métricas do ensemble e modelos individuais
         """
-        # Métricas do ensemble
         y_pred = self.predict(X)
 
         if hasattr(y_true, 'values'):
@@ -553,7 +495,6 @@ class BaselineEnsemble:
             'r2': float(r2_score(y_true, y_pred))
         }
 
-        # Métricas individuais
         individual_metrics = {}
         for model in self.models:
             individual_metrics[model.model_name] = model.evaluate(X, y_true)

@@ -9,7 +9,6 @@ parâmetros de walk-forward para os dados do Banco Mundial (LATAM,
 from core.dataset_config import register_dataset
 from core.indicators import (
     ALL_INDICATORS,
-    TARGET_INDICATORS,
 )
 from core.config import COUNTRY_STRATA
 

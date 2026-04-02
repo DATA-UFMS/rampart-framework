@@ -22,7 +22,6 @@ COUNTRY_STRATA = {
     'special_cases': ['CU', 'HT', 'DO']
 }
 
-# Lista completa de países
 LATIN_AMERICA_COUNTRIES = []
 for stratum in COUNTRY_STRATA.values():
     LATIN_AMERICA_COUNTRIES.extend(stratum)
@@ -31,50 +30,18 @@ for stratum in COUNTRY_STRATA.values():
 # CONFIGURAÇÃO DE ARQUIVOS
 # ============================================================================
 BASE_DATA_DIR = 'data'
-SQL_FIRST_DIR = f'{BASE_DATA_DIR}/sql_first'
-SCHEMA_ON_READ_DIR = f'{BASE_DATA_DIR}/schema_on_read'
-BENCHMARKS_DIR = f'{BASE_DATA_DIR}/benchmarks'
 
 # ============================================================================
 # CONFIGURAÇÃO DE PERFORMANCE
 # ============================================================================
 BENCHMARK_CONFIG = {
-    'repetitions': 30,  # Número de repetições por teste (≥20 para CIs confiáveis)
+    'repetitions': 30,  # Número de repetições por teste
     'warmup_runs': 2,   # Execuções de aquecimento
     'timeout_seconds': 3600,  # Timeout por operação
     'memory_limit_gb': 16,
     'profile_memory': True,
     'profile_cpu': True,
     'save_intermediate': True
-}
-
-# ============================================================================
-# CONFIGURAÇÃO DE LOGGING
-# ============================================================================
-LOGGING_CONFIG = {
-    'level': 'INFO',
-    'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    'file_prefix': 'research_architectures',
-    'max_file_size_mb': 100,
-    'backup_count': 5
-}
-
-# ============================================================================
-# CONFIGURAÇÃO DE VALIDAÇÃO
-# ============================================================================
-VALIDATION_CONFIG = {
-    'tolerance_numeric': 1e-9,  # Tolerância para comparações numéricas
-    'tolerance_percentage': 0.01,  # Tolerância percentual
-    'required_columns': [  # Colunas obrigatórias (World Bank default, override via DatasetConfig)
-        'country_code', 'year', 'lower_secondary_completion_rate',
-        'enrollment_rate_secondary_net'
-    ],
-    'required_columns_inep': [
-        'municipality_code', 'year', 'abandono_rate',
-    ],
-    'validate_collinearity': True,  # Validar filtragem de colinearidade
-    'validate_correlations': True,  # Validar matriz de correlação
-    'validate_imputation': True  # Validar qualidade da imputação
 }
 
 # ============================================================================
@@ -87,7 +54,6 @@ def get_project_root() -> str:
     """
     import os
     
-    # Primeiro, tentar a partir do arquivo atual
     try:
         current_dir = os.path.abspath(os.path.dirname(__file__))
         while current_dir != '/' and current_dir != os.path.dirname(current_dir):
@@ -97,14 +63,12 @@ def get_project_root() -> str:
     except Exception:
         pass
 
-    # Fallback: tentar a partir do working directory atual
     current_dir = os.path.abspath(os.getcwd())
     while current_dir != '/' and current_dir != os.path.dirname(current_dir):
         if os.path.exists(os.path.join(current_dir, 'README.md')):
             return current_dir
         current_dir = os.path.dirname(current_dir)
     
-    # Último fallback: assumir que estamos no root se README.md existe
     if os.path.exists('README.md'):
         return os.path.abspath('.')
     

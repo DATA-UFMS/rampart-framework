@@ -4,7 +4,7 @@ Módulo de Configuração Científica Centralizada para o Benchmark.
 
 Este arquivo define constantes e configurações que devem ser IDÊNTICAS
 entre as arquiteturas Data Warehouse e Data Lake para garantir um
-benchmark cientificamente válido.
+benchmark válido.
 
 Parâmetros definidos aqui governam:
 - Reprodutibilidade (seeds)
@@ -40,7 +40,7 @@ SCIENTIFIC_CONFIG = {
     # Amostragem de correlação (reduz custo computacional mantendo equivalência)
     'correlation_sampling': True,
     'correlation_min_sample_size': 5000,
-    # Limiar para detecção de proxy features (Kapoor & Narayanan 2023, tipo L2)
+    # Limiar para detecção de proxy features (Kapoor & Narayanan, 2023)
     # Alinhado com max_corr da seleção de features (defense-in-depth)
     'proxy_correlation_threshold': 0.80,
 
@@ -140,9 +140,9 @@ def setup_reproducibility():
 
     try:
         import dask
-        # Nota: Dask não possui config nativa de seed global.
+        # Dask não possui config nativa de seed global.
         # A reprodutibilidade é garantida pela seed do numpy.
     except ImportError:
         pass
 
-    print(f"🌱 Reprodutibilidade configurada com RANDOM_SEED={RANDOM_SEED}")
+    print(f"Seed={RANDOM_SEED}")

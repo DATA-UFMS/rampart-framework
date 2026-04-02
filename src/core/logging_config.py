@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Configuração de logging estruturado para o projeto ML.
+Configuração de logging estruturado para o projeto de benchmarking.
 
 Implementa logging centralizado com:
 - Múltiplos handlers (console, arquivo, JSON)
@@ -17,7 +17,7 @@ import logging
 import logging.handlers
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Union
 from functools import wraps
 import time
 import traceback
@@ -81,13 +81,12 @@ class ColoredConsoleFormatter(logging.Formatter):
     Usa cores ANSI para melhor visualização no terminal.
     """
     
-    # Cores ANSI
     COLORS = {
-        'DEBUG': '\033[36m',     # Cyan
-        'INFO': '\033[32m',      # Green
-        'WARNING': '\033[33m',   # Yellow
-        'ERROR': '\033[31m',     # Red
-        'CRITICAL': '\033[35m',  # Magenta
+        'DEBUG': '\033[36m',
+        'INFO': '\033[32m',
+        'WARNING': '\033[33m',
+        'ERROR': '\033[31m',
+        'CRITICAL': '\033[35m',
     }
     RESET = '\033[0m'
     BOLD = '\033[1m'
@@ -249,89 +248,6 @@ class MLContextLogger:
         self.info(f"Dataset {dataset_name} carregado: {shape}")
 
 
-def setup_logging(
-    log_dir: str = "logs",
-    log_level: str = "INFO",
-    log_to_file: bool = True,
-    log_to_console: bool = True,
-    structured: bool = False,
-    max_bytes: int = 10485760,  # 10MB
-    backup_count: int = 5
-) -> logging.Logger:
-    """
-    Configura o sistema de logging.
-    
-    Args:
-        log_dir: Diretório para arquivos de log
-        log_level: Nível de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_to_file: Se deve logar para arquivo
-        log_to_console: Se deve logar para console
-        structured: Se deve usar formato JSON estruturado
-        max_bytes: Tamanho máximo do arquivo de log antes de rotacionar
-        backup_count: Número de backups a manter
-        
-    Returns:
-        Logger configurado
-    """
-    if log_to_file:
-        Path(log_dir).mkdir(parents=True, exist_ok=True)
-    
-    root_logger = logging.getLogger()
-    root_logger.setLevel(getattr(logging, log_level.upper()))
-    
-    root_logger.handlers.clear()
-    
-    if log_to_console:
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(getattr(logging, log_level.upper()))
-        
-        if structured:
-            console_handler.setFormatter(StructuredFormatter())
-        else:
-            console_handler.setFormatter(ColoredConsoleFormatter())
-        
-        root_logger.addHandler(console_handler)
-    
-    # Adicionar handler de arquivo
-    if log_to_file:
-        # Log geral
-        general_log = Path(log_dir) / f"ml_pipeline_{datetime.now().strftime('%Y%m%d')}.log"
-        file_handler = logging.handlers.RotatingFileHandler(
-            general_log,
-            maxBytes=max_bytes,
-            backupCount=backup_count
-        )
-        file_handler.setLevel(getattr(logging, log_level.upper()))
-        
-        if structured:
-            file_handler.setFormatter(StructuredFormatter())
-        else:
-            file_handler.setFormatter(
-                logging.Formatter(
-                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-                )
-            )
-        
-        root_logger.addHandler(file_handler)
-        
-        # Log de erros separado
-        error_log = Path(log_dir) / f"errors_{datetime.now().strftime('%Y%m%d')}.log"
-        error_handler = logging.handlers.RotatingFileHandler(
-            error_log,
-            maxBytes=max_bytes,
-            backupCount=backup_count
-        )
-        error_handler.setLevel(logging.ERROR)
-        error_handler.setFormatter(StructuredFormatter())
-        root_logger.addHandler(error_handler)
-    
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('matplotlib').setLevel(logging.WARNING)
-    logging.getLogger('sklearn').setLevel(logging.WARNING)
-    
-    return root_logger
-
-
 def get_logger(name: str, with_ml_context: bool = False) -> Union[logging.Logger, MLContextLogger]:
     """
     Obtém um logger para um módulo específico.
@@ -349,51 +265,6 @@ def get_logger(name: str, with_ml_context: bool = False) -> Union[logging.Logger
         return MLContextLogger(logger)
     
     return logger
-
-
-def log_execution(func):
-    """
-    Decorator para logar execução de funções.
-    
-    Loga início, fim, duração e erros de execução.
-    
-    Example:
-        @log_execution
-        def process_data(df):
-            return df.dropna()
-    """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        logger = get_logger(func.__module__)
-        func_name = func.__name__
-        
-        # Log início
-        logger.info(f"Iniciando execução: {func_name}")
-        start_time = time.time()
-        
-        try:
-            result = func(*args, **kwargs)
-            
-            # Log sucesso
-            duration = time.time() - start_time
-            logger.info(
-                f"Execução concluída: {func_name}",
-                extra={'duration': duration}
-            )
-            
-            return result
-            
-        except Exception as e:
-            # Log erro
-            duration = time.time() - start_time
-            logger.error(
-                f"Erro na execução: {func_name}",
-                exc_info=True,
-                extra={'duration': duration}
-            )
-            raise
-    
-    return wrapper
 
 
 def log_ml_pipeline(phase: str):
@@ -433,58 +304,31 @@ def log_ml_pipeline(phase: str):
     return decorator
 
 
-# Configuração global padrão
-def init_default_logging():
-    """Inicializa logging com configuração padrão."""
-    setup_logging(
-        log_dir="logs",
-        log_level="INFO",
-        log_to_file=True,
-        log_to_console=True,
-        structured=False
-    )
-
-
-# Exemplo de uso
 if __name__ == "__main__":
-    setup_logging(
-        log_dir="test_logs",
-        log_level="DEBUG",
-        structured=True
-    )
-    
+    logging.basicConfig(level=logging.DEBUG)
+
     logger = get_logger(__name__, with_ml_context=True)
-    
+
     logger.info("Sistema de logging inicializado")
-    
+
     logger.set_context(
         experiment_id="exp_001",
         dataset="worldbank",
         architecture="data_lake"
     )
-    
+
     logger.info("Iniciando processamento de dados")
-    
-    # Log de métricas
+
     logger.log_model_metrics(
         "RandomForest",
         {"r2": 0.85, "rmse": 0.12, "mae": 0.08},
         phase="validation"
     )
-    
-    # Log com timer
+
     with logger.timer("feature_engineering"):
         time.sleep(1)  # Simular processamento
-    
+
     # Log de informações de dados
     logger.log_data_info("train_data", shape=(10000, 50), missing_pct=5.2)
-    
-    # Exemplo com decorator
-    @log_execution
-    def example_function(x: int) -> int:
-        return x * 2
-    
-    result = example_function(5)
-    print(f"Resultado: {result}")
-    
+
     logger.info("Teste de logging concluído")
