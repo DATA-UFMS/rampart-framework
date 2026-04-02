@@ -10,7 +10,7 @@ Métricas:
   - Hedges' g (correção small-sample) opcional
   - Eta squared (para t pareado: eta2 = t^2 / (t^2 + df))
   - Correções: Bonferroni e FDR (Benjamini-Hochberg)
-  - Power analysis prospectiva via Monte Carlo (Wilcoxon signed-rank; Lehmann, 2006)
+  - Power analysis prospectiva via Monte Carlo (Wilcoxon signed-rank; Lehmann & Romano, 2005)
 
 Saídas:
   - outputs/statistics/effect_sizes_summary.json
@@ -92,13 +92,12 @@ def cohens_dz(diff: np.ndarray) -> float:
 def hedges_g(d: float, n: int) -> float:
     if not math.isfinite(d):
         return d
-    # Correção para amostras pequenas
     J = 1 - (3 / (4 * (n - 1) - 1)) if n > 2 else 1.0
     return d * J
 
 
 def _effect_size_ci(diff: np.ndarray, n_boot: int = 3000, seed: int = 42, ci: float = 0.95) -> Tuple[float, float]:
-    """IC bootstrap para Cohen's d_z (Efron & Tibshirani, 1993)."""
+    """IC bootstrap percentil para Cohen's d_z."""
     rng = np.random.default_rng(seed)
     ds = []
     for _ in range(n_boot):
@@ -120,13 +119,12 @@ def eta_squared_from_t(t_stat: float, n: int) -> float:
     return float((t_stat * t_stat) / ((t_stat * t_stat) + df))
 
 
-def benjamini_hochberg(pvals: List[float], alpha: float = 0.05) -> List[float]:
+def benjamini_hochberg(pvals: List[float]) -> List[float]:
     m = len(pvals)
     order = np.argsort(pvals)
     ranked = np.empty(m)
     for rank, idx in enumerate(order, start=1):
         ranked[idx] = pvals[idx] * m / rank
-    # Monotonicidade (não-decrescente)
     for i in range(m - 2, -1, -1):
         ranked[i] = min(ranked[i], ranked[i + 1])
     return ranked.tolist()
@@ -137,7 +135,7 @@ def _prospective_power_wilcoxon(n: int, effect_size: float, alpha: float = 0.05,
     """Power prospectiva por simulação Monte Carlo para Wilcoxon signed-rank.
 
     Gera pares com efeito d sob distribuição normal, aplica Wilcoxon,
-    e conta a fração de rejeições (Lehmann, 2006).
+    e conta a fração de rejeições (Lehmann & Romano, 2005).
     """
     if n < 4 or abs(effect_size) < 1e-10:
         return float('nan')
@@ -160,7 +158,7 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
     phases = [p for p in sorted(df['phase'].unique()) if p != 'collection']
     results = {}
 
-    # Loop over each pair
+    # Por par
     for arch_a, arch_b in ALL_PAIRS:
         la, lb = PAIR_LABELS[(arch_a, arch_b)]
         pair_key = f"{la}_vs_{lb}"
@@ -180,7 +178,6 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
             d = cohens_dz(diff)
             g = hedges_g(d, n)
             eta2 = eta_squared_from_t(float(t_stat), n)
-            # power post-hoc (aprox.)
             power_est = _prospective_power_wilcoxon(n, d)
             d_ci_lo, d_ci_hi = _effect_size_ci(diff)
             rec = dict(
@@ -225,7 +222,6 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
 
         results[pair_key] = res
 
-    # Correção global para múltiplas comparações (todos os pares × fases)
     all_p = []
     all_refs = []  # (pair_key, phase_key)
     for pk, res in results.items():

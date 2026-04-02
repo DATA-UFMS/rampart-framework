@@ -19,11 +19,10 @@ Saídas:
     - outputs/benchmarks/architectural_benchmark_summary.json
     - outputs/benchmarks/fig_*.png
 
-Nota metodológica:
-    Este benchmark não altera a lógica do pipeline. Quando possível, obtém o
+Este benchmark não altera a lógica do pipeline. Quando possível, obtém o
     número de registros processados a partir dos artefatos gerados para
     computar throughput. Nos passos de ML, a contagem é inferida da
-    configuração de folds e dos datasets subjacentes (DW via SQL, DL via Dask).
+    configuração de folds e dos datasets subjacentes (DW via SQL, DL via framework de processamento).
 """
 
 from __future__ import annotations
@@ -38,7 +37,7 @@ import time
 from dataclasses import dataclass, asdict
 import threading
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import pandas as pd
 import psutil
@@ -66,7 +65,6 @@ if SRC_DIR not in sys.path:
 from core.config import get_absolute_output_path, BENCHMARK_CONFIG
 
 
-# Importações tardias dos componentes do pipeline (evitar custo no import inicial)
 def _import_modules():
     """Importa dinamicamente todos os módulos de paradigma via registro do framework."""
     from core.paradigm_registry import discover_paradigms
@@ -160,7 +158,6 @@ class BenchmarkRunner:
         self.modules = _import_modules()
         self.output_dir = output_dir or get_absolute_output_path("benchmarks")
         os.makedirs(self.output_dir, exist_ok=True)
-        # Arquivo de log de recursos (JSONL)
         self.resource_log_path = os.path.join(
             self.output_dir, "architectural_benchmark_resource_log.jsonl"
         )
@@ -195,7 +192,7 @@ class BenchmarkRunner:
             self._io0 = None
             self._start_ts = None
             self._end_ts = None
-            self.peak_rss_mb = None  # exposto após __exit__ para PhaseResult
+            self.peak_rss_mb = None
 
         def __enter__(self):
             try:
@@ -229,7 +226,7 @@ class BenchmarkRunner:
                     cpu_s = psutil.cpu_percent(interval=None)
                     rss_mb = self._proc.memory_info().rss / (1024**2)
                     mem_s = psutil.virtual_memory().percent
-                    # Agregar processos filhos (Dask workers, subprocessos, etc.)
+                    # Agregar processos filhos (subprocessos, etc.)
                     child_cpu = 0.0
                     child_rss_mb = 0.0
                     try:
@@ -251,7 +248,7 @@ class BenchmarkRunner:
                     }
                     self._samples.append(sample)
                 except Exception:
-                    pass  # Thread de monitoramento: tolera falhas transitórias do psutil
+                    pass
                 self._stop.wait(self.interval_s)
 
         def _write_summary(self):
@@ -275,7 +272,6 @@ class BenchmarkRunner:
             mem_sys = agg("mem_sys_percent")
             cpu_children = agg("cpu_children_percent")
             rss_children = agg("rss_children_mb")
-            # Expor pico de RSS (proc + filhos) para PhaseResult
             rss_peak = rss.get("max") or 0.0
             children_peak = rss_children.get("max") or 0.0
             self.peak_rss_mb = round(rss_peak + children_peak, 1)
@@ -312,7 +308,7 @@ class BenchmarkRunner:
                 with open(self.log_path, "a") as f:
                     f.write(_json.dumps(rec) + "\n")
             except Exception as exc:
-                print(f"[AVISO] Falha ao gravar log de recursos: {exc}")
+                print(f"[WARN] Falha ao gravar log de recursos: {exc}")
 
     # --------------------------- utilitários de contagem -------------------
     def _count_rows_parquet(self, abs_path: str) -> int:
@@ -422,10 +418,9 @@ class BenchmarkRunner:
     #
     # Estratégia:
     #   1. Rodar coleta + processamento UMA vez (usando cache quando possível)
-    #   2. Registrar seus tempos como run_id=0 para referência
+    #   2. Registrar seus tempos como run_id=-1 para referência
     #   3. Repetir apenas setup/baseline/hierarchical N vezes
 
-    _UPSTREAM_PHASES = {"collection"}
     _DOWNSTREAM_PHASES = {"processing", "setup", "baseline", "hierarchical"}
 
     def run(self) -> List[PhaseResult]:
@@ -452,7 +447,7 @@ class BenchmarkRunner:
                 )
             except Exception as exc:
                 import traceback
-                print(f"[ERRO DE BENCHMARK] {phase}/{arch}/{step_name}: {exc}")
+                print(f"Benchmark error: {phase}/{arch}/{step_name}: {exc}")
                 traceback.print_exc()
                 return PhaseResult(
                     run_id=run_id,
@@ -463,10 +458,8 @@ class BenchmarkRunner:
                     records=None,
                 )
 
-        # --- Fase 1: upstream (coleta + processamento) - executa UMA vez -------
-        # Estas fases produzem dados determinísticos idênticos em toda execução.
-        # Registram-se como run_id=0 para referência no CSV de resultados.
-        run_id = -1  # upstream separado do downstream (run_id >= 0)
+        # --- Fase 1: upstream (coleta) - executa UMA vez -------------------------
+        run_id = -1
         print("Upstream: coleta (execução única)")
 
         if "collection" in self.phases:
@@ -476,10 +469,7 @@ class BenchmarkRunner:
             if r:
                 results.append(r)
 
-        # Processing agora é downstream (repetido N vezes para IC de latência)
-
-        # --- Fase 2: downstream (setup → baseline → hierarchical) - repetida --
-        # Estas fases contêm a lógica arquitetural que diferencia os paradigmas.
+        # --- Fase 2: downstream - repetida N vezes --------------------------------
         downstream_phases = [p for p in self.phases if p in self._DOWNSTREAM_PHASES]
         if not downstream_phases:
             return results
@@ -523,7 +513,6 @@ class BenchmarkRunner:
 
             for phase_name in downstream_phases:
                 archs = list(phase_fns[phase_name])
-                # Permutação aleatória determinística (Fisher-Yates via RNG)
                 order_rng.shuffle(archs)
 
                 phase_results_run = []
@@ -603,7 +592,6 @@ class BenchmarkRunner:
                 plt.savefig(fig_path, dpi=120)
                 plt.close(fig)
         except ImportError:
-            # matplotlib não disponível — ignora geração de gráficos
             pass
 
         return csv_path, summary_path
@@ -686,4 +674,4 @@ if __name__ == "__main__":
         if os.path.exists(ms):
             subprocess_run([sys.executable, ms], check=False)
     except Exception as exc:
-        print(f"[AVISO] Análise pós-benchmark falhou: {exc}")
+        print(f"[WARN] Analise pos-benchmark falhou: {exc}")

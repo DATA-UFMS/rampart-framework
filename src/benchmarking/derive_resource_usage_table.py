@@ -13,7 +13,7 @@ Colunas na Tabela (LaTeX):
   Fase, Arq, CPU(proc) média, CPU(proc) pico, RSS(MB) média, RSS(MB) pico,
   CPU(sist) média, CPU(sist) pico, Mem(sist)% média, Mem(sist)% pico, IO Read(MB), IO Write(MB), n
 
-Observação: Se não houver dados, gera uma tabela mínima com "Sem dados".
+Se não houver dados, gera uma tabela mínima com "Sem dados".
 """
 
 from __future__ import annotations
@@ -33,12 +33,10 @@ OUT_TEX = OUT_DIR / "architectural_resource_usage.tex"
 
 
 def _garantir_dir():
-    """Garante que o diretório de saída existe."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _load_jsonl(path: Path) -> pd.DataFrame:
-    """Carrega e processa arquivo JSONL em DataFrame."""
     if not path.exists():
         return pd.DataFrame()
     
@@ -78,14 +76,12 @@ def _load_jsonl(path: Path) -> pd.DataFrame:
 
 
 def _escape_latex(text: str) -> str:
-    """Escapa caracteres especiais do LaTeX."""
     if text is None:
         return ""
     return text.replace("_", r"\_").replace("%", r"\%").replace("&", r"\&")
 
 
 def _fmt(x: float | None, unit: str = "") -> str:
-    """Formata valores numéricos com unidades apropriadas."""
     if x is None or not np.isfinite(x):
         return "—"
     
@@ -98,14 +94,10 @@ def _fmt(x: float | None, unit: str = "") -> str:
 
 
 def resumir(df: pd.DataFrame) -> Dict:
-    """Resume dados de uso de recursos por fase e arquitetura."""
     if df.empty:
         return {"erro": "sem_dados"}
     
-    # Agrupa por fase e arquitetura
     grouped = df.groupby(['phase', 'architecture'])
-    
-    # Calcula métricas agregadas
     metrics = grouped.agg({
         'cpu_proc_mean': 'mean',
         'cpu_proc_max': 'max',
@@ -120,7 +112,6 @@ def resumir(df: pd.DataFrame) -> Dict:
         'n': 'count'
     }).reset_index()
     
-    # Converte para dicionário estruturado
     result = {"per_phase": {}}
     
     for _, row in metrics.iterrows():
@@ -148,9 +139,7 @@ def resumir(df: pd.DataFrame) -> Dict:
 
 
 def para_latex(resumo: Dict) -> str:
-    """Gera tabela LaTeX com uso de recursos por fase e arquitetura."""
-    
- 
+
     wrapper_prefix = [
         r"\begingroup",
         r"\setlength{\tabcolsep}{4pt}",
@@ -174,7 +163,6 @@ def para_latex(resumo: Dict) -> str:
         r"\endgroup"
     ]
 
-    # Verifica se há dados para exibir
     if not resumo or "per_phase" not in resumo or not resumo["per_phase"]:
         linhas_erro = wrapper_prefix + [
             r"Sem dados & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\",
@@ -221,7 +209,6 @@ def para_latex(resumo: Dict) -> str:
 
 
 def main() -> None:
-    """Função principal que orquestra a geração da tabela de recursos."""
     _garantir_dir()
     
     if not LOG.exists():
@@ -235,7 +222,6 @@ def main() -> None:
         return
     
     try:
-        # Carrega os dados do arquivo JSONL
         df = _load_jsonl(LOG)
         if df.empty:
             msg = {"erro": "Nenhum dado válido encontrado no arquivo de log."}

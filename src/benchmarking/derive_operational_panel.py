@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict
-
 import numpy as np
 
 LAT_JSON = Path("outputs/statistics/architectural_latency_percentiles.json")

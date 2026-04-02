@@ -60,7 +60,7 @@ def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
 
 
 def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
-    """Returns {pair_key: {phase: (speedup, lo, hi)}}"""
+    """Retorna {pair_key: {phase: (speedup, lo, hi)}}"""
     j = load_json(BASE / 'significance_summary.json')
     if j:
         out: Dict[str, Dict[str, Tuple[float, float, float]]] = {}
@@ -71,7 +71,7 @@ def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
             for phase, metrics in phases.items():
                 if not isinstance(metrics, dict):
                     continue
-                # Detect the speedup key dynamically
+                # Detectar chave de speedup dinamicamente
                 speedup_key = [k for k in metrics if k.startswith('speedup_') and not k.endswith('_lo') and not k.endswith('_hi')]
                 ci_lo_key = [k for k in metrics if k.endswith('ci95_lo') and 'speedup' in k]
                 ci_hi_key = [k for k in metrics if k.endswith('ci95_hi') and 'speedup' in k]
@@ -85,7 +85,7 @@ def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
                 out[pair_key] = pair_speedups
         if out:
             return out
-    # Fallback to legacy flat structure (backward compatibility)
+    # Fallback para estrutura legada
     tex = read_text(BASE / 'significance_summary.tex')
     if tex:
         flat_speedups = parse_significance_tex(tex)
@@ -148,10 +148,10 @@ def get_resources_processing() -> Tuple[Optional[float], Optional[float], Option
 def build_scorecard() -> str:
     speedups_by_pair = get_speedups()
 
-    # Define pair keys and labels
+    # Pares e rótulos
     pairs = [('dl_vs_dw', 'DL vs DW'), ('dl_vs_pl', 'DL vs PL'), ('dw_vs_pl', 'DW vs PL')]
 
-    # Build speedup rows for each pair
+    # Linhas de speedup por par
     speedup_rows = {}
     for pair_key, pair_label in pairs:
         sp = speedups_by_pair.get(pair_key, {})
@@ -172,7 +172,7 @@ def build_scorecard() -> str:
             speed_lines.append(f"Total: {total_s}")
         speedup_rows[pair_key] = '; '.join(speed_lines) if speed_lines else '—'
 
-    # Build equivalence rows for each pair
+    # Linhas de equivalência por par
     equiv_rows = {}
     for pair_key, pair_label in pairs:
         r2 = summarize_equivalence('r2', pair_key) or '—'
@@ -180,7 +180,7 @@ def build_scorecard() -> str:
         wape = summarize_equivalence('wape', pair_key) or '—'
         equiv_rows[pair_key] = f"R$^2$: {r2}; MASE: {mase}; WAPE: {wape}"
 
-    # Get resource information
+    # Informações de recursos
     cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl = get_resources_processing()
     resource_lines = []
     if cpu_dl is not None and cpu_dw is not None:
@@ -193,9 +193,9 @@ def build_scorecard() -> str:
         resource_lines.append(f"RSS (MB) PL={rss_pl:.1f}")
     resource_s = '; '.join(resource_lines) if resource_lines else '—'
 
-    # Build 3-way table
+    # Tabela 3-way
     parts = []
-    parts.append('% Auto-generated scorecard with 3-way comparison')
+    parts.append('% Gerado automaticamente')
     parts.append('\\begin{table}[htbp]')
     parts.append('\\centering')
     parts.append('\\caption{Painel de evidências (resumo consolidado 3-way)}')

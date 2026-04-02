@@ -36,7 +36,6 @@ def _garantir_diretorio() -> None:
 
 
 def _fmt(val: float | None, sufixo: str = " r/s") -> str:
-    """Formata valores numéricos para LaTeX com separadores de milhares."""
     if val is None or not np.isfinite(val):
         return "—"
    
@@ -45,14 +44,12 @@ def _fmt(val: float | None, sufixo: str = " r/s") -> str:
 
 
 def _escape_latex(text: str) -> str:
-    """Escapa caracteres especiais do LaTeX."""
     if text is None:
         return ""
     return text.replace("_", r"\_")
 
 
 def _pct(arr: np.ndarray, q: float) -> float | None:
-    """Calcula percentil de um array, retornando None se vazio."""
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
         return None
@@ -60,8 +57,7 @@ def _pct(arr: np.ndarray, q: float) -> float | None:
 
 
 def resumir(df: pd.DataFrame) -> Dict:
-    """Processa DataFrame de resultados e calcula estatísticas de throughput."""
-  
+
     if df.empty:
         return {"erro": "resultados_vazios"}
 
@@ -103,7 +99,6 @@ def resumir(df: pd.DataFrame) -> Dict:
 
 
 def para_latex(resumo: Dict) -> str:
-    """Converte resumo estatístico para tabela LaTeX bem formatada."""
     wrapper_prefix = [
         r"\begingroup",
         r"\setlength{\tabcolsep}{4pt}",
@@ -141,7 +136,6 @@ def para_latex(resumo: Dict) -> str:
         item = por_fase[fase]
         arquiteturas = item.get("architectures", {})
         
-        # Extrair dados por arquitetura
         dl = arquiteturas.get("data_lake", {})
         dw = arquiteturas.get("data_warehouse", {})
         
@@ -165,7 +159,6 @@ def para_latex(resumo: Dict) -> str:
 
 
 def main() -> None:
-    """Função principal: processa dados e gera arquivos de saída."""
     _garantir_diretorio()
     
     if not RESULTS_CSV.exists():

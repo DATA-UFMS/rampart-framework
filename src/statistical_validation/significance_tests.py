@@ -87,7 +87,6 @@ def paired_vectors_for_phase(
     a = df[(df["phase"] == phase) & (df["architecture"] == arch_a)]
     b = df[(df["phase"] == phase) & (df["architecture"] == arch_b)]
 
-    # Determina sufixos baseado no par (para nomes de coluna bem definidos)
     pair_key = (arch_a, arch_b)
     if pair_key in PAIR_LABELS:
         suffix_a, suffix_b = PAIR_LABELS[pair_key]
@@ -126,7 +125,6 @@ def paired_vectors_total(
     a = tot[tot["architecture"] == arch_a][["run_id", "duration_s"]]
     b = tot[tot["architecture"] == arch_b][["run_id", "duration_s"]]
 
-    # Determina sufixos
     pair_key = (arch_a, arch_b)
     if pair_key in PAIR_LABELS:
         suffix_a, suffix_b = PAIR_LABELS[pair_key]
@@ -284,13 +282,11 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
     json_path = os.path.join(RESULTS_DIR, "significance_summary.json")
     csv_path = os.path.join(RESULTS_DIR, "significance_summary.csv")
     md_path = os.path.join(RESULTS_DIR, "significance_summary.md")
-    tex_path = os.path.join(RESULTS_DIR, "significance_summary.tex")
 
     # JSON: estrutura aninhada por pair
     with open(json_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    # Flatten structure para CSV/MD/TeX
     rows = []
     for pair_key, pair_results in results.items():
         for phase, metrics in pair_results.items():
@@ -298,7 +294,6 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
             row.update(metrics)
             rows.append(row)
 
-    # Colunas que podem aparecer (nem sempre todas existem em todos os pares)
     possible_cols = [
         "n",
         "mean_dl_s",

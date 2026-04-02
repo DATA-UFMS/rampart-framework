@@ -66,7 +66,7 @@ except Exception:
     DEFAULT_SESOI_MASE = 0.05
     DEFAULT_SESOI_WAPE = 0.05
 
-# Pairwise comparisons for 3-way analysis
+# Comparações par-a-par
 PREDICTIVE_PAIRS = [("dl", "dw"), ("dl", "pl"), ("dw", "pl")]
 LATENCY_PAIRS = [
     ("data_lake", "data_warehouse", "dl", "dw"),
@@ -87,7 +87,7 @@ def _median_hodges_lehmann(deltas: np.ndarray) -> float:
 
 
 def _bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, Tuple[float, float]]:
-    """IC bootstrap BCa (Efron & Tibshirani, 1993) com fallback percentil."""
+    """IC bootstrap (BCa com fallback percentil)."""
     if len(values) == 0 or np.all(np.isnan(values)):
         return float('nan'), (float('nan'), float('nan'))
     clean = values[~np.isnan(values)]
