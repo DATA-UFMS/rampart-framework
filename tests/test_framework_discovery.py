@@ -183,24 +183,6 @@ class TestEachParadigmMetaHasRequiredKeys:
         import architectures_ml.data_warehouse.setup  # noqa: F401
         import architectures_ml.polars_dataframe.setup  # noqa: F401
 
-    def test_data_lake_meta_keys(self):
-        from architectures_ml.data_lake.setup import DataLakeArchitectureML
-        meta = DataLakeArchitectureML.PARADIGM_META
-        missing = REQUIRED_KEYS - set(meta.keys())
-        assert not missing, f"data_lake PARADIGM_META missing keys: {missing}"
-
-    def test_data_warehouse_meta_keys(self):
-        from architectures_ml.data_warehouse.setup import DataWarehouseArchitectureML
-        meta = DataWarehouseArchitectureML.PARADIGM_META
-        missing = REQUIRED_KEYS - set(meta.keys())
-        assert not missing, f"data_warehouse PARADIGM_META missing keys: {missing}"
-
-    def test_polars_dataframe_meta_keys(self):
-        from architectures_ml.polars_dataframe.setup import PolarsDataFrameArchitectureML
-        meta = PolarsDataFrameArchitectureML.PARADIGM_META
-        missing = REQUIRED_KEYS - set(meta.keys())
-        assert not missing, f"polars_dataframe PARADIGM_META missing keys: {missing}"
-
     def test_all_paradigms_in_registry_have_required_keys(self):
         registry = BaseArchitectureML.get_registered_paradigms()
         for paradigm_name, cls in registry.items():
@@ -230,7 +212,6 @@ class TestDiscoverParadigms:
         expected = {'data_lake', 'data_warehouse', 'polars_dataframe'}
         assert expected.issubset(set(paradigms.keys())), \
             f"Missing paradigms: {expected - set(paradigms.keys())}"
-        # Detectar entradas de teste vazadas
         unexpected = set(paradigms.keys()) - expected
         assert not unexpected, f"Unexpected paradigms in registry (test leak?): {unexpected}"
 

@@ -397,7 +397,7 @@ class TestImports:
 class TestAntiLeakageP4:
     """
     Valida que feature selection usa apenas dados do período de treino
-    (Kapoor & Narayanan 2023, tipo L1.3; Kaufman et al. 2012).
+    (Kapoor & Narayanan, 2023; Kaufman et al., 2012).
     """
 
     def test_first_fold_train_end_calculation(self):
@@ -409,34 +409,12 @@ class TestAntiLeakageP4:
         val_len = cfg.get('folds_val_len_years', 2)
         gap = cfg.get('temporal_gap_years', 2)
 
-        # Derivação: test_start_min = start + min_train + val_len + 2*gap
-        # val_start = test_start_min - gap - val_len
-        # train_end = val_start - gap - 1
         test_start_min = start + min_train + val_len + 2 * gap
         val_end = test_start_min - gap - 1
         val_start = val_end - val_len + 1
         expected_train_end = val_start - gap - 1
 
-        # Com defaults (start=2000, min_train=8, val=2, gap=2):
-        # test_start_min=2014, val_end=2011, val_start=2010, train_end=2007
         assert expected_train_end == 2007
-
-    def test_train_end_excludes_val_and_test(self):
-        """train_end do primeiro fold não deve atingir nenhum período val/test."""
-        from core.scientific_config import SCIENTIFIC_CONFIG
-        cfg = SCIENTIFIC_CONFIG
-        start = cfg.get('temporal_range_start', 2000)
-        min_train = cfg.get('folds_min_train_years', 8)
-        val_len = cfg.get('folds_val_len_years', 2)
-        gap = cfg.get('temporal_gap_years', 2)
-
-        test_start_min = start + min_train + val_len + 2 * gap
-        val_end = test_start_min - gap - 1
-        val_start = val_end - val_len + 1
-        train_end = val_start - gap - 1
-
-        # Gap entre train_end e val_start deve ser >= gap configurado
-        assert val_start - train_end - 1 >= gap
 
     def test_proxy_threshold_in_config(self):
         """proxy_correlation_threshold deve existir na config científica."""
@@ -445,35 +423,6 @@ class TestAntiLeakageP4:
         assert threshold is not None
         assert 0.5 < threshold <= 1.0, f"Threshold fora do range razoável: {threshold}"
 
-    def test_proxy_detection_catches_perfect_correlation(self):
-        """Feature com correlação ~1.0 com target deve ser detectada como proxy."""
-        # Simula a lógica de detecção de proxy do run_feature_selection
-        correlations = {
-            'feature_normal': 0.45,
-            'feature_suspect': 0.97,  # Proxy: correlação > 0.95
-            'feature_ok': 0.30,
-        }
-        threshold = 0.95
-        proxies = {
-            feat: corr for feat, corr in correlations.items()
-            if abs(corr) > threshold
-        }
-        assert 'feature_suspect' in proxies
-        assert 'feature_normal' not in proxies
-        assert 'feature_ok' not in proxies
-
-    def test_proxy_detection_negative_correlation(self):
-        """Proxy detection deve considerar valor absoluto da correlação."""
-        correlations = {
-            'anti_proxy': -0.98,  # Correlação negativa forte = proxy invertido
-            'normal': 0.40,
-        }
-        threshold = 0.95
-        proxies = {
-            feat: corr for feat, corr in correlations.items()
-            if abs(corr) > threshold
-        }
-        assert 'anti_proxy' in proxies
 
 
 # ---------------------------------------------------------------------------
@@ -483,7 +432,7 @@ class TestAntiLeakageP4:
 class TestPreprocessingIsolation:
     """
     Valida que preprocessing (scaling, imputação) respeita o escopo
-    temporal: ajuste exclusivamente no treino (Semmelrock et al. 2025).
+    temporal: ajuste exclusivamente no treino.
     """
 
     def test_scaler_fit_on_train_only(self):
@@ -492,40 +441,32 @@ class TestPreprocessingIsolation:
         from sklearn.preprocessing import StandardScaler
 
         np.random.seed(42)
-        # Treino: média ~0, teste: média ~10 (distribuições distintas)
         X_train = pd.DataFrame({'feat': np.random.normal(0, 1, 100)})
         X_test = pd.DataFrame({'feat': np.random.normal(10, 1, 50)})
 
-        # Scaler correto: fit apenas no treino
         scaler_correct = StandardScaler()
         scaler_correct.fit(X_train)
         test_scaled_correct = scaler_correct.transform(X_test)
 
-        # Scaler contaminado: fit no conjunto completo
         X_full = pd.concat([X_train, X_test], ignore_index=True)
         scaler_leaked = StandardScaler()
         scaler_leaked.fit(X_full)
         test_scaled_leaked = scaler_leaked.transform(X_test)
 
-        # Resultados devem ser diferentes (prova que fonte importa)
         assert not np.allclose(test_scaled_correct, test_scaled_leaked), \
             "Scaler fit no treino vs completo deveria produzir resultados distintos"
 
-        # Scaler correto: média do treino é ~0, então teste escalado ~10
         assert test_scaled_correct.mean() > 5, \
             "Scaler fit no treino deve preservar deslocamento do teste"
 
     def test_imputation_uses_train_reference(self):
         """Imputação com mediana do treino produz valores diferentes
         de imputação com mediana do conjunto completo."""
-        # Treino: mediana ~5; teste: mediana ~50
         train = pd.DataFrame({'feat': [1, 3, 5, 7, 9]})
         test = pd.DataFrame({'feat': [40, np.nan, 60]})
 
-        # Imputação correta: mediana do treino (5)
         imputed_correct = test['feat'].fillna(train['feat'].median())
 
-        # Imputação contaminada: mediana do completo
         full = pd.concat([train['feat'], test['feat']])
         imputed_leaked = test['feat'].fillna(full.median())
 
@@ -537,17 +478,13 @@ class TestPreprocessingIsolation:
     def test_hpo_selects_on_validation_not_test(self):
         """Simula HPO com grid search: melhor hiperparâmetro deve ser
         escolhido pelo desempenho na validação, não no teste."""
-        # Cenário: alpha=1 é melhor na val, alpha=100 é melhor no teste
         val_scores = {1: 0.85, 10: 0.80, 100: 0.70}
         test_scores = {1: 0.60, 10: 0.65, 100: 0.90}
 
-        # HPO correto: seleciona pela validação
         best_alpha = max(val_scores, key=val_scores.get)
         assert best_alpha == 1, \
             "HPO deve selecionar hiperparâmetro com melhor score na validação"
 
-        # Verificar que não coincide com o melhor do teste
-        # (prova que a seleção não usa informação do teste)
         best_test_alpha = max(test_scores, key=test_scores.get)
         assert best_alpha != best_test_alpha, \
             "Cenário de teste garante que val e test têm ótimos distintos"

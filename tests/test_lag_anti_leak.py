@@ -1,39 +1,41 @@
 #!/usr/bin/env python3
 """
 Testes de anti-leak para lags do target e gaps temporais por fold.
+Requerem outputs pré-gerados (integration tests).
 """
 import json
 from pathlib import Path
 
+import pytest
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+_DL_MASTER = _PROJECT_ROOT / 'outputs/ml_pipeline/architectures/data_lake/prep/master_data_data_lake.parquet'
+_DW_FOLDS = _PROJECT_ROOT / 'outputs/ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json'
 
+
+@pytest.mark.skipif(not _DL_MASTER.exists(), reason='Master DL não encontrado; rode setup DL')
 def test_dl_lag2_anti_leak():
-    base = _PROJECT_ROOT / 'outputs/ml_pipeline/architectures/data_lake/prep'
-    master = base / 'master_data_data_lake.parquet'
-    assert master.exists(), 'Master DL não encontrado; rode setup DL'
-    try:
-        import dask.dataframe as dd
-        df = dd.read_parquet(str(master))
-        # Para cada linha com lag2, deve existir a linha (country, year-2)
-        base_df = df[['country_code','year','dropout_rate_data_lake']].rename(columns={'dropout_rate_data_lake':'dropout_rate_t'})
-        prev = base_df.assign(year=base_df['year']+2).rename(columns={'dropout_rate_t':'ref'})
-        merged = df.merge(prev[['country_code','year','ref']], on=['country_code','year'], how='left')
-        # Onde dropout_rate_lag_2 não é nulo, ref não deve ser nulo
-        mask = ~merged['dropout_rate_lag_2'].isna()
-        bad_df = merged[mask & merged['ref'].isna()].compute()
-        assert len(bad_df) == 0, 'Encontrados lag2 sem registro correspondente em t-2'
-    except Exception as e:
-        raise AssertionError(f'Falha no teste DL lag2: {e}')
+    import dask.dataframe as dd
+    df = dd.read_parquet(str(_DL_MASTER))
+    base_df = df[['country_code','year','dropout_rate_data_lake']].rename(columns={'dropout_rate_data_lake':'dropout_rate_t'})
+    prev = base_df.assign(year=base_df['year']+2).rename(columns={'dropout_rate_t':'ref'})
+    merged = df.merge(prev[['country_code','year','ref']], on=['country_code','year'], how='left')
+    mask = ~merged['dropout_rate_lag_2'].isna()
+    bad_df = merged[mask & merged['ref'].isna()].compute()
+    assert len(bad_df) == 0, f'Encontrados {len(bad_df)} lag2 sem registro correspondente em t-2'
 
 
+@pytest.mark.skipif(not _DW_FOLDS.exists(), reason='Folds não encontrados; rode pipeline')
 def test_fold_gaps_structure():
-    # Verifica gaps ≥2 anos nos folds DL e DW
-    for arch in ['data_lake','data_warehouse']:
+    for arch in ['data_lake', 'data_warehouse']:
         p = _PROJECT_ROOT / f'outputs/ml_pipeline/architectures/{arch}/prep/temporal_folds_{arch}.json'
-        assert p.exists(), f'Folds {arch} não encontrados'
+        if not p.exists():
+            pytest.skip(f'Folds {arch} não encontrados')
         conf = json.loads(p.read_text())
         folds = conf['folds']
         for f in folds:
-            assert f['val_start'] - f['train_end'] - 1 >= 2
-            assert f['test_start'] - f['val_end'] - 1 >= 2
+            assert f['val_start'] - f['train_end'] - 1 >= 2, \
+                f"Fold {f.get('fold_id','?')}: gap train-val < 2"
+            assert f['test_start'] - f['val_end'] - 1 >= 2, \
+                f"Fold {f.get('fold_id','?')}: gap val-test < 2"

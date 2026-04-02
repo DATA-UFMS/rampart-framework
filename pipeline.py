@@ -24,40 +24,38 @@ from datetime import datetime, timezone
 try:
     from src.core.scientific_config import SCIENTIFIC_CONFIG
 except Exception as exc:
-    print(f"[AVISO] Falha ao importar SCIENTIFIC_CONFIG: {exc}")
+    print(f"[WARN] Falha ao importar SCIENTIFIC_CONFIG: {exc}")
     SCIENTIFIC_CONFIG = {}
 
 try:
     from src.core.config import get_execution_metadata
 except Exception as exc:
-    print(f"[AVISO] Falha ao importar get_execution_metadata: {exc}")
+    print(f"[WARN] Falha ao importar get_execution_metadata: {exc}")
     get_execution_metadata = None
 
 try:
     from src.core.validation import TemporalValidator
 except Exception as exc:
-    print(f"[AVISO] Falha ao importar TemporalValidator: {exc}")
+    print(f"[WARN] Falha ao importar TemporalValidator: {exc}")
     TemporalValidator = None
 
 def print_conclusion(msg: str) -> None:
-    print("\n" + "=" * 80)
-    print(msg)
-    print("=" * 80)
+    print(f"\n{msg}")
 
 def print_system(msg: str) -> None:
-    print(f"\n[SISTEMA] {msg}")
+    print(f"\n{msg}")
 
 def print_config(msg: str) -> None:
-    print(f"[CONFIG] {msg}")
+    print(f"  {msg}")
 
 def print_step(msg: str) -> None:
-    print(f"[ETAPA] {msg}")
+    print(f"  {msg}")
 
 def print_success(msg: str) -> None:
-    print(f"[SUCESSO] {msg}")
+    print(f"  {msg}")
 
 def print_error(msg: str) -> None:
-    print(f"[ERRO] {msg}")
+    print(f"  ERRO: {msg}")
 
 def run(cmd: str) -> None:
     """Executa um subprocesso com PYTHONPATH configurado para src/ para imports consistentes."""
@@ -84,7 +82,6 @@ def _snapshot_scientific_config(root: str) -> None:
     except Exception:
         payload["git_commit"] = "unavailable"
 
-    # Versões dos pacotes instalados
     try:
         payload["installed_packages"] = {
             dist.metadata["Name"]: dist.version
@@ -93,14 +90,12 @@ def _snapshot_scientific_config(root: str) -> None:
     except Exception:
         payload["installed_packages"] = "unavailable"
 
-    # Informações de hardware (reutiliza get_execution_metadata de config.py)
     if get_execution_metadata is not None:
         try:
             payload["hardware"] = get_execution_metadata()
         except Exception:
             payload["hardware"] = "unavailable"
 
-    # Hash do requirements.txt para detecção de drift
     req_path = os.path.join(root, "requirements.txt")
     if os.path.exists(req_path):
         with open(req_path, "rb") as f:
@@ -147,7 +142,6 @@ def _validate_anti_leakage_gate(root: str) -> None:
 
 
 def main() -> None:
-    # CLI
     parser = argparse.ArgumentParser(description="Pipeline de pesquisa - benchmarking arquitetural")
     parser.add_argument(
         '--dataset', default='worldbank',
@@ -160,93 +154,71 @@ def main() -> None:
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
 
-    print_conclusion(f"INICIANDO PIPELINE METODOLÓGICO COMPLETO (O1–O3) — dataset: {dataset_name}")
+    print_conclusion(f"Pipeline iniciado (dataset: {dataset_name})")
     _snapshot_scientific_config(root)
     paradigms = _discover()
-    print_system("ETAPA 0 — SNAPSHOT DE REPRODUTIBILIDADE (P3: separação)")
-    print_config("Snapshot de configuração e ambiente salvo em outputs/scientific_config_snapshot.json")
+    print_system("Etapa 0: Snapshot de reprodutibilidade")
+    print_config("Snapshot salvo em outputs/scientific_config_snapshot.json")
 
-    # Coleta (dataset-driven)
     if dataset_name == 'worldbank':
-        print_system("PROCESSADOR DE DADOS BRUTOS")
-        print_config("Fonte: Banco Mundial (World Bank)")
-        print_step("ETAPA 1/9: Coletando dados brutos...")
+        print_system("Etapa 1/9: Coleta")
+        print_config("Fonte: World Bank")
         run(f"{py} {root}/src/collection/raw_data_collector.py")
     else:
-        print_system("PROCESSADOR DE DADOS BRUTOS")
-        print_config(f"Fonte: INEP Censo Escolar (Ensino Médio)")
-        print_step("ETAPA 1/9: Coletando dados brutos INEP...")
+        print_system("Etapa 1/9: Coleta")
+        print_config("Fonte: INEP Censo Escolar")
         run(f"{py} {root}/src/collection/inep_collector.py")
-    print_success("ETAPA 1 CONCLUÍDA: Dados brutos coletados")
+    print_success("Etapa 1 concluida")
 
-    # Processamento arquitetural (driven by paradigm discovery)
     n_paradigms = len(paradigms)
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print_system(f"PROCESSADOR {arch.upper()}")
+        print_system(f"Etapa 2{chr(96+i)}/9: Processamento {arch}")
         print_config(f"Arquitetura: {info['label']}")
-        print_step(f"ETAPA 2{chr(96+i)}/9: Processando {arch}...")
         run(f"{py} {root}/{info['processor_script']}")
-    print_success(f"ETAPA 2 CONCLUÍDA: Processamento arquitetural completo ({n_paradigms} paradigmas)")
+    print_success(f"Etapa 2 concluida ({n_paradigms} paradigmas)")
 
-    print_system("PROTOCOLO ANTI-LEAKAGE — VALIDAÇÃO TEMPORAL (O1)")
-    print_config("Gaps temporais: 2 anos (P1: ordenação, P2: gap, P3: separação)")
-    # Setup ML (driven by paradigm discovery)
+    print_system("Etapa 3: Setup ML")
+    print_config("Gaps temporais: 2 anos (P1-P3)")
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print_system(f"SETUP ML {arch.upper()}")
+        print_system(f"Etapa 3{chr(96+i)}/9: Setup ML {arch}")
         print_config(f"Arquitetura: {info['label']}")
-        print_step(f"ETAPA 3{chr(96+i)}/9: Configurando ML {arch}...")
         run(f"{py} {root}/{info['setup_script']}")
-    print_success(f"ETAPA 3 CONCLUÍDA: Setup ML completo ({n_paradigms} paradigmas)")
+    print_success(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
 
-    # Gate anti-leakage: interromper pipeline se integridade temporal for violada
-    print_system("GATE ANTI-LEAKAGE")
-    print_step("Verificando integridade temporal de todos os folds...")
+    print_system("Gate anti-leakage")
     _validate_anti_leakage_gate(root)
-    print_success("GATE ANTI-LEAKAGE: Todos os folds passaram na validação")
+    print_success("Todos os folds passaram na validacao temporal")
 
-    # Baselines (driven by paradigm discovery)
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print_system(f"MODELOS BASELINE {arch.upper()}")
-        print_config("Modelos: Média, Tendência, Naive, Cross-Country")
-        print_step(f"ETAPA 4{chr(96+i)}/9: Executando Baselines {arch}...")
+        print_system(f"Etapa 4{chr(96+i)}/9: Baselines {arch}")
         run(f"{py} {root}/{info['baseline_script']}")
-    print_success(f"ETAPA 4 CONCLUÍDA: Modelos baseline executados ({n_paradigms} paradigmas)")
+    print_success(f"Etapa 4 concluida ({n_paradigms} paradigmas)")
 
-    # Hierárquicos (driven by paradigm discovery)
-    print_system("MODELOS HIERÁRQUICOS")
-    print_step("ETAPA 5/9: Executando Modelos Hierárquicos...")
+    print_system("Etapa 5/9: Hierarquicos")
     for arch, info in paradigms.items():
         run(f"{py} {root}/{info['hierarchical_script']}")
-    print_success(f"ETAPA 5 CONCLUÍDA: Modelos hierárquicos executados ({n_paradigms} paradigmas)")
+    print_success(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
 
-    # Benchmark arquitetural
-    print_system("BENCHMARK ARQUITETURAL (O1)")
-    print_config("Comparação: schema-on-write vs schema-on-read vs lazy evaluation")
-    print_step("ETAPA 6/9: Executando Benchmark Arquitetural...")
+    print_system("Etapa 6/9: Benchmark arquitetural")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
-    print_success("ETAPA 6 CONCLUÍDA: Benchmark arquitetural executado (3 paradigmas)")
+    print_success("Etapa 6 concluida")
 
-    # Testes estatísticos de validação
-    print_system("EQUIVALÊNCIA PRÁTICA (O2)")
-    print_config("Validação: SESOI + IC95% com bootstrap e estatísticas robustas")
-    print_step("ETAPA 7/9: Executando Testes Estatísticos...")
-    
-    # Testes de significância com bootstrap (se dados de benchmark existirem)
+    print_system("Etapa 7/9: Testes estatisticos")
+
     benchmark_csv = f"{root}/outputs/benchmarks/architectural_benchmark_results.csv"
     if os.path.exists(benchmark_csv):
-        print_step("ETAPA 7a/9: Testes de significância (bootstrap)...")
+        print_step("Etapa 7a/9: Significancia (bootstrap)")
         run(f"{py} {root}/src/statistical_validation/significance_tests.py")
     else:
-        print_error("Arquivo de benchmark não encontrado, pulando testes de significância")
-    
-    # Equivalência por estimativa (SESOI + IC) (sempre executa para gerar estrutura)
-    print_step("ETAPA 7b/9: Equivalência por estimativa (SESOI + IC)...")
-    run(f"{py} {root}/src/statistical_validation/equivalence_estimation.py --latex")
-    
-    print_success("ETAPA 7 CONCLUÍDA: Testes estatísticos executados")
+        print_error("Arquivo de benchmark nao encontrado, pulando testes de significancia")
 
-    print_conclusion("PIPELINE METODOLÓGICO EXECUTADO COM SUCESSO")
-    print("Resultados disponíveis em: outputs/ (ver checklist no README.md)")
+    print_step("Etapa 7b/9: Equivalencia (SESOI + IC)")
+    run(f"{py} {root}/src/statistical_validation/equivalence_estimation.py --latex")
+
+    print_success("Etapa 7 concluida")
+
+    print_conclusion("Pipeline concluido")
+    print("Resultados em: outputs/")
 
 if __name__ == "__main__":
     main()

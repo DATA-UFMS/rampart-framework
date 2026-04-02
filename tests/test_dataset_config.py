@@ -9,7 +9,6 @@ import sys
 import os
 import pytest
 import pandas as pd
-import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -123,8 +122,6 @@ class TestBaseArchitectureDatasetConfig:
 
     def test_default_is_worldbank(self):
         from core.base_architecture import BaseArchitectureML
-        # Não podemos instanciar ABC, mas verificamos que o __init__
-        # aceita dataset_config como parâmetro
         import inspect
         sig = inspect.signature(BaseArchitectureML.__init__)
         assert 'dataset_config' in sig.parameters
@@ -164,5 +161,4 @@ class TestBaseArchitectureDatasetConfig:
             assert 'municipality_code' in excluded
             assert 'state_code' in excluded
 
-        # Cleanup registry
         BaseArchitectureML._registry.pop('_test_dataset_excl', None)

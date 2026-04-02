@@ -13,7 +13,7 @@ Este script remove:
 - Arquivos do sistema (.DS_Store, Thumbs.db, etc.)
 
 USO:
-    python cleanup_generated_files.py [--dry-run] [--verbose]
+    python scripts/dev/cleaner.py [--dry-run] [--verbose]
     
     --dry-run: Mostra o que seria removido sem remover
     --verbose: Mostra detalhes da operação
@@ -33,7 +33,6 @@ class RepositoryCleanup:
         self.removed_dirs = 0
         self.total_size = 0
         
-        # Extensões de arquivos para remover
         self.file_extensions = [
             '*.log', '*.json', '*.parquet', '*.csv', '*.duckdb',
             '*.h5', '*.hdf5', '*.xlsx', '*.pkl', '*.pickle',
@@ -43,14 +42,12 @@ class RepositoryCleanup:
             '*.DS_Store', 'Thumbs.db', 'ehthumbs.db'
         ]
         
-        # Padrões de nomes de arquivos para remover
         self.file_patterns = [
             'tmp_*', 'temp_*', '*_backup*', '*_old*',
             '*_log.txt', '*_results.json', 'pipeline_results_*.json',
             '.DS_Store*', '._*', '*~'
         ]
         
-        # Diretórios para remover completamente
         self.directories_to_remove = [
             'outputs', 'logs', 'data', 'benchmark_results',
             'validation_results', 'equivalence_results',
@@ -59,10 +56,8 @@ class RepositoryCleanup:
             'backups_before_output_update'
         ]
         
-        # Diretórios de cache Python
         self.python_cache_dirs = ['__pycache__']
         
-        # Arquivos específicos para preservar (mesmo que coincidam com padrões)
         self.preserve_files = [
             'README.md', 'requirements.txt', '.gitignore',
             'setup.py', 'pyproject.toml', 'Pipfile'
@@ -157,7 +152,7 @@ class RepositoryCleanup:
 
     def clean_by_extensions(self):
         """Remove arquivos por extensão."""
-        print(" Limpando arquivos por extensão...")
+        print("Limpando arquivos por extensao...")
         
         for pattern in self.file_extensions:
             files = glob.glob(f"**/{pattern}", recursive=True)
@@ -168,7 +163,7 @@ class RepositoryCleanup:
 
     def clean_by_patterns(self):
         """Remove arquivos por padrões de nome."""
-        print("\n Limpando arquivos por padrões de nome...")
+        print("\nLimpando arquivos por padroes de nome...")
         
         for pattern in self.file_patterns:
             files = glob.glob(f"**/{pattern}", recursive=True)
@@ -180,7 +175,7 @@ class RepositoryCleanup:
 
     def clean_directories(self):
         """Remove diretórios específicos."""
-        print("\n Limpando diretórios...")
+        print("\nLimpando diretorios...")
         
         for dirname in self.directories_to_remove:
             # Busca em todos os níveis
@@ -192,7 +187,7 @@ class RepositoryCleanup:
 
     def clean_python_cache(self):
         """Remove cache Python."""
-        print("\n Limpando cache Python...")
+        print("\nLimpando cache Python...")
         
         for dirname in self.python_cache_dirs:
             dirs = glob.glob(f"**/{dirname}", recursive=True)
@@ -203,7 +198,7 @@ class RepositoryCleanup:
 
     def clean_empty_directories(self):
         """Remove diretórios vazios."""
-        print("\n Removendo diretórios vazios...")
+        print("\nRemovendo diretorios vazios...")
         
         # Busca diretórios vazios (executa múltiplas vezes para pegar diretórios aninhados)
         for _ in range(5):  # Máximo 5 níveis de aninhamento
@@ -230,29 +225,23 @@ class RepositoryCleanup:
 
     def run_cleanup(self):
         """Executa a limpeza completa."""
-        print(" Iniciando limpeza do repositório...")
-        print(f"Modo: {'DRY RUN (simulação)' if self.dry_run else 'EXECUÇÃO REAL'}")
-        print("=" * 60)
-        
-        # Executa todas as etapas de limpeza
+        print("Iniciando limpeza do repositorio...")
+        print(f"Modo: {'DRY RUN' if self.dry_run else 'EXECUCAO REAL'}")
+
         self.clean_by_extensions()
         self.clean_by_patterns()
         self.clean_directories()
         self.clean_python_cache()
         self.clean_empty_directories()
-        
-        # Relatório final
-        print("\n" + "=" * 60)
-        print("⚙ RELATÓRIO FINAL:")
-        print(f"  Arquivos removidos: {self.removed_files}")
-        print(f"  Diretórios removidos: {self.removed_dirs}")
-        print(f"  Espaço liberado: {self.format_size(self.total_size)}")
-        
+
+        print(f"\nArquivos removidos: {self.removed_files}")
+        print(f"Diretorios removidos: {self.removed_dirs}")
+        print(f"Espaco liberado: {self.format_size(self.total_size)}")
+
         if self.dry_run:
-            print("\n SIMULAÇÃO - Nenhum arquivo foi realmente removido!")
-            print("   Execute sem --dry-run para realizar a limpeza.")
+            print("\nSimulacao - nenhum arquivo foi removido. Execute sem --dry-run.")
         else:
-            print("\n Limpeza concluída!")
+            print("\nLimpeza concluida.")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -276,15 +265,14 @@ def main():
     args = parser.parse_args()
     
     if not args.dry_run:
-        print("  ATENÇÃO: Esta operação irá REMOVER arquivos permanentemente!")
-        print("   Arquivos de dados, logs, cache e outputs serão deletados.")
-        response = input("   Deseja continuar? (digite 'sim' para confirmar): ")
-        
+        print("ATENCAO: Esta operacao ira REMOVER arquivos permanentemente.")
+        print("Arquivos de dados, logs, cache e outputs serao deletados.")
+        response = input("Deseja continuar? (digite 'sim' para confirmar): ")
+
         if response.lower() not in ['sim', 'yes', 's', 'y']:
-            print(" Operação cancelada.")
+            print("Operacao cancelada.")
             sys.exit(0)
     
-    # Executa limpeza
     cleanup = RepositoryCleanup(dry_run=args.dry_run, verbose=args.verbose)
     cleanup.run_cleanup()
 
