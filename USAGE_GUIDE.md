@@ -16,7 +16,7 @@ A demonstração embarcada compara DuckDB (schema-on-write), Dask (schema-on-rea
 Requisitos mínimos: Python 3.10+, 8 GB de RAM, 10 GB livres em disco.
 
 ```bash
-git clone https://github.com/DATA-UFMS/dw-vs-dl-dropout-prediction-latam.git
+git clone https://github.com/anonymous/dw-vs-dl-dropout-prediction-latam.git
 cd dw-vs-dl-dropout-prediction-latam
 python -m venv .venv
 source .venv/bin/activate        # Linux/macOS
@@ -40,11 +40,11 @@ pip install -r requirements.txt
    # Equivalência prática (gera JSON/LaTeX)
    python src/statistical_validation/equivalence_estimation.py --latex
 
-   # Testes unitários e anti-leakage (73 testes)
-   pytest tests/test_unit_core.py tests/test_lag_anti_leak.py
+   # Testes unitários e anti-leakage (80 testes)
+   pytest tests/
 
-   # Teste de injeção de leakage (validação negativa, cenários S1-S4)
-   python tests/test_leakage_injection.py
+   # Validação negativa do gate (cenários S1-S4, standalone)
+   python scripts/validation/leakage_injection.py
    ```
 
 3. **Pós-processamento das saídas**
@@ -94,7 +94,7 @@ Sempre documente alterações em um memo de decisão.
 
 ## 6. Boas Práticas e Sanity Checks
 
-- Execute `pytest tests/test_unit_core.py tests/test_lag_anti_leak.py` (73 testes) e `python tests/test_leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
+- Execute `pytest tests/` (80 testes) e `python scripts/validation/leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
 - Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre as 3 arquiteturas (DuckDB, Dask, Polars DataFrame).
 - Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
 
@@ -113,4 +113,4 @@ Sempre documente alterações em um memo de decisão.
 
 ---
 
-Em caso de dúvidas, abra uma issue ou contate {eos.xavier, rosa.livia, vanessa.a.borges}@ufms.br.
+Em caso de duvidas, abra uma issue no repositorio.
