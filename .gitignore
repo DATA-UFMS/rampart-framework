@@ -32,6 +32,16 @@ outputs/
 # OS
 .DS_Store
 Thumbs.db
+Zone.Identifier
+*Zone.Identifier
+
+# Secrets
+.env
+.env.*
+
+# Serialized models
+*.pkl
+*.pickle
 
 # Logs
 *.log
@@ -72,7 +82,8 @@ azure_results_*/
 azure_run.sh
 azure_rerun.sh
 
-# Planos de superpowers
+# Planos de desenvolvimento
+docs/plans/
 docs/superpowers/
 
 # Prompts pessoais
