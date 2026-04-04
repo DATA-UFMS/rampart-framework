@@ -64,14 +64,12 @@ class RepositoryCleanup:
         ]
 
     def get_file_size(self, path):
-        """Retorna o tamanho do arquivo em bytes."""
         try:
             return os.path.getsize(path)
         except (OSError, IOError):
             return 0
 
     def get_dir_size(self, path):
-        """Retorna o tamanho total de um diretório em bytes."""
         total = 0
         try:
             for dirpath, dirnames, filenames in os.walk(path):
@@ -86,7 +84,6 @@ class RepositoryCleanup:
         return total
 
     def format_size(self, size_bytes):
-        """Formata tamanho em bytes para formato legível."""
         for unit in ['B', 'KB', 'MB', 'GB']:
             if size_bytes < 1024.0:
                 return f"{size_bytes:.1f} {unit}"
@@ -94,12 +91,10 @@ class RepositoryCleanup:
         return f"{size_bytes:.1f} TB"
 
     def should_preserve_file(self, filepath):
-        """Verifica se um arquivo deve ser preservado."""
         filename = os.path.basename(filepath)
         return filename in self.preserve_files
 
     def remove_file(self, filepath):
-        """Remove um arquivo individual."""
         if self.should_preserve_file(filepath):
             if self.verbose:
                 print(f"  PRESERVANDO: {filepath}")
@@ -126,7 +121,6 @@ class RepositoryCleanup:
                 return False
 
     def remove_directory(self, dirpath):
-        """Remove um diretório e todo seu conteúdo."""
         if not os.path.exists(dirpath):
             return False
             
@@ -151,7 +145,6 @@ class RepositoryCleanup:
                 return False
 
     def clean_by_extensions(self):
-        """Remove arquivos por extensão."""
         print("Limpando arquivos por extensao...")
         
         for pattern in self.file_extensions:
@@ -162,7 +155,6 @@ class RepositoryCleanup:
                     self.remove_file(filepath)
 
     def clean_by_patterns(self):
-        """Remove arquivos por padrões de nome."""
         print("\nLimpando arquivos por padroes de nome...")
         
         for pattern in self.file_patterns:
@@ -174,7 +166,6 @@ class RepositoryCleanup:
                         self.remove_file(filepath)
 
     def clean_directories(self):
-        """Remove diretórios específicos."""
         print("\nLimpando diretorios...")
         
         for dirname in self.directories_to_remove:
@@ -186,7 +177,6 @@ class RepositoryCleanup:
                     self.remove_directory(dirpath)
 
     def clean_python_cache(self):
-        """Remove cache Python."""
         print("\nLimpando cache Python...")
         
         for dirname in self.python_cache_dirs:
@@ -197,7 +187,6 @@ class RepositoryCleanup:
                     self.remove_directory(dirpath)
 
     def clean_empty_directories(self):
-        """Remove diretórios vazios."""
         print("\nRemovendo diretorios vazios...")
         
         # Busca diretórios vazios (executa múltiplas vezes para pegar diretórios aninhados)
@@ -224,7 +213,6 @@ class RepositoryCleanup:
                         pass
 
     def run_cleanup(self):
-        """Executa a limpeza completa."""
         print("Iniciando limpeza do repositorio...")
         print(f"Modo: {'DRY RUN' if self.dry_run else 'EXECUCAO REAL'}")
 

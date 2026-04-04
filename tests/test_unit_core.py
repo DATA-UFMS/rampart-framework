@@ -12,9 +12,7 @@ import pandas as pd
 import pytest
 
 
-# ---------------------------------------------------------------------------
 # 1. Transformação log simétrica
-# ---------------------------------------------------------------------------
 
 def _symmetric_log(x):
     """Implementação de referência: sign(x) * ln(|x| + 1)."""
@@ -59,9 +57,7 @@ class TestSymmetricLogTransform:
         np.testing.assert_array_equal(_symmetric_log(xs), sql_style)
 
 
-# ---------------------------------------------------------------------------
 # 2. Geração de folds walk-forward
-# ---------------------------------------------------------------------------
 
 def _generate_folds(start_year, end_year, min_train, val_len, test_len, gap, step=1):
     """
@@ -159,9 +155,7 @@ class TestWalkForwardFolds:
         assert len(folds_step2) == 5  # step=2 seleciona folds 0,2,4,6,8 → 5 folds
 
 
-# ---------------------------------------------------------------------------
 # 3. Filtro greedy de colinearidade pairwise
-# ---------------------------------------------------------------------------
 
 def _greedy_collinearity_filter(corr_matrix, features, threshold=0.8):
     """
@@ -250,9 +244,7 @@ class TestCollinearityFilter:
         assert result == ['a', 'c']
 
 
-# ---------------------------------------------------------------------------
 # 4. Validação da configuração científica
-# ---------------------------------------------------------------------------
 
 class TestScientificConfig:
     """Testes para verificar que a configuração científica tem as chaves requeridas e valores válidos."""
@@ -297,9 +289,7 @@ class TestScientificConfig:
             assert config[key] > 0, f"{key} must be positive"
 
 
-# ---------------------------------------------------------------------------
 # 5. Completude dos estratos de países
-# ---------------------------------------------------------------------------
 
 class TestCountryStrata:
     """Testes para a configuração de estratificação geográfica."""
@@ -324,9 +314,7 @@ class TestCountryStrata:
                     f"Invalid ISO-2 code '{code}' in {stratum}"
 
 
-# ---------------------------------------------------------------------------
 # 6. Validação de integridade temporal
-# ---------------------------------------------------------------------------
 
 class TestTemporalIntegrity:
     """Testes para lógica de validação temporal anti-leak."""
@@ -367,9 +355,7 @@ class TestTemporalIntegrity:
             ), f"Fold {f['fold_id']} fails temporal integrity"
 
 
-# ---------------------------------------------------------------------------
 # 7. Testes de importação (via conftest.py PYTHONPATH)
-# ---------------------------------------------------------------------------
 
 class TestImports:
     """Verifica que os módulos core são importáveis via configuração de path do conftest.py."""
@@ -390,15 +376,10 @@ class TestImports:
         assert root.endswith("dw-vs-dl-dropout-prediction-latam")
 
 
-# ---------------------------------------------------------------------------
 # 8. Anti-leakage: P4 (escopo temporal) e P3 estendido (proxy detection)
-# ---------------------------------------------------------------------------
 
 class TestAntiLeakageP4:
-    """
-    Valida que feature selection usa apenas dados do período de treino
-    (Kapoor & Narayanan, 2023; Kaufman et al., 2012).
-    """
+    """Valida que feature selection usa apenas dados do período de treino."""
 
     def test_first_fold_train_end_calculation(self):
         """Verifica cálculo do train_end do primeiro fold a partir da config."""
@@ -425,15 +406,10 @@ class TestAntiLeakageP4:
 
 
 
-# ---------------------------------------------------------------------------
 # 9. Anti-leakage: P5 (escopo de preprocessing) e HPO
-# ---------------------------------------------------------------------------
 
 class TestPreprocessingIsolation:
-    """
-    Valida que preprocessing (scaling, imputação) respeita o escopo
-    temporal: ajuste exclusivamente no treino.
-    """
+    """Valida que preprocessing (scaling, imputação) respeita o escopo temporal."""
 
     def test_scaler_fit_on_train_only(self):
         """StandardScaler ajustado no treino produz estatísticas diferentes
@@ -489,11 +465,3 @@ class TestPreprocessingIsolation:
         assert best_alpha != best_test_alpha, \
             "Cenário de teste garante que val e test têm ótimos distintos"
 
-    def test_prepare_features_docstring_documents_p5(self):
-        """prepare_features() deve documentar P5 no docstring."""
-        from core.base_architecture import BaseArchitectureML
-        docstring = BaseArchitectureML.prepare_features.__doc__
-        assert docstring is not None, "prepare_features deve ter docstring"
-        assert 'P5' in docstring, "Docstring deve mencionar P5"
-        assert 'Kaufman' in docstring, \
-            "Docstring deve referenciar Kaufman et al. 2012"

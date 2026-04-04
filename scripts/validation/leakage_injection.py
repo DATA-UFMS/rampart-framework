@@ -33,9 +33,7 @@ from core.validation import TemporalValidator
 from core.scientific_config import SCIENTIFIC_CONFIG
 
 
-# ---------------------------------------------------------------------------
 # Folds válidos (baseline do paper: 9 walk-forward folds, gap=2)
-# ---------------------------------------------------------------------------
 def generate_valid_folds():
     """Gera folds walk-forward válidos usando a mesma lógica do framework."""
     cfg = SCIENTIFIC_CONFIG
@@ -69,9 +67,7 @@ def generate_valid_folds():
     return folds
 
 
-# ---------------------------------------------------------------------------
 # S1: Gap insuficiente (gap=0 entre train-val)
-# ---------------------------------------------------------------------------
 def inject_s1_zero_gap(folds):
     """Remove gaps temporais: val_start = train_end + 1 (gap efetivo = 0)."""
     contaminated = []
@@ -85,9 +81,7 @@ def inject_s1_zero_gap(folds):
     return contaminated
 
 
-# ---------------------------------------------------------------------------
 # S2: Sobreposição temporal (anos de treino no teste)
-# ---------------------------------------------------------------------------
 def inject_s2_temporal_overlap(folds):
     """Faz test_start cair dentro do período de treino."""
     contaminated = []
@@ -99,9 +93,7 @@ def inject_s2_temporal_overlap(folds):
     return contaminated
 
 
-# ---------------------------------------------------------------------------
 # S3: Ordem invertida (test antes de val)
-# ---------------------------------------------------------------------------
 def inject_s3_reversed_order(folds):
     """Inverte test e val: test_start < val_start."""
     contaminated = []
@@ -113,9 +105,7 @@ def inject_s3_reversed_order(folds):
     return contaminated
 
 
-# ---------------------------------------------------------------------------
 # Runner dos cenários de injeção
-# ---------------------------------------------------------------------------
 def run_injection_scenario(name, description, contaminated_folds, validator):
     """Executa um cenário e verifica que o gate bloqueia."""
     print(f"\n--- Cenario {name}: {description} ---")
@@ -134,9 +124,7 @@ def run_injection_scenario(name, description, contaminated_folds, validator):
         return True
 
 
-# ---------------------------------------------------------------------------
 # S4: Experimento empírico — naive k-fold vs walk-forward
-# ---------------------------------------------------------------------------
 def run_s4_empirical_comparison():
     """
     Compara métricas preditivas entre:
@@ -265,10 +253,8 @@ def run_s4_empirical_comparison():
     mae_deflation = clean_mae_mean - leaked_mae_mean
 
     print(f"\n  Resultados ({len(clean_r2s)} folds clean, {len(leaked_r2s)} folds leaked):")
-    print(f"  {'Métrica':<12} {'Clean (WF)':>12} {'Leaked (KF)':>12} {'Diferença':>12}")
-    print(f"  {'-'*48}")
-    print(f"  {'R²':<12} {clean_r2_mean:>12.4f} {leaked_r2_mean:>12.4f} {r2_inflation:>+12.4f}")
-    print(f"  {'MAE':<12} {clean_mae_mean:>12.4f} {leaked_mae_mean:>12.4f} {-mae_deflation:>+12.4f}")
+    print(f"  R2:  clean={clean_r2_mean:.3f}  leaked={leaked_r2_mean:.3f}  diff={r2_inflation:+.3f}")
+    print(f"  MAE: clean={clean_mae_mean:.3f}  leaked={leaked_mae_mean:.3f}  diff={-mae_deflation:+.3f}")
 
     print(f"\n  Conclusão: Leakage temporal inflou R² em {r2_inflation:+.4f} pontos")
     print(f"  ({r2_inflation/max(abs(clean_r2_mean), 1e-9)*100:+.1f}% relativo ao baseline limpo)")
@@ -305,9 +291,7 @@ def run_s4_empirical_comparison():
     return results
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Teste de injeção de leakage")
     parser.add_argument('--quick', action='store_true',
