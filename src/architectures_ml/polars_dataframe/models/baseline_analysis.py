@@ -12,6 +12,7 @@ Resumo técnico:
 - Métricas: R², RMSE, gaps de generalização
 - Usa modelos centralizados de core/models/baseline.py
 """
+import time
 
 import pandas as pd
 import polars as pl
@@ -223,6 +224,7 @@ class BaselineModelAnalysisPolarsDataFrame:
         baseline_results = {}
 
         for fold_id, fold in enumerate(self.folds):
+            _fold_t0 = time.perf_counter()
             print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) ->"
                   f"Val({fold['val_start']}-{fold['val_end']}) ->"
                   f"Test({fold['test_start']}-{fold['test_end']})")
@@ -467,7 +469,7 @@ class BaselineModelAnalysisPolarsDataFrame:
 
             print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
 
-            # Registrar resultados do fold
+            fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
             baseline_results[f'fold_{fold_id}'] = fold_results
 
         return baseline_results

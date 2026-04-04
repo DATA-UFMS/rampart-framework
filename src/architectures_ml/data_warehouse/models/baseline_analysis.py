@@ -12,6 +12,7 @@ Resumo técnico:
 - Acesso via SQL nativo (DuckDB) sem I/O de arquivos durante treinamento
 - Usa modelos centralizados de core/models/baseline.py
 """
+import time
 
 import pandas as pd
 import numpy as np
@@ -557,8 +558,9 @@ class BaselineModelAnalysisDataWarehouse:
         baseline_results = {}
         
         for fold_id, fold in enumerate(self.folds):
+            _fold_t0 = time.perf_counter()
             print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) -> Val({fold['val_start']}-{fold['val_end']}) -> Test({fold['test_start']}-{fold['test_end']})")
-            
+
             try:
                 train_data = self._load_ml_fold_data(fold_id, 'train')
                 val_data = self._load_ml_fold_data(fold_id, 'val')
@@ -813,8 +815,9 @@ class BaselineModelAnalysisDataWarehouse:
             else:
                 print(f"      Gap elevado: Possível instabilidade temporal ({abs_gap:.3f})")
             
+            fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
             baseline_results[f'fold_{fold_id}'] = fold_results
-        
+
         return baseline_results
 
     def analyze_predictability(self, baseline_results: Dict) -> Dict:

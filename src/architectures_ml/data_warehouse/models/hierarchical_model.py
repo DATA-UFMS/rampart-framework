@@ -6,6 +6,8 @@ Implementa modelos hierárquicos para arquitetura Data Warehouse com ML Consumer
 utilizando views DuckDB para queries diretas e connection pooling para performance.
 """
 
+import time
+
 import pandas as pd
 import numpy as np
 import json
@@ -514,8 +516,10 @@ class HierarchicalModelSQLFirst:
             }
             
             for fold_info in self.folds_config['folds']:
+                _fold_t0 = time.perf_counter()
                 fold_results = self.run_fold_analysis(fold_info)
                 if fold_results:
+                    fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
                     all_results['folds'].append(fold_results)
                     
                     # Log dos resultados

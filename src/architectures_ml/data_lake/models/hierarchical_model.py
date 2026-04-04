@@ -8,6 +8,8 @@ distribuído e schema-on-read para predição de dropout escolar.
 Otimizado com batch compute para reduzir chamadas Dask.
 """
 
+import time
+
 import pandas as pd
 import numpy as np
 import dask.dataframe as dd
@@ -475,8 +477,10 @@ class HierarchicalModelDataLake:
         
         valid_folds = 0
         for fold_info in self.folds:
+            _fold_t0 = time.perf_counter()
             fold_results = self.run_fold_analysis(fold_info)
             if fold_results is not None:
+                fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
                 all_results['folds'].append(fold_results)
                 valid_folds += 1
                 
