@@ -343,9 +343,12 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         print(f"Construindo target: {self.source_column} -> {self.target_column}")
         print("  Dropout Rate = 100 - Completion Rate")
 
-        # Transformação via Polars expression
+        # Transformação via Polars expression com validação de range [0,100]
+        # Equivale ao CASE WHEN do DW: valores fora do range -> NULL
         df_with_target = df.with_columns([
-            (100 - pl.col(self.source_column)).alias(self.target_column)
+            pl.when(
+                (pl.col(self.source_column) >= 0) & (pl.col(self.source_column) <= 100)
+            ).then(100 - pl.col(self.source_column)).otherwise(None).alias(self.target_column)
         ])
 
         # Lag temporal via join (valor de exatamente N anos atrás),

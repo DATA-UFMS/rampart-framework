@@ -363,15 +363,18 @@ class DataLakeArchitectureML(BaseArchitectureML):
         def create_dropout_rate(completion_rate):
             """
             Funcao pura para transformacao completion -> dropout rate.
-            
+
             Args:
                 completion_rate: Taxa de conclusão (0-100%)
-                
+
             Returns:
-                Taxa de abandono (0-100%)
-                
+                Taxa de abandono (0-100%), ou NaN se fora do range válido.
+
             Preserva NaN para missing values (não imputa artificialmente).
+            Valida range [0,100] — equivale ao CASE WHEN do DW.
             """
+            if pd.isna(completion_rate) or completion_rate < 0 or completion_rate > 100:
+                return float('nan')
             return 100 - completion_rate
         
         print(f"  {self.source_column} -> {self.target_column}")
