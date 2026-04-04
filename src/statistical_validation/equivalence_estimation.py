@@ -13,7 +13,7 @@ Limiares SESOI definidos a priori (ver scientific_config.py):
   MASE=0.05 — 5% relativo ao baseline naive (Hyndman & Koehler 2006)
   WAPE=0.05 — 5pp de erro ponderado
 
-Justificativa: abordagem hibrida distribution-based + anchor-based
+Abordagem hibrida distribution-based + anchor-based
 conforme Lakens, Scheel & Isager (2018).
 
 Nota sobre poder estatístico:

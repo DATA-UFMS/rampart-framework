@@ -65,7 +65,7 @@ class DataWarehouseProcessor:
     Implementação do processador Data Warehouse para análise científica.
     
     A classe encapsula o pipeline completo de ETL (Extract-Transform-Load) seguindo
-    o paradigma tradicional de Data Warehouse onde o schema é rigorosamente definido
+    o paradigma tradicional de Data Warehouse onde o schema é definido
     antes da carga dos dados, garantindo consistência e performance em consultas
     analíticas subsequentes.
     
@@ -75,8 +75,8 @@ class DataWarehouseProcessor:
     3. LOAD: Carga em tabelas relacionais com constraints e índices
     4. OPTIMIZE: Criação de índices e views materializadas para performance
     
-    Decisão metodológica: Prioriza corretude sobre flexibilidade, adequado para
-    cenários onde a estrutura dos dados é bem conhecida e estável (Chaudhuri & Dayal, 1997).
+    Prioriza corretude sobre flexibilidade, adequado para cenários onde a
+    estrutura dos dados é bem conhecida e estável (Chaudhuri & Dayal, 1997).
     """
     
     def __init__(self, dataset_name: str = "worldbank"):

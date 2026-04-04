@@ -34,7 +34,7 @@ class TemporalValidator:
     """
     Validador temporal para prevenção de vazamento em séries temporais.
 
-    Implementa validação rigorosa de splits temporais com gaps obrigatórios
+    Implementa validação de splits temporais com gaps obrigatórios
     e embargo configurável para garantir validade científica em previsão
     de dropout educacional.
 

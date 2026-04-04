@@ -225,12 +225,10 @@ class DataLakeProcessor:
             Dict[str, bool]: Mapeamento de metadados disponíveis, atualmente:
                 - 'has_completeness_score': Score de completude pré-calculado existe
             
-        Justificativa:
-            Data Lakes preservam metadados da fonte. Detectamos enriquecimentos
+        Data Lakes preservam metadados da fonte. Detectamos enriquecimentos
             prévios para evitar recomputação desnecessária.
-        
-        Extensibilidade:
-            Estrutura preparada para detectar futuros metadados como:
+
+        Estrutura preparada para detectar futuros metadados como:
             - 'has_imputation_flags': Marcadores de imputação
             - 'has_quality_tiers': Classificação de confiabilidade
         """
@@ -267,17 +265,15 @@ class DataLakeProcessor:
         Returns:
             DataFrame Dask com metadados garantidos mas não validados
             
-        Princípio arquitetural:
-            Data Lakes adiam validação até o momento de uso (Terrizzano et al., 2015).
+        Data Lakes adiam validação até o momento de uso (Terrizzano et al., 2015).
             Este método garante apenas existência estrutural de metadados, não sua
             correção semântica, que será verificada durante processamento distribuído.
-        
-        Diferença vs Data Warehouse:
+
+        Contraste com Data Warehouse:
             - Data Lake: Cria placeholder, valida durante processamento
             - Data Warehouse: Valida imediatamente, rejeita dados inválidos
-        
-        Justificativa:
-            Validação eager desperdiçaria recursos computacionais se dados
+
+        Validação eager desperdiçaria recursos computacionais se dados
             forem posteriormente filtrados ou agregados, violando princípio
             de lazy evaluation do Dask (Rocklin, 2015).
         """
@@ -447,7 +443,7 @@ class DataLakeProcessor:
         """
         print("Materializando dados processados")
 
-        # Garantia de score de completude para metadados científicos
+        # Default completude se ausente
         if 'data_completeness_score' not in ddf.columns:
             print("Calculando score de completude ausente")
             ddf = self._calculate_completeness_score(ddf)
