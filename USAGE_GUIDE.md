@@ -1,19 +1,10 @@
-# Guia de Uso do Framework Metodológico
+# Guia de Uso
 
-Este guia descreve como executar, verificar e adaptar o framework metodológico de avaliação de arquiteturas de dados em analytics educacional. O material complementa o README principal.
+Instruções para executar, verificar e adaptar o framework. Complementa o [README](README.md).
 
-## 1. Visão Geral dos Protocolos
+## Preparação do Ambiente
 
-1. **Extensibilidade (O1)** — Arquitetura modular via Template Method com 11 métodos abstratos; novas arquiteturas herdam enforcement anti-leakage automaticamente.
-2. **Recomendação automática (O2)** — Benchmark arquitetural com SESOI + IC95% por bootstrap e estatísticas robustas (Wilcoxon, Hodges–Lehmann), gerando recomendação automática de paradigma.
-3. **Reprodutibilidade integral (O3)** — Seeds centralizadas, `n_jobs=1`, snapshot completo de ambiente (packages, hardware, git commit) e gate anti-leakage no pipeline.
-4. **Validação anti-leakage** — Enforcement automático: `raise ValueError` em violações de ordenação temporal, gap mínimo e separação de features. Gate no pipeline bloqueia execução se integridade temporal falhar. Suporte a embargo configurável (`embargo_years`, default 0) conforme López de Prado (2018).
-
-A demonstração embarcada compara DuckDB (schema-on-write), Dask (schema-on-read) e Polars DataFrame (lazy evaluation); você pode reutilizar os mesmos protocolos para outras arquiteturas.
-
-## 2. Preparação do Ambiente
-
-Requisitos mínimos: Python 3.10+, 8 GB de RAM, 10 GB livres em disco.
+Requisitos: Python 3.10+, 8 GB RAM, 10 GB disco, acesso à internet.
 
 ```bash
 git clone https://github.com/anonymous/archbench-framework.git
@@ -24,93 +15,87 @@ source .venv/bin/activate        # Linux/macOS
 pip install -r requirements.txt
 ```
 
-## 3. Execução dos Protocolos
+## Execução
 
-1. **Pipeline completo** (recomendado)
-   ```bash
-   python pipeline.py
-   ```
-   Executa coleta \u2192 preparação \u2192 **gate anti-leakage** \u2192 benchmark \u2192 análises estatísticas, preservando os parâmetros do `scientific_config.py`. O gate verifica integridade temporal de todos os folds antes de prosseguir ao benchmark.
+**Pipeline completo** (~20 min na primeira execução, ~5 min com cache):
 
-2. **Componentes individuais** (quando precisar repetir apenas uma etapa)
-   ```bash
-   # Benchmark arquitetural
-   python src/benchmarking/architectural_benchmark.py --repetitions 5 --warmup 1
+```bash
+python pipeline.py
+```
 
-   # Equivalência prática (gera JSON/LaTeX)
-   python src/statistical_validation/equivalence_estimation.py --latex
+Executa: coleta, processamento (3 paradigmas), gate anti-leakage, modelos, benchmark e validação estatística.
 
-   # Testes unitários e anti-leakage (80 testes)
-   pytest tests/
+**Componentes individuais:**
 
-   # Validação negativa do gate (cenários S1-S4, standalone)
-   python scripts/validation/leakage_injection.py
-   ```
+```bash
+# Benchmark com parâmetros customizados
+python src/benchmarking/architectural_benchmark.py --repetitions 5 --warmup 1
 
-3. **Pós-processamento das saídas**
- ```bash
-  python src/benchmarking/derive_latency_percentiles.py
-  python src/benchmarking/derive_throughput_percentiles.py
-  python src/benchmarking/derive_resource_usage_table.py
-  python src/statistical_validation/bootstrap_sensitivity.py --latex
-  ```
-  Esses scripts convertem os CSV/JSON brutos em tabelas LaTeX prontas para publicação.
+# Equivalência (gera JSON + LaTeX)
+python src/statistical_validation/equivalence_estimation.py --latex
 
-## 4. Verificação dos Resultados
+# Testes
+pytest tests/
 
-Após a execução, valide os seguintes artefatos:
+# Validação negativa do gate (cenários S1-S4)
+python scripts/validation/leakage_injection.py
+```
 
-- `outputs/ml_pipeline/architectures/<arch>/prep/temporal_folds_<arch>.json` — intervalos treino/validação/teste e gaps \u22652 anos (onde `<arch>` pode ser `data_lake`, `data_warehouse`, ou `polars_dataframe`).
-- `outputs/ml_pipeline/architectures/<arch>/prep/target_statistics.json` — estatísticas do target e checagens de consistência.
-- `outputs/statistics/equivalence_estimation.json` — decisão (equivalente/superior/inferior) + IC95% + Wilcoxon/Hodges-Lehmann.
-- `outputs/benchmarks/architectural_benchmark_results.csv` — latência por fase com identificador de execução.
-- `outputs/benchmarks/architectural_benchmark_resource_log.jsonl` — monitoramento de CPU/RAM/IO a cada amostra.
-- `outputs/statistics/architectural_scorecard.tex` — painel consolidado para o artigo.
+**Pós-processamento (tabelas LaTeX a partir dos CSVs de benchmark):**
 
-Compare os hashes/timestamps com os registrados nos cabeçalhos para garantir que a execução seja recente e coerente.
+```bash
+python src/benchmarking/derive_latency_percentiles.py
+python src/benchmarking/derive_throughput_percentiles.py
+python src/benchmarking/derive_resource_usage_table.py
+python src/statistical_validation/bootstrap_sensitivity.py --latex
+```
 
-## 5. Customização
+## Verificação dos Resultados
 
-### 5.1 Ajustar Parâmetros Científicos
+Artefatos gerados em `outputs/`:
 
-Edite `src/core/scientific_config.py` para alterar:
+| Artefato | Caminho | Conteúdo |
+|----------|---------|----------|
+| Folds temporais | `ml_pipeline/architectures/<arch>/prep/temporal_folds_<arch>.json` | Intervalos treino/val/teste, gaps |
+| Estatísticas do target | `ml_pipeline/architectures/<arch>/prep/target_statistics.json` | Distribuição, consistência |
+| Equivalência | `statistics/equivalence_estimation.json` | Decisão + IC 95% + Wilcoxon |
+| Latência | `benchmarks/architectural_benchmark_results.csv` | Tempo por fase e repetição |
+| Recursos | `benchmarks/architectural_benchmark_resource_log.jsonl` | CPU/RAM/IO por amostra |
+| Scorecard | `statistics/architectural_scorecard.tex` | Painel consolidado |
 
-- `temporal_gap_years`, `folds_min_train_years`, `folds_step_years`, `embargo_years` (validação temporal).
-- `sesoi_r2`, `sesoi_mase`, `sesoi_wape` (limiares de equivalência por métrica).
-- `bootstrap_iters` (número de reamostragens).
+## Customização
 
-Sempre documente alterações em um memo de decisão.
+### Parâmetros
 
-### 5.2 Adicionar Nova Arquitetura
+Edite `src/core/scientific_config.py`:
 
-1. Crie `src/architectures_ml/<nova>/setup.py` com uma subclasse de `BaseArchitectureML` que define `PARADIGM_META` (nome, label, módulos) e implementa os 11 métodos abstratos. O enforcement anti-leakage é herdado automaticamente.
-2. Crie os módulos de processamento, baseline e hierárquico nos caminhos declarados no `PARADIGM_META`. O framework descobre o novo paradigma automaticamente via `__init_subclass__` — nenhum arquivo existente precisa ser editado.
+- `temporal_gap_years`, `folds_min_train_years`, `folds_step_years`, `embargo_years`
+- `sesoi_r2`, `sesoi_mase`, `sesoi_wape` (limiares de equivalência)
+- `bootstrap_iters`
 
-### 5.3 Instrumentar Métricas Extras
+### Nova Arquitetura
 
-- Extenda `src/benchmarking` para coletar métricas adicionais (p.ex., energia, custo).
-- Adicione novos módulos em `src/statistical_validation` mantendo o padrão de entrada/saída JSON/LaTeX.
-- Registre scripts personalizados no README.
+1. Crie `src/architectures_ml/<nova>/setup.py` com subclasse de `BaseArchitectureML` definindo `PARADIGM_META` e implementando os métodos abstratos. O anti-leakage é herdado.
+2. Crie os módulos de processamento, baseline e hierárquico nos caminhos declarados no `PARADIGM_META`. O framework descobre automaticamente via `__init_subclass__`.
 
-## 6. Boas Práticas e Sanity Checks
+### Novo Dataset
 
-- Execute `pytest tests/` (80 testes) e `python scripts/validation/leakage_injection.py` (validação negativa S1-S4) depois de qualquer alteração em geração de folds ou lógica de validação.
-- Compare estatísticas de target e listas de features nos diretórios `outputs/ml_pipeline/architectures/<arch>/prep/` para garantir alinhamento entre as 3 arquiteturas (DuckDB, Dask, Polars DataFrame).
-- Para replicações externas, gere um `requirements-lock.txt` atualizado (`pip freeze > requirements-lock.txt`).
+Implemente um `DatasetConfig` em `src/datasets/` e um coletor em `src/collection/`. Use o adapter pattern para converter ao schema interno. Exemplo existente: INEP Censo Escolar (`python pipeline.py --dataset inep_censo`).
 
-## 7. Integração com o Artigo
+### Métricas Extras
 
-- Tabelas LaTeX geradas automaticamente (`outputs/statistics/*.tex`) podem ser incluídas diretamente no artigo via `\input{}`.
-- Em submissões, inclua a checklist de reprodutibilidade (Seção 4) como material suplementar.
+Adicione módulos em `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão JSON → LaTeX.
 
-## 8. Perguntas Frequentes
+## FAQ
 
-**Os resultados devem bater exatamente?** Sim. Seeds, configuração científica e scripts determinísticos garantem replicabilidade. Divergências indicam ambiente diferente ou alteração não documentada.
+**Quanto tempo demora?** ~20 min na primeira execução (coleta da API). Com cache, ~5 min.
 
-**Posso usar apenas parte do framework?** Pode, desde que explique no memo de decisão quais protocolos foram executados e quais foram omitidos.
+**Precisa de API key?** Não. A World Bank API é aberta.
 
-**Como adapto para outro domínio (ex.: saúde)?** Ajuste os limiares SESOI, redefine indicadores no coletor de dados e atualize a documentação contextual. Os protocolos permanecem idênticos.
+**Os resultados devem bater exatamente entre execuções?** Sim. Seeds centralizadas e `n_jobs=1` garantem determinismo. Divergências indicam ambiente diferente.
+
+**Funciona no Windows?** O pipeline foi testado em Linux. DuckDB e Polars funcionam no Windows; Dask distributed pode ter limitações.
 
 ---
 
-Em caso de duvidas, abra uma issue no repositorio.
+Em caso de dúvidas, abra uma issue no repositório.
