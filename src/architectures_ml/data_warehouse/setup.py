@@ -54,7 +54,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         super().__init__(architecture_name='data_warehouse', output_base_path=output_base)
         
         print("Inicializando Pipeline ML Data Warehouse")
-        print("SQL-first com validacao temporal rigorosa")
+        print("SQL-first com validacao temporal")
         
         # Configurações específicas do Data Warehouse
         self.db_path = get_absolute_output_path('collection/data_warehouse/worldbank_data.duckdb')
@@ -161,7 +161,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         target_source_col = self.source_column
         
-        # === 1. Validação de Schema ===
+        # 1. Validação de Schema
         print("  [1/4] Validacao de schema")
         column_exists = self.conn_manager.execute_scalar(f"""
             SELECT COUNT(*) > 0
@@ -199,7 +199,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                     "Verifique se dados foram processados corretamente."
                 )
         
-        # === 2. Análise de Cobertura ===
+        # 2. Análise de Cobertura
         print("  [2/4] Analise de cobertura")
         coverage_stats = self.conn_manager.execute_sql(f"""
             SELECT
@@ -228,7 +228,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             print(f"    [WARN] Cobertura baixa ({target_coverage:.1f}%<20%)")
             print("      Risco de vies de selecao em predicoes")
         
-        # === 3. Consistência Temporal ===
+        # 3. Consistência Temporal
         print("  [3/4] Consistencia temporal")
         temporal_stats = self.conn_manager.execute_sql("""
             SELECT
@@ -249,7 +249,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         if temporal_completeness < 80:
             print("    [WARN] Gaps temporais significativos podem afetar validacao walk-forward")
         
-        # === 4. Cobertura Geográfica ===
+        # 4. Cobertura Geográfica
         print("  [4/4] Representatividade geografica")
         unique_countries = int(temporal_stats['unique_countries'])
         obs_per_country = total_records / unique_countries if unique_countries > 0 else 0
@@ -260,7 +260,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         if unique_countries < 10:
             print("    [WARN] Poucos paises podem limitar generalizacao geografica")
         
-        # === 5. Validação de Colunas Obrigatórias ===
+        # 5. Validação de Colunas Obrigatórias
         required_cols = ['country_code', 'year']
         missing_cols = []
         
@@ -458,8 +458,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             - Teste: Mínimo 10 obs (avaliação out-of-sample mínima)
             - Geographic coverage: >50% países em cada fold para generalização
             
-        Fundamentação:
-            Validação cruzada temporal (Bergmeir & Benítez, 2012) requer
+        Validação cruzada temporal (Bergmeir & Benítez, 2012) requer
             estrutura específica para evitar data leakage em séries temporais.
         """
         print("Validando folds temporais")
@@ -557,7 +556,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
                     warning = f"{split_type}: Baixa completude de targets ({target_completeness:.1f}%<70%)"
                     validation_warnings.append(warning)
             
-            # === Validação de Consistência Temporal ===
+            # Validação de Consistência Temporal
             train_end = fold['train_end']
             val_start = fold['val_start']
             val_end = fold['val_end']
@@ -690,8 +689,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             2. Exclusão automática: Identificadores (country_code, year), targets
             3. Ordenação alfabética: Garantia de determinismo entre execuções
             
-        Justificativa técnica:
-            Schema-based filtering via information_schema evita scan de dados.
+        Schema-based filtering via information_schema evita scan de dados.
         
         Limitações:
             - Não detecta variáveis categóricas numéricas (e.g., códigos país)
@@ -721,7 +719,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             print("  [WARN] Poucas features numericas (<5) podem limitar capacidade preditiva")
 
         if len(numeric_features) > 100:
-            print("  [WARN] Muitas features (>100) requerem selecao rigorosa (curse of dimensionality)")
+            print("  [WARN] Muitas features (>100) requerem selecao cuidadosa (curse of dimensionality)")
         
         return numeric_features
     
@@ -746,10 +744,10 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             2. Correlação Pearson: Adequada para relações lineares (assunção ML)
             3. Tratamento de zeros: Variáveis constantes recebem r=0 automaticamente
             
-        Otimizações SQL:
+        Implementação SQL:
             - CTE reutilizável para estatísticas descritivas
             - Single-pass calculation para eficiência O(n)
-            - Tratamento robusto de divisão por zero e NULLs
+            - Tratamento de divisão por zero e NULLs
             
         Limitações:
             - Detecta apenas associações lineares (ignora não-linearidades)
@@ -918,7 +916,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
 
         print(f"Filtrando colinearidade: {len(features)} features, threshold={threshold}")
         
-        # === Configuração de amostragem ===
+        # Configuração de amostragem
         total_rows = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
         
         min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
@@ -935,7 +933,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         print(f"  Amostragem: {final_sample_size:,}/{total_rows:,} ({sample_percentage:.1f}%)")
         
-        # === Criação de view amostrada reprodutível ===
+        # Criação de view amostrada reprodutível
         sample_view_name = "vw_collinearity_sample"
         
         try:
@@ -961,7 +959,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             actual_sample_size = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM {sample_view_name}")
             print(f"  Amostra: {actual_sample_size:,} observacoes")
             
-            # === Construção de matriz de correlação ===
+            # Construção de matriz de correlação
             
             correlation_matrix = {}
             correlation_pairs_computed = 0
@@ -1103,7 +1101,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             transformed_features_sql.append(transformation_sql)
             print(f"    {feat} -> {feat}_log_transform")
 
-        # === Construção da Query de View ===
+        # Construção da Query de View
         all_features_sql = selected_features.copy()
 
         if transformed_features_sql:
@@ -1141,7 +1139,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         try:
             self.conn_manager.execute_sql_no_return(feature_view_query)
             
-            # === Validação e Relatório da View ===
+            # Validação e Relatório da View
             view_validation_query = f"""
                 SELECT
                     COUNT(*) as total_records,

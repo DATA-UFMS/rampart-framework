@@ -61,13 +61,12 @@ class DataLakeArchitectureML(BaseArchitectureML):
         Raises:
             Exception: Propagada da operação de escrita subjacente
             
-        Robustez implementada:
+        Tratamento de conflitos:
             - Criação de diretórios pai se ausentes
             - Remoção de arquivos/diretórios conflitantes pré-existentes
             - Escrita atomica via pandas.to_parquet com index=False
-            
-        Justificativa:
-            Data Lakes frequentemente têm conflitos de naming entre arquivos e
+
+        Data Lakes frequentemente têm conflitos de naming entre arquivos e
             diretórios devido à natureza schema-on-read. Esta função garante
             escrita bem-sucedida independente do estado do filesystem.
         """
@@ -168,7 +167,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         ddf = None
         data_source = None
         
-        # === Estratégia 1: Dados processados (otimizados) ===
+        # Estratégia 1: Dados processados (otimizados)
         if os.path.exists(self.data_lake_path):
             try:
                 ddf = dd.read_parquet(self.data_lake_path, engine='pyarrow').persist()
@@ -179,7 +178,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 self.logger.warning(f"Erro ao carregar dados processados: {e}")
                 print(f"  [ERROR] Dados processados: {e}")
         
-        # === Estratégia 2: Dados raw particionados (fallback) ===
+        # Estratégia 2: Dados raw particionados (fallback)
         if ddf is None and os.path.exists(self.fallback_path):
             try:
                 print("  Fallback para dados raw particionados...")
@@ -190,7 +189,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 self.logger.error(f"Erro ao carregar dados raw: {e}")
                 print(f"  [ERROR] Dados raw: {e}")
         
-        # === Validação de carregamento ===
+        # Validação de carregamento
         if ddf is None:
             raise FileNotFoundError(
                 "Dados Data Lake não encontrados em nenhuma fonte.\n"
@@ -198,7 +197,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 "Execute 'data_lake/processor.py' para gerar dados processados."
             )
     
-        # === Análise de adequação ===
+        # Análise de adequação
         
         # Computação em lote para eficiência (única chamada Dask compute)
         stats_to_compute = {
@@ -256,7 +255,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         """
         print("Validando dados")
         
-        # === Amostragem adaptativa para validação eficiente ===
+        # Amostragem adaptativa para validação eficiente
         total_rows = int(ddf.index.size.compute())
         sample_size = min(1000, total_rows)  # Balanceia precisão vs eficiência
         
@@ -267,7 +266,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         if hasattr(sample_df, 'compute'):
             sample_df = sample_df.compute()
         
-        # === Validação centralizada com DataIntegrityValidator ===
+        # Validação centralizada com DataIntegrityValidator
         is_valid, validation_report = self.data_validator.validate_dataframe(
             sample_df,
             target_col=self.source_column,
@@ -280,7 +279,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             for warning in warnings[:3]:
                 print(f"  [WARN] {warning}")
 
-        # === Schema validation com fallback inteligente ===
+        # Schema validation com fallback
         if self.source_column not in ddf.columns:
             print(f"  [WARN] Coluna target '{self.source_column}' nao encontrada")
 
@@ -294,7 +293,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                     "Verificar presença de colunas com 'completion' no nome."
                 )
         
-        # === Análise de qualidade distribuída ===
+        # Análise de qualidade distribuída
         
         # Computação em lote otimizada (única chamada Dask)
         validation_stats = {
@@ -324,7 +323,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         if computed['under_0_count'] > 0:
             print(f"  [WARN] {computed['under_0_count']} valores <0% (dados invalidos)")
         
-        # === Validação de schema obrigatório ===
+        # Validação de schema obrigatório
         required_cols = ['country_code', 'year']
         missing_cols = [col for col in required_cols if col not in ddf.columns]
         if missing_cols:
@@ -558,7 +557,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             - Random sampling: Preserva distribuição populacional (Cochran, 1977)
             
         Justificativa da abordagem:
-            Para equivalência rigorosa com SQL Data Warehouse, materialização
+            Para equivalência com SQL Data Warehouse, materialização
             da amostra é necessária. Overhead computacional é aceitável pois
             correlação é step único na seleção de features.
             
@@ -659,7 +658,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
 
         print(f"Filtrando colinearidade: {len(features)} features")
 
-        # === Configuração de amostragem ===
+        # Configuração de amostragem
         total_rows = float(ddf.index.size.compute())
 
         min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
@@ -671,7 +670,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         print(f"  Amostragem: {min_sample_size:,} registros ({sample_frac:.1%})")
 
         try:
-            # === Amostragem distribuída Dask ===
+            # Amostragem distribuída Dask
             corr_sample_ddf = ddf[features].sample(
                 frac=sample_frac,
                 random_state=self.config['random_seed']
@@ -769,10 +768,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
         """
         print("\nFeature engineering")
 
-        # === Cópia defensiva para preservar DataFrame original ===
+        # Cópia para preservar DataFrame original
         ddf_work = ddf.copy()
 
-        # === Transformação, log simétrico: T(x) = sign(x) * ln(|x| + 1) ===
+        # Transformação log simétrico: T(x) = sign(x) * ln(|x| + 1)
         
         # Critério: Limitar escopo por curse of dimensionality
         features_to_transform = selected_features[:5] if len(selected_features) > 5 else selected_features
@@ -798,7 +797,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         
         print(f"  {transformed_count} log transforms aplicadas")
 
-        # === Construção de dataset ML final ===
+        # Construção de dataset ML final
         
         # Metadados essenciais para ML temporal
         ml_features = ['country_code', 'year', self.target_column]
@@ -816,8 +815,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             if lag_col in ddf_work.columns and lag_col not in ml_features:
                 ml_features.append(lag_col)
         
-        # === Garantia de unicidade e existência ===
-        # Preservar ordem mas remover duplicatas
+        # Remover duplicatas preservando ordem
         ml_features = list(dict.fromkeys(ml_features))
         
         # Filtrar apenas colunas que existem no DataFrame
@@ -826,10 +824,10 @@ class DataLakeArchitectureML(BaseArchitectureML):
         print(f"  Dataset ML final: {len(ml_features)} variaveis "
               f"({len(selected_features)} originais, {len(transformed_cols)} transformadas)")
         
-        # === Seleção final com preservação de estrutura Dask ===
+        # Seleção final
         result_ddf = ddf_work[ml_features]
         
-        # === Logging para auditoria ===
+        # Logging para auditoria
         try:
             total_rows = int(ddf.index.size.compute())
             sample_size = min(100, total_rows)

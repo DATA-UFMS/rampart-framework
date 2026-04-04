@@ -6,7 +6,7 @@ carregamento via pl.scan_parquet() (LazyFrame), criação de folds temporais com
 anti-leak, alinhamento de features com as arquiteturas Data Lake e Data Warehouse,
 e geração de artefatos em `outputs/ml_pipeline/architectures/polars_dataframe/`.
 
-Mantém simetria metodológica com DL e DW para comparação rigorosa,
+Mantém simetria metodológica com DL e DW para comparação controlada,
 diferindo apenas na implementação específica de Polars usando expressions e
 lazy evaluation para otimização de memória."""
 
@@ -62,7 +62,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             df: DataFrame Polars para persistência
             file_path: Caminho de destino para arquivo Parquet
 
-        Robustez implementada:
+        Tratamento de conflitos:
             - Criação de diretórios pai se ausentes
             - Remoção de arquivos/diretórios conflitantes pré-existentes
             - Escrita atômica via polars.write_parquet
@@ -155,7 +155,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         lf = None
         data_source = None
 
-        # === Estratégia 1: Dados processados (otimizados) ===
+        # Estratégia 1: Dados processados (otimizados)
         if os.path.exists(self.parquet_path):
             try:
                 lf = pl.scan_parquet(self.parquet_path)
@@ -165,7 +165,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 self.logger.warning(f"Erro ao carregar dados processados: {e}")
                 print(f"  [ERROR] Dados processados: {e}")
 
-        # === Estratégia 2: Dados raw particionados (fallback) ===
+        # Estratégia 2: Dados raw particionados (fallback)
         if lf is None and os.path.exists(self.fallback_path):
             try:
                 print("  Fallback para dados raw particionados...")
@@ -180,7 +180,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 self.logger.error(f"Erro ao carregar dados raw: {e}")
                 print(f"  [ERROR] Dados raw: {e}")
 
-        # === Validação de carregamento ===
+        # Validação de carregamento
         if lf is None:
             raise FileNotFoundError(
                 "Dados Polars DataFrame não encontrados em nenhuma fonte.\n"
@@ -188,7 +188,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 "Execute 'polars_dataframe/processor.py' para gerar dados processados."
             )
 
-        # === Análise de adequação ===
+        # Análise de adequação
 
         # Operações lazy, computadas uma única vez
         stats_lf = lf.select([
@@ -243,7 +243,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         """
         print("Validando dados")
 
-        # === Amostragem adaptativa para validação eficiente ===
+        # Amostragem adaptativa para validação eficiente
         total_rows = len(df)
         sample_size = min(1000, total_rows)
 
@@ -253,7 +253,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         sample_df = df.sample(n=sample_size, seed=self.config['random_seed'])
         sample_pd = sample_df.to_pandas()
 
-        # === Validação centralizada com DataIntegrityValidator ===
+        # Validação centralizada com DataIntegrityValidator
         is_valid, validation_report = self.data_validator.validate_dataframe(
             sample_pd,
             target_col=self.source_column,
@@ -266,7 +266,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             for warning in warnings[:3]:
                 print(f"  [WARN] {warning}")
 
-        # === Schema validation com fallback inteligente ===
+        # Schema validation com fallback
         if self.source_column not in df.columns:
             print(f"  [WARN] Coluna target '{self.source_column}' nao encontrada")
 
@@ -280,7 +280,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                     "Verificar presença de colunas com 'completion' no nome."
                 )
 
-        # === Análise de qualidade via Polars ===
+        # Análise de qualidade via Polars
 
         # Computações via Polars expressions
         stats_lf = df.lazy().select([
@@ -311,7 +311,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         if under_0_count > 0:
             print(f"  [WARN] {under_0_count} valores <0% (dados invalidos)")
 
-        # === Validação de schema obrigatório ===
+        # Validação de schema obrigatório
         required_cols = ['country_code', 'year']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
@@ -638,7 +638,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
         print(f"Filtrando colinearidade: {len(features)} features")
 
-        # === Configuração de amostragem ===
+        # Configuração de amostragem
         total_rows = len(df)
 
         min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
@@ -650,7 +650,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         print(f"  Amostragem: {min_sample_size:,} registros ({sample_frac:.1%})")
 
         try:
-            # === Amostragem Polars ===
+            # Amostragem Polars
             if sample_frac >= 0.9999:
                 corr_sample_df = df.select(features)
             else:
@@ -769,7 +769,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
         print(f"  {transformed_count} log transforms aplicadas")
 
-        # === Construção de dataset ML final ===
+        # Construção de dataset ML final
 
         # Metadados essenciais para ML temporal
         ml_features = ['country_code', 'year', self.target_column]
@@ -787,14 +787,14 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             if lag_col in df.columns and lag_col not in ml_features:
                 ml_features.append(lag_col)
 
-        # === Garantia de unicidade e existência ===
+        # Remover duplicatas preservando ordem
         ml_features = list(dict.fromkeys(ml_features))
         ml_features = [col for col in ml_features if col in df.columns]
 
         print(f"  Dataset ML final: {len(ml_features)} variaveis "
               f"({len(selected_features)} originais, {len(transformed_cols)} transformadas)")
 
-        # === Seleção final ===
+        # Seleção final
         result_df = df.select(ml_features)
 
         print("  Feature engineering concluido")
