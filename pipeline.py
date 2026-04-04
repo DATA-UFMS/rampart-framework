@@ -39,22 +39,10 @@ except Exception as exc:
     print(f"[WARN] Falha ao importar TemporalValidator: {exc}")
     TemporalValidator = None
 
-def print_conclusion(msg: str) -> None:
-    print(f"\n{msg}")
-
-def print_system(msg: str) -> None:
-    print(f"\n{msg}")
-
-def print_config(msg: str) -> None:
+def _log(msg: str) -> None:
     print(f"  {msg}")
 
-def print_step(msg: str) -> None:
-    print(f"  {msg}")
-
-def print_success(msg: str) -> None:
-    print(f"  {msg}")
-
-def print_error(msg: str) -> None:
+def _log_error(msg: str) -> None:
     print(f"  ERRO: {msg}")
 
 def run(cmd: str) -> None:
@@ -104,7 +92,7 @@ def _snapshot_scientific_config(root: str) -> None:
     snapshot_path = os.path.join(snapshot_dir, "scientific_config_snapshot.json")
     with open(snapshot_path, "w", encoding="utf-8") as handler:
         json.dump(payload, handler, indent=2, ensure_ascii=False)
-    print_system(f"Snapshot científico registrado em {snapshot_path}")
+    print(f"\nSnapshot científico registrado em {snapshot_path}")
 
 
 def _discover():
@@ -138,7 +126,7 @@ def _validate_anti_leakage_gate(root: str) -> None:
 
         folds = folds_config.get('folds', [])
         validator.enforce_walk_forward(folds)
-        print_config(f"  {arch}: {len(folds)} folds — integridade temporal verificada")
+        _log(f"  {arch}: {len(folds)} folds — integridade temporal verificada")
 
 
 def main() -> None:
@@ -154,70 +142,70 @@ def main() -> None:
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
 
-    print_conclusion(f"Pipeline iniciado (dataset: {dataset_name})")
+    print(f"\nPipeline iniciado (dataset: {dataset_name})")
     _snapshot_scientific_config(root)
     paradigms = _discover()
-    print_system("Etapa 0: Snapshot de reprodutibilidade")
-    print_config("Snapshot salvo em outputs/scientific_config_snapshot.json")
+    print("\nEtapa 0: Snapshot de reprodutibilidade")
+    _log("Snapshot salvo em outputs/scientific_config_snapshot.json")
 
     if dataset_name == 'worldbank':
-        print_system("Etapa 1/9: Coleta")
-        print_config("Fonte: World Bank")
+        print("\nEtapa 1/9: Coleta")
+        _log("Fonte: World Bank")
         run(f"{py} {root}/src/collection/raw_data_collector.py")
     else:
-        print_system("Etapa 1/9: Coleta")
-        print_config("Fonte: INEP Censo Escolar")
+        print("\nEtapa 1/9: Coleta")
+        _log("Fonte: INEP Censo Escolar")
         run(f"{py} {root}/src/collection/inep_collector.py")
-    print_success("Etapa 1 concluida")
+    _log("Etapa 1 concluida")
 
     n_paradigms = len(paradigms)
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print_system(f"Etapa 2{chr(96+i)}/9: Processamento {arch}")
-        print_config(f"Arquitetura: {info['label']}")
+        print(f"\nEtapa 2{chr(96+i)}/9: Processamento {arch}")
+        _log(f"Arquitetura: {info['label']}")
         run(f"{py} {root}/{info['processor_script']}")
-    print_success(f"Etapa 2 concluida ({n_paradigms} paradigmas)")
+    _log(f"Etapa 2 concluida ({n_paradigms} paradigmas)")
 
-    print_system("Etapa 3: Setup ML")
-    print_config("Gaps temporais: 2 anos (P1-P3)")
+    print("\nEtapa 3: Setup ML")
+    _log("Gaps temporais: 2 anos (P1-P3)")
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print_system(f"Etapa 3{chr(96+i)}/9: Setup ML {arch}")
-        print_config(f"Arquitetura: {info['label']}")
+        print(f"\nEtapa 3{chr(96+i)}/9: Setup ML {arch}")
+        _log(f"Arquitetura: {info['label']}")
         run(f"{py} {root}/{info['setup_script']}")
-    print_success(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
+    _log(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
 
-    print_system("Gate anti-leakage")
+    print("\nGate anti-leakage")
     _validate_anti_leakage_gate(root)
-    print_success("Todos os folds passaram na validacao temporal")
+    _log("Todos os folds passaram na validacao temporal")
 
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print_system(f"Etapa 4{chr(96+i)}/9: Baselines {arch}")
+        print(f"\nEtapa 4{chr(96+i)}/9: Baselines {arch}")
         run(f"{py} {root}/{info['baseline_script']}")
-    print_success(f"Etapa 4 concluida ({n_paradigms} paradigmas)")
+    _log(f"Etapa 4 concluida ({n_paradigms} paradigmas)")
 
-    print_system("Etapa 5/9: Hierarquicos")
+    print("\nEtapa 5/9: Hierarquicos")
     for arch, info in paradigms.items():
         run(f"{py} {root}/{info['hierarchical_script']}")
-    print_success(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
+    _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
 
-    print_system("Etapa 6/9: Benchmark arquitetural")
+    print("\nEtapa 6/9: Benchmark arquitetural")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
-    print_success("Etapa 6 concluida")
+    _log("Etapa 6 concluida")
 
-    print_system("Etapa 7/9: Testes estatisticos")
+    print("\nEtapa 7/9: Testes estatisticos")
 
     benchmark_csv = f"{root}/outputs/benchmarks/architectural_benchmark_results.csv"
     if os.path.exists(benchmark_csv):
-        print_step("Etapa 7a/9: Significancia (bootstrap)")
+        _log("Etapa 7a/9: Significancia (bootstrap)")
         run(f"{py} {root}/src/statistical_validation/significance_tests.py")
     else:
-        print_error("Arquivo de benchmark nao encontrado, pulando testes de significancia")
+        _log_error("Arquivo de benchmark nao encontrado, pulando testes de significancia")
 
-    print_step("Etapa 7b/9: Equivalencia (SESOI + IC)")
+    _log("Etapa 7b/9: Equivalencia (SESOI + IC)")
     run(f"{py} {root}/src/statistical_validation/equivalence_estimation.py --latex")
 
-    print_success("Etapa 7 concluida")
+    _log("Etapa 7 concluida")
 
-    print_conclusion("Pipeline concluido")
+    print("\nPipeline concluido")
     print("Resultados em: outputs/")
 
 if __name__ == "__main__":
