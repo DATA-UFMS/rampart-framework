@@ -229,7 +229,7 @@ class BaselineModelAnalysisPolarsDataFrame:
                   f"Val({fold['val_start']}-{fold['val_end']}) ->"
                   f"Test({fold['test_start']}-{fold['test_end']})")
 
-            # Filtros lazy (com exclusão de gap years — anti-leakage P2)
+            # Exclusão de gap years
             train_lazy = self.df_lazy.filter(
                 (pl.col('year') >= fold['train_start']) & (pl.col('year') <= fold['train_end'])
             ).filter(

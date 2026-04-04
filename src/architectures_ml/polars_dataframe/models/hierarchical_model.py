@@ -152,8 +152,6 @@ class HierarchicalModelPolarsDataFrame:
                 ).collect().to_dicts()[0][feature]
                 medians[feature] = mean_val if mean_val is not None else 0.0
 
-        # Filtrar linhas com target NaN (equivale a WHERE target IS NOT NULL no DW)
-        # Ordenação determinística (equivale a ORDER BY country_code, year no DW)
         data_filtered = data_lazy.filter(pl.col(self.target_col).is_not_null()).sort(['country_code', 'year'])
 
         # Aplicar imputação
@@ -358,7 +356,7 @@ class HierarchicalModelPolarsDataFrame:
         except (OSError, IOError, TypeError):
             pass
 
-        # Filtros lazy (com exclusão de gap years — anti-leakage P2)
+        # Exclusão de gap years
         train_lazy = self.df_lazy.filter(
             (pl.col('year') >= fold_info['train_start']) &
             (pl.col('year') <= fold_info['train_end'])

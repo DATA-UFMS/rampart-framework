@@ -343,8 +343,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         print(f"Construindo target: {self.source_column} -> {self.target_column}")
         print("  Dropout Rate = 100 - Completion Rate")
 
-        # Transformação via Polars expression com validação de range [0,100]
-        # Equivale ao CASE WHEN do DW: valores fora do range -> NULL
+        # Validação de range [0, 100]
         df_with_target = df.with_columns([
             pl.when(
                 (pl.col(self.source_column) >= 0) & (pl.col(self.source_column) <= 100)

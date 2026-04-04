@@ -371,7 +371,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 Taxa de abandono (0-100%), ou NaN se fora do range válido.
 
             Preserva NaN para missing values (não imputa artificialmente).
-            Valida range [0,100] — equivale ao CASE WHEN do DW.
+            Valida range [0,100].
             """
             if pd.isna(completion_rate) or completion_rate < 0 or completion_rate > 100:
                 return float('nan')

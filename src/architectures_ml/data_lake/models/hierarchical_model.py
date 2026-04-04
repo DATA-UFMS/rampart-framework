@@ -173,10 +173,8 @@ class HierarchicalModelDataLake:
         computed_final = dask.compute(final_data)[0]
 
         X_out, y_out, c_out, yr_out = computed_final['X'], computed_final['y'], computed_final['countries'], computed_final['year']
-        # Filtrar linhas com target NaN (equivale a WHERE target IS NOT NULL no DW)
         valid_mask = y_out.notna()
         X_out, y_out, c_out, yr_out = X_out[valid_mask], y_out[valid_mask], c_out[valid_mask], yr_out[valid_mask]
-        # Ordenação determinística (equivale a ORDER BY country_code, year no DW)
         sort_idx = pd.DataFrame({'country_code': c_out, 'year': yr_out}).sort_values(['country_code', 'year']).index
         return X_out.loc[sort_idx].reset_index(drop=True), y_out.loc[sort_idx].reset_index(drop=True), c_out.loc[sort_idx].reset_index(drop=True)
     
