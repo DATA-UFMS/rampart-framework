@@ -710,35 +710,42 @@ class BaselineModelAnalysisDataWarehouse:
             for _, val_row in val_clean.iterrows():
                 country = val_row['country_code']
                 val_year = val_row['year']
-                
-                cross_country_history = train_clean[
-                    (train_clean['country_code'] != country) &
-                    (train_clean['year'] <= val_year - MIN_LAG)
+
+                year_data = train_clean[
+                    train_clean['year'] <= val_year - MIN_LAG
                 ]
-                
-                if len(cross_country_history) > 0:
-                    cross_val = cross_country_history[self.target_col].mean()
+
+                if len(year_data) > 0:
+                    country_means = year_data.groupby('country_code')[self.target_col].mean()
+                    other_countries = country_means[country_means.index != country]
+                    if len(other_countries) > 0:
+                        cross_val = other_countries.mean()
+                    else:
+                        cross_val = global_mean
                 else:
                     cross_val = global_mean
-                
+
                 val_pred_cross.append(cross_val)
             
             test_pred_cross = []
             for _, test_row in test_clean.iterrows():
                 country = test_row['country_code']
                 test_year = test_row['year']
-                
-                # Usar história combinada, excluindo país target
-                cross_country_history = combined_history[
-                    (combined_history['country_code'] != country) &  # EXCLUIR país target
-                    (combined_history['year'] <= test_year - MIN_LAG)
+
+                year_data = combined_history[
+                    combined_history['year'] <= test_year - MIN_LAG
                 ]
-                
-                if len(cross_country_history) > 0:
-                    cross_test = cross_country_history[self.target_col].mean()
+
+                if len(year_data) > 0:
+                    country_means = year_data.groupby('country_code')[self.target_col].mean()
+                    other_countries = country_means[country_means.index != country]
+                    if len(other_countries) > 0:
+                        cross_test = other_countries.mean()
+                    else:
+                        cross_test = combined_history[self.target_col].mean()
                 else:
-                    cross_test = combined_history[self.target_col].mean()  # Fallback
-                
+                    cross_test = combined_history[self.target_col].mean()
+
                 test_pred_cross.append(cross_test)
             
             val_pred_cross = np.array(val_pred_cross)
