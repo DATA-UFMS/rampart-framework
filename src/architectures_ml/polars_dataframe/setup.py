@@ -514,11 +514,11 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
         exclude_prefixes = ('dropout_rate_lag_',)
 
         # Filtro preservando ordem para determinismo
-        numeric_features = [
+        numeric_features = sorted([
             col for col in numeric_cols
             if col not in exclude_cols
             and not any(col.startswith(p) for p in exclude_prefixes)
-        ]
+        ])
 
         return numeric_features
 
@@ -669,6 +669,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
                 selected = []
                 rejected_count = 0
+                features = sorted(features)
 
                 for feature in features:
                     if feature not in corr_matrix.columns:

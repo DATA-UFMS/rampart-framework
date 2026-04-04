@@ -999,7 +999,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             
             selected_features = []
             rejected_features = []
-            
+            features = sorted(features)
+
             for feature in features:
                 if not selected_features:
                     # Primeira feature sempre aceita

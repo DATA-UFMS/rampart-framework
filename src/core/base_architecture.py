@@ -477,20 +477,20 @@ class BaseArchitectureML(ABC):
         Returns:
             Lista de features selecionadas
         """
-        selected = [
+        selected = sorted([
             feat for feat, corr in correlations.items()
             if min_corr <= corr <= max_corr
-        ]
-        
+        ])
+
         print(f"   Features com correlação moderada ({min_corr}-{max_corr}): "
               f"{len(selected)}")
-        
+
         # Relaxar critério se muito poucas features
         if len(selected) < 5:
-            selected = [
+            selected = sorted([
                 feat for feat, corr in correlations.items()
                 if corr >= min_corr * 0.67
-            ]
+            ])
             print(f"   Critério relaxado: {len(selected)} features")
         
         return selected
