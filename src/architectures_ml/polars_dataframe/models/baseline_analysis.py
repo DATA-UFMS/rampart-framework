@@ -38,9 +38,9 @@ class BaselineModelAnalysisPolarsDataFrame:
     """
     Análise de modelos baseline para arquitetura Polars DataFrame.
 
-    Implementa análise científica de modelos baseline com validação temporal
-    rigorosa, prevenindo vazamento de dados e utilizando leitura lazy com Polars
-    para dados em formato Parquet.
+    Implementa análise científica de modelos baseline com validação temporal,
+    prevenindo vazamento de dados e utilizando leitura lazy com Polars para
+    dados em formato Parquet.
 
     Attributes:
         data_path (str): Caminho para os dados principais do Polars DataFrame
@@ -213,7 +213,7 @@ class BaselineModelAnalysisPolarsDataFrame:
 
     def test_baseline_models(self) -> Dict:
         """
-        Testar modelos baseline científicos com validação temporal rigorosa.
+        Testar modelos baseline científicos com validação temporal.
 
         Returns:
             Dict: Resultados dos modelos baseline para todos os folds
@@ -300,7 +300,7 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'test_wape': float((np.abs(y_test - test_pred_global)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_global))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
-                'method': 'global_mean_no_leakage'
+                'method': 'global_mean'
             }
 
             # Baseline 2: Tendência Linear
@@ -326,7 +326,7 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_trend))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'slope': float(trend_model.coef_[0]),
-                'method': 'linear_trend_no_leakage'
+                'method': 'linear_trend'
             }
 
             # Baseline 3: Naive com Lag Científico
@@ -436,7 +436,6 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_cross))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'min_lag_years': MIN_LAG,
-                'geographic_leakage_prevented': True,
                 'method': 'cross_country_average_excluding_target'
             }
 
@@ -544,13 +543,7 @@ class BaselineModelAnalysisPolarsDataFrame:
                 'best_test_r2': best_mean_test_r2,
                 'best_val_r2': best_mean_val_r2,
                 'generalization_gap': best_generalization_gap,
-                'predictability_level': 'unknown',
-                'scientific_validity': {
-                    'temporal_leakage_prevented': True,
-                    'geographic_leakage_prevented': True,
-                    'validation_used_correctly': True,
-                    'walk_forward_validation': True
-                }
+                'predictability_level': 'unknown'
             }
 
             if best_mean_test_r2 < 0:
@@ -576,20 +569,10 @@ class BaselineModelAnalysisPolarsDataFrame:
             else:
                 stability_level = "low"
 
-            publication_criteria = {
-                'temporal_leakage_prevented': True,
-                'validation_used_correctly': True,
-                'stability_acceptable': abs_avg_gap <= 0.2
-            }
-
             predictability_analysis['stability_analysis'] = {
                 'avg_generalization_gap': float(avg_generalization_gap),
-                'stability_level': stability_level,
-                'publication_criteria': {k: bool(v) for k, v in publication_criteria.items()}
+                'stability_level': stability_level
             }
-            if not all(publication_criteria.values()):
-                failed_criteria = [k for k, v in publication_criteria.items() if not v]
-                print(f"   [WARN] Requer atenção: {', '.join(failed_criteria)}")
 
             print(f"\n   Melhor baseline: {best_baseline_overall}")
             print(f"      Performance Teste: R² = {best_mean_test_r2:.3f}")
@@ -599,8 +582,7 @@ class BaselineModelAnalysisPolarsDataFrame:
             predictability_analysis = {
                 'architecture': 'polars_dataframe',
                 'baseline_scores': {},
-                'predictability_level': 'unknown',
-                'scientific_validity': {'error': 'no_valid_results'}
+                'predictability_level': 'unknown'
             }
 
         return predictability_analysis

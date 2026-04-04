@@ -39,9 +39,9 @@ class BaselineModelAnalysisDataLake:
     """
     Análise de modelos baseline para arquitetura Data Lake.
     
-    Implementa análise científica de modelos baseline com validação temporal
-    rigorosa, prevenindo vazamento de dados e utilizando processamento 
-    distribuído com Dask para dados em formato Parquet.
+    Implementa análise científica de modelos baseline com validação temporal,
+    prevenindo vazamento de dados e utilizando processamento distribuído com
+    Dask para dados em formato Parquet.
     
     Attributes:
         data_path (str): Caminho para os dados principais do Data Lake
@@ -235,7 +235,7 @@ class BaselineModelAnalysisDataLake:
     
     def test_baseline_models(self) -> Dict:
         """
-        Testar modelos baseline científicos com validação temporal rigorosa.
+        Testar modelos baseline científicos com validação temporal.
         
         Problemas corrigidos:
         - Vazamento temporal: eliminado com lag mínimo de 2 anos
@@ -325,7 +325,7 @@ class BaselineModelAnalysisDataLake:
                 'test_wape': float((np.abs(y_test - test_pred_global)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_global))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
-                'method': 'global_mean_no_leakage'
+                'method': 'global_mean'
             }
             
             # Baseline 2: Tendência Linear - Batch compute para features temporais
@@ -356,7 +356,7 @@ class BaselineModelAnalysisDataLake:
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_trend))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'slope': float(trend_model.coef_[0]),
-                'method': 'linear_trend_no_leakage'
+                'method': 'linear_trend'
             }
             
             # Baseline 3: Naive com Lag Científico
@@ -525,7 +525,6 @@ class BaselineModelAnalysisDataLake:
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_cross))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'min_lag_years': MIN_LAG,
-                'geographic_leakage_prevented': True,
                 'method': 'cross_country_average_excluding_target'
             }
             
@@ -653,15 +652,9 @@ class BaselineModelAnalysisDataLake:
                 'best_test_r2': best_mean_test_r2,
                 'best_val_r2': best_mean_val_r2,
                 'generalization_gap': best_generalization_gap,
-                'predictability_level': 'unknown',
-                'scientific_validity': {
-                    'temporal_leakage_prevented': True,
-                    'geographic_leakage_prevented': True,
-                    'validation_used_correctly': True,
-                    'walk_forward_validation': True
-                }
+                'predictability_level': 'unknown'
             }
-            
+
             # Classificação de predictabilidade
             if best_mean_test_r2 < 0:
                 predictability_analysis['predictability_level'] = 'very_low'
@@ -701,28 +694,16 @@ class BaselineModelAnalysisDataLake:
                 print(f"      Possível overfitting ou forte variação temporal")
                 stability_level = "low"
             
-            publication_criteria = {
-                'temporal_leakage_prevented': predictability_analysis['scientific_validity']['temporal_leakage_prevented'],
-                'validation_used_correctly': predictability_analysis['scientific_validity']['validation_used_correctly'],
-                'stability_acceptable': abs_avg_gap <= 0.2
-            }
-            
-            if not all(publication_criteria.values()):
-                failed_criteria = [k for k, v in publication_criteria.items() if not v]
-                print(f"   [WARN] Requer atenção: {', '.join(failed_criteria)}")
-
             predictability_analysis['stability_analysis'] = {
                 'avg_generalization_gap': float(avg_generalization_gap),
-                'stability_level': stability_level,
-                'publication_criteria': {k: bool(v) for k, v in publication_criteria.items()}
+                'stability_level': stability_level
             }
             
         else:
             predictability_analysis = {
                 'architecture': 'data_lake',
                 'baseline_scores': {},
-                'predictability_level': 'unknown',
-                'scientific_validity': {'error': 'no_valid_results'}
+                'predictability_level': 'unknown'
             }
         
         return predictability_analysis

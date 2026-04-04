@@ -54,7 +54,7 @@ class BaselineModelAnalysisDataWarehouse:
     ML Data Warehouse Consumer - Análise Baseline.
     
     Implementa padrão ML Data Warehouse Consumer para análise científica
-    de modelos baseline com validação temporal rigorosa utilizando:
+    de modelos baseline com validação temporal utilizando:
     - Queries diretas via Connection Manager
     - Consumo de views do Feature Store para treinamento ML
     - Connection pooling para performance em workloads ML
@@ -550,7 +550,7 @@ class BaselineModelAnalysisDataWarehouse:
         - Gaps temporais apropriados entre conjuntos
         
         Returns:
-            Dict: Resultados dos baselines com validação temporal rigorosa
+            Dict: Resultados dos baselines com validação temporal
         """
         print(f"\nBaselines com validação temporal")
         
@@ -621,7 +621,7 @@ class BaselineModelAnalysisDataWarehouse:
                 'test_wape': float((np.abs(y_test - test_pred_global)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_global))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
-                'method': 'global_mean_no_leakage'
+                'method': 'global_mean'
             }
             
             X_train_time = train_clean[['year']].values
@@ -646,7 +646,7 @@ class BaselineModelAnalysisDataWarehouse:
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_trend))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'slope': float(trend_model.coef_[0]),
-                'method': 'linear_trend_no_leakage'
+                'method': 'linear_trend'
             }
             
             MIN_LAG = 2
@@ -756,7 +756,6 @@ class BaselineModelAnalysisDataWarehouse:
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_cross))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'min_lag_years': MIN_LAG,
-                'geographic_leakage_prevented': True,
                 'method': 'cross_country_average_excluding_target'
             }
             
@@ -816,7 +815,7 @@ class BaselineModelAnalysisDataWarehouse:
         Analisar predictabilidade científica dos baselines Data Warehouse.
         
         Args:
-            baseline_results: Resultados dos baselines com validação temporal rigorosa
+            baseline_results: Resultados dos baselines com validação temporal
             
         Returns:
             Dict: Análise de predictabilidade agregada com gaps de generalização
@@ -891,15 +890,9 @@ class BaselineModelAnalysisDataWarehouse:
                 'best_test_r2': best_mean_test_r2,
                 'best_val_r2': best_mean_val_r2,
                 'generalization_gap': best_generalization_gap,
-                'predictability_level': 'unknown',
-                'scientific_validity': {
-                    'temporal_leakage_prevented': True,
-                    'geographic_leakage_prevented': True,
-                    'validation_used_correctly': True,
-                    'walk_forward_validation': True
-                }
+                'predictability_level': 'unknown'
             }
-            
+
             if best_mean_test_r2 < 0:
                 predictability_analysis['predictability_level'] = 'very_low'
                 print(f"   Predictabilidade muito baixa: R²_test < 0")
@@ -938,28 +931,16 @@ class BaselineModelAnalysisDataWarehouse:
                 print(f"      Possível overfitting ou forte variação temporal")
                 stability_level = "low"
             
-            publication_criteria = {
-                'temporal_leakage_prevented': predictability_analysis['scientific_validity']['temporal_leakage_prevented'],
-                'validation_used_correctly': predictability_analysis['scientific_validity']['validation_used_correctly'],
-                'stability_acceptable': abs_avg_gap <= 0.2  # Critério mais realista
-            }
-            
-            if not all(publication_criteria.values()):
-                failed_criteria = [k for k, v in publication_criteria.items() if not v]
-                print(f"   [WARN] Requer atenção: {', '.join(failed_criteria)}")
-
             predictability_analysis['stability_analysis'] = {
                 'avg_generalization_gap': float(avg_generalization_gap),
-                'stability_level': stability_level,
-                'publication_criteria': {k: bool(v) for k, v in publication_criteria.items()}
+                'stability_level': stability_level
             }
             
         else:
             predictability_analysis = {
                 'architecture': 'data_warehouse',
                 'baseline_scores': {},
-                'predictability_level': 'unknown',
-                'scientific_validity': {'error': 'no_valid_results'}
+                'predictability_level': 'unknown'
             }
         
         return predictability_analysis
@@ -985,26 +966,15 @@ class BaselineModelAnalysisDataWarehouse:
             'target_variable': self.target_col,
             'data_source': self.db_path,
             'data_access_method': 'direct_view_queries',
-            'connection_manager_used': True,
-            'feature_store_consumed': True,
-            'file_io_eliminated': True,
             'target_distribution_analysis': target_analysis,
             'baseline_model_results': baseline_results,
             'predictability_analysis': predictability_analysis,
-            'data_warehouse_validation': {
-                'connection_pooling': True,
-                'batch_loading_optimized': True,
-                'ml_views_used': True,
-                'parquet_reads_eliminated': True,
-                'scientific_interface_maintained': True
-            },
             'summary': {
                 'total_folds_analyzed': len(baseline_results),
                 'best_baseline_model': predictability_analysis.get('best_baseline', 'unknown'),
                 'best_baseline_r2': predictability_analysis.get('best_test_r2', 0),
                 'predictability_level': predictability_analysis.get('predictability_level', 'unknown'),
-                'r2_score_identical_tolerance': 0.001,
-                'ml_consumer_pattern_implemented': True
+                'r2_score_identical_tolerance': 0.001
             }
         }
         
@@ -1087,12 +1057,6 @@ class BaselineModelAnalysisDataWarehouse:
                 print(f"   [WARN] Temporal Views: nenhuma (apenas fallback)")
                 print(f"   Execute setup.py primeiro para criar views temporais")
 
-            if not predictability_analysis.get('scientific_validity', {}).get('temporal_leakage_prevented', False):
-                print(f"   [WARN] Vazamento temporal possível")
-
-            if not predictability_analysis.get('scientific_validity', {}).get('validation_used_correctly', False):
-                print(f"   [WARN] Validação mal implementada")
-            
             return results
             
         except Exception as e:

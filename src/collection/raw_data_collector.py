@@ -72,7 +72,7 @@ class RawDataCollector:
     Sistema de coleta e imputação hierárquica para dados socioeconômicos da América Latina.
     
     A classe implementa um pipeline completo desde a coleta via API World Bank até
-    a geração de dataset analítico com tratamento rigoroso de dados faltantes,
+    a geração de dataset analítico com tratamento de dados faltantes,
     seguindo metodologia publicável em periódicos de ciências sociais computacionais.
     
     Hierarquia de Imputação (ordem de preferência baseada em confiabilidade):
@@ -303,8 +303,8 @@ class RawDataCollector:
         valores extremos podem ser legítimos em contextos de crise. Corrige
         apenas violações de constraints lógicos (e.g., percentuais > 100%).
         
-        Decisão metodológica: Preservar outliers legítimos é crucial para
-        análises de eventos raros e choques econômicos (Taleb, 2007).
+        Preservar outliers legítimos é crucial para análises de eventos
+        raros e choques econômicos (Taleb, 2007).
         
         Args:
             df: DataFrame com dados a validar
@@ -638,7 +638,7 @@ class RawDataCollector:
     
     def apply_conservative_imputation(self, df_wide: pd.DataFrame) -> pd.DataFrame:
         """
-        Implementa imputação hierárquica com prevenção rigorosa de data leakage.
+        Implementa imputação hierárquica com prevenção de data leakage.
         
         HIERARQUIA DE CONFIABILIDADE (baseada em análise empírica):
         
@@ -1150,14 +1150,10 @@ class RawDataCollector:
             'indicators_count': df_long['indicator_code'].nunique(),
             'year_range': [int(df_long['year'].min()), int(df_long['year'].max())],
             'data_completeness': float(df_wide.select_dtypes(include=[np.number]).notna().mean().mean() * 100),
-            'corrections_applied': True,
-            'data_leakage_eliminated': True,
-            'conservative_imputation': True,
             'scientific_validation': {
-                'missingness_analysis_performed': missingness_analysis is not None,
-                'quality_metrics_calculated': quality_metrics is not None,
-                'sensitivity_analysis_performed': sensitivity_analysis is not None,
-                'methodology_validated': True,
+                'has_missingness': missingness_analysis is not None,
+                'has_quality': quality_metrics is not None,
+                'has_sensitivity': sensitivity_analysis is not None,
             },
             'references': [
                 'Rubin, D.B. (1987). Multiple Imputation for Nonresponse in Surveys',
