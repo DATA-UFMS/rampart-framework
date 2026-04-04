@@ -255,8 +255,10 @@ class BaselineModelAnalysisDataLake:
             print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) ->Val({fold['val_start']}-{fold['val_end']}) ->Test({fold['test_start']}-{fold['test_end']})")
             
             train_ddf = self.ddf[(self.ddf['year'] >= fold['train_start']) & (self.ddf['year'] <= fold['train_end'])]
+            train_ddf = train_ddf[~((train_ddf['year'] >= fold['train_gap_start']) & (train_ddf['year'] <= fold['train_gap_end']))]
             val_ddf = self.ddf[(self.ddf['year'] >= fold['val_start']) & (self.ddf['year'] <= fold['val_end'])]
             test_ddf = self.ddf[(self.ddf['year'] >= fold['test_start']) & (self.ddf['year'] <= fold['test_end'])]
+            test_ddf = test_ddf[~((test_ddf['year'] >= fold['val_gap_start']) & (test_ddf['year'] <= fold['val_gap_end']))]
             
             train_len = int(train_ddf.map_partitions(len).compute().sum())
             val_len = int(val_ddf.map_partitions(len).compute().sum())
@@ -282,9 +284,9 @@ class BaselineModelAnalysisDataLake:
             )
             
             try:
-                train_clean_pd = train_clean_ddf[['country_code','year', self.target_col]].compute()
-                val_clean_pd = val_clean_ddf[['country_code','year', self.target_col]].compute()
-                test_clean_pd = test_clean_ddf[['country_code','year', self.target_col]].compute()
+                train_clean_pd = train_clean_ddf[['country_code','year', self.target_col]].compute().sort_values(['country_code', 'year'])
+                val_clean_pd = val_clean_ddf[['country_code','year', self.target_col]].compute().sort_values(['country_code', 'year'])
+                test_clean_pd = test_clean_ddf[['country_code','year', self.target_col]].compute().sort_values(['country_code', 'year'])
             except Exception:
                 train_clean_pd = None
                 val_clean_pd = None

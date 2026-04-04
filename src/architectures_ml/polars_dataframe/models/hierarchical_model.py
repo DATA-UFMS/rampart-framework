@@ -152,8 +152,12 @@ class HierarchicalModelPolarsDataFrame:
                 ).collect().to_dicts()[0][feature]
                 medians[feature] = mean_val if mean_val is not None else 0.0
 
+        # Filtrar linhas com target NaN (equivale a WHERE target IS NOT NULL no DW)
+        # Ordenação determinística (equivale a ORDER BY country_code, year no DW)
+        data_filtered = data_lazy.filter(pl.col(self.target_col).is_not_null()).sort(['country_code', 'year'])
+
         # Aplicar imputação
-        X_lazy = data_lazy.select(self.available_features)
+        X_lazy = data_filtered.select(self.available_features)
         for feature, median_val in medians.items():
             X_lazy = X_lazy.with_columns(
                 pl.col(feature).fill_null(median_val)
@@ -161,8 +165,8 @@ class HierarchicalModelPolarsDataFrame:
 
         # Materializar para operações pandas
         X_df = X_lazy.collect().to_pandas()
-        y_series = data_lazy.select(pl.col(self.target_col)).collect().to_pandas().iloc[:, 0]
-        countries_series = data_lazy.select(pl.col('country_code')).collect().to_pandas().iloc[:, 0]
+        y_series = data_filtered.select(pl.col(self.target_col)).collect().to_pandas().iloc[:, 0]
+        countries_series = data_filtered.select(pl.col('country_code')).collect().to_pandas().iloc[:, 0]
 
         return X_df, y_series, countries_series
 
@@ -354,10 +358,13 @@ class HierarchicalModelPolarsDataFrame:
         except (OSError, IOError, TypeError):
             pass
 
-        # Filtros lazy
+        # Filtros lazy (com exclusão de gap years — anti-leakage P2)
         train_lazy = self.df_lazy.filter(
             (pl.col('year') >= fold_info['train_start']) &
             (pl.col('year') <= fold_info['train_end'])
+        ).filter(
+            ~((pl.col('year') >= fold_info['train_gap_start']) &
+              (pl.col('year') <= fold_info['train_gap_end']))
         )
         val_lazy = self.df_lazy.filter(
             (pl.col('year') >= fold_info['val_start']) &
@@ -366,6 +373,9 @@ class HierarchicalModelPolarsDataFrame:
         test_lazy = self.df_lazy.filter(
             (pl.col('year') >= fold_info['test_start']) &
             (pl.col('year') <= fold_info['test_end'])
+        ).filter(
+            ~((pl.col('year') >= fold_info['val_gap_start']) &
+              (pl.col('year') <= fold_info['val_gap_end']))
         )
 
         # Contar registros

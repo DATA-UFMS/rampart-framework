@@ -229,21 +229,25 @@ class BaselineModelAnalysisPolarsDataFrame:
                   f"Val({fold['val_start']}-{fold['val_end']}) ->"
                   f"Test({fold['test_start']}-{fold['test_end']})")
 
-            # Filtros lazy
+            # Filtros lazy (com exclusão de gap years — anti-leakage P2)
             train_lazy = self.df_lazy.filter(
                 (pl.col('year') >= fold['train_start']) & (pl.col('year') <= fold['train_end'])
+            ).filter(
+                ~((pl.col('year') >= fold['train_gap_start']) & (pl.col('year') <= fold['train_gap_end']))
             )
             val_lazy = self.df_lazy.filter(
                 (pl.col('year') >= fold['val_start']) & (pl.col('year') <= fold['val_end'])
             )
             test_lazy = self.df_lazy.filter(
                 (pl.col('year') >= fold['test_start']) & (pl.col('year') <= fold['test_end'])
+            ).filter(
+                ~((pl.col('year') >= fold['val_gap_start']) & (pl.col('year') <= fold['val_gap_end']))
             )
 
-            # Materializar para operações pandas
-            train_df = train_lazy.collect().to_pandas()
-            val_df = val_lazy.collect().to_pandas()
-            test_df = test_lazy.collect().to_pandas()
+            # Materializar para operações pandas (ordenação determinística)
+            train_df = train_lazy.sort(['country_code', 'year']).collect().to_pandas()
+            val_df = val_lazy.sort(['country_code', 'year']).collect().to_pandas()
+            test_df = test_lazy.sort(['country_code', 'year']).collect().to_pandas()
 
             train_len = len(train_df)
             val_len = len(val_df)

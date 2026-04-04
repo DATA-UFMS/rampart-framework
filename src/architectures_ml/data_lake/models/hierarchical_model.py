@@ -167,11 +167,18 @@ class HierarchicalModelDataLake:
         final_data = {
             'X': X_ddf,
             'y': data_ddf[self.target_col],
-            'countries': data_ddf['country_code']
+            'countries': data_ddf['country_code'],
+            'year': data_ddf['year'],
         }
         computed_final = dask.compute(final_data)[0]
-        
-        return computed_final['X'], computed_final['y'], computed_final['countries']
+
+        X_out, y_out, c_out, yr_out = computed_final['X'], computed_final['y'], computed_final['countries'], computed_final['year']
+        # Filtrar linhas com target NaN (equivale a WHERE target IS NOT NULL no DW)
+        valid_mask = y_out.notna()
+        X_out, y_out, c_out, yr_out = X_out[valid_mask], y_out[valid_mask], c_out[valid_mask], yr_out[valid_mask]
+        # Ordenação determinística (equivale a ORDER BY country_code, year no DW)
+        sort_idx = pd.DataFrame({'country_code': c_out, 'year': yr_out}).sort_values(['country_code', 'year']).index
+        return X_out.loc[sort_idx].reset_index(drop=True), y_out.loc[sort_idx].reset_index(drop=True), c_out.loc[sort_idx].reset_index(drop=True)
     
     def simple_hierarchical_model(self, X_train: pd.DataFrame, y_train: pd.Series, 
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -363,6 +370,10 @@ class HierarchicalModelDataLake:
             (self.ddf['year'] >= fold_info['train_start']) &
             (self.ddf['year'] <= fold_info['train_end'])
         ]
+        train_ddf = train_ddf[
+            ~((train_ddf['year'] >= fold_info['train_gap_start']) &
+              (train_ddf['year'] <= fold_info['train_gap_end']))
+        ]
         val_ddf = self.ddf[
             (self.ddf['year'] >= fold_info['val_start']) &
             (self.ddf['year'] <= fold_info['val_end'])
@@ -370,6 +381,10 @@ class HierarchicalModelDataLake:
         test_ddf = self.ddf[
             (self.ddf['year'] >= fold_info['test_start']) &
             (self.ddf['year'] <= fold_info['test_end'])
+        ]
+        test_ddf = test_ddf[
+            ~((test_ddf['year'] >= fold_info['val_gap_start']) &
+              (test_ddf['year'] <= fold_info['val_gap_end']))
         ]
         n_train, n_val, n_test = dask.compute(
             train_ddf.shape[0], val_ddf.shape[0], test_ddf.shape[0]
