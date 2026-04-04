@@ -799,41 +799,13 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         
         for i, feat in enumerate(features):
             try:
-                # Correlação de Pearson via SQL
                 correlation_query = f"""
-                    WITH feature_target_stats AS (
-                        SELECT
-                            COUNT(*) as sample_size,
-                            AVG({feat}) as feat_mean,
-                            AVG({target_col}) as target_mean,
-                            STDDEV({feat}) as feat_std,
-                            STDDEV({target_col}) as target_std
-                        FROM {base_table}
-                        WHERE {feat} IS NOT NULL
-                        AND {target_col} IS NOT NULL
-                    ),
-                    covariance_calc AS (
-                        SELECT
-                            AVG(({feat} - s.feat_mean) * ({target_col} - s.target_mean)) as covariance,
-                            s.feat_std,
-                            s.target_std,
-                            s.sample_size
-                        FROM {base_table} a
-                        CROSS JOIN feature_target_stats s
-                        WHERE a.{feat} IS NOT NULL
-                        AND a.{target_col} IS NOT NULL
-                        GROUP BY s.feat_std, s.target_std, s.sample_size
-                    )
                     SELECT
-                        CASE
-                            WHEN feat_std = 0 OR target_std = 0 OR feat_std IS NULL OR target_std IS NULL
-                            THEN 0.0  -- Variável constante = correlação zero
-                            WHEN sample_size < 3
-                            THEN 0.0  -- Amostra inadequada para correlação
-                            ELSE covariance / (feat_std * target_std)
-                        END as pearson_correlation,
-                        sample_size
-                    FROM covariance_calc
+                        COALESCE(CORR({feat}, {target_col}), 0.0) as pearson_correlation,
+                        COUNT(*) as sample_size
+                    FROM {base_table}
+                    WHERE {feat} IS NOT NULL
+                    AND {target_col} IS NOT NULL
                 """
                 
                 result = self.conn_manager.execute_sql(correlation_query)

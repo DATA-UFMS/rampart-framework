@@ -31,7 +31,7 @@ warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGr
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from src.core.config import get_absolute_output_path
-from src.core.scientific_config import setup_reproducibility
+from src.core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
 
@@ -364,8 +364,8 @@ class BaselineModelAnalysisDataLake:
             }
             
             # Baseline 3: Naive com Lag Científico
-            MIN_LAG = 2
-            
+            MIN_LAG = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
+
             print(f"      Naive baseline...")
             
             # Batch compute para val e test clean

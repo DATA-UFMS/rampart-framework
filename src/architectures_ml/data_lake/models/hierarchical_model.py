@@ -129,36 +129,11 @@ class HierarchicalModelDataLake:
         conjunto completo. Chamadas usam _prepare_data(val, train),
         _prepare_data(test, train).
         """
-        medians_batch = {}
-        means_batch = {}
-        
-        for feature in self.available_features:
-            try:
-                # Quantil 0.5 (mediana) com dask quantile, mais robusto
-                medians_batch[f"{feature}_median"] = reference_ddf[feature].quantile(0.5)
-            except Exception:
-                means_batch[f"{feature}_mean"] = reference_ddf[feature].mean()
-        
-        if medians_batch:
-            computed_medians = dask.compute(medians_batch)[0]
-        else:
-            computed_medians = {}
-            
-        if means_batch:
-            computed_means = dask.compute(means_batch)[0]
-        else:
-            computed_means = {}
-        
+        ref_pd = reference_ddf[self.available_features].compute()
         medians = {}
         for feature in self.available_features:
-            if f"{feature}_median" in computed_medians:
-                median_val = computed_medians[f"{feature}_median"]
-                medians[feature] = median_val if not pd.isna(median_val) else 0.0
-            elif f"{feature}_mean" in computed_means:
-                mean_val = computed_means[f"{feature}_mean"]
-                medians[feature] = mean_val if not pd.isna(mean_val) else 0.0
-            else:
-                medians[feature] = 0.0
+            median_val = ref_pd[feature].median()
+            medians[feature] = median_val if not pd.isna(median_val) else 0.0
         
         X_ddf = data_ddf[self.available_features]
         for feature, median_val in medians.items():

@@ -38,7 +38,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from config import get_absolute_output_path
-from src.core.scientific_config import setup_reproducibility
+from src.core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
 
@@ -651,7 +651,7 @@ class BaselineModelAnalysisDataWarehouse:
                 'method': 'linear_trend'
             }
             
-            MIN_LAG = 2
+            MIN_LAG = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
             
             print(f"      Naive baseline...")
             
