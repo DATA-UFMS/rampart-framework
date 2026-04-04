@@ -315,10 +315,14 @@ class BenchmarkRunner:
         if not os.path.exists(abs_path):
             return 0
         try:
-            df = pd.read_parquet(abs_path)
-            return int(len(df))
+            import pyarrow.parquet as pq
+            return pq.read_metadata(abs_path).num_rows
         except Exception:
-            return 0  # Parquet corrompido/ilegível: contagem como zero linhas
+            try:
+                df = pd.read_parquet(abs_path, columns=[])
+                return int(len(df))
+            except Exception:
+                return 0
 
     # --------------------------- fases medidas -----------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
@@ -374,6 +378,9 @@ class BenchmarkRunner:
         analyzer.run_complete_analysis()
         end_ns = time.perf_counter_ns()
         records = self._count_fold_records(paradigm_name)
+        if hasattr(analyzer, 'conn_manager'):
+            analyzer.conn_manager.close_connection()
+        del analyzer
         return end_ns - start_ns, records
 
     def _phase_hierarchical_generic(self, paradigm_name: str) -> Tuple[int, Optional[int]]:
@@ -383,6 +390,9 @@ class BenchmarkRunner:
         model.run_hierarchical_analysis()
         end_ns = time.perf_counter_ns()
         records = self._count_fold_records(paradigm_name)
+        if hasattr(model, 'conn_manager'):
+            model.conn_manager.close_connection()
+        del model
         return end_ns - start_ns, records
 
     def _count_fold_records(self, paradigm_name: str) -> Optional[int]:
@@ -398,14 +408,17 @@ class BenchmarkRunner:
                 folds_cfg = json.load(f)["folds"]
             if not os.path.exists(master_path):
                 return None
-            df = pd.read_parquet(master_path, columns=["year"])
+            import pyarrow.parquet as pq
+            table = pq.read_table(master_path, columns=["year"])
+            years = table.column("year").to_pylist()
+            del table
             records = 0
             for fold in folds_cfg:
                 for s, e in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
-                    records += int(len(df[(df["year"] >= fold[s]) & (df["year"] <= fold[e])]))
+                    records += sum(1 for y in years if fold[s] <= y <= fold[e])
             return records
         except Exception:
-            return None  # Melhor esforço: contagem ausente não invalida a latência
+            return None
 
     # --------------------------- execução ----------------------------------
     # Fases "upstream" (coleta + processamento) são infraestrutura compartilhada
