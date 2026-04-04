@@ -16,8 +16,8 @@ A demonstração embarcada compara DuckDB (schema-on-write), Dask (schema-on-rea
 Requisitos mínimos: Python 3.10+, 8 GB de RAM, 10 GB livres em disco.
 
 ```bash
-git clone https://github.com/anonymous/dw-vs-dl-dropout-prediction-latam.git
-cd dw-vs-dl-dropout-prediction-latam
+git clone https://github.com/anonymous/archbench-framework.git
+cd archbench-framework
 python -m venv .venv
 source .venv/bin/activate        # Linux/macOS
 # .venv\Scripts\activate        # Windows

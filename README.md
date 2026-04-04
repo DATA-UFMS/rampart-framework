@@ -1,27 +1,45 @@
-# dw-vs-dl-dropout-prediction-latam
+# archbench-framework
 
-Framework open-source para benchmarking reprodutivel de arquiteturas de dados, comparando **tres paradigmas** (DuckDB, Dask, Polars), com **verificacao automatica de anti-leakage temporal**.
+Framework para benchmarking reprodutível de arquiteturas de dados com verificação automática de anti-leakage temporal. Compara DuckDB, Dask e Polars processando os mesmos dados e modelos, verificando se os resultados preditivos são estatisticamente equivalentes.
+
+## Quickstart
+
+Requisitos: Python 3.10+, 8 GB RAM, acesso à internet (coleta dados da World Bank API, sem API key).
+
+```bash
+git clone https://github.com/anonymous/archbench-framework.git
+cd archbench-framework
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+python pipeline.py          # ~20 min na primeira execução (coleta + processamento + benchmark)
+pytest tests/               # 80 testes, ~2s
+```
+
+O pipeline gera artefatos em `outputs/`: folds temporais, métricas de benchmark (CSV/JSON) e tabelas LaTeX. Execuções subsequentes usam cache e levam ~5 min.
+
+## O que faz
 
 ```mermaid
 flowchart LR
     subgraph U["Upstream -- 1x"]
-        A["World Bank API"] --> B["Coleta + Imputacao"]
+        A["World Bank API\n32 países, 2000-2023"] --> B["Coleta + Imputação"]
     end
 
     B --> DW & DL & PL
 
-    DW["DuckDB\nSQL -- schema-on-write"]:::dw
-    DL["Dask\ndistributed -- schema-on-read"]:::dl
-    PL["Polars\nlazy eval -- Arrow"]:::pl
+    DW["DuckDB\nschema-on-write"]:::dw
+    DL["Dask\nschema-on-read"]:::dl
+    PL["Polars\nlazy evaluation"]:::pl
 
     DW & DL & PL --> S
 
     subgraph D["Downstream -- Nx"]
         S["Setup ML"] --> G{{"Anti-Leak\nGate"}}:::gate
-        G --> M["Baseline + Hierarquico"]
+        G --> M["Ridge + Random Forest"]
     end
 
-    M --> V["Bootstrap CI + Effect Sizes"] --> T["LaTeX"]
+    M --> V["Bootstrap CI\n+ Effect Sizes"] --> T["LaTeX"]
 
     classDef dw fill:#1e88e5,stroke:#0d47a1,color:#fff,font-weight:bold
     classDef dl fill:#43a047,stroke:#1b5e20,color:#fff,font-weight:bold
@@ -29,270 +47,122 @@ flowchart LR
     classDef gate fill:#e53935,stroke:#b71c1c,color:#fff,font-weight:bold
 ```
 
-## O problema
+Os mesmos dados do Banco Mundial (evasão escolar, 32 países, 2000–2023) são processados em três backends — **DuckDB** (SQL analítico), **Dask** (DataFrames distribuídos) e **Polars** (lazy evaluation) — e alimentam os mesmos modelos (Ridge hierárquico + Random Forest). Um **gate anti-leakage** valida integridade temporal antes de cada execução de modelo; se qualquer fold violar as garantias, o pipeline interrompe com `ValueError`.
 
-Leakage temporal e uma das principais causas de resultados irreplicaveis em machine learning aplicado a educacao. Kapoor & Narayanan (2023) auditaram 294 papers e encontraram leakage em uma parcela significativa deles. Em analytics educacional, o cenario e agravado pela escassez de validacao temporal rigorosa e pela ausencia de ferramentas que automatizem essa verificacao.
+A comparação estatística usa SESOI (menor efeito de interesse prático) com IC 95% por bootstrap, complementada por Wilcoxon pareado e Hodges–Lehmann. O objetivo é testar se a escolha de paradigma de processamento introduz viés nos resultados — a contribuição é o protocolo, não o resultado preditivo.
 
-## O que este repositorio faz
+## Anti-leakage (P1–P5)
 
-Este framework fornece um **protocolo reutilizavel de benchmarking com verificacao anti-leakage** para pipelines de ML, demonstrado com dados publicos do Banco Mundial (32 paises, 2000-2023) para predicao de evasao escolar. A contribuicao principal e o protocolo, nao o resultado preditivo.
+O pipeline aplica 5 verificações automáticas em todos os paradigmas:
 
-Como caso de uso, o pipeline processa os mesmos dados em tres fluxos de processamento distintos -- **DuckDB** (SQL analitico, schema-on-write), **Dask** (DataFrames distribuidos, schema-on-read) e **Polars** (lazy evaluation, schema-on-read) -- e verifica se o resultado preditivo e estatisticamente equivalente independente do backend. Isso testa se a escolha de paradigma de processamento introduz vies nos resultados de ML, uma pergunta que a literatura de analytics educacional nao aborda sistematicamente.
+| Protocolo | Verificação | Enforcement |
+|-----------|------------|-------------|
+| P1 | Ordenação temporal dos splits | `ValueError` em runtime |
+| P2 | Gap mínimo de 2 anos entre splits | `ValueError` em runtime |
+| P3 | Separação de features + detecção de proxy | `ValueError` em runtime |
+| P4 | Feature selection restrita ao treino | `ValueError` em runtime |
+| P5 | Scaling/imputação ajustados só no treino | Contrato + testes unitários |
 
-O pipeline executa coleta, processamento, treinamento e benchmark de ponta a ponta, com um **gate anti-leakage** que interrompe a execucao se qualquer fold violar integridade temporal. Inclui testes de injecao que deliberadamente tentam quebrar o gate para provar que ele funciona.
+A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre treino/validação e validação/teste, garantindo que nenhuma informação futura contamine o modelo. Isso produz 9 folds ao longo de 23 anos de dados (Kapoor & Narayanan, 2023).
 
-### Por que tres paradigmas?
-
-A comparacao original (DuckDB vs Dask) cobria os extremos do espectro: SQL analitico in-process versus DataFrames distribuidos. Polars ocupa um nicho intermediario -- lazy evaluation single-machine com otimizacao de query plan, sem overhead de coordenacao distribuida (Dask) e sem linguagem SQL (DuckDB). Isso permite testar se a equivalencia preditiva se mantem nao apenas entre extremos, mas tambem em um paradigma que combina caracteristicas de ambos: schema-on-read como o Data Lake, mas execucao in-process como o Data Warehouse. Com N=3 paradigmas, a generalizacao da tese ("a arquitetura de processamento nao introduz vies nos resultados de ML") e mais robusta do que com N=2.
-
-### Walk-forward temporal
-
-O framework usa validacao walk-forward com gaps de 2 anos entre treino e teste, garantindo que nenhuma informacao futura contamine o modelo. O diagrama abaixo mostra como os 9 folds se distribuem ao longo de 23 anos de dados:
-
-```mermaid
-gantt
-    title Walk-Forward Temporal (9 folds, gap = 2 anos)
-    dateFormat YYYY
-    axisFormat %Y
-    todayMarker off
-
-    section Fold 1
-    Treino 2000-2005      :done, f1t, 2000, 2006
-    Gap                   :crit, f1g, 2006, 2008
-    Val 2008              :active, f1v, 2008, 2009
-    Teste 2009            :f1e, 2009, 2010
-
-    section Fold 2
-    Treino 2000-2007      :done, f2t, 2000, 2008
-    Gap                   :crit, f2g, 2008, 2010
-    Val 2010              :active, f2v, 2010, 2011
-    Teste 2011            :f2e, 2011, 2012
-
-    section Fold 3
-    Treino 2000-2009      :done, f3t, 2000, 2010
-    Gap                   :crit, f3g, 2010, 2012
-    Val 2012              :active, f3v, 2012, 2013
-    Teste 2013            :f3e, 2013, 2014
-
-    section Fold 5
-    Treino 2000-2013      :done, f5t, 2000, 2014
-    Gap                   :crit, f5g, 2014, 2016
-    Val 2016              :active, f5v, 2016, 2017
-    Teste 2017            :f5e, 2017, 2018
-
-    section Fold 9
-    Treino 2000-2017      :done, f9t, 2000, 2018
-    Gap                   :crit, f9g, 2018, 2020
-    Val 2020              :active, f9v, 2020, 2021
-    Teste 2021-2023       :f9e, 2021, 2024
-```
-
-### Protocolo anti-leakage (P1-P5)
-
-```mermaid
-stateDiagram-v2
-    direction LR
-
-    state "Dados Temporais" as INPUT
-    state fork_state <<fork>>
-    state join_state <<join>>
-
-    state "P1: Ordenacao\ntemporal" as P1
-    state "P2: Gap\nminimo 2a" as P2
-    state "P3: Separacao\nde features" as P3
-    state "P4: Selecao no\nescopo do treino" as P4
-    state "P5: Scaling/imput.\nso no treino" as P5
-
-    state check <<choice>>
-
-    state "Pipeline ML\n(baseline + hierarquico)" as ML
-    state "ValueError!\nExecucao interrompida" as FAIL
-
-    INPUT --> fork_state
-    fork_state --> P1
-    fork_state --> P2
-    fork_state --> P3
-    fork_state --> P4
-    fork_state --> P5
-    P1 --> join_state
-    P2 --> join_state
-    P3 --> join_state
-    P4 --> join_state
-    P5 --> join_state
-    join_state --> check
-    check --> ML : Todas OK
-    check --> FAIL : Qualquer violacao
-```
-
-### DuckDB vs Dask vs Polars: o que cada um faz
-
-```mermaid
-block-beta
-    columns 4
-
-    space header["Mesmo dado, mesmo modelo, backends diferentes"] space space
-
-    block:dw:1
-        columns 1
-        dw_title["Data Warehouse"]
-        dw1["DuckDB in-process"]
-        dw2["SQL views (zero I/O)"]
-        dw3["Schema-on-write"]
-        dw4["Buffer pool implicito"]
-        dw5["LAG() window functions"]
-    end
-
-    block:shared:1
-        columns 1
-        sh_title["Compartilhado"]
-        sh1["World Bank API"]
-        sh2["9 walk-forward folds"]
-        sh3["Ridge + Random Forest"]
-        sh4["Anti-leakage gate"]
-        sh5["SESOI + Bootstrap CI"]
-    end
-
-    block:dl:1
-        columns 1
-        dl_title["Data Lake"]
-        dl1["Dask distributed"]
-        dl2["Parquet materializado"]
-        dl3["Schema-on-read"]
-        dl4[".persist() explicito"]
-        dl5["merge() para lags"]
-    end
-
-    block:pl:1
-        columns 1
-        pl_title["Polars DataFrame"]
-        pl1["Polars lazy engine"]
-        pl2["Schema-on-read (Parquet)"]
-        pl3["In-process, single-machine"]
-        pl4["Expressions idiomaticas"]
-        pl5["Query plan optimizer"]
-    end
-
-    style header fill:transparent,stroke:none,color:#333
-    style dw_title fill:#42a5f5,stroke:#1565c0,color:#fff
-    style dl_title fill:#66bb6a,stroke:#2e7d32,color:#fff
-    style pl_title fill:#ffa726,stroke:#e65100,color:#fff
-    style sh_title fill:#ff9800,stroke:#e65100,color:#fff
-    style dw fill:#e3f2fd,stroke:#1565c0
-    style shared fill:#fff3e0,stroke:#e65100
-    style dl fill:#e8f5e9,stroke:#2e7d32
-    style pl fill:#ffe0b2,stroke:#e65100
-```
-
-### Separacao upstream / downstream
-
-O benchmark separa o pipeline em duas camadas:
-
-- **Upstream** (1x) -- coleta e processamento produzem dados deterministicos identicos em toda execucao. Repeti-los N vezes apenas desperdicaria tempo com chamadas HTTP e I/O sem adicionar informacao estatistica.
-
-- **Downstream** (Nx) -- setup, baseline e hierarchical contem a logica arquitetural que diferencia os paradigmas. Sao repetidos N vezes para derivar intervalos de confianca e effect sizes.
-
-### Garantias de fairness no benchmark
-
-Cada iteracao do benchmark aplica 4 controles:
-
-1. **Ordem randomizada** -- `random.Random(42)` decide a ordem DW/DL/PL a cada iteracao. Elimina vies sistematico de OS page cache.
-2. **gc.collect()** -- garbage collection forcado entre cada execucao de arquitetura e entre fases. Evita que objetos residuais beneficiem ou prejudiquem a proxima.
-3. **Feature set unificado** -- todas as arquiteturas entram no filtro de colinearidade com o mesmo conjunto base de features.
-4. **Amostragem normalizada** -- a matriz de correlacao e computada sobre a mesma populacao de linhas completas em todos os paradigmas.
-
-### Garantias do pipeline
-
-- **Anti-leakage automatico (P1-P5)** em todas as 3 arquiteturas -- ordenacao temporal (P1), gap minimo de 2 anos (P2), separacao de features e deteccao de proxy (P3), escopo temporal da selecao de features (P4), e escopo de preprocessing com scaling/imputacao ajustados exclusivamente no treino (P5). Violacoes de P1-P4 geram `ValueError` e interrompem a execucao; P5 e enforced por contrato e testes unitarios. Cobre as principais categorias de leakage identificadas por Kapoor & Narayanan (2023).
-- **HPO sem contaminacao** -- hiperparametros selecionados via grid search no conjunto de validacao; modelo final retreinado no treino completo. Previne leakage por otimizacao no conjunto de teste.
-- **Equivalencia estatistica, nao p-hacking** -- comparacao arquitetural via SESOI + IC 95% por bootstrap, com Wilcoxon e Hodges-Lehmann como suporte. Limiares SESOI definidos a priori: R2 = 0.01, MASE = 0.05, WAPE = 0.05 (Lakens et al., 2018).
-- **Reprodutibilidade integral** -- seeds centralizadas, `n_jobs=1`, snapshot de ambiente (packages, hardware, git commit) e 80 testes automatizados.
-- **Extensivel por design** -- `BaseArchitectureML` (11 metodos abstratos, Template Method) com auto-descoberta de paradigmas via `__init_subclass__`; novas arquiteturas sao registradas automaticamente ao serem importadas, sem editar codigo existente.
-
-### Limitacoes explicitas
-
-Os dados sao macro-educacionais (agregados por pais/ano), nao logs individuais de alunos. O walk-forward com gaps de 2 anos produz n=9 folds, o maximo sem comprometer o anti-leakage temporal. Isso limita o poder do Wilcoxon pareado (~30% para efeitos medios), por isso a decisao primaria usa bootstrap CI e o Wilcoxon e complemento de robustez. Um resultado "inconclusivo" e esperado e reflete a precisao disponivel, nao falha metodologica (Lakens et al., 2018).
-
-## Quickstart
-
-```bash
-git clone https://github.com/anonymous/dw-vs-dl-dropout-prediction-latam.git
-cd dw-vs-dl-dropout-prediction-latam
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Pipeline completo: coleta -> validacao -> benchmark -> artefatos LaTeX
-python pipeline.py
-
-# Testes (80 testes)
-pytest tests/
-```
-
-## Estrutura do projeto
+## Estrutura
 
 ```
 src/
-├── core/                    # Base do framework
-│   ├── base_architecture.py # Classe abstrata (Template Method, 11 metodos)
-│   ├── paradigm_registry.py # Auto-descoberta de paradigmas via __init_subclass__
-│   ├── validation.py        # TemporalValidator + DataIntegrityValidator
-│   ├── scientific_config.py # Parametros centralizados (gaps, SESOI, seeds)
-│   └── models/baseline.py   # Estrategias de modelos baseline (Ridge, RF)
-├── collection/              # Coleta e processamento de dados brutos
-│   ├── raw_data_collector.py
-│   ├── data_lake/           # Processador Dask (schema-on-read)
-│   ├── data_warehouse/      # Processador DuckDB (schema-on-write)
-│   └── polars_dataframe/    # Processador Polars (lazy evaluation)
-├── architectures_ml/        # Implementacoes por arquitetura
-│   ├── data_lake/           # Setup ML + modelos hierarquicos (Ridge, RF)
-│   ├── data_warehouse/      # Setup ML + modelos hierarquicos (Ridge, RF)
-│   └── polars_dataframe/    # Setup ML + modelos hierarquicos (Ridge, RF)
-├── benchmarking/            # Instrumentacao e derivacao de metricas
-└── statistical_validation/  # Equivalencia, bootstrap, effect sizes, scorecard
-tests/
-├── test_unit_core.py        # Testes unitarios (transforms, folds, anti-leakage)
-├── test_framework_discovery.py # Testes de auto-descoberta de paradigmas
-├── test_dataset_config.py   # Testes de configuracao de datasets
-└── test_lag_anti_leak.py    # Testes de integridade temporal
-pipeline.py                  # Orquestra tudo
+├── core/
+│   ├── base_architecture.py    # Classe abstrata (Template Method)
+│   ├── paradigm_registry.py    # Auto-descoberta via __init_subclass__
+│   ├── validation.py           # TemporalValidator + DataIntegrityValidator
+│   ├── scientific_config.py    # Parâmetros centralizados (gaps, SESOI, seeds)
+│   ├── dataset_config.py       # Protocol + registry de datasets
+│   ├── config.py               # Paths, países, configurações gerais
+│   ├── indicators.py           # Indicadores World Bank
+│   ├── logging_config.py       # Logging estruturado
+│   └── models/baseline.py      # Modelos baseline (Ridge, RF)
+├── collection/
+│   ├── raw_data_collector.py   # Coleta World Bank API
+│   ├── inep_collector.py       # Coleta INEP Censo Escolar
+│   ├── data_lake/              # Processador Dask
+│   ├── data_warehouse/         # Processador DuckDB
+│   └── polars_dataframe/       # Processador Polars
+├── datasets/
+│   ├── worldbank.py            # Config World Bank (32 países, 2000-2023)
+│   └── inep_censo.py           # Config INEP (5570 municípios, 2007-2024)
+├── architectures_ml/           # Setup + modelos por paradigma
+│   ├── data_lake/
+│   ├── data_warehouse/
+│   └── polars_dataframe/
+├── benchmarking/               # Instrumentação e métricas de latência
+└── statistical_validation/     # Equivalência, bootstrap, effect sizes
+tests/                          # 80 testes (unitários, discovery, anti-leakage)
+pipeline.py                     # Orquestra o pipeline completo
 ```
 
-### Estrutura de outputs
+### Outputs
 
 ```
 outputs/
-├── collection/
-│   ├── raw_data/                          # Dados brutos
-│   ├── data_lake/                         # Parquet particionado (Dask)
-│   ├── data_warehouse/                    # DuckDB + Parquet
-│   └── polars_dataframe/                  # Parquet (Polars)
-├── ml_pipeline/
-│   └── architectures/
-│       ├── data_lake/prep/                # Folds, features, modelos DL
-│       ├── data_warehouse/prep/           # Folds, features, modelos DW
-│       └── polars_dataframe/prep/         # Folds, features, modelos PL
-├── benchmarks/
-│   ├── architectural_benchmark_results.csv
-│   ├── architectural_benchmark_resource_log.jsonl
-│   └── architectural_benchmark_summary.json
-└── statistics/
-    ├── effect_sizes_summary.csv/json
-    ├── significance_summary.csv/json
-    ├── equivalence_estimation.json/tex
-    └── architectural_scorecard.tex
+├── collection/                 # Dados brutos e processados por paradigma
+├── ml_pipeline/architectures/  # Folds, features, resultados de modelos
+├── benchmarks/                 # CSV + JSONL de latência e uso de recursos
+└── statistics/                 # Effect sizes, significância, scorecard LaTeX
 ```
 
-## Como adaptar para seu dominio
+## Extensão
 
-1. **Nova arquitetura** -- crie uma subclasse de `BaseArchitectureML` em `src/architectures_ml/<novo>/setup.py` com `PARADIGM_META` definido. O framework descobre automaticamente via `__init_subclass__` -- nenhum arquivo existente precisa ser editado.
+### Novo paradigma
 
-2. **Novos parametros** -- edite `src/core/scientific_config.py`: gaps temporais, limiares SESOI, embargo, bootstrap iterations.
+Crie uma subclasse de `BaseArchitectureML` com `PARADIGM_META` definido. O framework descobre automaticamente via `__init_subclass__` — nenhum arquivo existente precisa ser editado. As verificações anti-leakage são herdadas.
 
-3. **Novas metricas** -- estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrao de entrada/saida JSON -> LaTeX dos scripts existentes.
+```python
+# src/architectures_ml/meu_paradigma/setup.py
+class MeuParadigmaML(BaseArchitectureML):
+    PARADIGM_META = {
+        'name': 'meu_paradigma',
+        'label': 'Meu Paradigma',
+        'setup_script': 'src/architectures_ml/meu_paradigma/setup.py',
+        # ... módulos de processamento, baseline e hierárquico
+    }
+    # Implementar métodos abstratos: setup_environment, load_data,
+    # validate_data, create_target_implementation, save_folds,
+    # compute_feature_correlations, apply_collinearity_filter,
+    # get_numeric_features, prepare_features, entre outros.
+```
 
-4. **Outro dominio** -- ajuste os indicadores no coletor de dados e os limiares SESOI. Os protocolos permanecem os mesmos.
+### Novo dataset
+
+O framework suporta múltiplos datasets via `DatasetConfig`. Já inclui World Bank (32 países) e INEP Censo Escolar (5570 municípios brasileiros):
+
+```bash
+python pipeline.py                        # World Bank (default)
+python pipeline.py --dataset inep_censo   # INEP
+```
+
+Para adicionar um dataset, implemente um `DatasetConfig` em `src/datasets/` e um coletor em `src/collection/`. O adapter pattern converte dados para o schema interno (`country_code`, `year`, features numéricas) sem modificar processadores ou modelos.
+
+### Parâmetros
+
+Edite `src/core/scientific_config.py`: gaps temporais, limiares SESOI, embargo, bootstrap iterations, seed.
+
+### Métricas
+
+Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão JSON → LaTeX.
+
+## Decisões metodológicas
+
+- **Walk-forward com gap=2 anos** produz 9 folds, o máximo sem comprometer anti-leakage. Isso limita o poder do Wilcoxon pareado (~30% para efeitos médios); por isso a decisão primária usa bootstrap CI e o Wilcoxon é complemento (Lakens et al., 2018).
+- **Fairness no benchmark**: ordem DW/DL/PL randomizada por iteração (seed=42), `gc.collect()` entre fases, feature set e amostragem normalizados entre paradigmas.
+- **Upstream executa 1x** (coleta + processamento produzem dados determinísticos); **downstream executa Nx** (setup + modelos são o alvo do benchmark).
+
+## Reprodutibilidade
+
+- Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
+- Snapshot de ambiente: packages, hardware, git commit
+- `requirements-lock.txt` com versões exatas
+- 80 testes automatizados (`pytest tests/`)
 
 Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 
 ---
 
-**Contato**: [Removido para revisao double-blind]
+**Contato**: [Removido para revisão double-blind]
