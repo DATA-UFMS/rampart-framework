@@ -527,51 +527,28 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
     def compute_feature_correlations(self, df: pl.DataFrame,
                                      features: List[str]) -> Dict[str, float]:
         """
-        Computa correlações de Pearson feature-target via amostragem e Polars.
+        Computa correlacoes de Pearson feature-target usando dados completos.
 
         Args:
             df: DataFrame Polars com dados educacionais completos
-            features: Lista de features candidatas para análise de correlação
+            features: Lista de features candidatas para analise de correlacao
 
         Returns:
-            Dicionário {feature_name: absolute_correlation} para ranking
+            Dicionario {feature_name: absolute_correlation} para ranking
 
-        Metodologia híbrida Polars-Pandas:
-            1. Polars sampling: Amostragem eficiente com seed reprodutível
-            2. Pandas correlation: Cálculo preciso de correlação após conversão
-            3. Equivalência: Resultados idênticos ao DL/DW para benchmarking
-
-        Amostragem:
-            - Tamanho ótimo: min(10k, total_rows) baseado em Central Limit Theorem
-            - Seed reprodutível: Garante determinismo entre execuções
+        Metodologia:
+            1. Materializa dados completos de treino (sem amostragem)
+            2. Calcula correlacao Pearson via pandas para cada feature
+            3. Retorna valor absoluto para ranking por relevancia
         """
         print("Analisando correlacoes feature-target")
 
         target_col = self.target_column
         correlations = {}
 
-        total_rows = len(df)
-        use_sampling = bool(self.config.get('correlation_sampling', True))
-        min_sample = int(self.config.get('correlation_min_sample_size', 5000))
-        frac = float(self.config.get('correlation_sample_fraction', 0.1))
+        sample_pd = df.select([target_col] + features).drop_nulls(subset=[target_col]).to_pandas()
 
-        if use_sampling and total_rows > min_sample:
-            sample_size = max(min_sample, int(total_rows * frac))
-            sample_frac = min(sample_size / total_rows, 1.0)
-        else:
-            sample_size = total_rows
-            sample_frac = 1.0
-
-        print(f"  Amostragem: {sample_size:,}/{total_rows:,} ({sample_frac:.1%})")
-
-        if sample_frac >= 0.9999:
-            sample_df = df
-        else:
-            sample_df = df.sample(fraction=sample_frac, seed=self.config['random_seed'])
-
-        sample_pd = sample_df.to_pandas()
-
-        print(f"  Amostra materializada: {len(sample_pd):,} obs, {len(features)} features")
+        print(f"  Dados materializados: {len(sample_pd):,} obs, {len(features)} features")
 
         successful_correlations = 0
         failed_features = []
@@ -629,10 +606,9 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             2. Features subsequentes aceitas se max |r| < threshold
             3. Ordem preservada para determinismo
 
-        Amostragem híbrida Polars-Pandas:
-            - Polars: Amostragem eficiente via Polars
-            - Pandas: Matriz de correlação precisa após materialização
-            - Equivalência: Resultados idênticos ao DL/DW SQL
+        Materializacao:
+            - Dados completos de treino (sem amostragem)
+            - Matriz de correlacao via pandas apos conversao
         """
         if len(features) <= 1:
             print("  Menos de 2 features - colinearidade desnecessaria")
@@ -640,33 +616,13 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
 
         print(f"Filtrando colinearidade: {len(features)} features")
 
-        # Configuração de amostragem
-        total_rows = len(df)
-
-        min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
-        sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
-
-        min_sample_size = max(min_sample_absolute, int(total_rows * sample_fraction))
-        sample_frac = min(min_sample_size / total_rows, 1.0)
-
-        print(f"  Amostragem: {min_sample_size:,} registros ({sample_frac:.1%})")
-
         try:
-            # Amostragem Polars
-            if sample_frac >= 0.9999:
-                corr_sample_df = df.select(features)
-            else:
-                corr_sample_df = df.select(features).sample(
-                    fraction=sample_frac,
-                    seed=self.config['random_seed']
-                )
+            corr_data = df.select(features).to_pandas().dropna()
 
-            corr_data = corr_sample_df.to_pandas().dropna()
+            valid_rows = len(corr_data)
+            print(f"  {valid_rows:,} observacoes validas pos-dropna")
 
-            actual_sample_size = len(corr_data)
-            print(f"  {actual_sample_size:,} observacoes validas pos-dropna")
-
-            if actual_sample_size > 10:  # Mínimo estatístico
+            if valid_rows > 10:
                 corr_matrix = corr_data.corr().abs()
 
                 selected = []
@@ -704,7 +660,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 return selected
 
             else:
-                print(f"  Amostra inadequada ({actual_sample_size}<=10) - fallback top-10")
+                print(f"  Dados insuficientes ({valid_rows}<=10) - fallback top-10")
                 return features[:10]
 
         except (ValueError, TypeError, np.linalg.LinAlgError) as e:

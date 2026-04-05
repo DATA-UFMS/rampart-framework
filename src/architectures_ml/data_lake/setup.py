@@ -539,57 +539,29 @@ class DataLakeArchitectureML(BaseArchitectureML):
     def compute_feature_correlations(self, ddf: dd.DataFrame,
                                     features: List[str]) -> Dict[str, float]:
         """
-        Computa correlações de Pearson feature-target via amostragem.
-        
+        Computa correlações de Pearson feature-target sobre dados completos.
+
         Args:
             ddf: DataFrame Dask com dados educacionais completos
             features: Lista de features candidatas para análise de correlação
-            
+
         Returns:
             Dicionário {feature_name: absolute_correlation} para ranking
-            
-        Metodologia híbrida Dask-Pandas:
-            1. Dask sampling: Amostragem distribuída eficiente para datasets >10GB
-            2. Pandas correlation: Cálculo preciso de correlação após materialização
-            3. Equivalência SQL: Resultados idênticos ao Data Warehouse para benchmarking
-            
-        Amostragem:
-            - Tamanho ótimo: min(10k, total_rows) baseado em Central Limit Theorem
-            - Seed reprodutível: Garante determinismo entre execuções
-            - Random sampling: Preserva distribuição populacional (Cochran, 1977)
-            
-        Justificativa da abordagem:
-            Para equivalência com SQL Data Warehouse, materialização
-            da amostra é necessária. Overhead computacional é aceitável pois
-            correlação é step único na seleção de features.
-            
+
+        Metodologia:
+            Materializa o conjunto completo de treino e calcula correlação
+            pairwise Pearson entre cada feature e o target. Para datasets
+            na escala deste benchmark (~22K linhas), a materialização
+            completa é viável e elimina variância de amostragem.
         """
         print("Analisando correlacoes feature-target")
-        
+
         target_col = self.target_column
         correlations = {}
-        
-        total_rows = int(ddf.index.size.compute())
-        use_sampling = bool(self.config.get('correlation_sampling', True))
-        min_sample = int(self.config.get('correlation_min_sample_size', 5000))
-        frac = float(self.config.get('correlation_sample_fraction', 0.1))
 
-        if use_sampling and total_rows > min_sample:
-            sample_size = max(min_sample, int(total_rows * frac))
-            sample_frac = min(sample_size / total_rows, 1.0)
-        else:
-            sample_size = total_rows
-            sample_frac = 1.0
+        sample_df = ddf[features + [target_col]].compute().dropna(subset=[target_col])
 
-        print(f"  Amostragem: {sample_size:,}/{total_rows:,} ({sample_frac:.1%})")
-
-        sample_ddf = ddf if sample_frac >= 0.9999 else ddf.sample(
-            frac=sample_frac,
-            random_state=self.config['random_seed']
-        )
-        sample_df = sample_ddf.compute()  # Materialização para Pandas
-        
-        print(f"  Amostra materializada: {len(sample_df):,} obs, {len(features)} features")
+        print(f"  Dados materializados: {len(sample_df):,} obs, {len(features)} features")
         
         successful_correlations = 0
         failed_features = []
@@ -646,13 +618,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         Algoritmo greedy:
             1. Primeira feature sempre aceita (baseline)
             2. Features subsequentes aceitas se max |r| < threshold
-            3. Ordem preservada para determinismo
-
-        Amostragem híbrida Dask-Pandas:
-            - Dask: Amostragem distribuída eficiente para datasets >10GB
-            - Pandas: Matriz de correlação precisa após materialização
-            - Equivalência: Resultados idênticos ao Data Warehouse SQL
-
+            3. Ordem determinística (features sorted)
         """
         if len(features) <= 1:
             print("  Menos de 2 features - colinearidade desnecessaria")
@@ -660,30 +626,12 @@ class DataLakeArchitectureML(BaseArchitectureML):
 
         print(f"Filtrando colinearidade: {len(features)} features")
 
-        # Configuração de amostragem
-        total_rows = float(ddf.index.size.compute())
-
-        min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
-        sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
-
-        min_sample_size = max(min_sample_absolute, int(total_rows * sample_fraction))
-        sample_frac = min(min_sample_size / total_rows, 1.0)
-
-        print(f"  Amostragem: {min_sample_size:,} registros ({sample_frac:.1%})")
-
         try:
-            # Amostragem distribuída Dask
-            corr_sample_ddf = ddf[features].sample(
-                frac=sample_frac,
-                random_state=self.config['random_seed']
-            )
+            corr_data = ddf[features].compute().dropna()
 
-            corr_data = corr_sample_ddf.compute().dropna()
+            print(f"  {len(corr_data):,} observacoes validas pos-dropna")
 
-            actual_sample_size = len(corr_data)
-            print(f"  {actual_sample_size:,} observacoes validas pos-dropna")
-
-            if actual_sample_size > 10:  # Mínimo estatístico
+            if len(corr_data) > 10:
                 corr_matrix = corr_data.corr().abs()
 
                 selected = []
@@ -721,7 +669,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 return selected
 
             else:
-                print(f"  Amostra inadequada ({actual_sample_size}<=10) - fallback top-10")
+                print(f"  Dados insuficientes ({len(corr_data)}<=10) - fallback top-10")
                 return features[:10]
 
         except Exception as e:

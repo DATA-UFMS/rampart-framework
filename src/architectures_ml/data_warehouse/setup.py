@@ -12,6 +12,8 @@ import os
 import sys
 from typing import List, Dict, Any
 
+import pandas as pd
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from core.base_architecture import BaseArchitectureML
@@ -726,305 +728,118 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
     def compute_feature_correlations(self, data: Any,
                                     features: List[str]) -> Dict[str, float]:
         """
-        Computa correlações de Pearson feature-target via SQL nativo otimizado.
-        
+        Computa correlacoes de Pearson feature-target sobre dados de treino.
+
         Args:
-            data: Ignorado - análise executada via SQL no Data Warehouse
-            features: Lista de features candidatas para análise de correlação
-            
+            data: DataFrame pandas filtrado ao periodo de treino
+            features: Lista de features candidatas para analise de correlacao
+
         Returns:
-            Dicionário {feature_name: absolute_correlation} ordenado por relevância
-            
-        Metodologia estatística:
-            Utiliza correlação de Pearson (r) como proxy de associação linear:
-            r = Cov(X,Y) / (σ_X × σ_Y)
-            
-        Justificativas:
-            1. Valor absoluto: |r| indica força da relação independente da direção
-            2. Correlação Pearson: Adequada para relações lineares (assunção ML)
-            3. Tratamento de zeros: Variáveis constantes recebem r=0 automaticamente
-            
-        Implementação SQL:
-            - CTE reutilizável para estatísticas descritivas
-            - Single-pass calculation para eficiência O(n)
-            - Tratamento de divisão por zero e NULLs
-            
-        Limitações:
-            - Detecta apenas associações lineares (ignora não-linearidades)
-            - Sensível a outliers extremos (não usa correlação robusta)
-            - Assume distribuições contínuas (inadequado para categóricas)
-        
+            Dicionario {feature_name: absolute_correlation} para ranking
         """
         print(f"Analisando correlacao de {len(features)} features com target")
-        
+
         target_col = self.target_column
         correlations = {}
         failed_features = []
 
-        # Decidir base da análise (amostra vs full table) conforme scientific_config
-        use_sampling = bool(self.config.get('correlation_sampling', True))
-        min_sample = int(self.config.get('correlation_min_sample_size', 5000))
-        frac = float(self.config.get('correlation_sample_fraction', 0.1))
-        base_table = 'analytics_wide'
+        df = data[features + [target_col]].dropna(subset=[target_col])
+        print(f"  {len(df):,} observacoes validas")
 
-        sample_view_name = 'vw_corr_sample'
-        try:
-            total_rows = int(self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide"))
-        except Exception:
-            total_rows = 0
-        if use_sampling and total_rows > min_sample:
-            final_sample_size = max(min_sample, int(total_rows * frac))
-            seed_float = (self.config.get('random_seed', 42) % 100) / 100.0
+        for feat in features:
             try:
-                self.conn_manager.execute_sql_no_return(f"SELECT setseed({seed_float})")
-            except Exception:
-                pass
-            try:
-                self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
-                sampling_query = f"""
-                    CREATE OR REPLACE VIEW {sample_view_name} AS
-                    SELECT * FROM analytics_wide
-                    WHERE {target_col} IS NOT NULL
-                    ORDER BY RANDOM()
-                    LIMIT {final_sample_size}
-                """
-                self.conn_manager.execute_sql_no_return(sampling_query)
-                base_table = sample_view_name
-                print(f"  Amostragem: {final_sample_size:,}/{total_rows:,} observacoes (~{final_sample_size/total_rows:.1%})")
-            except SQLProcessingError as e:
-                print(f"  [WARN] Falha ao criar view amostrada: {e}. Usando tabela completa.")
-                base_table = 'analytics_wide'
+                corr = df[feat].corr(df[target_col])
 
-        # Análise batch para features com schema similar
-        
-        for i, feat in enumerate(features):
-            try:
-                correlation_query = f"""
-                    SELECT
-                        COALESCE(CORR({feat}, {target_col}), 0.0) as pearson_correlation,
-                        COUNT(*) as sample_size
-                    FROM {base_table}
-                    WHERE {feat} IS NOT NULL
-                    AND {target_col} IS NOT NULL
-                """
-                
-                result = self.conn_manager.execute_sql(correlation_query)
-                
-                if not result.empty:
-                    correlation = float(result.iloc[0]['pearson_correlation'] or 0.0)
-                    sample_size = int(result.iloc[0]['sample_size'] or 0)
-                    
-                    if sample_size < 10:
-                        print(f"  {feat}: Amostra pequena (n={sample_size}), correlacao nao confiavel")
-                        correlations[feat] = 0.0
-                    else:
-                        # Valor absoluto para ranking por força da associação
-                        correlations[feat] = abs(correlation)
-                        
-                        if abs(correlation) > 0.7:
-                            print(f"  {feat}: r={correlation:.3f} (alta)")
-                        elif abs(correlation) > 0.3:
-                            print(f"  {feat}: r={correlation:.3f} (moderada)")
-                else:
+                if pd.isna(corr):
                     correlations[feat] = 0.0
-                    
-            except SQLProcessingError as e:
+                else:
+                    correlations[feat] = abs(float(corr))
+            except Exception as e:
                 print(f"  [ERROR] Correlacao para {feat}: {e}")
                 correlations[feat] = 0.0
                 failed_features.append(feat)
-        
-        # Limpeza da view amostrada
-        if base_table == sample_view_name:
-            try:
-                self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
-            except Exception:
-                pass
-        
+
         valid_correlations = [r for r in correlations.values() if r > 0]
 
         if valid_correlations:
             avg_correlation = sum(valid_correlations) / len(valid_correlations)
             max_correlation = max(valid_correlations)
-            high_corr_count = sum(1 for r in valid_correlations if r > 0.5)
-
             print(f"  Correlacao media: {avg_correlation:.3f}, maxima: {max_correlation:.3f}")
-            print(f"  Features com |r|>0.5: {high_corr_count}")
 
-            if len(failed_features) > 0:
-                print(f"  Features com falha: {len(failed_features)}")
-        
+        if failed_features:
+            print(f"  Features com falha: {len(failed_features)}")
+
         return correlations
     
     def apply_collinearity_filter(self, data: Any, features: List[str],
                                    threshold: float = 0.8) -> List[str]:
         """
-        Remove multicolinearidade via filtragem greedy de correlação pairwise (SQL).
-
-        Para cada feature candidata, calcula a correlação absoluta máxima com
-        as features já selecionadas e rejeita se max |r| >= threshold.
+        Remove multicolinearidade via filtragem greedy de correlacao pairwise.
 
         Args:
-            data: Ignorado - análise executada no Data Warehouse
-            features: Lista de features candidatas para análise de multicolinearidade
-            threshold: Limiar de correlação pairwise (padrão 0.8)
+            data: DataFrame pandas filtrado ao periodo de treino
+            features: Lista de features candidatas para analise
+            threshold: Limiar de correlacao pairwise (padrao 0.8)
 
         Returns:
-            Lista de features filtradas com multicolinearidade reduzida
-
-        Algoritmo greedy:
-            1. Primeira feature sempre aceita (baseline)
-            2. Features subsequentes aceitas se max |r| < threshold
-            3. Ordem preservada para determinismo
-
-        Amostragem justificada:
-            Para datasets >10k observações, matriz de correlação completa
-            pode ser computacionalmente custosa O(n²). Amostragem reduz a
-            O(s²) onde s << n, mantendo precisão estatística adequada.
-
+            Lista filtrada de features com multicolinearidade reduzida
         """
         if len(features) < 2:
             print("  Menos de 2 features - colinearidade desnecessaria")
             return features
 
         print(f"Filtrando colinearidade: {len(features)} features, threshold={threshold}")
-        
-        # Configuração de amostragem
-        total_rows = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-        
-        min_sample_absolute = self.config.get('correlation_min_sample_size', 5000)
-        sample_fraction = self.config.get('correlation_sample_fraction', 0.1)
-        
-        optimal_sample_size = max(
-            min_sample_absolute,
-            int(total_rows * sample_fraction)
-        )
 
-        final_sample_size = min(optimal_sample_size, total_rows)
-        
-        sample_percentage = (final_sample_size / total_rows) * 100
-        
-        print(f"  Amostragem: {final_sample_size:,}/{total_rows:,} ({sample_percentage:.1f}%)")
-        
-        # Criação de view amostrada reprodutível
-        sample_view_name = "vw_collinearity_sample"
-        
         try:
-            random_seed = self.config.get('random_seed', 42)
-            seed_float = (random_seed % 100) / 100.0  # Normalização [0,1]
-            
-            self.conn_manager.execute_sql_no_return(f"SELECT setseed({seed_float})")
-            self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
-            
-            # Amostragem aleatória com dropna completo (equivalente ao DL que
-            # faz .compute().dropna() sobre TODAS as features candidatas).
-            # Versão anterior filtrava apenas features[:10], criando divergência.
-            not_null_clauses = ' AND '.join([f'{feat} IS NOT NULL' for feat in features])
-            sampling_query = f"""
-                CREATE OR REPLACE VIEW {sample_view_name} AS
-                SELECT * FROM analytics_wide
-                WHERE {not_null_clauses}
-                ORDER BY RANDOM()
-                LIMIT {final_sample_size}
-            """
-            self.conn_manager.execute_sql_no_return(sampling_query)
-            
-            actual_sample_size = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM {sample_view_name}")
-            print(f"  Amostra: {actual_sample_size:,} observacoes")
-            
-            # Construção de matriz de correlação
-            
-            correlation_matrix = {}
-            correlation_pairs_computed = 0
-            total_pairs = len(features) * (len(features) - 1) // 2
-            
-            # Computação otimizada da matriz triangular superior
-            for i, feat1 in enumerate(features):
-                correlation_matrix[feat1] = {}
-                
-                for j, feat2 in enumerate(features):
-                    if i >= j:  # Matriz triangular superior apenas
+            corr_data = data[features].dropna()
+
+            print(f"  {len(corr_data):,} observacoes validas pos-dropna")
+
+            if len(corr_data) > 10:
+                corr_matrix = corr_data.corr().abs()
+
+                selected = []
+                rejected_count = 0
+                features = sorted(features)
+
+                for feature in features:
+                    if feature not in corr_matrix.columns:
                         continue
-                        
-                    try:
-                        # Query robusta para correlação de Pearson
-                        corr_query = f"""
-                            SELECT
-                                CASE
-                                    WHEN COUNT(*) < 3 THEN 0.0
-                                    WHEN STDDEV({feat1}) = 0 OR STDDEV({feat2}) = 0 THEN 0.0
-                                    ELSE ABS(CORR({feat1}, {feat2}))
-                                END as correlation_value
-                            FROM {sample_view_name}
-                            WHERE {feat1} IS NOT NULL
-                            AND {feat2} IS NOT NULL
-                        """
-                        
-                        correlation = self.conn_manager.execute_scalar(corr_query)
-                        correlation_matrix[feat1][feat2] = float(correlation or 0.0)
-                        correlation_pairs_computed += 1
-                        
-                    except SQLProcessingError as e:
-                        print(f"  [ERROR] Correlacao {feat1}-{feat2}: {e}")
-                        correlation_matrix[feat1][feat2] = 0.0
-            
-            print(f"  {correlation_pairs_computed}/{total_pairs} pares analisados")
-            
-            selected_features = []
-            rejected_features = []
-            features = sorted(features)
 
-            for feature in features:
-                if not selected_features:
-                    # Primeira feature sempre aceita
-                    selected_features.append(feature)
-                    continue
-                
-                # Calcular correlação máxima com features já selecionadas
-                max_correlation = 0.0
-                worst_correlated_feature = None
-                
-                for selected_feat in selected_features:
-                    # Acessar matriz simétrica corretamente
-                    f1, f2 = sorted([feature, selected_feat])
-                    
-                    if f1 in correlation_matrix and f2 in correlation_matrix[f1]:
-                        corr_value = correlation_matrix[f1][f2]
-                        if corr_value > max_correlation:
-                            max_correlation = corr_value
-                            worst_correlated_feature = selected_feat
-                
-                if max_correlation < threshold:
-                    selected_features.append(feature)
-                else:
-                    rejected_features.append({
-                        'feature': feature,
-                        'max_correlation': max_correlation,
-                        'correlated_with': worst_correlated_feature
-                    })
-            
-            reduction_rate = ((len(features) - len(selected_features)) / len(features)) * 100
+                    if not selected:
+                        selected.append(feature)
+                    else:
+                        max_corr = 0.0
+                        worst_pair = None
 
-            print(f"  Originais: {len(features)}, selecionadas: {len(selected_features)}, "
-                  f"removidas: {len(rejected_features)} ({reduction_rate:.1f}%)")
+                        for sel_feat in selected:
+                            if sel_feat in corr_matrix.columns:
+                                corr_val = corr_matrix.loc[feature, sel_feat]
+                                if corr_val > max_corr:
+                                    max_corr = corr_val
+                                    worst_pair = sel_feat
 
-            if rejected_features:
-                for reject in rejected_features[:5]:
-                    print(f"    Rejeitado {reject['feature']}: r={reject['max_correlation']:.3f} "
-                          f"com {reject['correlated_with']}")
-            
-            return selected_features
-            
+                        if max_corr < threshold:
+                            selected.append(feature)
+                        else:
+                            rejected_count += 1
+                            if rejected_count <= 3:
+                                print(f"    Rejeitado {feature}: r={max_corr:.3f} com {worst_pair}")
+
+                reduction_rate = ((len(features) - len(selected)) / len(features)) * 100
+                print(f"  Originais: {len(features)}, selecionadas: {len(selected)}, "
+                      f"removidas: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
+
+                return selected
+
+            else:
+                print(f"  Dados insuficientes ({len(corr_data)}<=10) - fallback top-10")
+                return features[:10]
+
         except Exception as e:
             print(f"[ERROR] Falha na filtragem de colinearidade: {e}")
             print(f"  Fallback: retornando primeiras 10 features")
             return features[:10]
-            
-        finally:
-            # Limpeza de recursos temporários
-            try:
-                self.conn_manager.execute_sql_no_return(f"DROP VIEW IF EXISTS {sample_view_name}")
-            except Exception:
-                pass
     
     def prepare_features(self, data: Any, selected_features: List[str]) -> None:
         """
