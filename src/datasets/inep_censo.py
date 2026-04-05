@@ -71,6 +71,7 @@ class InepCensoDatasetConfig:
         "municipality_code", "municipality_name", "year",
         "state_code", "state_name", "region",
         "abandono_rate",  # target source
+        "data_completeness_score",
     ]
 
     # Walk-forward: 2007-2024 (18 anos)
