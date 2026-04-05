@@ -748,8 +748,10 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
 
         for feat in features:
             try:
+                if feat not in df.columns:
+                    correlations[feat] = 0.0
+                    continue
                 corr = df[feat].corr(df[target_col])
-
                 if pd.isna(corr):
                     correlations[feat] = 0.0
                 else:

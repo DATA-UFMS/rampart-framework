@@ -151,7 +151,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 ## Decisões metodológicas
 
 - **Walk-forward com gap=2 anos** produz 9 folds, o máximo sem comprometer anti-leakage. Isso limita o poder do Wilcoxon pareado (~30% para efeitos médios); por isso a decisão primária usa bootstrap CI e o Wilcoxon é complemento (Lakens et al., 2018).
-- **Fairness no benchmark**: ordem DW/DL/PL randomizada por iteração (seed=42), `gc.collect()` entre fases, feature set e amostragem normalizados entre paradigmas.
+- **Fairness no benchmark**: ordem DW/DL/PL randomizada por iteração (seed=42), `gc.collect()` entre fases, feature set idêntico entre paradigmas.
 - **Upstream executa 1x** (coleta + processamento produzem dados determinísticos); **downstream executa Nx** (setup + modelos são o alvo do benchmark).
 
 ## Reprodutibilidade

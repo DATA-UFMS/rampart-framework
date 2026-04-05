@@ -35,11 +35,7 @@ SCIENTIFIC_CONFIG = {
 
     # Seleção de Features
     'collinearity_threshold': 0.8,
-    'correlation_precision': 1e-3, # MAE máximo permitido entre correlações
-    'correlation_sample_fraction': 0.1,
-    # Amostragem de correlação (reduz custo computacional mantendo equivalência)
-    'correlation_sampling': True,
-    'correlation_min_sample_size': 5000,
+    'correlation_precision': 1e-3,
     # Limiar para detecção de proxy features (Kapoor & Narayanan, 2023)
     # Alinhado com max_corr da seleção de features (defense-in-depth)
     'proxy_correlation_threshold': 0.80,
