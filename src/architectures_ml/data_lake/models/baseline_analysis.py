@@ -1,18 +1,7 @@
 #!/usr/bin/env python3
-"""
-Análise de modelos baseline para arquitetura Data Lake.
-
-Módulo para análise comparativa de modelos baseline usando processamento distribuído
-com Dask e validação temporal walk-forward com gaps para predição de dropout educacional.
-
-Resumo técnico:
-- Processamento distribuído via Dask com dados Parquet
-- Validação temporal com gaps (mínimo 2 anos) para prevenir vazamento
-- Modelos baseline: média global, tendência linear, naive com lag, cross-country
-- Métricas: R², RMSE, gaps de generalização
-- Usa modelos centralizados de core/models/baseline.py
-"""
+"""Análise de modelos baseline para arquitetura Data Lake."""
 import time
+import traceback
 
 import pandas as pd
 import numpy as np
@@ -37,21 +26,7 @@ setup_reproducibility()
 
 
 class BaselineModelAnalysisDataLake:
-    """
-    Análise de modelos baseline para arquitetura Data Lake.
-    
-    Implementa análise científica de modelos baseline com validação temporal,
-    prevenindo vazamento de dados e utilizando processamento distribuído com
-    Dask para dados em formato Parquet.
-    
-    Attributes:
-        data_path (str): Caminho para os dados principais do Data Lake
-        folds_path (str): Caminho para configuração dos folds temporais
-        results_path (str): Diretório para salvar resultados
-        ddf (dask.DataFrame): DataFrame distribuído com os dados
-        target_col (str): Nome da coluna target para predição
-        folds (list): Lista de configurações dos folds temporais
-    """
+    """Análise de modelos baseline para arquitetura Data Lake."""
     
     def __init__(self):
         """Inicializa a análise baseline para arquitetura Data Lake."""
@@ -79,7 +54,7 @@ class BaselineModelAnalysisDataLake:
         self._load_data_summary()
     
     def _load_data_summary(self):
-        """Carregar resumo dos dados usando batch compute otimizado."""
+        """Carregar resumo dos dados."""
         stats_tasks = {
             'total_rows': self.ddf.index.size,
             'year_min': self.ddf['year'].min(),
@@ -112,9 +87,6 @@ class BaselineModelAnalysisDataLake:
         print(f"   Target: {self.target_col}")
         print(f"   Folds: {len(self.folds)}")
         
-        if self.target_col not in self.ddf.columns:
-            raise ValueError(f"Target {self.target_col} não encontrado nos dados Data Lake")
-        
         print(f"   Target stats: mean={target_stats['mean']:.2f}%, std={target_stats['std']:.2f}%")
         
         if imputed_cols:
@@ -134,12 +106,7 @@ class BaselineModelAnalysisDataLake:
         self._cached_basic_stats = computed_stats
     
     def analyze_target_distribution(self) -> Dict:
-        """
-        Analisar distribuição do target Data Lake usando batch compute otimizado.
-        
-        Returns:
-            Dict: Estatísticas da distribuição do target incluindo temporal e por país
-        """
+        """Analisar distribuição do target Data Lake."""
         print(f"\nAnálise da distribuição do target Data Lake")
         
         analysis = {}
@@ -201,7 +168,6 @@ class BaselineModelAnalysisDataLake:
         
         analysis['target_stats'] = target_stats
         
-        # Distribuição temporal usando Dask groupby
         if unique_years > 1:
             temporal_stats_ddf = self.ddf.groupby('year')[self.target_col].agg([
                 'count', 'mean', 'std', 'min', 'max'
@@ -219,7 +185,6 @@ class BaselineModelAnalysisDataLake:
             
             analysis['temporal_stats'] = temporal_stats.to_dict()
         
-        # Distribuição por país usando Dask groupby
         country_stats_ddf = self.ddf.groupby('country_code')[self.target_col].agg([
             'count', 'mean', 'std', 'min', 'max'
         ])
@@ -235,17 +200,7 @@ class BaselineModelAnalysisDataLake:
         return analysis
     
     def test_baseline_models(self) -> Dict:
-        """
-        Testar modelos baseline científicos com validação temporal.
-        
-        Problemas corrigidos:
-        - Vazamento temporal: eliminado com lag mínimo de 2 anos
-        - Período de validação usado corretamente
-        - Gaps temporais apropriados implementados
-        
-        Returns:
-            Dict: Resultados dos modelos baseline para todos os folds
-        """
+        """Testar modelos baseline com validação temporal walk-forward."""
         print(f"\nBaselines com validação temporal")
         
         baseline_results = {}
@@ -259,38 +214,29 @@ class BaselineModelAnalysisDataLake:
             val_ddf = self.ddf[(self.ddf['year'] >= fold['val_start']) & (self.ddf['year'] <= fold['val_end'])]
             test_ddf = self.ddf[(self.ddf['year'] >= fold['test_start']) & (self.ddf['year'] <= fold['test_end'])]
             test_ddf = test_ddf[~((test_ddf['year'] >= fold['val_gap_start']) & (test_ddf['year'] <= fold['val_gap_end']))]
-            
-            train_len = int(train_ddf.map_partitions(len).compute().sum())
-            val_len = int(val_ddf.map_partitions(len).compute().sum())
-            test_len = int(test_ddf.map_partitions(len).compute().sum())
-            
+
+            cols = ['country_code', 'year', self.target_col]
+            train_raw, val_raw, test_raw = dask.compute(
+                train_ddf[cols].dropna(subset=[self.target_col]),
+                val_ddf[cols].dropna(subset=[self.target_col]),
+                test_ddf[cols].dropna(subset=[self.target_col]),
+            )
+            train_clean = train_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
+            val_clean = val_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
+            test_clean = test_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
+
+            train_len, val_len, test_len = len(train_clean), len(val_clean), len(test_clean)
             print(f"   Dados: Train={train_len}, Val={val_len}, Test={test_len}")
             print(f"    Gaps: Train-Val={fold['val_start']-fold['train_end']-1}yr, Val-Test={fold['test_start']-fold['val_end']-1}yr")
-            
-            train_clean_ddf = train_ddf.dropna(subset=[self.target_col])
-            val_clean_ddf = val_ddf.dropna(subset=[self.target_col])
-            test_clean_ddf = test_ddf.dropna(subset=[self.target_col])
-            
+
             if train_len == 0 or test_len == 0:
                 print(f"   Fold {fold_id}: Dados insuficientes")
                 continue
-            
-            # Batch compute para targets e média global
-            y_train, y_val, y_test, global_mean = dask.compute(
-                train_clean_ddf[self.target_col],
-                val_clean_ddf[self.target_col],
-                test_clean_ddf[self.target_col],
-                train_clean_ddf[self.target_col].mean(),
-            )
-            
-            try:
-                train_clean_pd = train_clean_ddf[['country_code','year', self.target_col]].compute().sort_values(['country_code', 'year'])
-                val_clean_pd = val_clean_ddf[['country_code','year', self.target_col]].compute().sort_values(['country_code', 'year'])
-                test_clean_pd = test_clean_ddf[['country_code','year', self.target_col]].compute().sort_values(['country_code', 'year'])
-            except Exception:
-                train_clean_pd = None
-                val_clean_pd = None
-                test_clean_pd = None
+
+            y_train = train_clean[self.target_col].values
+            y_val = val_clean[self.target_col].values
+            y_test = test_clean[self.target_col].values
+            global_mean = float(y_train.mean())
 
             def _mase_scale_from_train(df):
                 try:
@@ -309,7 +255,7 @@ class BaselineModelAnalysisDataLake:
                 except Exception:
                     return None
 
-            mase_scale = _mase_scale_from_train(train_clean_pd)
+            mase_scale = _mase_scale_from_train(train_clean)
 
             fold_results = {}
             
@@ -326,21 +272,16 @@ class BaselineModelAnalysisDataLake:
                 'test_r2': float(test_r2_global),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_global))),
                 'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred_global))),
-                'test_wape': float((np.abs(y_test - test_pred_global)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
+                'test_wape': float((np.abs(y_test - test_pred_global)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)),
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_global))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'method': 'global_mean'
             }
             
-            # Baseline 2: Tendência Linear - Batch compute para features temporais
-            X_train_time, X_val_time, X_test_time = dask.compute(
-                train_clean_ddf[['year']],
-                val_clean_ddf[['year']],
-                test_clean_ddf[['year']],
-            )
-            X_train_time = X_train_time.values
-            X_val_time = X_val_time.values
-            X_test_time = X_test_time.values
+            # Baseline 2: Tendência Linear
+            X_train_time = train_clean[['year']].values
+            X_val_time = val_clean[['year']].values
+            X_test_time = test_clean[['year']].values
             
             trend_model = LinearRegression()
             trend_model.fit(X_train_time, y_train)
@@ -356,76 +297,46 @@ class BaselineModelAnalysisDataLake:
                 'test_r2': float(test_r2_trend),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_trend))),
                 'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred_trend))),
-                'test_wape': float((np.abs(y_test - test_pred_trend)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
+                'test_wape': float((np.abs(y_test - test_pred_trend)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)),
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_trend))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'slope': float(trend_model.coef_[0]),
                 'method': 'linear_trend'
             }
             
-            # Baseline 3: Naive com Lag Científico
+            # Baseline 3: Naive com Lag
             MIN_LAG = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
-
             print(f"      Naive baseline...")
-            
-            # Batch compute para val e test clean
-            # val_clean_pd e test_clean_pd já computados acima
-            
+
             val_pred_naive = []
-            
-            unique_countries = val_clean_pd['country_code'].unique()
-            country_last_values = {}
-            
-            for country in unique_countries:
-                country_train_ddf = train_clean_ddf[train_clean_ddf['country_code'] == country]
-                country_train_pd = country_train_ddf.compute()
-                if len(country_train_pd) > 0:
-                    country_last_values[country] = country_train_pd.sort_values('year')
-                else:
-                    country_last_values[country] = pd.DataFrame()
-            
-            for _, val_row in val_clean_pd.iterrows():
+
+            for _, val_row in val_clean.iterrows():
                 country = val_row['country_code']
                 val_year = val_row['year']
-                
-                country_history = country_last_values[country]
-                if len(country_history) > 0 and 'year' in country_history.columns:
-                    country_history_filtered = country_history[country_history['year'] <= val_year - MIN_LAG]
-                    if len(country_history_filtered) > 0:
-                        naive_val = country_history_filtered[self.target_col].iloc[-1]
-                    else:
-                        naive_val = global_mean
+
+                country_train = train_clean[train_clean['country_code'] == country]
+                country_hist = country_train[country_train['year'] <= val_year - MIN_LAG]
+
+                if len(country_hist) > 0:
+                    naive_val = country_hist.sort_values('year').iloc[-1][self.target_col]
                 else:
                     naive_val = global_mean
 
                 val_pred_naive.append(naive_val)
-            
-            # Predições para teste
+
             test_pred_naive = []
-            combined_history_ddf = dd.concat([train_clean_ddf, val_clean_ddf], ignore_index=True)
-            combined_mean = combined_history_ddf[self.target_col].mean().compute()
-            test_unique_countries = test_clean_pd['country_code'].unique()
-            test_country_values = {}
-            
-            for country in test_unique_countries:
-                country_combined_ddf = combined_history_ddf[combined_history_ddf['country_code'] == country]
-                country_combined_pd = country_combined_ddf.compute()
-                if len(country_combined_pd) > 0:
-                    test_country_values[country] = country_combined_pd.sort_values('year')
-                else:
-                    test_country_values[country] = pd.DataFrame()
-            
-            for _, test_row in test_clean_pd.iterrows():
+            combined_clean = pd.concat([train_clean, val_clean], ignore_index=True)
+            combined_mean = combined_clean[self.target_col].mean()
+
+            for _, test_row in test_clean.iterrows():
                 country = test_row['country_code']
                 test_year = test_row['year']
-                
-                country_history = test_country_values[country]
-                if len(country_history) > 0 and 'year' in country_history.columns:
-                    country_history_filtered = country_history[country_history['year'] <= test_year - MIN_LAG]
-                    if len(country_history_filtered) > 0:
-                        naive_test = country_history_filtered[self.target_col].iloc[-1]
-                    else:
-                        naive_test = combined_mean
+
+                country_combined = combined_clean[combined_clean['country_code'] == country]
+                country_hist = country_combined[country_combined['year'] <= test_year - MIN_LAG]
+
+                if len(country_hist) > 0:
+                    naive_test = country_hist.sort_values('year').iloc[-1][self.target_col]
                 else:
                     naive_test = combined_mean
 
@@ -442,76 +353,54 @@ class BaselineModelAnalysisDataLake:
                 'test_r2': float(test_r2_naive),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_naive))),
                 'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred_naive))),
+                'test_wape': float((np.abs(y_test - test_pred_naive)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)),
+                'test_mase': (float(np.mean(np.abs(y_test - test_pred_naive))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
+                'mase_scale_train': mase_scale,
                 'min_lag_years': MIN_LAG,
                 'method': 'naive_persistence_with_scientific_lag'
             }
             
             # Baseline 4: Cross-Country Average
             print(f"      Cross-Country baseline...")
-            
-            val_pred_cross = []
-            
-            unique_years = sorted(val_clean_pd['year'].unique())
-            cross_country_means = {}
-            
-            for year in unique_years:
-                year_data_ddf = train_clean_ddf[train_clean_ddf['year'] <= year - MIN_LAG]
 
-                year_count = int(year_data_ddf.map_partitions(len).compute().sum())
-                if year_count > 0:
-                    country_means_ddf = year_data_ddf.groupby('country_code')[self.target_col].mean()
-                    country_means_pd = country_means_ddf.compute()
-                    cross_country_means[year] = country_means_pd
-                else:
-                    cross_country_means[year] = pd.Series(dtype=float)
-            
-            for _, val_row in val_clean_pd.iterrows():
+            val_pred_cross = []
+            for _, val_row in val_clean.iterrows():
                 country = val_row['country_code']
                 val_year = val_row['year']
-                
-                if val_year in cross_country_means:
-                    country_means = cross_country_means[val_year]
-                    other_countries = country_means[country_means.index != country]
-                    
+
+                year_data = train_clean[train_clean['year'] <= val_year - MIN_LAG]
+
+                if len(year_data) > 0:
+                    country_means_dict = year_data.groupby('country_code')[self.target_col].mean()
+                    other_countries = country_means_dict[country_means_dict.index != country]
+
                     if len(other_countries) > 0:
                         cross_val = other_countries.mean()
                     else:
                         cross_val = global_mean
                 else:
                     cross_val = global_mean
-                
+
                 val_pred_cross.append(cross_val)
-            
-            # Predições para teste
+
             test_pred_cross = []
-            test_unique_years = sorted(test_clean_pd['year'].unique())
-            test_cross_country_means = {}
-            
-            for year in test_unique_years:
-                year_data_ddf = combined_history_ddf[combined_history_ddf['year'] <= year - MIN_LAG]
-                year_count = int(year_data_ddf.map_partitions(len).compute().sum())
-                if year_count > 0:
-                    country_means_ddf = year_data_ddf.groupby('country_code')[self.target_col].mean()
-                    country_means_pd = country_means_ddf.compute()
-                    test_cross_country_means[year] = country_means_pd
-                else:
-                    test_cross_country_means[year] = pd.Series(dtype=float)
-            
-            for _, test_row in test_clean_pd.iterrows():
+            for _, test_row in test_clean.iterrows():
                 country = test_row['country_code']
                 test_year = test_row['year']
-                
-                if test_year in test_cross_country_means:
-                    country_means = test_cross_country_means[test_year]
-                    other_countries = country_means[country_means.index != country]
-                    
+
+                year_data = combined_clean[combined_clean['year'] <= test_year - MIN_LAG]
+
+                if len(year_data) > 0:
+                    country_means_dict = year_data.groupby('country_code')[self.target_col].mean()
+                    other_countries = country_means_dict[country_means_dict.index != country]
+
                     if len(other_countries) > 0:
                         cross_test = other_countries.mean()
                     else:
                         cross_test = combined_mean
                 else:
                     cross_test = combined_mean
-                
+
                 test_pred_cross.append(cross_test)
             
             val_pred_cross = np.array(val_pred_cross)
@@ -525,25 +414,12 @@ class BaselineModelAnalysisDataLake:
                 'test_r2': float(test_r2_cross),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_cross))),
                 'test_rmse': float(np.sqrt(mean_squared_error(y_test, test_pred_cross))),
-                'test_wape': float((np.abs(y_test - test_pred_cross)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None,
+                'test_wape': float((np.abs(y_test - test_pred_cross)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)),
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_cross))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'min_lag_years': MIN_LAG,
                 'method': 'cross_country_average_excluding_target'
             }
-            
-            # Métricas agregadas para Naive (inclui WAPE/MASE)
-            try:
-                test_wape_naive = float((np.abs(y_test - test_pred_naive)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None
-                test_mase_naive = (float(np.mean(np.abs(y_test - test_pred_naive))) / mase_scale) if (mase_scale and mase_scale > 0) else None
-            except Exception:
-                test_wape_naive = None
-                test_mase_naive = None
-            fold_results['naive_with_lag'].update({
-                'test_wape': test_wape_naive,
-                'test_mase': test_mase_naive,
-                'mase_scale_train': mase_scale
-            })
             
             print(f"   Resultados (Val | Test):")
             print(f"      Global Mean:      R²={val_r2_global:.3f} | {test_r2_global:.3f}")
@@ -582,15 +458,7 @@ class BaselineModelAnalysisDataLake:
         return baseline_results
 
     def analyze_predictability(self, baseline_results: Dict) -> Dict:
-        """
-        Análise científica de predictabilidade dos modelos baseline.
-        
-        Args:
-            baseline_results: Resultados dos modelos baseline por fold
-            
-        Returns:
-            Dict: Análise completa de predictabilidade com métricas de estabilidade
-        """
+        """Análise de predictabilidade dos modelos baseline."""
         print("\nAnálise de predictabilidade Data Lake")
         
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
@@ -713,19 +581,9 @@ class BaselineModelAnalysisDataLake:
         
         return predictability_analysis
     
-    def save_results(self, target_analysis: Dict, baseline_results: Dict, 
+    def save_results(self, target_analysis: Dict, baseline_results: Dict,
                     predictability_analysis: Dict):
-        """
-        Salvar resultados da análise Data Lake.
-        
-        Args:
-            target_analysis: Análise da distribuição do target
-            baseline_results: Resultados dos modelos baseline
-            predictability_analysis: Análise de predictabilidade
-            
-        Returns:
-            Dict: Resultados completos consolidados
-        """
+        """Salvar resultados da análise Data Lake."""
         print(f"\nSalvando resultados Data Lake...")
         
         full_results = {
@@ -752,12 +610,7 @@ class BaselineModelAnalysisDataLake:
         return full_results
     
     def run_complete_analysis(self):
-        """
-        Executar análise completa de baseline Data Lake.
-        
-        Returns:
-            Dict: Resultados consolidados da análise ou erro
-        """
+        """Executar análise completa de baseline Data Lake."""
         if getattr(self, '_needs_persist', False):
             self.ddf = self.ddf.persist()
             self._needs_persist = False
@@ -797,7 +650,6 @@ class BaselineModelAnalysisDataLake:
             return results
             
         except Exception as e:
-            import traceback
             print(f"\nErro na análise Data Lake: {e}")
             traceback.print_exc()
             return {
