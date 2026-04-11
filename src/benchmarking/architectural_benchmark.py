@@ -327,11 +327,12 @@ class BenchmarkRunner:
     # --------------------------- fases medidas -----------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
         dataset_name = os.environ.get("DATASET_NAME", "worldbank")
+        raw_subdir = "collection/inep_raw" if dataset_name == "inep_censo" else "collection/raw_data"
         t0 = time.perf_counter_ns()
         if dataset_name == "inep_censo":
             from collection.inep_collector import collect_inep_data
             collect_inep_data(
-                output_dir=get_absolute_output_path("collection/raw_data")
+                output_dir=get_absolute_output_path(raw_subdir)
             )
         else:
             Collector = self.modules["RawDataCollector"]
@@ -339,7 +340,7 @@ class BenchmarkRunner:
             collector.run()
         t1 = time.perf_counter_ns()
         rows = self._count_rows_parquet(
-            get_absolute_output_path("collection/raw_data/complete_data.parquet")
+            get_absolute_output_path(f"{raw_subdir}/complete_data.parquet")
         )
         return t1 - t0, rows
 

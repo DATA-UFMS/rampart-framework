@@ -31,7 +31,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, os.path.join(PROJECT_ROOT, 'src'))
 
-DEFAULT_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "outputs", "collection", "raw_data")
+DEFAULT_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "outputs", "collection", "inep_raw")
 
 # ============================================================================
 # URLs de download — variam por ano (mapeado manualmente do portal INEP)
