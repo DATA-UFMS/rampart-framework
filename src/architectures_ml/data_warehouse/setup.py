@@ -59,7 +59,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         print("SQL-first com validacao temporal")
         
         # Configurações específicas do Data Warehouse
-        self.db_path = get_absolute_output_path('collection/data_warehouse/worldbank_data.duckdb')
+        dataset_name = self.dataset_config.name
+        self.db_path = get_absolute_output_path(f'collection/data_warehouse/{dataset_name}_data.duckdb')
         self.conn_manager = None
         
         print(f"  Diretorio base: {self.output_base}")
