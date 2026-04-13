@@ -68,9 +68,10 @@ class HierarchicalModelSQLFirst:
 
         print("   Pattern: ML Consumer com views")
         
+        dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json")
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/models/hierarchical_results")
-        self.db_path = get_absolute_output_path('collection/data_warehouse/worldbank_data.duckdb')
+        self.db_path = get_absolute_output_path(f'collection/data_warehouse/{dataset_name}_data.duckdb')
         
         os.makedirs(self.results_path, exist_ok=True)
         
