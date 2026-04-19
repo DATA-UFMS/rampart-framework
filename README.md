@@ -1,6 +1,6 @@
 # archbench-framework
 
-Framework para benchmarking reprodutível de arquiteturas de dados com verificação automática de anti-leakage temporal. Compara DuckDB, Dask e Polars processando os mesmos dados e modelos, verificando se os resultados preditivos são estatisticamente equivalentes.
+Framework para benchmarking reprodutível de arquiteturas de dados com verificação automática de anti-leakage temporal. Compara DuckDB, Dask e Polars processando os mesmos dados e modelos, verificando se os pipelines produzem predições bitwise-idênticas (Δ=0.0) como validação negativa da integridade de ETL.
 
 ## Quickstart
 
@@ -12,8 +12,9 @@ cd archbench-framework
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python pipeline.py          # ~20 min na primeira execução (coleta + processamento + benchmark)
-pytest tests/               # 79 testes, ~2s
+python pipeline.py                        # World Bank (default, ~20 min na primeira execução)
+python pipeline.py --dataset inep_censo   # INEP Censo Escolar (~2h na primeira execução)
+pytest tests/                             # testes unitários
 ```
 
 O pipeline gera artefatos em `outputs/`: folds temporais, métricas de benchmark (CSV/JSON) e tabelas LaTeX. Execuções subsequentes usam cache e levam ~5 min.
@@ -51,6 +52,8 @@ Os mesmos dados do Banco Mundial (evasão escolar, 32 países, 2000–2023) são
 
 A comparação estatística usa SESOI (menor efeito de interesse prático) com IC 95% por bootstrap, complementada por Wilcoxon pareado e Hodges–Lehmann. O objetivo é testar se a escolha de paradigma de processamento introduz viés nos resultados — a contribuição é o protocolo, não o resultado preditivo.
 
+Avaliado em dois datasets (World Bank: 32 países, 768 obs; INEP: 5.564 municípios, 94K obs), o framework confirma equivalência preditiva bitwise nos três paradigmas e revela um crossover dependente de escala: engines in-process dominam dados pequenos (~9,6× end-to-end em WB), enquanto Dask vence as fases de ML em dados grandes (~2,0–2,2× em INEP via caching de `persist()` entre folds).
+
 ## Anti-leakage (P1–P5)
 
 O pipeline aplica 5 verificações automáticas em todos os paradigmas:
@@ -63,7 +66,7 @@ O pipeline aplica 5 verificações automáticas em todos os paradigmas:
 | P4 | Feature selection restrita ao treino | `ValueError` em runtime |
 | P5 | Scaling/imputação ajustados só no treino | Contrato + testes unitários |
 
-A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre treino/validação e validação/teste, garantindo que nenhuma informação futura contamine o modelo. Isso produz 9 folds ao longo de 23 anos de dados (Kapoor & Narayanan, 2023).
+A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre splits, garantindo que nenhuma informação futura contamine o modelo. Produz 9 folds em WB (janela train=8yr, val=2yr, test=2yr sobre 24 anos) e 8 folds em INEP (janela train=5yr, val=1yr, test=1yr sobre 18 anos). Referência: Kapoor & Narayanan (2023).
 
 ## Estrutura
 
@@ -87,7 +90,7 @@ src/
 │   └── polars_dataframe/       # Processador Polars
 ├── datasets/
 │   ├── worldbank.py            # Config World Bank (32 países, 2000-2023)
-│   └── inep_censo.py           # Config INEP (5570 municípios, 2007-2024)
+│   └── inep_censo.py           # Config INEP (5.564 municípios, 2007-2024)
 ├── architectures_ml/           # Setup + modelos por paradigma
 │   ├── data_lake/
 │   ├── data_warehouse/
@@ -131,7 +134,7 @@ class MeuParadigmaML(BaseArchitectureML):
 
 ### Novo dataset
 
-O framework suporta múltiplos datasets via `DatasetConfig`. Já inclui World Bank (32 países) e INEP Censo Escolar (5570 municípios brasileiros):
+O framework suporta múltiplos datasets via `DatasetConfig`. Já inclui World Bank (32 países) e INEP Censo Escolar (5.564 municípios brasileiros):
 
 ```bash
 python pipeline.py                        # World Bank (default)
@@ -150,7 +153,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 
 ## Decisões metodológicas
 
-- **Walk-forward com gap=2 anos** produz 9 folds, o máximo sem comprometer anti-leakage. Isso limita o poder do Wilcoxon pareado (~30% para efeitos médios); por isso a decisão primária usa bootstrap CI e o Wilcoxon é complemento (Lakens et al., 2018).
+- **Walk-forward com gap=2 anos** produz 9 folds em WB e 8 em INEP, o máximo sem comprometer anti-leakage em cada span temporal. Efeitos de latência observados são grandes (Cohen's d_z > 7); a decisão primária usa bootstrap CI e o Wilcoxon é complemento (Lakens et al., 2018).
 - **Fairness no benchmark**: ordem DW/DL/PL randomizada por iteração (seed=42), `gc.collect()` entre fases, feature set idêntico entre paradigmas.
 - **Upstream executa 1x** (coleta + processamento produzem dados determinísticos); **downstream executa Nx** (setup + modelos são o alvo do benchmark).
 
