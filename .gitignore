@@ -82,9 +82,3 @@ azure_results_*/
 azure_run.sh
 azure_rerun.sh
 
-# Planos de desenvolvimento
-docs/plans/
-docs/superpowers/
-
-# Prompts pessoais
-prompt_revisor_pesquisa.md
