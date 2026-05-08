@@ -1,4 +1,4 @@
-# archbench-framework
+# rampart-framework
 
 Framework para benchmarking reprodutível de arquiteturas de dados com verificação automática de anti-leakage temporal. Compara DuckDB, Dask e Polars processando os mesmos dados e modelos, verificando se os pipelines produzem predições bitwise-idênticas (Δ=0.0) como validação negativa da integridade de ETL.
 
@@ -7,8 +7,8 @@ Framework para benchmarking reprodutível de arquiteturas de dados com verifica�
 Requisitos: Python 3.10+, 8 GB RAM, acesso à internet (coleta dados da World Bank API, sem API key).
 
 ```bash
-git clone https://github.com/anonymous/archbench-framework.git
-cd archbench-framework
+git clone https://github.com/anonymous/rampart-framework.git
+cd rampart-framework
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 

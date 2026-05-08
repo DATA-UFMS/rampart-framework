@@ -7,8 +7,8 @@ Instruções para executar, verificar e adaptar o framework. Complementa o [READ
 Requisitos: Python 3.10+, 8 GB RAM, 10 GB disco, acesso à internet.
 
 ```bash
-git clone https://github.com/anonymous/archbench-framework.git
-cd archbench-framework
+git clone https://github.com/anonymous/rampart-framework.git
+cd rampart-framework
 python -m venv .venv
 source .venv/bin/activate        # Linux/macOS
 # .venv\Scripts\activate        # Windows
