@@ -7,7 +7,7 @@ Framework para benchmarking reprodutível de arquiteturas de dados com verifica�
 Requisitos: Python 3.10+, 8 GB RAM, acesso à internet (coleta dados da World Bank API, sem API key).
 
 ```bash
-git clone https://github.com/anonymous/rampart-framework.git
+git clone https://github.com/DATA-UFMS/rampart-framework.git
 cd rampart-framework
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -168,4 +168,4 @@ Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 
 ---
 
-**Contato**: [Removido para revisão double-blind]
+**Contato**: Eos Xavier (eos.xavier@ufms.br)
