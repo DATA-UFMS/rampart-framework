@@ -12,12 +12,19 @@ cd rampart-framework
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python pipeline.py                        # World Bank (default, ~20 min na primeira execução)
-python pipeline.py --dataset inep_censo   # INEP Censo Escolar (~2h na primeira execução)
+python pipeline.py                        # World Bank (default)
+python pipeline.py --dataset inep_censo   # INEP Censo Escolar
 pytest tests/                             # testes unitários
 ```
 
-O pipeline gera artefatos em `outputs/`: folds temporais, métricas de benchmark (CSV/JSON) e tabelas LaTeX. Execuções subsequentes usam cache e levam ~5 min.
+O pipeline gera artefatos em `outputs/`: folds temporais, métricas de benchmark (CSV/JSON) e tabelas LaTeX.
+
+**Custo de execução.** A etapa de benchmark domina o tempo total: ela reexecuta as fases de
+setup, baseline e hierárquico dos três paradigmas `warmup + n` vezes (por padrão 2 + 10 = 12
+passagens completas). Cache de coleta e processamento reduz apenas as etapas a montante, não o
+benchmark. Na prática, o World Bank leva horas e o INEP Censo Escolar leva mais de um dia em
+uma VM de 4 vCPUs. Para uma execução exploratória, reduza `--repetitions` — ciente de que isso
+não reproduz a tabela de latência.
 
 ## O que faz
 

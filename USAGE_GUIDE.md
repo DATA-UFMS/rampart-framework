@@ -17,7 +17,7 @@ pip install -r requirements.txt
 
 ## Execução
 
-**Pipeline completo** (~20 min na primeira execução, ~5 min com cache):
+**Pipeline completo** (horas; o benchmark reexecuta as fases `warmup + n` vezes):
 
 ```bash
 python pipeline.py
@@ -91,7 +91,11 @@ Adicione módulos em `src/benchmarking/` ou `src/statistical_validation/` seguin
 
 ## FAQ
 
-**Quanto tempo demora?** ~20 min na primeira execução (coleta da API). Com cache, ~5 min.
+**Quanto tempo demora?** Horas para o World Bank e mais de um dia para o INEP Censo Escolar em
+uma VM de 4 vCPUs. O custo é dominado pela etapa de benchmark, que reexecuta setup, baseline e
+hierárquico dos três paradigmas `warmup + n` vezes (12 por padrão). O cache de coleta e
+processamento reduz apenas as etapas a montante. Para explorar, use `--repetitions` menor —
+ciente de que isso não reproduz a tabela de latência.
 
 **Precisa de API key?** Não. A World Bank API é aberta.
 
