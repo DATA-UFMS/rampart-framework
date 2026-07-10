@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rampart"
+version = "1.0.0"
+description = "Reproducible benchmarking of data processing paradigms with automated anti-leakage verification"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dynamic = ["dependencies"]
+
+[project.urls]
+Repository = "https://github.com/DATA-UFMS/rampart-framework"
+
+# requirements.txt é a única fonte de verdade das dependências. Ele pina o
+# ambiente completo de reprodução — incluindo o executor de testes, porque a
+# suíte faz parte do artefato. requirements-lock.txt fixa as transitivas.
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+# Layout src/: os pacotes de topo (core, collection, architectures_ml,
+# datasets, benchmarking, statistical_validation) vivem sob src/ e são
+# importados sem prefixo, como em `from core.validation import ...`.
+# São namespace packages (sem __init__.py), então a descoberta precisa de
+# namespaces = true.
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
