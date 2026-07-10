@@ -212,8 +212,14 @@ class TestDiscoverParadigms:
         expected = {'data_lake', 'data_warehouse', 'polars_dataframe'}
         assert expected.issubset(set(paradigms.keys())), \
             f"Missing paradigms: {expected - set(paradigms.keys())}"
-        unexpected = set(paradigms.keys()) - expected
-        assert not unexpected, f"Unexpected paradigms in registry (test leak?): {unexpected}"
+        # Paradigmas adicionais são esperados: o registry existe para permitir
+        # extensão sem editar arquivos existentes. O que não é aceitável é um
+        # paradigma definido fora de src/architectures_ml/ (vazamento de teste).
+        for name, meta in paradigms.items():
+            setup_script = str(meta.get('setup_script', ''))
+            assert setup_script.startswith('src/architectures_ml/'), \
+                (f"Paradigm '{name}' is not declared under src/architectures_ml/ "
+                 f"(setup_script={setup_script!r}); possible test leak into the registry")
 
     def test_discover_returns_script_paths(self):
         from core.paradigm_registry import discover_paradigms
