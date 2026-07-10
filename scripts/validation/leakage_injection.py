@@ -18,15 +18,15 @@ preditivas em configuração limpa (walk-forward, gap=2) vs contaminada
 de métricas causada por leakage temporal.
 
 Uso:
-    python tests/test_leakage_injection.py          # roda todos os cenários
-    python tests/test_leakage_injection.py --quick   # só cenários S1-S3 (sem dados)
+    python scripts/validation/leakage_injection.py           # roda todos os cenários
+    python scripts/validation/leakage_injection.py --quick   # só cenários S1-S3 (sem dados)
 """
 import argparse
 import json
 import sys
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT / 'src'))
 
 from core.validation import TemporalValidator
