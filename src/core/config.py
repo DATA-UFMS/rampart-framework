@@ -35,7 +35,7 @@ BASE_DATA_DIR = 'data'
 # CONFIGURAÇÃO DE PERFORMANCE
 # ============================================================================
 BENCHMARK_CONFIG = {
-    'repetitions': 30,  # Número de repetições por teste
+    'repetitions': 10,  # Número de repetições por teste (n do protocolo experimental)
     'warmup_runs': 2,   # Execuções de aquecimento
     'timeout_seconds': 3600,  # Timeout por operação
     'memory_limit_gb': 16,

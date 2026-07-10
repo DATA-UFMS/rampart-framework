@@ -146,7 +146,7 @@ class BenchmarkRunner:
         phases: Optional[List[str]] = None,
         output_dir: Optional[str] = None,
     ):
-        self.repetitions = repetitions or int(BENCHMARK_CONFIG.get("repetitions", 3))
+        self.repetitions = repetitions or int(BENCHMARK_CONFIG.get("repetitions", 10))
         self.warmup_runs = warmup_runs or int(BENCHMARK_CONFIG.get("warmup_runs", 1))
         self.phases = phases or [
             "collection",

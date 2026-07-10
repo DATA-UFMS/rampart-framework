@@ -188,7 +188,7 @@ def main() -> None:
     _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
 
     print("\nEtapa 6/9: Benchmark arquitetural")
-    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 30 --warmup 2")
+    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 10 --warmup 2")
     _log("Etapa 6 concluida")
 
     print("\nEtapa 7/9: Testes estatisticos")

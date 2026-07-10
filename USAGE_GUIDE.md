@@ -28,7 +28,10 @@ Executa: coleta, processamento (3 paradigmas), gate anti-leakage, modelos, bench
 **Componentes individuais:**
 
 ```bash
-# Benchmark com parâmetros customizados
+# Benchmark com o protocolo experimental (n=10, 2 aquecimentos)
+python src/benchmarking/architectural_benchmark.py --repetitions 10 --warmup 2
+
+# Execução exploratória e mais curta (NÃO reproduz a tabela de latência)
 python src/benchmarking/architectural_benchmark.py --repetitions 5 --warmup 1
 
 # Equivalência (gera JSON + LaTeX)
