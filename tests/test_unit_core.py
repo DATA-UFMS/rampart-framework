@@ -7,6 +7,8 @@ saídas de pipeline pré-geradas ou dados externos. Executam com
 apenas numpy e pandas como dependências.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -372,8 +374,9 @@ class TestImports:
 
     def test_import_get_project_root(self):
         from core.config import get_project_root
-        root = get_project_root()
-        assert root.endswith("dw-vs-dl-dropout-prediction-latam")
+        root = Path(get_project_root())
+        assert root.is_dir()
+        assert (root / "src" / "core").is_dir()
 
 
 # 8. Anti-leakage: P4 (escopo temporal) e P3 estendido (proxy detection)
