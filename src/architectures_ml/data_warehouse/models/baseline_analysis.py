@@ -38,7 +38,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from config import get_absolute_output_path
-from src.core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
+from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
 

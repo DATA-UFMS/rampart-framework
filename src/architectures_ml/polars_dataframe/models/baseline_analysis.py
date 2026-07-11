@@ -29,8 +29,8 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by 
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.*')
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-from src.core.config import get_absolute_output_path
-from src.core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
+from core.config import get_absolute_output_path
+from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
 

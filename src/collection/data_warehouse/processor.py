@@ -53,7 +53,7 @@ from datetime import datetime
 from typing import Dict
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from src.core.config import get_absolute_output_path
+from core.config import get_absolute_output_path
 try:
     from .connection_manager import DuckDBConnectionManager, SQLProcessingError
 except ImportError:

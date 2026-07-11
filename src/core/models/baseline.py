@@ -18,7 +18,7 @@ _core_dir = os.path.dirname(_baseline_dir)
 _project_root = os.path.dirname(os.path.dirname(_core_dir))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
-from src.core.scientific_config import RANDOM_SEED
+from core.scientific_config import RANDOM_SEED
 
 try:
     from sklearn.ensemble import RandomForestRegressor

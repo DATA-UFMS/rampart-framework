@@ -60,9 +60,9 @@ import pandas as pd
 import requests
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.core.config import COUNTRY_STRATA, get_absolute_output_path, START_YEAR, END_YEAR
-from src.core.indicators import ALL_INDICATORS
-from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+from core.config import COUNTRY_STRATA, get_absolute_output_path, START_YEAR, END_YEAR
+from core.indicators import ALL_INDICATORS
+from core.scientific_config import RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
 

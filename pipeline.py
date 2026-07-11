@@ -21,20 +21,26 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+# Permite executar o pipeline sem instalar o pacote (`python pipeline.py`).
+# Com `pip install -e .` esta insercao e redundante, mas inofensiva.
+_SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
 try:
-    from src.core.scientific_config import SCIENTIFIC_CONFIG
+    from core.scientific_config import SCIENTIFIC_CONFIG
 except Exception as exc:
     print(f"[WARN] Falha ao importar SCIENTIFIC_CONFIG: {exc}")
     SCIENTIFIC_CONFIG = {}
 
 try:
-    from src.core.config import get_execution_metadata
+    from core.config import get_execution_metadata
 except Exception as exc:
     print(f"[WARN] Falha ao importar get_execution_metadata: {exc}")
     get_execution_metadata = None
 
 try:
-    from src.core.validation import TemporalValidator
+    from core.validation import TemporalValidator
 except Exception as exc:
     print(f"[WARN] Falha ao importar TemporalValidator: {exc}")
     TemporalValidator = None
@@ -97,7 +103,7 @@ def _snapshot_scientific_config(root: str) -> None:
 
 def _discover():
     """Descoberta preguiçosa de paradigmas — importação aciona o registro."""
-    from src.core.paradigm_registry import discover_paradigms
+    from core.paradigm_registry import discover_paradigms
     paradigms = discover_paradigms()
     if not paradigms:
         raise RuntimeError("Nenhum paradigma descoberto — verifique src/architectures_ml/*/setup.py")

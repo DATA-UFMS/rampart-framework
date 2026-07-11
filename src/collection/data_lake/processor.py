@@ -67,8 +67,8 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*invalid va
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.apply operated on the grouping columns.*')
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from src.core.config import get_absolute_output_path
-from src.core.indicators import ALL_INDICATORS
+from core.config import get_absolute_output_path
+from core.indicators import ALL_INDICATORS
 
 class DataLakeProcessor:
     """

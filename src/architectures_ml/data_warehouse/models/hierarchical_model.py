@@ -30,12 +30,12 @@ _actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '
 if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
 
-from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+from core.scientific_config import RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
 
 try:
-    from src.core.config import get_absolute_output_path
+    from core.config import get_absolute_output_path
 except ImportError:
     def get_absolute_output_path(relative_path):
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))

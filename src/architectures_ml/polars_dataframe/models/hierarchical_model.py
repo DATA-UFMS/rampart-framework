@@ -37,7 +37,7 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
 project_root = os.path.abspath(project_root)
 if project_root not in sys.path:
     sys.path.append(project_root)
-from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+from core.scientific_config import RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
 

@@ -21,11 +21,12 @@ import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+_SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
-from src.core.scientific_config import SCIENTIFIC_CONFIG
-from src.statistical_validation.equivalence_estimation import (
+from core.scientific_config import SCIENTIFIC_CONFIG
+from statistical_validation.equivalence_estimation import (
     _bootstrap_ci,
     _decision_equivalence,
     _load_baseline_pairs,
