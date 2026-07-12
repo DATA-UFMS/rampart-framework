@@ -50,7 +50,7 @@ class HierarchicalModelTaskGraph:
     """
     
     def __init__(self):
-        print("Inicializando Modelo Hierárquico Data Lake")
+        print("Inicializando Modelo Hierárquico Dask")
 
         self.target_col = 'dropout_rate_task_graph'
 
@@ -205,7 +205,7 @@ class HierarchicalModelTaskGraph:
             final_alpha = ridge_cv.alpha_
             residual_model = ridge_cv
 
-            print(f"      Simple Hierarchical Data Lake:")
+            print(f"      Simple Hierarchical Dask:")
             print(f"         {features_count} features x {samples_count} samples de resíduos")
             print(f"         alpha selecionado por RidgeCV: {final_alpha:.2f}")
             print(f"         Shrinkage aplicado em {n_countries} países")
@@ -322,7 +322,7 @@ class HierarchicalModelTaskGraph:
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
         """Executar análise hierárquica completa para um fold específico."""
         fold_id = fold_info['fold_id']
-        print(f"\nAnalisando Fold {fold_id} Data Lake (NORMAL)...")
+        print(f"\nAnalisando Fold {fold_id} Dask (NORMAL)...")
 
         # Registrar features usadas para auditoria
         try:
@@ -446,7 +446,7 @@ class HierarchicalModelTaskGraph:
         if getattr(self, '_needs_persist', False):
             self.ddf = self.ddf.persist()
             self._needs_persist = False
-        print("Análise hierárquica Data Lake")
+        print("Análise hierárquica Dask")
         print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
 
         all_results = {
@@ -538,11 +538,11 @@ class HierarchicalModelTaskGraph:
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
 
-        print(f"\nResultados Data Lake (NORMAL) salvos: {results_file}")
+        print(f"\nResultados Dask (NORMAL) salvos: {results_file}")
         
         return all_results
 
 if __name__ == "__main__":
     model = HierarchicalModelTaskGraph()
     results = model.run_hierarchical_analysis()
-    print("\nAnálise hierárquica Data Lake concluída!")
+    print("\nAnálise hierárquica Dask concluída!")

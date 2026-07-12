@@ -72,7 +72,7 @@ class BaselineModelAnalysisSqlEngine:
     
     def __init__(self):
         """Inicializa a análise baseline para arquitetura Data Warehouse."""
-        print("Inicializando análise baseline Data Warehouse")
+        print("Inicializando análise baseline DuckDB")
         
         dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/prep/temporal_folds_sql_engine.json")
@@ -420,7 +420,7 @@ class BaselineModelAnalysisSqlEngine:
         Returns:
             Dict: Estatísticas da distribuição do target incluindo temporal e por país
         """
-        print(f"\nAnálise da distribuição do target Data Warehouse")
+        print(f"\nAnálise da distribuição do target DuckDB")
         
         analysis = {}
         
@@ -494,7 +494,7 @@ class BaselineModelAnalysisSqlEngine:
                 first_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE year = {first_year} AND {self.target_col} IS NOT NULL")
                 last_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE year = {last_year} AND {self.target_col} IS NOT NULL")
                 
-                print(f"\n   Evolução temporal Data Warehouse:")
+                print(f"\n   Evolução temporal DuckDB:")
                 print(f"      Primeiro ano ({first_year}): {first_mean:.1f}%")
                 print(f"      Último ano ({last_year}): {last_mean:.1f}%")
                 
@@ -831,7 +831,7 @@ class BaselineModelAnalysisSqlEngine:
         Returns:
             Dict: Análise de predictabilidade agregada com gaps de generalização
         """
-        print("\nAnálise de predictabilidade Data Warehouse")
+        print("\nAnálise de predictabilidade DuckDB")
         
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -969,7 +969,7 @@ class BaselineModelAnalysisSqlEngine:
         Returns:
             Dict: Resultados completos salvos
         """
-        print(f"\nSalvando resultados Data Warehouse...")
+        print(f"\nSalvando resultados DuckDB...")
         
         full_results = {
             'architecture': 'sql_engine_consumer',
@@ -1004,7 +1004,7 @@ class BaselineModelAnalysisSqlEngine:
         Returns:
             Dict: Resultados completos da análise comparativa Data Warehouse vs Data Lake
         """
-        print(f"Análise completa - arquitetura Data Warehouse")
+        print(f"Análise completa - arquitetura DuckDB")
         
         try:
             target_analysis = self.analyze_target_distribution()
@@ -1020,7 +1020,7 @@ class BaselineModelAnalysisSqlEngine:
                                        predictability_analysis)
             
             # 5. Resumo final
-            print(f"\nResumo - arquitetura Data Warehouse:")
+            print(f"\nResumo - arquitetura DuckDB:")
             print(f"   Target: {self.target_col}")
             print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
             print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
@@ -1071,7 +1071,7 @@ class BaselineModelAnalysisSqlEngine:
             return results
             
         except Exception as e:
-            print(f"\n[ERROR] Análise Data Warehouse: {e}")
+            print(f"\n[ERROR] Análise DuckDB: {e}")
             return {
                 'architecture': 'sql_engine_consumer',
                 'status': 'failed',
@@ -1086,7 +1086,7 @@ if __name__ == "__main__":
     try:
         analyzer = BaselineModelAnalysisSqlEngine()
         results = analyzer.run_complete_analysis()
-        print(f"\nAnálise baseline Data Warehouse concluída!")
+        print(f"\nAnálise baseline DuckDB concluída!")
     except Exception as e:
         print(f"\n[ERROR] {e}")
         if analyzer:

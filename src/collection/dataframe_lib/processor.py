@@ -58,8 +58,8 @@ class DataFrameLibProcessor:
         Args:
             dataset_name: Nome do dataset ("worldbank" ou "inep_censo")
         """
-        print("Inicializando processador Polars DataFrame")
-        print("Arquitetura: Data Lake com Polars, schema-on-read")
+        print("Inicializando processador Polars")
+        print("Arquitetura: Polars, schema-on-read")
 
         self.dataset_name = dataset_name
         raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
@@ -286,7 +286,7 @@ class DataFrameLibProcessor:
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
 
-            print(f"\nProcessamento Polars DataFrame concluido em {processing_time:.2f}s")
+            print(f"\nProcessamento Polars concluido em {processing_time:.2f}s")
 
             return {
                 'status': 'success',

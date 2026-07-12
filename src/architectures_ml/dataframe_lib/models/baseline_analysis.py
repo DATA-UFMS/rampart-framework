@@ -56,7 +56,7 @@ class BaselineModelAnalysisDataFrameLib:
         """
         Inicializa a análise baseline para arquitetura Polars DataFrame.
         """
-        print("Inicializando análise baseline Polars DataFrame")
+        print("Inicializando análise baseline Polars")
 
         self.data_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/master_data_dataframe_lib.parquet")
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/temporal_folds_dataframe_lib.json")
@@ -130,7 +130,7 @@ class BaselineModelAnalysisDataFrameLib:
         Returns:
             Dict: Estatísticas da distribuição do target
         """
-        print(f"\nAnálise da distribuição do target Polars DataFrame")
+        print(f"\nAnálise da distribuição do target Polars")
 
         analysis = {}
 
@@ -163,7 +163,7 @@ class BaselineModelAnalysisDataFrameLib:
             }
             unique_years = self.df_lazy.select(pl.col('year').n_unique()).collect()[0, 0]
 
-        print(f"   Target Polars DataFrame ({self.target_col}):")
+        print(f"   Target Polars ({self.target_col}):")
         print(f"      Média: {target_stats['mean']:.2f}%")
         print(f"      Desvio: {target_stats['std']:.2f}%")
         print(f"      Range: {target_stats['min']:.2f}% - {target_stats['max']:.2f}%")
@@ -181,7 +181,7 @@ class BaselineModelAnalysisDataFrameLib:
                 pl.col(self.target_col).max().alias('max')
             ]).sort('year').collect()
 
-            print(f"\n   Evolução temporal Polars DataFrame:")
+            print(f"\n   Evolução temporal Polars:")
             if len(temporal_df) > 0:
                 first_year_mean = temporal_df[0, 'mean']
                 last_year_mean = temporal_df[-1, 'mean']
@@ -201,7 +201,7 @@ class BaselineModelAnalysisDataFrameLib:
             pl.col(self.target_col).max().alias('max')
         ]).sort('mean', descending=True).collect()
 
-        print(f"\n   Variação por país (Polars DataFrame):")
+        print(f"\n   Variação por país (Polars):")
         if len(country_df) > 0:
             print(f"      Menor dropout: {country_df[-1, 'mean']:.1f}% ({country_df[-1, 'country_code']})")
             print(f"      Maior dropout: {country_df[0, 'mean']:.1f}% ({country_df[0, 'country_code']})")
@@ -490,7 +490,7 @@ class BaselineModelAnalysisDataFrameLib:
         Returns:
             Dict: Análise completa de predictabilidade com métricas de estabilidade
         """
-        print("\nAnálise de predictabilidade Polars DataFrame")
+        print("\nAnálise de predictabilidade Polars")
 
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -627,7 +627,7 @@ class BaselineModelAnalysisDataFrameLib:
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
 
-        print(f"   Resultados Polars DataFrame salvos: {results_file}")
+        print(f"   Resultados Polars salvos: {results_file}")
 
         return full_results
 
@@ -640,7 +640,7 @@ class BaselineModelAnalysisDataFrameLib:
         Returns:
             Dict: Resultados consolidados da análise ou erro
         """
-        print(f"Análise completa - arquitetura Polars DataFrame")
+        print(f"Análise completa - arquitetura Polars")
 
         try:
             target_analysis = self.analyze_target_distribution()
@@ -649,7 +649,7 @@ class BaselineModelAnalysisDataFrameLib:
             results = self.save_results(target_analysis, baseline_results,
                                         predictability_analysis)
 
-            print(f"\nResumo - arquitetura Polars DataFrame:")
+            print(f"\nResumo - arquitetura Polars:")
             print(f"   Target: {self.target_col}")
             print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
             print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
@@ -659,7 +659,7 @@ class BaselineModelAnalysisDataFrameLib:
 
         except Exception as e:
             import traceback
-            print(f"\nErro na análise Polars DataFrame: {e}")
+            print(f"\nErro na análise Polars: {e}")
             traceback.print_exc()
             return {
                 'architecture': 'dataframe_lib',
@@ -671,4 +671,4 @@ class BaselineModelAnalysisDataFrameLib:
 if __name__ == "__main__":
     analyzer = BaselineModelAnalysisDataFrameLib()
     results = analyzer.run_complete_analysis()
-    print("\nAnálise baseline Polars DataFrame concluída!")
+    print("\nAnálise baseline Polars concluída!")

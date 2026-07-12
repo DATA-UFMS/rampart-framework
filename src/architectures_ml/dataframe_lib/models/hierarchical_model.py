@@ -54,7 +54,7 @@ class HierarchicalModelDataFrameLib:
         """
         Inicializa modelo hierárquico Polars DataFrame.
         """
-        print("Inicializando Modelo Hierárquico Polars DataFrame")
+        print("Inicializando Modelo Hierárquico Polars")
 
         self.target_col = 'dropout_rate_dataframe_lib'
 
@@ -220,7 +220,7 @@ class HierarchicalModelDataFrameLib:
             final_alpha = ridge_cv.alpha_
             residual_model = ridge_cv
 
-            print(f"      Simple Hierarchical Polars DataFrame:")
+            print(f"      Simple Hierarchical Polars:")
             print(f"         {features_count} features x {samples_count} samples de resíduos")
             print(f"         alpha selecionado por RidgeCV: {final_alpha:.2f}")
         else:
@@ -339,7 +339,7 @@ class HierarchicalModelDataFrameLib:
         Executar análise hierárquica completa para um fold específico.
         """
         fold_id = fold_info['fold_id']
-        print(f"\nAnalisando Fold {fold_id} Polars DataFrame (NORMAL)...")
+        print(f"\nAnalisando Fold {fold_id} Polars (NORMAL)...")
 
         # Registrar features usadas para auditoria
         try:
@@ -464,7 +464,7 @@ class HierarchicalModelDataFrameLib:
         """
         Executar análise hierárquica completa para arquitetura Polars DataFrame.
         """
-        print("Análise hierárquica Polars DataFrame")
+        print("Análise hierárquica Polars")
         print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
 
         all_results = {
@@ -556,7 +556,7 @@ class HierarchicalModelDataFrameLib:
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
 
-        print(f"\nResultados Polars DataFrame (NORMAL) salvos: {results_file}")
+        print(f"\nResultados Polars (NORMAL) salvos: {results_file}")
 
         return all_results
 
@@ -564,4 +564,4 @@ class HierarchicalModelDataFrameLib:
 if __name__ == "__main__":
     model = HierarchicalModelDataFrameLib()
     results = model.run_hierarchical_analysis()
-    print("\nAnálise hierárquica Polars DataFrame concluída!")
+    print("\nAnálise hierárquica Polars concluída!")

@@ -35,7 +35,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
 
     PARADIGM_META = {
         'name': 'sql_engine',
-        'label': 'Data Warehouse com DuckDB',
+        'label': 'SQL Engine (DuckDB)',
         'processor_module': 'collection.sql_engine.processor',
         'processor_class': 'SqlEngineProcessor',
         'processor_run_method': 'run_sql_engine_processing',
@@ -55,7 +55,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         output_base = get_absolute_output_path('ml_pipeline/architectures/sql_engine')
         super().__init__(architecture_name='sql_engine', output_base_path=output_base)
         
-        print("Inicializando Pipeline ML Data Warehouse")
+        print("Inicializando Pipeline ML DuckDB")
         print("SQL-first com validacao temporal")
         
         # Configurações específicas do Data Warehouse
@@ -64,7 +64,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         self.conn_manager = None
         
         print(f"  Diretorio base: {self.output_base}")
-        print(f"  Data Warehouse: {self.db_path}")
+        print(f"  DuckDB: {self.db_path}")
         print("  Zero file I/O, processamento SQL nativo sem cache")
     
     def setup_environment(self) -> None:
@@ -595,7 +595,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             data: Ignorado (usa SQL direto)
             folds: Lista de folds
         """
-        print("\nCriando temporal views Data Warehouse")
+        print("\nCriando temporal views DuckDB")
         
         for fold in folds:
             fold_id = fold['fold_id']
@@ -674,7 +674,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         
         self.save_master_config(folds, total_obs, total_countries, (int(min_year), int(max_year)))
         
-        print(f"  Data Warehouse: Views temporais criadas, zero file I/O")
+        print(f"  DuckDB: Views temporais criadas, zero file I/O")
     
     def get_numeric_features(self, data: Any) -> List[str]:
         """
@@ -1000,7 +1000,7 @@ def main():
         - Comparação arquitetural (usar architectural_benchmark.py)
     """
     print("=" * 80)
-    print("Pipeline ML Data Warehouse")
+    print("Pipeline ML DuckDB")
     print("=" * 80)
 
     try:
@@ -1032,7 +1032,7 @@ def main():
                 
     except Exception as e:
         print(f"\n[ERROR] Pipeline falhou: {e}")
-        print("  Verifique se Data Warehouse foi processado corretamente")
+        print("  Verifique se DuckDB foi processado corretamente")
         print("  Execute sql_engine/processor.py antes deste script")
         return {'success': False, 'error': str(e)}
     

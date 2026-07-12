@@ -80,7 +80,7 @@ class SqlEngineProcessor:
     """
     
     def __init__(self, dataset_name: str = "worldbank"):
-        print("Inicializando processador Data Warehouse")
+        print("Inicializando processador DuckDB")
         print("Schema-on-write com DuckDB OLAP, SQL nativo")
 
         self.dataset_name = dataset_name
@@ -453,7 +453,7 @@ class SqlEngineProcessor:
             - SQLProcessingError: Erros de processamento SQL
             - Exception: Erros inesperados com traceback completo
         """
-        print("\nExecutando pipeline Data Warehouse")
+        print("\nExecutando pipeline DuckDB")
 
         try:
             print("\n[1/6] Carregando dados completos")

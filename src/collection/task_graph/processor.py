@@ -94,8 +94,8 @@ class TaskGraphProcessor:
         Args:
             dataset_name: Nome do dataset ("worldbank" ou "inep_censo")
         """
-        print("Inicializando processador Data Lake")
-        print("Arquitetura: Data Lake com Dask, schema-on-read")
+        print("Inicializando processador Dask")
+        print("Arquitetura: Dask, schema-on-read")
 
         self.dataset_name = dataset_name
         self.run_timestamp = datetime.now().isoformat()
@@ -277,7 +277,7 @@ class TaskGraphProcessor:
             forem posteriormente filtrados ou agregados, violando princípio
             de lazy evaluation do Dask (Rocklin, 2015).
         """
-        print("Configurando metadados Data Lake")
+        print("Configurando metadados Dask")
 
         if metadata_status['has_completeness_score']:
             print("  Score de completude preservado (validacao diferida)")
@@ -392,7 +392,7 @@ class TaskGraphProcessor:
             embaraçosamente paralela. Não há comunicação entre partições,
             garantindo escalabilidade linear.
         """
-        print(f"Pipeline Data Lake: {ddf.npartitions} particoes")
+        print(f"Pipeline Dask: {ddf.npartitions} particoes")
 
         ddf_processed = ddf.map_partitions(
             self._add_distributed_processing_metadata
@@ -581,7 +581,7 @@ class TaskGraphProcessor:
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
 
-            print(f"\nProcessamento Data Lake concluido em {processing_time:.2f}s "
+            print(f"\nProcessamento Dask concluido em {processing_time:.2f}s "
                   f"({len(ddf_complete)/processing_time:.0f} registros/s)")
             
             return {

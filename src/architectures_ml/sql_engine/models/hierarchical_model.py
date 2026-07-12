@@ -62,7 +62,7 @@ class HierarchicalModelSQLFirst:
     """
     
     def __init__(self):
-        print("Inicializando Modelo Hierárquico Data Warehouse")
+        print("Inicializando Modelo Hierárquico DuckDB")
 
         self.target_col = 'dropout_rate_sql_engine'
 
@@ -223,7 +223,7 @@ class HierarchicalModelSQLFirst:
         country_residuals_y = []
         country_sample_counts = {}
         
-        print(f"      Processamento adaptativo Data Warehouse: {n_countries} países, {total_samples} amostras")
+        print(f"      Processamento adaptativo DuckDB: {n_countries} países, {total_samples} amostras")
         
         for country in countries_train.unique():
             country_mask = countries_train == country
@@ -258,7 +258,7 @@ class HierarchicalModelSQLFirst:
             final_alpha = ridge_cv.alpha_
             residual_model = ridge_cv
 
-            print(f"      Simple Hierarchical Data Warehouse:")
+            print(f"      Simple Hierarchical DuckDB:")
             print(f"         {features_count} features x {samples_count} samples de resíduos")
             print(f"         alpha selecionado por RidgeCV: {final_alpha:.2f}")
             print(f"         Shrinkage aplicado em {n_countries} países")
@@ -499,7 +499,7 @@ class HierarchicalModelSQLFirst:
     
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa via ML Data Warehouse Consumer."""
-        print("Análise hierárquica Data Warehouse")
+        print("Análise hierárquica DuckDB")
         print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
         
         try:
@@ -534,7 +534,7 @@ class HierarchicalModelSQLFirst:
             
             # Performance agregada
             if all_results['folds']:
-                print(f"\nPerformance agregada Data Warehouse:")
+                print(f"\nPerformance agregada DuckDB:")
                 
                 for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
                     val_r2s = []
@@ -565,7 +565,7 @@ class HierarchicalModelSQLFirst:
                         else:
                             print(f"      Necessita regularização adicional")
                 
-                print(f"\nResumo hierárquico Data Warehouse")
+                print(f"\nResumo hierárquico DuckDB")
             
             results_file = f"{self.results_path}/hierarchical_analysis_sql_engine_results.json"
             with open(results_file, 'w') as f:
@@ -600,6 +600,6 @@ if __name__ == "__main__":
     try:
         model = HierarchicalModelSQLFirst()
         results = model.run_hierarchical_analysis()
-        print(f"\nAnálise hierárquica Data Warehouse concluída!")
+        print(f"\nAnálise hierárquica DuckDB concluída!")
     except Exception as e:
         print(f"\n[ERROR] {e}")

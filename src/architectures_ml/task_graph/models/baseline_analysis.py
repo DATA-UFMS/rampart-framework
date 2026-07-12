@@ -30,7 +30,7 @@ class BaselineModelAnalysisTaskGraph:
     
     def __init__(self):
         """Inicializa a análise baseline para arquitetura Data Lake."""
-        print("Inicializando análise baseline Data Lake")
+        print("Inicializando análise baseline Dask")
         
         self.data_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/master_data_task_graph.parquet")
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/temporal_folds_task_graph.json")
@@ -107,7 +107,7 @@ class BaselineModelAnalysisTaskGraph:
     
     def analyze_target_distribution(self) -> Dict:
         """Analisar distribuição do target Data Lake."""
-        print(f"\nAnálise da distribuição do target Data Lake")
+        print(f"\nAnálise da distribuição do target Dask")
         
         analysis = {}
         
@@ -160,7 +160,7 @@ class BaselineModelAnalysisTaskGraph:
             year_max = computed_target['year_max']
             unique_years = computed_target['unique_years']
         
-        print(f"   Target Data Lake ({self.target_col}):")
+        print(f"   Target Dask ({self.target_col}):")
         print(f"      Média: {target_stats['mean']:.2f}%")
         print(f"      Desvio: {target_stats['std']:.2f}%")
         print(f"      Range: {target_stats['min']:.2f}% - {target_stats['max']:.2f}%")
@@ -174,7 +174,7 @@ class BaselineModelAnalysisTaskGraph:
             ])
             temporal_stats = temporal_stats_ddf.compute().round(2)
             
-            print(f"\n   Evolução temporal Data Lake:")
+            print(f"\n   Evolução temporal Dask:")
             if year_min in temporal_stats.index:
                 print(f"      Primeiro ano ({year_min}): {temporal_stats.loc[year_min, 'mean']:.1f}%")
             if year_max in temporal_stats.index:
@@ -190,7 +190,7 @@ class BaselineModelAnalysisTaskGraph:
         ])
         country_stats = country_stats_ddf.compute().round(2)
         
-        print(f"\n   Variação por país (Data Lake):")
+        print(f"\n   Variação por país (Dask):")
         print(f"      Menor dropout: {country_stats['mean'].min():.1f}% ({country_stats['mean'].idxmin()})")
         print(f"      Maior dropout: {country_stats['mean'].max():.1f}% ({country_stats['mean'].idxmax()})")
         print(f"      Variação entre países: {country_stats['mean'].std():.1f}% (std)")
@@ -459,7 +459,7 @@ class BaselineModelAnalysisTaskGraph:
 
     def analyze_predictability(self, baseline_results: Dict) -> Dict:
         """Análise de predictabilidade dos modelos baseline."""
-        print("\nAnálise de predictabilidade Data Lake")
+        print("\nAnálise de predictabilidade Dask")
         
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -584,7 +584,7 @@ class BaselineModelAnalysisTaskGraph:
     def save_results(self, target_analysis: Dict, baseline_results: Dict,
                     predictability_analysis: Dict):
         """Salvar resultados da análise Data Lake."""
-        print(f"\nSalvando resultados Data Lake...")
+        print(f"\nSalvando resultados Dask...")
         
         full_results = {
             'architecture': 'task_graph',
@@ -605,7 +605,7 @@ class BaselineModelAnalysisTaskGraph:
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
         
-        print(f"   Resultados Data Lake salvos: {results_file}")
+        print(f"   Resultados Dask salvos: {results_file}")
         
         return full_results
     
@@ -614,7 +614,7 @@ class BaselineModelAnalysisTaskGraph:
         if getattr(self, '_needs_persist', False):
             self.ddf = self.ddf.persist()
             self._needs_persist = False
-        print(f"Análise completa - arquitetura Data Lake")
+        print(f"Análise completa - arquitetura Dask")
         
         try:
             target_analysis = self.analyze_target_distribution()
@@ -623,9 +623,9 @@ class BaselineModelAnalysisTaskGraph:
             results = self.save_results(target_analysis, baseline_results, 
                                        predictability_analysis)
             
-            print(f"\nResumo executivo - arquitetura Data Lake:")
+            print(f"\nResumo executivo - arquitetura Dask:")
             print(f"   Pesquisa: Comparação de arquiteturas ML para dropout")
-            print(f"   Arquitetura: Data Lake (Processamento Distribuído)")
+            print(f"   Arquitetura: Dask (Processamento Distribuído)")
             print(f"   Target: {self.target_col}")
             print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
             print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
@@ -650,7 +650,7 @@ class BaselineModelAnalysisTaskGraph:
             return results
             
         except Exception as e:
-            print(f"\nErro na análise Data Lake: {e}")
+            print(f"\nErro na análise Dask: {e}")
             traceback.print_exc()
             return {
                 'architecture': 'task_graph',

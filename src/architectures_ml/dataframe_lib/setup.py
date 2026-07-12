@@ -40,7 +40,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
 
     PARADIGM_META = {
         'name': 'dataframe_lib',
-        'label': 'Polars DataFrame com Lazy Evaluation',
+        'label': 'DataFrame Library (Polars)',
         'processor_module': 'collection.dataframe_lib.processor',
         'processor_class': 'DataFrameLibProcessor',
         'processor_run_method': 'run_dataframe_lib_processing',
@@ -85,7 +85,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
         self.logger = get_logger(__name__, with_ml_context=True)
         self.logger.set_context(architecture='dataframe_lib', module='setup')
 
-        print("Inicializando Pipeline ML Polars DataFrame")
+        print("Inicializando Pipeline ML Polars")
         print("Lazy evaluation com expressions Polars")
 
         self.parquet_path = get_absolute_output_path('collection/dataframe_lib/processed/final_results.parquet')
@@ -768,7 +768,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
             df: DataFrame Polars processado
             folds: Lista de configurações de folds
         """
-        print("\nSalvando folds Polars DataFrame")
+        print("\nSalvando folds Polars")
 
         for fold in folds:
             fold_id = fold['fold_id']
@@ -837,13 +837,13 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
 
         self.save_master_config(folds, total_obs, total_countries, (year_min, year_max))
 
-        print(f"  Polars DataFrame: folds salvos")
+        print(f"  Polars: folds salvos")
 
 
 def main():
     """Executa o pipeline Polars DataFrame end-to-end para validação local."""
     print("=" * 80)
-    print("Pipeline ML Polars DataFrame")
+    print("Pipeline ML Polars")
     print("=" * 80)
 
     try:

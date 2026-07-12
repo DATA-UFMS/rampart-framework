@@ -36,7 +36,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
 
     PARADIGM_META = {
         'name': 'task_graph',
-        'label': 'Data Lake com Dask',
+        'label': 'Task-Graph Scheduler (Dask)',
         'processor_module': 'collection.task_graph.processor',
         'processor_class': 'TaskGraphProcessor',
         'processor_run_method': 'run_task_graph_processing',
@@ -87,7 +87,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         self.logger = get_logger(__name__, with_ml_context=True)
         self.logger.set_context(architecture='task_graph', module='setup')
         
-        print("Inicializando Pipeline ML Data Lake")
+        print("Inicializando Pipeline ML Dask")
         print("Schema-on-read com processamento distribuido lazy")
         
         # Configurações de paths Data Lake
@@ -161,7 +161,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             
         Leitura lazy -- materialização sob demanda.
         """
-        self.logger.info("Iniciando carregamento Data Lake com schema-on-read")
+        self.logger.info("Iniciando carregamento Dask com schema-on-read")
         print("\nCarregando dados (schema-on-read)")
         
         ddf = None
@@ -887,7 +887,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         
         self.save_master_config(folds, total_obs, total_countries, (year_min, year_max))
         
-        print(f"  Data Lake: folds salvos")
+        print(f"  Dask: folds salvos")
     
     
     def _load_from_partitioned_raw_distributed(self) -> dd.DataFrame:
@@ -955,7 +955,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
 def main():
     """Executa o pipeline Data Lake end-to-end para validação local."""
     print("=" * 80)
-    print("Pipeline ML Data Lake")
+    print("Pipeline ML Dask")
     print("=" * 80)
 
     try:
@@ -969,7 +969,7 @@ def main():
             print(f"  Folds temporais: {results.get('folds_created', 'N/A')}")
             print(f"  Processamento: {results.get('processing_time', 'N/A')}s")
         else:
-            print("[ERROR] Pipeline Data Lake falhou")
+            print("[ERROR] Pipeline Dask falhou")
             if 'error' in results:
                 print(f"  Erro: {results['error']}")
 
@@ -979,7 +979,7 @@ def main():
                 print(f"  {key}: {value}")
                 
     except Exception as e:
-        print(f"\n[ERROR] Pipeline Data Lake falhou: {e}")
+        print(f"\n[ERROR] Pipeline Dask falhou: {e}")
         print("  Verificar se dados foram processados pelo task_graph/processor.py")
         return {'success': False, 'error': str(e)}
     
