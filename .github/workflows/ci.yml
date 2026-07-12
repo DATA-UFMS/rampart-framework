@@ -42,7 +42,7 @@ jobs:
           from core.paradigm_registry import discover_paradigms
           paradigms = sorted(discover_paradigms())
           print('paradigmas descobertos:', paradigms)
-          assert set(paradigms) >= {'data_lake', 'data_warehouse', 'polars_dataframe'}, paradigms
+          assert set(paradigms) >= {'task_graph', 'sql_engine', 'dataframe_lib'}, paradigms
           "
 
       - name: Testes

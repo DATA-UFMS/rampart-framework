@@ -64,12 +64,12 @@ def main() -> None:
     def row_for_phase(ph: str) -> str:
         per_phase = lat.get("per_phase", {})
         arch_key = "architectures"
-        dl_p50 = per_phase.get(ph, {}).get(arch_key, {}).get("data_lake", {}).get("p50")
-        dw_p50 = per_phase.get(ph, {}).get(arch_key, {}).get("data_warehouse", {}).get("p50")
+        dl_p50 = per_phase.get(ph, {}).get(arch_key, {}).get("task_graph", {}).get("p50")
+        dw_p50 = per_phase.get(ph, {}).get(arch_key, {}).get("sql_engine", {}).get("p50")
         sp = per_phase.get(ph, {}).get("speedup_dw_vs_dl_p50")
         # recursos
-        rdl = res.get(ph, {}).get("data_lake", {}) if res else {}
-        rdw = res.get(ph, {}).get("data_warehouse", {}) if res else {}
+        rdl = res.get(ph, {}).get("task_graph", {}) if res else {}
+        rdw = res.get(ph, {}).get("sql_engine", {}) if res else {}
         cpu_dl = rdl.get('cpu_proc_mean')
         cpu_dw = rdw.get('cpu_proc_mean')
         rss_dl = rdl.get('rss_mb_mean')
@@ -86,8 +86,8 @@ def main() -> None:
     # total
     t_total = lat.get("total", {})
     t_arch_key = "architectures"
-    t_dl = t_total.get(t_arch_key, {}).get("data_lake", {}).get("p50")
-    t_dw = t_total.get(t_arch_key, {}).get("data_warehouse", {}).get("p50")
+    t_dl = t_total.get(t_arch_key, {}).get("task_graph", {}).get("p50")
+    t_dw = t_total.get(t_arch_key, {}).get("sql_engine", {}).get("p50")
     t_sp = t_total.get("speedup_dw_vs_dl_p50")
     t_sp_s = f"{float(t_sp):.2f}×" if (t_sp is not None and np.isfinite(t_sp)) else "—"
     lines.append("\\hline")

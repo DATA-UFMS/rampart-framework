@@ -314,7 +314,7 @@ if __name__ == "__main__":
     logger.set_context(
         experiment_id="exp_001",
         dataset="worldbank",
-        architecture="data_lake"
+        architecture="task_graph"
     )
 
     logger.info("Iniciando processamento de dados")

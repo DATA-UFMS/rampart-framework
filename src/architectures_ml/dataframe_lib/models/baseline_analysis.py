@@ -35,7 +35,7 @@ from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 setup_reproducibility()
 
 
-class BaselineModelAnalysisPolarsDataFrame:
+class BaselineModelAnalysisDataFrameLib:
     """
     Análise de modelos baseline para arquitetura Polars DataFrame.
 
@@ -58,9 +58,9 @@ class BaselineModelAnalysisPolarsDataFrame:
         """
         print("Inicializando análise baseline Polars DataFrame")
 
-        self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet")
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json")
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/models/baseline_results")
+        self.data_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/master_data_dataframe_lib.parquet")
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/temporal_folds_dataframe_lib.json")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/models/baseline_results")
 
         os.makedirs(self.results_path, exist_ok=True)
 
@@ -75,7 +75,7 @@ class BaselineModelAnalysisPolarsDataFrame:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
 
-        self.target_col = 'dropout_rate_polars_dataframe'
+        self.target_col = 'dropout_rate_dataframe_lib'
         self._load_data_summary()
 
     def _load_data_summary(self):
@@ -138,7 +138,7 @@ class BaselineModelAnalysisPolarsDataFrame:
             stats = self._cached_basic_stats
 
             target_stats = {
-                'architecture': 'polars_dataframe',
+                'architecture': 'dataframe_lib',
                 'target_variable': self.target_col,
                 'mean': float(stats['target_mean']),
                 'std': float(stats['target_std']),
@@ -158,7 +158,7 @@ class BaselineModelAnalysisPolarsDataFrame:
             ]).collect()
 
             target_stats = {
-                'architecture': 'polars_dataframe',
+                'architecture': 'dataframe_lib',
                 'target_variable': self.target_col
             }
             unique_years = self.df_lazy.select(pl.col('year').n_unique()).collect()[0, 0]
@@ -540,7 +540,7 @@ class BaselineModelAnalysisPolarsDataFrame:
             best_generalization_gap = generalization_gaps[best_baseline_overall]['mean_gap']
 
             predictability_analysis = {
-                'architecture': 'polars_dataframe',
+                'architecture': 'dataframe_lib',
                 'methodology': 'scientific_baselines_with_temporal_lags',
                 'validation_scores': all_val_scores,
                 'test_scores': all_test_scores,
@@ -586,7 +586,7 @@ class BaselineModelAnalysisPolarsDataFrame:
 
         else:
             predictability_analysis = {
-                'architecture': 'polars_dataframe',
+                'architecture': 'dataframe_lib',
                 'baseline_scores': {},
                 'predictability_level': 'unknown'
             }
@@ -609,7 +609,7 @@ class BaselineModelAnalysisPolarsDataFrame:
         print(f"\nSalvando resultados...")
 
         full_results = {
-            'architecture': 'polars_dataframe',
+            'architecture': 'dataframe_lib',
             'target_variable': self.target_col,
             'data_source': self.data_path,
             'target_distribution_analysis': target_analysis,
@@ -623,7 +623,7 @@ class BaselineModelAnalysisPolarsDataFrame:
             }
         }
 
-        results_file = f"{self.results_path}/baseline_analysis_polars_dataframe_results.json"
+        results_file = f"{self.results_path}/baseline_analysis_dataframe_lib_results.json"
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
 
@@ -662,13 +662,13 @@ class BaselineModelAnalysisPolarsDataFrame:
             print(f"\nErro na análise Polars DataFrame: {e}")
             traceback.print_exc()
             return {
-                'architecture': 'polars_dataframe',
+                'architecture': 'dataframe_lib',
                 'status': 'failed',
                 'error': str(e)
             }
 
 
 if __name__ == "__main__":
-    analyzer = BaselineModelAnalysisPolarsDataFrame()
+    analyzer = BaselineModelAnalysisDataFrameLib()
     results = analyzer.run_complete_analysis()
     print("\nAnálise baseline Polars DataFrame concluída!")

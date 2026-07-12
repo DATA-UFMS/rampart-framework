@@ -121,14 +121,14 @@ def get_resources_processing() -> Tuple[Optional[float], Optional[float], Option
             continue
         # Normalizar underscores escapados do LaTeX para comparação
         norm = line.replace('\\_', '_')
-        if 'processing & data_lake' in norm:
+        if 'processing & task_graph' in norm:
             parts = [p.strip() for p in norm.split('&')]
             try:
                 cpu_dl = float(re.sub(r'[\\%\s]', '', parts[2]))
                 rss_dl = float(re.sub(r'[\\%\s]', '', parts[4]))
             except Exception:
                 pass
-        elif 'processing & data_warehouse' in norm:
+        elif 'processing & sql_engine' in norm:
             parts = [p.strip() for p in norm.split('&')]
             try:
                 cpu_dw = float(re.sub(r'[\\%\s]', '', parts[2]))

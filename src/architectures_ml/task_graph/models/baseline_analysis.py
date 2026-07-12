@@ -25,16 +25,16 @@ from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 setup_reproducibility()
 
 
-class BaselineModelAnalysisDataLake:
+class BaselineModelAnalysisTaskGraph:
     """Análise de modelos baseline para arquitetura Data Lake."""
     
     def __init__(self):
         """Inicializa a análise baseline para arquitetura Data Lake."""
         print("Inicializando análise baseline Data Lake")
         
-        self.data_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/master_data_data_lake.parquet")
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/temporal_folds_data_lake.json")
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/models/baseline_results")
+        self.data_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/master_data_task_graph.parquet")
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/temporal_folds_task_graph.json")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/models/baseline_results")
         
         os.makedirs(self.results_path, exist_ok=True)
         
@@ -50,7 +50,7 @@ class BaselineModelAnalysisDataLake:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
         
-        self.target_col = 'dropout_rate_data_lake'
+        self.target_col = 'dropout_rate_task_graph'
         self._load_data_summary()
     
     def _load_data_summary(self):
@@ -124,7 +124,7 @@ class BaselineModelAnalysisDataLake:
             computed_missing = dask.compute(missing_stats_batch)[0]
             
             target_stats = {
-                'architecture': 'data_lake',
+                'architecture': 'task_graph',
                 'target_variable': self.target_col,
                 'mean': float(target_describe['mean']),
                 'std': float(target_describe['std']),
@@ -147,7 +147,7 @@ class BaselineModelAnalysisDataLake:
             
             target_describe = computed_target['target_describe']
             target_stats = {
-                'architecture': 'data_lake',
+                'architecture': 'task_graph',
                 'target_variable': self.target_col,
                 'mean': float(target_describe['mean']),
                 'std': float(target_describe['std']),
@@ -516,7 +516,7 @@ class BaselineModelAnalysisDataLake:
             print(f"      Gap Generalização:     {best_generalization_gap:+.3f}")
             
             predictability_analysis = {
-                'architecture': 'data_lake',
+                'architecture': 'task_graph',
                 'methodology': 'scientific_baselines_with_temporal_lags',
                 'validation_scores': all_val_scores,
                 'test_scores': all_test_scores,
@@ -574,7 +574,7 @@ class BaselineModelAnalysisDataLake:
             
         else:
             predictability_analysis = {
-                'architecture': 'data_lake',
+                'architecture': 'task_graph',
                 'baseline_scores': {},
                 'predictability_level': 'unknown'
             }
@@ -587,7 +587,7 @@ class BaselineModelAnalysisDataLake:
         print(f"\nSalvando resultados Data Lake...")
         
         full_results = {
-            'architecture': 'data_lake',
+            'architecture': 'task_graph',
             'target_variable': self.target_col,
             'data_source': self.data_path,
             'target_distribution_analysis': target_analysis,
@@ -601,7 +601,7 @@ class BaselineModelAnalysisDataLake:
             }
         }
         
-        results_file = f"{self.results_path}/baseline_analysis_data_lake_results.json"
+        results_file = f"{self.results_path}/baseline_analysis_task_graph_results.json"
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
         
@@ -653,11 +653,11 @@ class BaselineModelAnalysisDataLake:
             print(f"\nErro na análise Data Lake: {e}")
             traceback.print_exc()
             return {
-                'architecture': 'data_lake',
+                'architecture': 'task_graph',
                 'status': 'failed',
                 'error': str(e)
             }
 
 if __name__ == "__main__":
-    analyzer = BaselineModelAnalysisDataLake()
+    analyzer = BaselineModelAnalysisTaskGraph()
     results = analyzer.run_complete_analysis()

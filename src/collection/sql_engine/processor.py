@@ -60,7 +60,7 @@ except ImportError:
     from connection_manager import DuckDBConnectionManager, SQLProcessingError
 
 
-class DataWarehouseProcessor:
+class SqlEngineProcessor:
     """
     Implementação do processador Data Warehouse para análise científica.
     
@@ -86,7 +86,7 @@ class DataWarehouseProcessor:
         self.dataset_name = dataset_name
         raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
         self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
-        self.output_dir = get_absolute_output_path('collection/data_warehouse')
+        self.output_dir = get_absolute_output_path('collection/sql_engine')
         self.db_path = f"{self.output_dir}/{dataset_name}_data.duckdb"
         
         os.makedirs(self.output_dir, exist_ok=True)
@@ -205,7 +205,7 @@ class DataWarehouseProcessor:
             try:
                 self.conn_manager.execute_sql_no_return("""
                     UPDATE analytics_wide
-                    SET etl_batch_id = 'data_warehouse_' || strftime(now(), '%Y%m%d_%H%M%S')
+                    SET etl_batch_id = 'sql_engine_' || strftime(now(), '%Y%m%d_%H%M%S')
                 """)
             except SQLProcessingError:
                 pass  # Coluna pode não existir em todos os datasets
@@ -302,7 +302,7 @@ class DataWarehouseProcessor:
             raise SQLProcessingError(f"Export falhou: {e}")
         
         stats = {
-            'architecture': 'data_warehouse',
+            'architecture': 'sql_engine',
             'paradigm': 'schema_on_write',
             'processing_method': 'duckdb_sql_native',
             'total_records': total_records,
@@ -398,7 +398,7 @@ class DataWarehouseProcessor:
             """)
 
             # Adicionar/atualizar metadados de linhagem
-            batch_id = f"data_warehouse_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            batch_id = f"sql_engine_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             source = f"{self.dataset_name}_scientific"
             for col, default in [('data_source', f"'{source}'"),
                                   ('etl_batch_id', f"'{batch_id}'"),
@@ -433,7 +433,7 @@ class DataWarehouseProcessor:
         except Exception as e:
             print(f"   [WARN] Erro no cleanup: {e}")
     
-    def run_data_warehouse_processing(self) -> Dict:
+    def run_sql_engine_processing(self) -> Dict:
         """
         Executa pipeline completo de processamento Data Warehouse.
         
@@ -482,7 +482,7 @@ class DataWarehouseProcessor:
             
             return {
                 'status': 'success',
-                'architecture': 'data_warehouse',
+                'architecture': 'sql_engine',
                 'output_path': output_path,
                 'database_path': self.db_path,
                 'timestamp': datetime.now().isoformat()
@@ -522,6 +522,6 @@ class DataWarehouseProcessor:
             }
 
 if __name__ == "__main__":
-    processor = DataWarehouseProcessor()
-    results = processor.run_data_warehouse_processing()
+    processor = SqlEngineProcessor()
+    results = processor.run_sql_engine_processing()
     print(f"\nStatus: {results.get('status', 'failed')}")

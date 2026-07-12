@@ -42,15 +42,15 @@ from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
 
-data_warehouse_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'collection', 'data_warehouse')
-data_warehouse_path = os.path.abspath(data_warehouse_path)
-if data_warehouse_path not in sys.path:
-    sys.path.append(data_warehouse_path)
+sql_engine_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'collection', 'sql_engine')
+sql_engine_path = os.path.abspath(sql_engine_path)
+if sql_engine_path not in sys.path:
+    sys.path.append(sql_engine_path)
 
 from connection_manager import DuckDBConnectionManager, SQLProcessingError
 
 
-class BaselineModelAnalysisDataWarehouse:
+class BaselineModelAnalysisSqlEngine:
     """
     ML Data Warehouse Consumer - Análise Baseline.
     
@@ -75,9 +75,9 @@ class BaselineModelAnalysisDataWarehouse:
         print("Inicializando análise baseline Data Warehouse")
         
         dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json")
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/models")
-        self.db_path = get_absolute_output_path(f'collection/data_warehouse/{dataset_name}_data.duckdb')
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/prep/temporal_folds_sql_engine.json")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/models")
+        self.db_path = get_absolute_output_path(f'collection/sql_engine/{dataset_name}_data.duckdb')
         
         os.makedirs(self.results_path, exist_ok=True)
         
@@ -100,7 +100,7 @@ class BaselineModelAnalysisDataWarehouse:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
         
-        self.target_col = 'dropout_rate_data_warehouse'
+        self.target_col = 'dropout_rate_sql_engine'
         self._ensure_target_column()
         
         self._verify_feature_store_views()
@@ -432,7 +432,7 @@ class BaselineModelAnalysisDataWarehouse:
                 total_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
                 
                 target_stats = {
-                    'architecture': 'data_warehouse',
+                    'architecture': 'sql_engine',
                     'target_variable': self.target_col,
                     'mean': cached_stats['mean'],
                     'std': cached_stats['std'],
@@ -450,7 +450,7 @@ class BaselineModelAnalysisDataWarehouse:
                 total_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
                 
                 target_stats = {
-                    'architecture': 'data_warehouse',
+                    'architecture': 'sql_engine',
                     'target_variable': self.target_col,
                     'mean': float(target_mean),
                     'std': float(target_std),
@@ -537,7 +537,7 @@ class BaselineModelAnalysisDataWarehouse:
         except SQLProcessingError as e:
             print(f"   [ERROR] Análise de distribuição: {e}")
             return {
-                'architecture': 'data_warehouse',
+                'architecture': 'sql_engine',
                 'error': str(e),
                 'target_stats': {}
             }
@@ -892,7 +892,7 @@ class BaselineModelAnalysisDataWarehouse:
             print(f"      Gap Generalização:     {best_generalization_gap:+.3f}")
             
             predictability_analysis = {
-                'architecture': 'data_warehouse',
+                'architecture': 'sql_engine',
                 'methodology': 'scientific_baselines_with_temporal_lags',
                 'validation_scores': all_val_scores,
                 'test_scores': all_test_scores,
@@ -949,7 +949,7 @@ class BaselineModelAnalysisDataWarehouse:
             
         else:
             predictability_analysis = {
-                'architecture': 'data_warehouse',
+                'architecture': 'sql_engine',
                 'baseline_scores': {},
                 'predictability_level': 'unknown'
             }
@@ -972,8 +972,8 @@ class BaselineModelAnalysisDataWarehouse:
         print(f"\nSalvando resultados Data Warehouse...")
         
         full_results = {
-            'architecture': 'data_warehouse_consumer',
-            'pattern': 'ml_data_warehouse_consumer',
+            'architecture': 'sql_engine_consumer',
+            'pattern': 'ml_sql_engine_consumer',
             'target_variable': self.target_col,
             'data_source': self.db_path,
             'data_access_method': 'direct_view_queries',
@@ -989,7 +989,7 @@ class BaselineModelAnalysisDataWarehouse:
             }
         }
         
-        results_file = f"{self.results_path}/baseline_analysis_data_warehouse_consumer_results.json"
+        results_file = f"{self.results_path}/baseline_analysis_sql_engine_consumer_results.json"
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
         
@@ -1073,7 +1073,7 @@ class BaselineModelAnalysisDataWarehouse:
         except Exception as e:
             print(f"\n[ERROR] Análise Data Warehouse: {e}")
             return {
-                'architecture': 'data_warehouse_consumer',
+                'architecture': 'sql_engine_consumer',
                 'status': 'failed',
                 'error': str(e)
             }
@@ -1084,7 +1084,7 @@ if __name__ == "__main__":
     print("=" * 60)
     analyzer = None
     try:
-        analyzer = BaselineModelAnalysisDataWarehouse()
+        analyzer = BaselineModelAnalysisSqlEngine()
         results = analyzer.run_complete_analysis()
         print(f"\nAnálise baseline Data Warehouse concluída!")
     except Exception as e:

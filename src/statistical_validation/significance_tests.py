@@ -51,15 +51,15 @@ except Exception:
 
 # Pares de arquiteturas para comparação (3-way)
 ALL_PAIRS = [
-    ("data_lake", "data_warehouse"),
-    ("data_lake", "polars_dataframe"),
-    ("data_warehouse", "polars_dataframe"),
+    ("task_graph", "sql_engine"),
+    ("task_graph", "dataframe_lib"),
+    ("sql_engine", "dataframe_lib"),
 ]
 
 PAIR_LABELS = {
-    ("data_lake", "data_warehouse"): ("dl", "dw"),
-    ("data_lake", "polars_dataframe"): ("dl", "pl"),
-    ("data_warehouse", "polars_dataframe"): ("dw", "pl"),
+    ("task_graph", "sql_engine"): ("dl", "dw"),
+    ("task_graph", "dataframe_lib"): ("dl", "pl"),
+    ("sql_engine", "dataframe_lib"): ("dw", "pl"),
 }
 
 
@@ -82,7 +82,7 @@ def load_benchmark(csv_path: str) -> pd.DataFrame:
 
 
 def paired_vectors_for_phase(
-    df: pd.DataFrame, phase: str, arch_a: str = "data_lake", arch_b: str = "data_warehouse"
+    df: pd.DataFrame, phase: str, arch_a: str = "task_graph", arch_b: str = "sql_engine"
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Retorna vetores alinhados para dois arquiteturas por run_id em uma fase."""
     a = df[(df["phase"] == phase) & (df["architecture"] == arch_a)]
@@ -109,8 +109,8 @@ def paired_vectors_for_phase(
 
 def paired_vectors_total(
     df: pd.DataFrame,
-    arch_a: str = "data_lake",
-    arch_b: str = "data_warehouse",
+    arch_a: str = "task_graph",
+    arch_b: str = "sql_engine",
     exclude_phases: Optional[List[str]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Soma durations por run_id e arquitetura nas fases especificadas (excluindo collection)."""

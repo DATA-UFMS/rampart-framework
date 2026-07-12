@@ -52,7 +52,7 @@ class BaseArchitectureML(ABC):
         previne leakage por otimização no conjunto de teste (Kapoor & Narayanan, 2023).
 
     Attributes:
-        architecture_name: Nome da arquitetura (data_lake, data_warehouse)
+        architecture_name: Nome da arquitetura (task_graph, sql_engine)
         output_base: Diretório base para outputs
         prep_dir: Diretório de preparação
         target_column: Nome da coluna target criada

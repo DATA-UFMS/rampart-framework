@@ -136,8 +136,8 @@ def para_latex(resumo: Dict) -> str:
         item = por_fase[fase]
         arquiteturas = item.get("architectures", {})
         
-        dl = arquiteturas.get("data_lake", {})
-        dw = arquiteturas.get("data_warehouse", {})
+        dl = arquiteturas.get("task_graph", {})
+        dw = arquiteturas.get("sql_engine", {})
         
         fase_latex = _escape_latex(fase)
         

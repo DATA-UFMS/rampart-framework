@@ -41,12 +41,12 @@ except ImportError:
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
         return os.path.join(project_root, 'outputs', relative_path)
 
-connection_manager_path = os.path.join(project_root, 'src', 'collection', 'data_warehouse')
+connection_manager_path = os.path.join(project_root, 'src', 'collection', 'sql_engine')
 if connection_manager_path not in sys.path:
     sys.path.append(connection_manager_path)
 
 try:
-    from collection.data_warehouse.connection_manager import DuckDBConnectionManager, SQLProcessingError
+    from collection.sql_engine.connection_manager import DuckDBConnectionManager, SQLProcessingError
 except ImportError:
     try:
         from connection_manager import DuckDBConnectionManager, SQLProcessingError
@@ -64,14 +64,14 @@ class HierarchicalModelSQLFirst:
     def __init__(self):
         print("Inicializando Modelo Hierárquico Data Warehouse")
 
-        self.target_col = 'dropout_rate_data_warehouse'
+        self.target_col = 'dropout_rate_sql_engine'
 
         print("   Pattern: ML Consumer com views")
         
         dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json")
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/models/hierarchical_results")
-        self.db_path = get_absolute_output_path(f'collection/data_warehouse/{dataset_name}_data.duckdb')
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/prep/temporal_folds_sql_engine.json")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/models/hierarchical_results")
+        self.db_path = get_absolute_output_path(f'collection/sql_engine/{dataset_name}_data.duckdb')
         
         os.makedirs(self.results_path, exist_ok=True)
         
@@ -170,7 +170,7 @@ class HierarchicalModelSQLFirst:
     
     def _prepare_features(self, train_clean):
         """Preparar lista de features baseado no modo."""
-        selection_path = get_absolute_output_path("ml_pipeline/architectures/data_warehouse/prep/feature_selection_data_warehouse.json")
+        selection_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/prep/feature_selection_sql_engine.json")
 
         if os.path.exists(selection_path):
             # Modo Normal: carregar features selecionadas
@@ -295,7 +295,7 @@ class HierarchicalModelSQLFirst:
         
         return {
             'model_name': 'simple_hierarchical',
-            'architecture': 'data_warehouse',
+            'architecture': 'sql_engine',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -359,7 +359,7 @@ class HierarchicalModelSQLFirst:
 
         return {
             'model_name': 'random_forest_hierarchical',
-            'architecture': 'data_warehouse',
+            'architecture': 'sql_engine',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -396,7 +396,7 @@ class HierarchicalModelSQLFirst:
 
         try:
             used = {
-                'architecture': 'data_warehouse',
+                'architecture': 'sql_engine',
                 'fold_id': int(fold_id),
                 'target': self.target_col,
                 'total_features': len(available_features),
@@ -492,7 +492,7 @@ class HierarchicalModelSQLFirst:
         
         return {
             'fold_id': fold_id,
-            'architecture': 'data_warehouse',
+            'architecture': 'sql_engine',
             'total_features': len(available_features),
             'models': models
         }
@@ -504,7 +504,7 @@ class HierarchicalModelSQLFirst:
         
         try:
             all_results = {
-                'architecture': 'data_warehouse',
+                'architecture': 'sql_engine',
                 'version': 'hierarchical_analysis',
                 'target': self.target_col,
                 'mode': 'normal',
@@ -567,7 +567,7 @@ class HierarchicalModelSQLFirst:
                 
                 print(f"\nResumo hierárquico Data Warehouse")
             
-            results_file = f"{self.results_path}/hierarchical_analysis_data_warehouse_results.json"
+            results_file = f"{self.results_path}/hierarchical_analysis_sql_engine_results.json"
             with open(results_file, 'w') as f:
                 json.dump(all_results, f, indent=2)
             
@@ -578,7 +578,7 @@ class HierarchicalModelSQLFirst:
         except Exception as e:
             print(f"Erro na análise hierárquica: {e}")
             return {
-                'architecture': 'data_warehouse',
+                'architecture': 'sql_engine',
                 'error': str(e),
                 'folds': []
             }

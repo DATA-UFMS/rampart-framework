@@ -10,15 +10,15 @@ import pytest
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-_DL_MASTER = _PROJECT_ROOT / 'outputs/ml_pipeline/architectures/data_lake/prep/master_data_data_lake.parquet'
-_DW_FOLDS = _PROJECT_ROOT / 'outputs/ml_pipeline/architectures/data_warehouse/prep/temporal_folds_data_warehouse.json'
+_DL_MASTER = _PROJECT_ROOT / 'outputs/ml_pipeline/architectures/task_graph/prep/master_data_task_graph.parquet'
+_DW_FOLDS = _PROJECT_ROOT / 'outputs/ml_pipeline/architectures/sql_engine/prep/temporal_folds_sql_engine.json'
 
 
 @pytest.mark.skipif(not _DL_MASTER.exists(), reason='Master DL não encontrado; rode setup DL')
 def test_dl_lag2_anti_leak():
     import dask.dataframe as dd
     df = dd.read_parquet(str(_DL_MASTER))
-    base_df = df[['country_code','year','dropout_rate_data_lake']].rename(columns={'dropout_rate_data_lake':'dropout_rate_t'})
+    base_df = df[['country_code','year','dropout_rate_task_graph']].rename(columns={'dropout_rate_task_graph':'dropout_rate_t'})
     prev = base_df.assign(year=base_df['year']+2).rename(columns={'dropout_rate_t':'ref'})
     merged = df.merge(prev[['country_code','year','ref']], on=['country_code','year'], how='left')
     mask = ~merged['dropout_rate_lag_2'].isna()
@@ -28,7 +28,7 @@ def test_dl_lag2_anti_leak():
 
 @pytest.mark.skipif(not _DW_FOLDS.exists(), reason='Folds não encontrados; rode pipeline')
 def test_fold_gaps_structure():
-    for arch in ['data_lake', 'data_warehouse']:
+    for arch in ['task_graph', 'sql_engine']:
         p = _PROJECT_ROOT / f'outputs/ml_pipeline/architectures/{arch}/prep/temporal_folds_{arch}.json'
         if not p.exists():
             pytest.skip(f'Folds {arch} não encontrados')

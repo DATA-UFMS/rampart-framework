@@ -42,7 +42,7 @@ from core.scientific_config import RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
 
-class HierarchicalModelDataLake:
+class HierarchicalModelTaskGraph:
     """
     Modelo Hierárquico para Arquitetura Data Lake.
 
@@ -52,19 +52,19 @@ class HierarchicalModelDataLake:
     def __init__(self):
         print("Inicializando Modelo Hierárquico Data Lake")
 
-        self.target_col = 'dropout_rate_data_lake'
+        self.target_col = 'dropout_rate_task_graph'
 
         self._setup_normal_mode()
 
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/models/hierarchical_results")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/models/hierarchical_results")
         os.makedirs(self.results_path, exist_ok=True)
 
         self._load_normal_summary()
     
     def _setup_normal_mode(self):
         """Setup para modo normal."""
-        self.data_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/master_data_data_lake.parquet")
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/temporal_folds_data_lake.json")
+        self.data_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/master_data_task_graph.parquet")
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/temporal_folds_task_graph.json")
         
         if not os.path.exists(self.data_path) or not os.path.exists(self.folds_path):
             raise FileNotFoundError("Dados Data Lake não encontrados")
@@ -99,7 +99,7 @@ class HierarchicalModelDataLake:
         
 
         
-        selection_path = get_absolute_output_path("ml_pipeline/architectures/data_lake/prep/feature_selection_data_lake.json")
+        selection_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/feature_selection_task_graph.json")
         if os.path.exists(selection_path):
             try:
                 with open(selection_path, 'r') as f:
@@ -242,7 +242,7 @@ class HierarchicalModelDataLake:
 
         return {
             'model_name': 'simple_hierarchical',
-            'architecture': 'data_lake',
+            'architecture': 'task_graph',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -307,7 +307,7 @@ class HierarchicalModelDataLake:
 
         return {
             'model_name': 'random_forest_hierarchical',
-            'architecture': 'data_lake',
+            'architecture': 'task_graph',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -327,7 +327,7 @@ class HierarchicalModelDataLake:
         # Registrar features usadas para auditoria
         try:
             used = {
-                'architecture': 'data_lake',
+                'architecture': 'task_graph',
                 'fold_id': int(fold_id),
                 'target': self.target_col,
                 'total_features': len(self.available_features),
@@ -435,7 +435,7 @@ class HierarchicalModelDataLake:
         
         return {
             'fold_id': fold_id,
-            'architecture': 'data_lake',
+            'architecture': 'task_graph',
             'mode': 'normal',
             'total_features': len(self.available_features),
             'models': models
@@ -450,7 +450,7 @@ class HierarchicalModelDataLake:
         print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
 
         all_results = {
-            'architecture': 'data_lake',
+            'architecture': 'task_graph',
             'version': 'hierarchical_analysis',
             'mode': 'normal',
             'target': self.target_col,
@@ -534,7 +534,7 @@ class HierarchicalModelDataLake:
                 print(f"   Melhor modelo: Simple Hierarchical")
                 print(f"   R² Teste: {simple_test:.3f}")
 
-        results_file = f"{self.results_path}/hierarchical_analysis_data_lake_results_normal.json"
+        results_file = f"{self.results_path}/hierarchical_analysis_task_graph_results_normal.json"
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
 
@@ -543,6 +543,6 @@ class HierarchicalModelDataLake:
         return all_results
 
 if __name__ == "__main__":
-    model = HierarchicalModelDataLake()
+    model = HierarchicalModelTaskGraph()
     results = model.run_hierarchical_analysis()
     print("\nAnálise hierárquica Data Lake concluída!")

@@ -36,7 +36,7 @@ from core.config import get_absolute_output_path
 from core.indicators import ALL_INDICATORS
 
 
-class PolarsDataFrameProcessor:
+class DataFrameLibProcessor:
     """
     Processador científico Polars DataFrame para análise de indicadores educacionais.
 
@@ -64,7 +64,7 @@ class PolarsDataFrameProcessor:
         self.dataset_name = dataset_name
         raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
         self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
-        self.output_dir = get_absolute_output_path('collection/polars_dataframe')
+        self.output_dir = get_absolute_output_path('collection/dataframe_lib')
         self.processed_dir = f"{self.output_dir}/processed"
 
         os.makedirs(self.output_dir, exist_ok=True)
@@ -221,7 +221,7 @@ class PolarsDataFrameProcessor:
 
         # Metadados JSON
         metadata = {
-            'architecture': 'polars_dataframe',
+            'architecture': 'dataframe_lib',
             'processing_paradigm': 'polars_lazy_evaluation',
             'dataset_statistics': {
                 'total_records': int(n_rows),
@@ -236,7 +236,7 @@ class PolarsDataFrameProcessor:
             'compliance_flags': {
                 'schema_on_read': True,
                 'lazy_evaluation_preserved': True,
-                'data_lake_pattern': True
+                'task_graph_pattern': True
             },
             'output_artifacts': {
                 'dataset': output_path,
@@ -258,7 +258,7 @@ class PolarsDataFrameProcessor:
 
         return output_path
 
-    def run_polars_dataframe_processing(self) -> Dict:
+    def run_dataframe_lib_processing(self) -> Dict:
         """
         Orquestra pipeline completo de processamento Polars DataFrame.
 
@@ -290,7 +290,7 @@ class PolarsDataFrameProcessor:
 
             return {
                 'status': 'success',
-                'architecture': 'polars_dataframe',
+                'architecture': 'dataframe_lib',
                 'paradigm': 'lazy_evaluation',
                 'output': {
                     'dataset': output_path,
@@ -334,6 +334,6 @@ class PolarsDataFrameProcessor:
 
 
 if __name__ == "__main__":
-    processor = PolarsDataFrameProcessor()
-    results = processor.run_polars_dataframe_processing()
+    processor = DataFrameLibProcessor()
+    results = processor.run_dataframe_lib_processing()
     print(f"Execucao: {results.get('status', 'failed')}")

@@ -33,14 +33,14 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 STATS_DIR = os.path.join(BASE_DIR, "outputs", "statistics")
 
 ALL_PAIRS = [
-    ("data_lake", "data_warehouse"),
-    ("data_lake", "polars_dataframe"),
-    ("data_warehouse", "polars_dataframe"),
+    ("task_graph", "sql_engine"),
+    ("task_graph", "dataframe_lib"),
+    ("sql_engine", "dataframe_lib"),
 ]
 PAIR_LABELS = {
-    ("data_lake", "data_warehouse"): ("dl", "dw"),
-    ("data_lake", "polars_dataframe"): ("dl", "pl"),
-    ("data_warehouse", "polars_dataframe"): ("dw", "pl"),
+    ("task_graph", "sql_engine"): ("dl", "dw"),
+    ("task_graph", "dataframe_lib"): ("dl", "pl"),
+    ("sql_engine", "dataframe_lib"): ("dw", "pl"),
 }
 
 

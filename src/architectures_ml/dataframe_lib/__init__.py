@@ -19,16 +19,16 @@ Protocolo anti-leakage (P1-P5):
     - P5: Preprocessing ajustado exclusivamente no treino
 
 Classes exportadas:
-    - PolarsDataFrameArchitectureML: Implementação do pipeline ML
+    - DataFrameLibArchitectureML: Implementação do pipeline ML
 """
 
-__all__ = ['PolarsDataFrameArchitectureML', 'main']
+__all__ = ['DataFrameLibArchitectureML', 'main']
 __version__ = '1.0.0'
 
 
 def __getattr__(name):
     """Importação preguiçosa para manter compatibilidade retroativa sem carregamento antecipado."""
-    if name in ('PolarsDataFrameArchitectureML', 'main'):
-        from .setup import PolarsDataFrameArchitectureML, main
-        return PolarsDataFrameArchitectureML if name == 'PolarsDataFrameArchitectureML' else main
+    if name in ('DataFrameLibArchitectureML', 'main'):
+        from .setup import DataFrameLibArchitectureML, main
+        return DataFrameLibArchitectureML if name == 'DataFrameLibArchitectureML' else main
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

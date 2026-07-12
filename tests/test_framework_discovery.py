@@ -141,19 +141,19 @@ class TestSubclassWithoutMetaIsSkipped:
 class TestAllThreeParadigmsDiscovered:
     def test_all_three_paradigms_discovered(self):
         # Importar os módulos aciona o registro via __init_subclass__
-        import architectures_ml.data_lake.setup  # noqa: F401
-        import architectures_ml.data_warehouse.setup  # noqa: F401
-        import architectures_ml.polars_dataframe.setup  # noqa: F401
+        import architectures_ml.task_graph.setup  # noqa: F401
+        import architectures_ml.sql_engine.setup  # noqa: F401
+        import architectures_ml.dataframe_lib.setup  # noqa: F401
 
         registry = BaseArchitectureML.get_registered_paradigms()
-        assert 'data_lake' in registry, "data_lake not in registry"
-        assert 'data_warehouse' in registry, "data_warehouse not in registry"
-        assert 'polars_dataframe' in registry, "polars_dataframe not in registry"
+        assert 'task_graph' in registry, "task_graph not in registry"
+        assert 'sql_engine' in registry, "sql_engine not in registry"
+        assert 'dataframe_lib' in registry, "dataframe_lib not in registry"
 
     def test_registry_values_are_classes(self):
-        import architectures_ml.data_lake.setup  # noqa: F401
-        import architectures_ml.data_warehouse.setup  # noqa: F401
-        import architectures_ml.polars_dataframe.setup  # noqa: F401
+        import architectures_ml.task_graph.setup  # noqa: F401
+        import architectures_ml.sql_engine.setup  # noqa: F401
+        import architectures_ml.dataframe_lib.setup  # noqa: F401
 
         registry = BaseArchitectureML.get_registered_paradigms()
         for name, cls in registry.items():
@@ -179,9 +179,9 @@ REQUIRED_KEYS = {
 class TestEachParadigmMetaHasRequiredKeys:
     @pytest.fixture(autouse=True)
     def _import_paradigms(self):
-        import architectures_ml.data_lake.setup  # noqa: F401
-        import architectures_ml.data_warehouse.setup  # noqa: F401
-        import architectures_ml.polars_dataframe.setup  # noqa: F401
+        import architectures_ml.task_graph.setup  # noqa: F401
+        import architectures_ml.sql_engine.setup  # noqa: F401
+        import architectures_ml.dataframe_lib.setup  # noqa: F401
 
     def test_all_paradigms_in_registry_have_required_keys(self):
         registry = BaseArchitectureML.get_registered_paradigms()
@@ -209,7 +209,7 @@ class TestDiscoverParadigms:
         from core.paradigm_registry import discover_paradigms
         paradigms = discover_paradigms()
         assert isinstance(paradigms, dict)
-        expected = {'data_lake', 'data_warehouse', 'polars_dataframe'}
+        expected = {'task_graph', 'sql_engine', 'dataframe_lib'}
         assert expected.issubset(set(paradigms.keys())), \
             f"Missing paradigms: {expected - set(paradigms.keys())}"
         # Paradigmas adicionais são esperados: o registry existe para permitir
@@ -275,7 +275,7 @@ class TestFrameworkContract:
         with open(pipeline_path) as f:
             content = f.read()
         hardcoded = re.findall(
-            r"['\"](?:data_lake|data_warehouse|polars_dataframe)['\"]",
+            r"['\"](?:task_graph|sql_engine|dataframe_lib)['\"]",
             content
         )
         assert len(hardcoded) == 0, \

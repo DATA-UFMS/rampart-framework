@@ -4,7 +4,7 @@
 O módulo executa as etapas do protocolo metodológico no paradigma Polars nativo:
 carregamento via pl.scan_parquet() (LazyFrame), criação de folds temporais com gaps
 anti-leak, alinhamento de features com as arquiteturas Data Lake e Data Warehouse,
-e geração de artefatos em `outputs/ml_pipeline/architectures/polars_dataframe/`.
+e geração de artefatos em `outputs/ml_pipeline/architectures/dataframe_lib/`.
 
 Mantém simetria metodológica com DL e DW para comparação controlada,
 diferindo apenas na implementação específica de Polars usando expressions e
@@ -26,7 +26,7 @@ from core.validation import TemporalValidator, DataIntegrityValidator
 from core.logging_config import get_logger, log_ml_pipeline
 
 
-class PolarsDataFrameArchitectureML(BaseArchitectureML):
+class DataFrameLibArchitectureML(BaseArchitectureML):
     """Implementação do pipeline ML para a arquitetura Polars DataFrame.
 
     A classe mantém simetria metodológica com as versões Data Lake e Data Warehouse:
@@ -39,19 +39,19 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
     """
 
     PARADIGM_META = {
-        'name': 'polars_dataframe',
+        'name': 'dataframe_lib',
         'label': 'Polars DataFrame com Lazy Evaluation',
-        'processor_module': 'collection.polars_dataframe.processor',
-        'processor_class': 'PolarsDataFrameProcessor',
-        'processor_run_method': 'run_polars_dataframe_processing',
-        'baseline_module': 'architectures_ml.polars_dataframe.models.baseline_analysis',
-        'baseline_class': 'BaselineModelAnalysisPolarsDataFrame',
-        'hierarchical_module': 'architectures_ml.polars_dataframe.models.hierarchical_model',
-        'hierarchical_class': 'HierarchicalModelPolarsDataFrame',
-        'setup_script': 'src/architectures_ml/polars_dataframe/setup.py',
-        'processor_script': 'src/collection/polars_dataframe/processor.py',
-        'baseline_script': 'src/architectures_ml/polars_dataframe/models/baseline_analysis.py',
-        'hierarchical_script': 'src/architectures_ml/polars_dataframe/models/hierarchical_model.py',
+        'processor_module': 'collection.dataframe_lib.processor',
+        'processor_class': 'DataFrameLibProcessor',
+        'processor_run_method': 'run_dataframe_lib_processing',
+        'baseline_module': 'architectures_ml.dataframe_lib.models.baseline_analysis',
+        'baseline_class': 'BaselineModelAnalysisDataFrameLib',
+        'hierarchical_module': 'architectures_ml.dataframe_lib.models.hierarchical_model',
+        'hierarchical_class': 'HierarchicalModelDataFrameLib',
+        'setup_script': 'src/architectures_ml/dataframe_lib/setup.py',
+        'processor_script': 'src/collection/dataframe_lib/processor.py',
+        'baseline_script': 'src/architectures_ml/dataframe_lib/models/baseline_analysis.py',
+        'hierarchical_script': 'src/architectures_ml/dataframe_lib/models/hierarchical_model.py',
     }
 
     def _safe_write_parquet_file(self, df: pl.DataFrame, file_path: str) -> None:
@@ -79,17 +79,17 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
     def __init__(self):
         """Inicializa paths, validadores e logging para o pipeline Polars DataFrame."""
         # Inicialização da arquitetura base
-        output_base = get_absolute_output_path('ml_pipeline/architectures/polars_dataframe')
-        super().__init__(architecture_name='polars_dataframe', output_base_path=output_base)
+        output_base = get_absolute_output_path('ml_pipeline/architectures/dataframe_lib')
+        super().__init__(architecture_name='dataframe_lib', output_base_path=output_base)
 
         self.logger = get_logger(__name__, with_ml_context=True)
-        self.logger.set_context(architecture='polars_dataframe', module='setup')
+        self.logger.set_context(architecture='dataframe_lib', module='setup')
 
         print("Inicializando Pipeline ML Polars DataFrame")
         print("Lazy evaluation com expressions Polars")
 
-        self.parquet_path = get_absolute_output_path('collection/polars_dataframe/processed/final_results.parquet')
-        self.fallback_path = get_absolute_output_path('collection/polars_dataframe/raw')
+        self.parquet_path = get_absolute_output_path('collection/dataframe_lib/processed/final_results.parquet')
+        self.fallback_path = get_absolute_output_path('collection/dataframe_lib/raw')
 
         self.temporal_validator = TemporalValidator(min_gap_years=2)
         self.data_validator = DataIntegrityValidator()
@@ -185,7 +185,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             raise FileNotFoundError(
                 "Dados Polars DataFrame não encontrados em nenhuma fonte.\n"
                 f"Verificar: {self.parquet_path} ou {self.fallback_path}\n"
-                "Execute 'polars_dataframe/processor.py' para gerar dados processados."
+                "Execute 'dataframe_lib/processor.py' para gerar dados processados."
             )
 
         # Análise de adequação
@@ -330,7 +330,7 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             df: DataFrame Polars com dados educacionais
 
         Returns:
-            DataFrame Polars enriquecido com variável target dropout_rate_polars_dataframe
+            DataFrame Polars enriquecido com variável target dropout_rate_dataframe_lib
 
         Transformação:
             Dropout Rate = 100 - Completion Rate
@@ -801,9 +801,9 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
                 val_df = df.filter(val_filter)
                 test_df = df.filter(test_filter)
 
-                self._safe_write_parquet_file(train_df, f'{fold_dir}/train_data_polars_dataframe.parquet')
-                self._safe_write_parquet_file(val_df, f'{fold_dir}/val_data_polars_dataframe.parquet')
-                self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_polars_dataframe.parquet')
+                self._safe_write_parquet_file(train_df, f'{fold_dir}/train_data_dataframe_lib.parquet')
+                self._safe_write_parquet_file(val_df, f'{fold_dir}/val_data_dataframe_lib.parquet')
+                self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_dataframe_lib.parquet')
 
                 print(f"    Fold {fold_id}: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
 
@@ -814,14 +814,14 @@ class PolarsDataFrameArchitectureML(BaseArchitectureML):
             fold_metadata = {
                 **fold,
                 'storage_method': 'parquet_files',
-                'paradigm': 'polars_dataframe'
+                'paradigm': 'dataframe_lib'
             }
             self.save_fold_metadata(fold_metadata, fold_dir)
 
         # Master data
         print("\n  Salvando master data...")
         try:
-            master_path = f"{self.prep_dir}/master_data_polars_dataframe.parquet"
+            master_path = f"{self.prep_dir}/master_data_dataframe_lib.parquet"
             self._safe_write_parquet_file(df, master_path)
             print(f"    Master data: {len(df)} registros")
 
@@ -847,7 +847,7 @@ def main():
     print("=" * 80)
 
     try:
-        setup = PolarsDataFrameArchitectureML()
+        setup = DataFrameLibArchitectureML()
         results = setup.run_setup()
 
         if results.get('status') == 'success':
@@ -866,7 +866,7 @@ def main():
         import traceback
         traceback.print_exc()
         return {
-            'architecture': 'polars_dataframe',
+            'architecture': 'dataframe_lib',
             'status': 'failed',
             'error': str(e),
             'setup_timestamp': datetime.now().isoformat()

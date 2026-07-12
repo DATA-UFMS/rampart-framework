@@ -70,9 +70,9 @@ except Exception:
 # Comparações par-a-par
 PREDICTIVE_PAIRS = [("dl", "dw"), ("dl", "pl"), ("dw", "pl")]
 LATENCY_PAIRS = [
-    ("data_lake", "data_warehouse", "dl", "dw"),
-    ("data_lake", "polars_dataframe", "dl", "pl"),
-    ("data_warehouse", "polars_dataframe", "dw", "pl"),
+    ("task_graph", "sql_engine", "dl", "dw"),
+    ("task_graph", "dataframe_lib", "dl", "pl"),
+    ("sql_engine", "dataframe_lib", "dw", "pl"),
 ]
 
 
@@ -188,9 +188,9 @@ def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
 
 def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
     paths = {
-        'dw': 'outputs/ml_pipeline/architectures/data_warehouse/models/baseline_analysis_data_warehouse_consumer_results.json',
-        'dl': 'outputs/ml_pipeline/architectures/data_lake/models/baseline_results/baseline_analysis_data_lake_results.json',
-        'pl': 'outputs/ml_pipeline/architectures/polars_dataframe/models/baseline_results/baseline_analysis_polars_dataframe_results.json',
+        'dw': 'outputs/ml_pipeline/architectures/sql_engine/models/baseline_analysis_sql_engine_consumer_results.json',
+        'dl': 'outputs/ml_pipeline/architectures/task_graph/models/baseline_results/baseline_analysis_task_graph_results.json',
+        'pl': 'outputs/ml_pipeline/architectures/dataframe_lib/models/baseline_results/baseline_analysis_dataframe_lib_results.json',
     }
     out = {}
     for arch, p in paths.items():

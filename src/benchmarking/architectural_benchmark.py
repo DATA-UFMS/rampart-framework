@@ -583,9 +583,9 @@ class BenchmarkRunner:
 
             # Mapeamento fixo: cor por arquitetura (independente da ordem de sort)
             arch_color_map = {
-                "data_lake": "#4C78A8",
-                "data_warehouse": "#72B7B2",
-                "polars_dataframe": "#F58518",
+                "task_graph": "#4C78A8",
+                "sql_engine": "#72B7B2",
+                "dataframe_lib": "#F58518",
             }
 
             for phase in df["phase"].unique():

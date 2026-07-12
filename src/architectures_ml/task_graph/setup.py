@@ -24,7 +24,7 @@ from core.validation import TemporalValidator, DataIntegrityValidator
 from core.logging_config import get_logger, log_ml_pipeline
 
 
-class DataLakeArchitectureML(BaseArchitectureML):
+class TaskGraphArchitectureML(BaseArchitectureML):
     """Implementação do pipeline ML para a arquitetura Data Lake.
 
     A classe mantém simetria metodológica com a versão Data Warehouse: usa os
@@ -35,19 +35,19 @@ class DataLakeArchitectureML(BaseArchitectureML):
     schema-on-read."""
 
     PARADIGM_META = {
-        'name': 'data_lake',
+        'name': 'task_graph',
         'label': 'Data Lake com Dask',
-        'processor_module': 'collection.data_lake.processor',
-        'processor_class': 'DataLakeProcessor',
-        'processor_run_method': 'run_data_lake_processing',
-        'baseline_module': 'architectures_ml.data_lake.models.baseline_analysis',
-        'baseline_class': 'BaselineModelAnalysisDataLake',
-        'hierarchical_module': 'architectures_ml.data_lake.models.hierarchical_model',
-        'hierarchical_class': 'HierarchicalModelDataLake',
-        'setup_script': 'src/architectures_ml/data_lake/setup.py',
-        'processor_script': 'src/collection/data_lake/processor.py',
-        'baseline_script': 'src/architectures_ml/data_lake/models/baseline_analysis.py',
-        'hierarchical_script': 'src/architectures_ml/data_lake/models/hierarchical_model.py',
+        'processor_module': 'collection.task_graph.processor',
+        'processor_class': 'TaskGraphProcessor',
+        'processor_run_method': 'run_task_graph_processing',
+        'baseline_module': 'architectures_ml.task_graph.models.baseline_analysis',
+        'baseline_class': 'BaselineModelAnalysisTaskGraph',
+        'hierarchical_module': 'architectures_ml.task_graph.models.hierarchical_model',
+        'hierarchical_class': 'HierarchicalModelTaskGraph',
+        'setup_script': 'src/architectures_ml/task_graph/setup.py',
+        'processor_script': 'src/collection/task_graph/processor.py',
+        'baseline_script': 'src/architectures_ml/task_graph/models/baseline_analysis.py',
+        'hierarchical_script': 'src/architectures_ml/task_graph/models/hierarchical_model.py',
     }
 
     def _safe_write_parquet_file(self, df: pd.DataFrame, file_path: str) -> None:
@@ -81,24 +81,24 @@ class DataLakeArchitectureML(BaseArchitectureML):
     def __init__(self):
         """Inicializa paths, validadores e logging para o pipeline Data Lake."""
         # Inicialização da arquitetura base
-        output_base = get_absolute_output_path('ml_pipeline/architectures/data_lake')
-        super().__init__(architecture_name='data_lake', output_base_path=output_base)
+        output_base = get_absolute_output_path('ml_pipeline/architectures/task_graph')
+        super().__init__(architecture_name='task_graph', output_base_path=output_base)
         
         self.logger = get_logger(__name__, with_ml_context=True)
-        self.logger.set_context(architecture='data_lake', module='setup')
+        self.logger.set_context(architecture='task_graph', module='setup')
         
         print("Inicializando Pipeline ML Data Lake")
         print("Schema-on-read com processamento distribuido lazy")
         
         # Configurações de paths Data Lake
-        self.data_lake_path = get_absolute_output_path('collection/data_lake/processed/final_results.parquet')
-        self.fallback_path = get_absolute_output_path('collection/data_lake/raw')
+        self.task_graph_path = get_absolute_output_path('collection/task_graph/processed/final_results.parquet')
+        self.fallback_path = get_absolute_output_path('collection/task_graph/raw')
         
         self.temporal_validator = TemporalValidator(min_gap_years=2)
         self.data_validator = DataIntegrityValidator()
         
         print(f"  Diretorio base: {self.output_base}")
-        print(f"  Dados primarios: {self.data_lake_path}")
+        print(f"  Dados primarios: {self.task_graph_path}")
         print(f"  Dados raw (fallback): {self.fallback_path}")
         print("  Lazy evaluation sem camadas de cache adicionais")
     
@@ -168,9 +168,9 @@ class DataLakeArchitectureML(BaseArchitectureML):
         data_source = None
         
         # Estratégia 1: Dados processados (otimizados)
-        if os.path.exists(self.data_lake_path):
+        if os.path.exists(self.task_graph_path):
             try:
-                ddf = dd.read_parquet(self.data_lake_path, engine='pyarrow').persist()
+                ddf = dd.read_parquet(self.task_graph_path, engine='pyarrow').persist()
                 data_source = "processed"
                 ncols = len(ddf.columns)
                 print(f"  Carregado: {ddf.npartitions} particoes x {ncols} variaveis")
@@ -193,8 +193,8 @@ class DataLakeArchitectureML(BaseArchitectureML):
         if ddf is None:
             raise FileNotFoundError(
                 "Dados Data Lake não encontrados em nenhuma fonte.\n"
-                f"Verificar: {self.data_lake_path} ou {self.fallback_path}\n"
-                "Execute 'data_lake/processor.py' para gerar dados processados."
+                f"Verificar: {self.task_graph_path} ou {self.fallback_path}\n"
+                "Execute 'task_graph/processor.py' para gerar dados processados."
             )
     
         # Análise de adequação
@@ -342,7 +342,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
             ddf: DataFrame Dask com dados educacionais
             
         Returns:
-            DataFrame Dask enriquecido com variável target dropout_rate_data_lake
+            DataFrame Dask enriquecido com variável target dropout_rate_task_graph
             
         Transformação:
             Dropout Rate = 100 - Completion Rate
@@ -850,9 +850,9 @@ class DataLakeArchitectureML(BaseArchitectureML):
                 train_df = train_df.reset_index(drop=True)
                 val_df = val_df.reset_index(drop=True)
                 test_df = test_df.reset_index(drop=True)
-                self._safe_write_parquet_file(train_df, f'{fold_dir}/train_data_lake.parquet')
-                self._safe_write_parquet_file(val_df, f'{fold_dir}/val_data_lake.parquet')
-                self._safe_write_parquet_file(test_df, f'{fold_dir}/test_data_lake.parquet')
+                self._safe_write_parquet_file(train_df, f'{fold_dir}/train_task_graph.parquet')
+                self._safe_write_parquet_file(val_df, f'{fold_dir}/val_task_graph.parquet')
+                self._safe_write_parquet_file(test_df, f'{fold_dir}/test_task_graph.parquet')
                 
                 print(f"    Fold {fold_id}: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
                 
@@ -870,7 +870,7 @@ class DataLakeArchitectureML(BaseArchitectureML):
         # Master data
         print("\n  Salvando master data...")
         try:
-            master_path = f"{self.prep_dir}/master_data_data_lake.parquet"
+            master_path = f"{self.prep_dir}/master_data_task_graph.parquet"
             master_df = ddf.compute().reset_index(drop=True)
             self._safe_write_parquet_file(master_df, master_path)
             print(f"    Master data: {len(master_df)} registros")
@@ -959,7 +959,7 @@ def main():
     print("=" * 80)
 
     try:
-        setup = DataLakeArchitectureML()
+        setup = TaskGraphArchitectureML()
         results = setup.run_setup_with_monitoring()
         
         if results.get('status') == 'success':
@@ -980,7 +980,7 @@ def main():
                 
     except Exception as e:
         print(f"\n[ERROR] Pipeline Data Lake falhou: {e}")
-        print("  Verificar se dados foram processados pelo data_lake/processor.py")
+        print("  Verificar se dados foram processados pelo task_graph/processor.py")
         return {'success': False, 'error': str(e)}
     
 

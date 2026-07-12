@@ -19,13 +19,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from core.base_architecture import BaseArchitectureML
 from core.config import get_absolute_output_path
 
-from collection.data_warehouse.connection_manager import (
+from collection.sql_engine.connection_manager import (
     DuckDBConnectionManager, 
     SQLProcessingError
 )
 
 
-class DataWarehouseArchitectureML(BaseArchitectureML):
+class SqlEngineArchitectureML(BaseArchitectureML):
     """Implementação do pipeline ML para a arquitetura Data Warehouse.
 
     Reproduz o mesmo protocolo aplicado à arquitetura Data Lake,
@@ -34,33 +34,33 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
     padrão do framework para permitir benchmark e equivalência prática."""
 
     PARADIGM_META = {
-        'name': 'data_warehouse',
+        'name': 'sql_engine',
         'label': 'Data Warehouse com DuckDB',
-        'processor_module': 'collection.data_warehouse.processor',
-        'processor_class': 'DataWarehouseProcessor',
-        'processor_run_method': 'run_data_warehouse_processing',
-        'baseline_module': 'architectures_ml.data_warehouse.models.baseline_analysis',
-        'baseline_class': 'BaselineModelAnalysisDataWarehouse',
-        'hierarchical_module': 'architectures_ml.data_warehouse.models.hierarchical_model',
+        'processor_module': 'collection.sql_engine.processor',
+        'processor_class': 'SqlEngineProcessor',
+        'processor_run_method': 'run_sql_engine_processing',
+        'baseline_module': 'architectures_ml.sql_engine.models.baseline_analysis',
+        'baseline_class': 'BaselineModelAnalysisSqlEngine',
+        'hierarchical_module': 'architectures_ml.sql_engine.models.hierarchical_model',
         'hierarchical_class': 'HierarchicalModelSQLFirst',
-        'setup_script': 'src/architectures_ml/data_warehouse/setup.py',
-        'processor_script': 'src/collection/data_warehouse/processor.py',
-        'baseline_script': 'src/architectures_ml/data_warehouse/models/baseline_analysis.py',
-        'hierarchical_script': 'src/architectures_ml/data_warehouse/models/hierarchical_model.py',
+        'setup_script': 'src/architectures_ml/sql_engine/setup.py',
+        'processor_script': 'src/collection/sql_engine/processor.py',
+        'baseline_script': 'src/architectures_ml/sql_engine/models/baseline_analysis.py',
+        'hierarchical_script': 'src/architectures_ml/sql_engine/models/hierarchical_model.py',
     }
 
     def __init__(self):
         """Inicializa paths, conexão DuckDB e logger."""
         # Inicialização da arquitetura base
-        output_base = get_absolute_output_path('ml_pipeline/architectures/data_warehouse')
-        super().__init__(architecture_name='data_warehouse', output_base_path=output_base)
+        output_base = get_absolute_output_path('ml_pipeline/architectures/sql_engine')
+        super().__init__(architecture_name='sql_engine', output_base_path=output_base)
         
         print("Inicializando Pipeline ML Data Warehouse")
         print("SQL-first com validacao temporal")
         
         # Configurações específicas do Data Warehouse
         dataset_name = self.dataset_config.name
-        self.db_path = get_absolute_output_path(f'collection/data_warehouse/{dataset_name}_data.duckdb')
+        self.db_path = get_absolute_output_path(f'collection/sql_engine/{dataset_name}_data.duckdb')
         self.conn_manager = None
         
         print(f"  Diretorio base: {self.output_base}")
@@ -78,7 +78,7 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
         if not os.path.exists(self.db_path):
             raise FileNotFoundError(
                 f"Banco DuckDB não encontrado: {self.db_path}\n"
-                f"Execute 'data_warehouse/processor.py' antes deste pipeline ML."
+                f"Execute 'sql_engine/processor.py' antes deste pipeline ML."
             )
         
         self.conn_manager = DuckDBConnectionManager(
@@ -706,8 +706,8 @@ class DataWarehouseArchitectureML(BaseArchitectureML):
             AND data_type IN ('DOUBLE', 'INTEGER', 'FLOAT', 'DECIMAL', 'NUMERIC')
             AND column_name NOT IN (
                 'country_code', 'year',                    -- Identificadores
-                'dropout_rate_data_warehouse',              -- Target variables
-                'dropout_rate_data_lake',
+                'dropout_rate_sql_engine',              -- Target variables
+                'dropout_rate_task_graph',
                 'data_completeness_score'                   -- Quality metadata
             )
             ORDER BY column_name                            -- Determinismo
@@ -1004,7 +1004,7 @@ def main():
     print("=" * 80)
 
     try:
-        setup = DataWarehouseArchitectureML()
+        setup = SqlEngineArchitectureML()
         results = setup.run_setup()
         
         success_flag = results.get('success', None)
@@ -1033,7 +1033,7 @@ def main():
     except Exception as e:
         print(f"\n[ERROR] Pipeline falhou: {e}")
         print("  Verifique se Data Warehouse foi processado corretamente")
-        print("  Execute data_warehouse/processor.py antes deste script")
+        print("  Execute sql_engine/processor.py antes deste script")
         return {'success': False, 'error': str(e)}
     
 

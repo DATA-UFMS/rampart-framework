@@ -92,19 +92,19 @@ src/
 ├── collection/
 │   ├── raw_data_collector.py   # Coleta World Bank API
 │   ├── inep_collector.py       # Coleta INEP Censo Escolar
-│   ├── data_lake/              # Processador Dask
-│   ├── data_warehouse/         # Processador DuckDB
-│   └── polars_dataframe/       # Processador Polars
+│   ├── task_graph/             # Processador Dask (task-graph)
+│   ├── sql_engine/             # Processador DuckDB (SQL)
+│   └── dataframe_lib/          # Processador Polars (DataFrame)
 ├── datasets/
 │   ├── worldbank.py            # Config World Bank (32 países, 2000-2023)
 │   └── inep_censo.py           # Config INEP (5.564 municípios, 2007-2024)
 ├── architectures_ml/           # Setup + modelos por paradigma
-│   ├── data_lake/
-│   ├── data_warehouse/
-│   └── polars_dataframe/
+│   ├── task_graph/
+│   ├── sql_engine/
+│   └── dataframe_lib/
 ├── benchmarking/               # Instrumentação e métricas de latência
 └── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 79 testes (unitários, discovery, anti-leakage)
+tests/                          # 84 testes (unitários, discovery, anti-leakage)
 pipeline.py                     # Orquestra o pipeline completo
 ```
 

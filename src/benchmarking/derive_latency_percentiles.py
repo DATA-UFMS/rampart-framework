@@ -87,9 +87,9 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
                 "n": int(np.isfinite(vals).sum()),
             }
 
-        dl_med = por_arq.get("data_lake", {}).get("p50")
-        dw_med = por_arq.get("data_warehouse", {}).get("p50")
-        pl_med = por_arq.get("polars_dataframe", {}).get("p50")
+        dl_med = por_arq.get("task_graph", {}).get("p50")
+        dw_med = por_arq.get("sql_engine", {}).get("p50")
+        pl_med = por_arq.get("dataframe_lib", {}).get("p50")
 
         def _speedup(a, b):
             return (a / b) if (a is not None and b is not None and b > 0) else None
@@ -115,8 +115,8 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
             "p99": _pct(arr, 99),
             "n_runs": int(np.isfinite(arr).sum()),
         }
-    dl_med = por_arq_total.get("data_lake", {}).get("p50")
-    dw_med = por_arq_total.get("data_warehouse", {}).get("p50")
+    dl_med = por_arq_total.get("task_graph", {}).get("p50")
+    dw_med = por_arq_total.get("sql_engine", {}).get("p50")
     speedup_total = (dl_med / dw_med) if (dl_med is not None and dw_med is not None and dw_med > 0) else None
     resumo["total"] = {"architectures": por_arq_total, "speedup_dw_vs_dl_p50": speedup_total}
     return resumo
@@ -146,8 +146,8 @@ def para_latex(resumo: Dict) -> str:
     for fase in sorted(por_fase.keys()):
         item = por_fase[fase]
         a = item.get("architectures", {})
-        dl = a.get("data_lake", {})
-        dw = a.get("data_warehouse", {})
+        dl = a.get("task_graph", {})
+        dw = a.get("sql_engine", {})
         sp = item.get("speedup_dw_vs_dl_p50")
         row = [
             fase,
@@ -163,8 +163,8 @@ def para_latex(resumo: Dict) -> str:
 
     total = resumo.get("total", {})
     ta = total.get("architectures", {})
-    dl = ta.get("data_lake", {})
-    dw = ta.get("data_warehouse", {})
+    dl = ta.get("task_graph", {})
+    dw = ta.get("sql_engine", {})
     sp = total.get("speedup_dw_vs_dl_p50")
     linhas.append("\\hline")
     linhas.append(

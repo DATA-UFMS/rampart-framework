@@ -42,7 +42,7 @@ from core.scientific_config import RANDOM_SEED, setup_reproducibility
 setup_reproducibility()
 
 
-class HierarchicalModelPolarsDataFrame:
+class HierarchicalModelDataFrameLib:
     """
     Modelo Hierárquico para Arquitetura Polars DataFrame.
 
@@ -56,11 +56,11 @@ class HierarchicalModelPolarsDataFrame:
         """
         print("Inicializando Modelo Hierárquico Polars DataFrame")
 
-        self.target_col = 'dropout_rate_polars_dataframe'
+        self.target_col = 'dropout_rate_dataframe_lib'
 
         self._setup_normal_mode()
 
-        self.results_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/models/hierarchical_results")
+        self.results_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/models/hierarchical_results")
         os.makedirs(self.results_path, exist_ok=True)
 
         self._load_normal_summary()
@@ -69,8 +69,8 @@ class HierarchicalModelPolarsDataFrame:
         """
         Setup para modo normal.
         """
-        self.data_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/master_data_polars_dataframe.parquet")
-        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/temporal_folds_polars_dataframe.json")
+        self.data_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/master_data_dataframe_lib.parquet")
+        self.folds_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/temporal_folds_dataframe_lib.json")
 
         if not os.path.exists(self.data_path) or not os.path.exists(self.folds_path):
             raise FileNotFoundError("Dados Polars DataFrame não encontrados")
@@ -106,7 +106,7 @@ class HierarchicalModelPolarsDataFrame:
         if self.target_col not in self.df_lazy.collect_schema().names():
             raise ValueError(f"Target {self.target_col} não encontrado nos dados")
 
-        selection_path = get_absolute_output_path("ml_pipeline/architectures/polars_dataframe/prep/feature_selection_polars_dataframe.json")
+        selection_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/feature_selection_dataframe_lib.json")
         if os.path.exists(selection_path):
             try:
                 with open(selection_path, 'r') as f:
@@ -256,7 +256,7 @@ class HierarchicalModelPolarsDataFrame:
 
         return {
             'model_name': 'simple_hierarchical',
-            'architecture': 'polars_dataframe',
+            'architecture': 'dataframe_lib',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -322,7 +322,7 @@ class HierarchicalModelPolarsDataFrame:
 
         return {
             'model_name': 'random_forest_hierarchical',
-            'architecture': 'polars_dataframe',
+            'architecture': 'dataframe_lib',
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
@@ -344,7 +344,7 @@ class HierarchicalModelPolarsDataFrame:
         # Registrar features usadas para auditoria
         try:
             used = {
-                'architecture': 'polars_dataframe',
+                'architecture': 'dataframe_lib',
                 'fold_id': int(fold_id),
                 'target': self.target_col,
                 'total_features': len(self.available_features),
@@ -454,7 +454,7 @@ class HierarchicalModelPolarsDataFrame:
 
         return {
             'fold_id': fold_id,
-            'architecture': 'polars_dataframe',
+            'architecture': 'dataframe_lib',
             'mode': 'normal',
             'total_features': len(self.available_features),
             'models': models
@@ -468,7 +468,7 @@ class HierarchicalModelPolarsDataFrame:
         print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
 
         all_results = {
-            'architecture': 'polars_dataframe',
+            'architecture': 'dataframe_lib',
             'version': 'hierarchical_analysis',
             'mode': 'normal',
             'target': self.target_col,
@@ -552,7 +552,7 @@ class HierarchicalModelPolarsDataFrame:
                 print(f"   Melhor modelo: Simple Hierarchical")
                 print(f"   R² Teste: {simple_test:.3f}")
 
-        results_file = f"{self.results_path}/hierarchical_analysis_polars_dataframe_results_normal.json"
+        results_file = f"{self.results_path}/hierarchical_analysis_dataframe_lib_results_normal.json"
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
 
@@ -562,6 +562,6 @@ class HierarchicalModelPolarsDataFrame:
 
 
 if __name__ == "__main__":
-    model = HierarchicalModelPolarsDataFrame()
+    model = HierarchicalModelDataFrameLib()
     results = model.run_hierarchical_analysis()
     print("\nAnálise hierárquica Polars DataFrame concluída!")

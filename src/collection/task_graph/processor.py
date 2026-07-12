@@ -70,7 +70,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from core.config import get_absolute_output_path
 from core.indicators import ALL_INDICATORS
 
-class DataLakeProcessor:
+class TaskGraphProcessor:
     """
     Processador científico Data Lake para análise de indicadores educacionais.
     
@@ -101,7 +101,7 @@ class DataLakeProcessor:
         self.run_timestamp = datetime.now().isoformat()
         raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
         self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
-        self.output_dir = get_absolute_output_path('collection/data_lake')
+        self.output_dir = get_absolute_output_path('collection/task_graph')
         self.processed_dir = f"{self.output_dir}/processed"
         
         os.makedirs(self.output_dir, exist_ok=True)
@@ -254,7 +254,7 @@ class DataLakeProcessor:
         
         return metadata_status
 
-    def prepare_data_lake_metadata(self, ddf: dd.DataFrame, metadata_status: Dict[str, bool]) -> dd.DataFrame:
+    def prepare_task_graph_metadata(self, ddf: dd.DataFrame, metadata_status: Dict[str, bool]) -> dd.DataFrame:
         """
         Prepara metadados seguindo princípios schema-on-read do Data Lake.
         
@@ -317,7 +317,7 @@ class DataLakeProcessor:
         print("Otimizando particionamento para processamento distribuido")
         
         metadata_status = self.detect_quality_metadata(ddf)
-        ddf_prepared = self.prepare_data_lake_metadata(ddf, metadata_status)
+        ddf_prepared = self.prepare_task_graph_metadata(ddf, metadata_status)
         
         # Tratamento de valores missing em variável de estratificação
         if 'country_stratum' in ddf_prepared.columns:
@@ -376,7 +376,7 @@ class DataLakeProcessor:
 
         return partition
 
-    def process_data_lake_architecture(self, ddf: dd.DataFrame) -> dd.DataFrame:
+    def process_task_graph_architecture(self, ddf: dd.DataFrame) -> dd.DataFrame:
         """
         Executa processamento distribuído com metadados de auditoria.
 
@@ -503,7 +503,7 @@ class DataLakeProcessor:
         )
         
         metadata = {
-            'architecture': 'data_lake',
+            'architecture': 'task_graph',
             'processing_paradigm': 'dask_distributed_lazy_evaluation',
             'dataset_statistics': {
                 'total_records': int(computed_stats['total_records']),
@@ -550,7 +550,7 @@ class DataLakeProcessor:
         
         return output_path
 
-    def run_data_lake_processing(self) -> Dict:
+    def run_task_graph_processing(self) -> Dict:
         """
         Orquestra pipeline de processamento Data Lake.
 
@@ -573,7 +573,7 @@ class DataLakeProcessor:
             ddf_partitioned = self.create_partitioned_structure(ddf_complete)
 
             print("\n[3/4] Feature engineering distribuido")
-            ddf_processed = self.process_data_lake_architecture(ddf_partitioned)
+            ddf_processed = self.process_task_graph_architecture(ddf_partitioned)
 
             print("\n[4/4] Materializacao e persistencia")
             output_path = self.export_processed_data(ddf_processed)
@@ -586,7 +586,7 @@ class DataLakeProcessor:
             
             return {
                 'status': 'success',
-                'architecture': 'data_lake',
+                'architecture': 'task_graph',
                 'paradigm': 'distributed_lazy_evaluation',
                 'output': {
                     'primary_dataset': output_path,
@@ -637,6 +637,6 @@ class DataLakeProcessor:
             }
 
 if __name__ == "__main__":
-    processor = DataLakeProcessor()
-    results = processor.run_data_lake_processing()
+    processor = TaskGraphProcessor()
+    results = processor.run_task_graph_processing()
     print(f"Execucao: {results.get('status', 'failed')}")
