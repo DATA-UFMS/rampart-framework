@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  artifact-check:
+    name: Clone limpo, instalação e testes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configura Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Resolve o lock em ambiente limpo. É a verificação que não pode ser
+      # feita na máquina de desenvolvimento, onde as dependências já existem.
+      - name: Instala dependências pinadas
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-lock.txt
+
+      - name: Instala o pacote
+        run: pip install -e . --no-deps
+
+      # O framework precisa ser importável de fora da raiz do repositório.
+      - name: Verifica importação fora da raiz
+        run: |
+          cd "$RUNNER_TEMP"
+          python -c "
+          from core.validation import TemporalValidator
+          from core.paradigm_registry import discover_paradigms
+          paradigms = sorted(discover_paradigms())
+          print('paradigmas descobertos:', paradigms)
+          assert set(paradigms) >= {'data_lake', 'data_warehouse', 'polars_dataframe'}, paradigms
+          "
+
+      - name: Testes
+        run: pytest -q
+
+      # O entrypoint documentado no README precisa ao menos carregar.
+      - name: Verifica o entrypoint
+        run: python pipeline.py --help
+
+      # Validação negativa do gate anti-leakage, também disponível como script.
+      - name: Validação negativa do gate anti-leakage
+        run: python scripts/validation/leakage_injection.py --quick
