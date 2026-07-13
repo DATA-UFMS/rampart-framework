@@ -107,14 +107,32 @@ class TestInepAdapter:
         assert adapted['lower_secondary_completion_rate'].iloc[0] == pytest.approx(94.0)
 
 
-    def test_adapter_preserves_features(self):
-        """Features INEP (aprov_ef, reprov_em, etc.) passam inalteradas."""
+    def test_adapter_preserves_lower_secondary_features(self):
+        """Lower-secondary rates reach the final dataset unchanged."""
         from collection.inep_collector import adapt_to_framework_schema
         adapted = adapt_to_framework_schema(
-            self._make_inep_df(aprov_ef=[92.5], reprov_em=[3.7])
+            self._make_inep_df(aprov_ef=[92.5], reprov_ef=[4.2])
         )
         assert adapted['aprov_ef'].iloc[0] == pytest.approx(92.5)
-        assert adapted['reprov_em'].iloc[0] == pytest.approx(3.7)
+        assert adapted['reprov_ef'].iloc[0] == pytest.approx(4.2)
+
+    def test_adapter_drops_upper_secondary_rates(self):
+        """The target's algebraic components must not reach the feature pool.
+
+        aprovacao + reprovacao + abandono partition each level exactly, so any
+        upper-secondary rate reconstructs the upper-secondary dropout target.
+        """
+        from collection.inep_collector import adapt_to_framework_schema
+        adapted = adapt_to_framework_schema(self._make_inep_df())
+
+        leaked = [
+            col for col in adapted.columns
+            if col.endswith('_em') or '_em_' in col
+        ]
+        assert not leaked, (
+            f"upper-secondary rates reached the feature pool and reconstruct "
+            f"the target: {leaked}"
+        )
 
 
 class TestBaseArchitectureDatasetConfig:
