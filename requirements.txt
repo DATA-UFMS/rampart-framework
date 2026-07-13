@@ -19,8 +19,8 @@ psutil==5.9.8
 requests==2.31.0
 pyarrow==18.1.0
 
-# Data ingestion (INEP: pandas.read_excel exige um engine para .xlsx)
+# Excel engine required by pandas.read_excel for the INEP source
 openpyxl==3.1.5
 
-# Testes (README e USAGE_GUIDE instruem `pytest tests/`)
+# Test runner (the suite ships with the artifact)
 pytest==8.3.4

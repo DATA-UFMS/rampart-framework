@@ -312,11 +312,10 @@ class BenchmarkRunner:
 
     # --------------------------- utilitários de contagem -------------------
     def _count_rows_parquet(self, abs_path: str) -> Optional[int]:
-        """Conta linhas de um Parquet.
+        """Row count of a Parquet artifact, or None if it cannot be read.
 
-        Devolve None quando a contagem não é possível -- artefato ausente ou
-        ilegível. Devolver 0 nesse caso tornaria indistinguível "sem dados" de
-        "não medido", e mascarou por completo um erro no nome do artefato.
+        None and 0 are distinct: 0 means an empty artifact, None means the
+        measurement is unavailable. Throughput is only derived from the former.
         """
         if not os.path.exists(abs_path):
             return None
@@ -372,10 +371,8 @@ class BenchmarkRunner:
         t1 = time.perf_counter_ns()
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
-            # Nem todo paradigma materializa um artefato master em Parquet: o
-            # sql_engine mantem os dados no proprio DuckDB, de modo que a
-            # contagem fica indisponivel (None) e o throughput nao e reportado
-            # para ele. Isso e uma limitacao de instrumentacao, nao uma falha.
+            # sql_engine keeps its data in DuckDB and materialises no master
+            # Parquet, so its record count stays unavailable.
             master_path = get_absolute_output_path(
                 f"ml_pipeline/architectures/{paradigm_name}/prep/master_data_{paradigm_name}.parquet"
             )

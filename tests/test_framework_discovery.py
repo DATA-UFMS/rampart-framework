@@ -212,9 +212,8 @@ class TestDiscoverParadigms:
         expected = {'task_graph', 'sql_engine', 'dataframe_lib'}
         assert expected.issubset(set(paradigms.keys())), \
             f"Missing paradigms: {expected - set(paradigms.keys())}"
-        # Paradigmas adicionais são esperados: o registry existe para permitir
-        # extensão sem editar arquivos existentes. O que não é aceitável é um
-        # paradigma definido fora de src/architectures_ml/ (vazamento de teste).
+        # Extra paradigms are legitimate; the registry exists to allow them.
+        # A paradigm declared outside src/architectures_ml/ is not.
         for name, meta in paradigms.items():
             setup_script = str(meta.get('setup_script', ''))
             assert setup_script.startswith('src/architectures_ml/'), \

@@ -21,8 +21,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-# Permite executar o pipeline sem instalar o pacote (`python pipeline.py`).
-# Com `pip install -e .` esta insercao e redundante, mas inofensiva.
+# Supports running from a checkout, without installing the package.
 _SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)

@@ -14,17 +14,14 @@ dynamic = ["dependencies"]
 [project.urls]
 Repository = "https://github.com/DATA-UFMS/rampart-framework"
 
-# requirements.txt é a única fonte de verdade das dependências. Ele pina o
-# ambiente completo de reprodução — incluindo o executor de testes, porque a
-# suíte faz parte do artefato. requirements-lock.txt fixa as transitivas.
+# Single source of truth for dependencies; requirements-lock.txt pins the
+# transitive closure.
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
 
-# Layout src/: os pacotes de topo (core, collection, architectures_ml,
-# datasets, benchmarking, statistical_validation) vivem sob src/ e são
-# importados sem prefixo, como em `from core.validation import ...`.
-# São namespace packages (sem __init__.py), então a descoberta precisa de
-# namespaces = true.
+# Top-level packages live under src/ and are imported without a prefix
+# (`from core.validation import ...`). They carry no __init__.py, hence
+# namespaces = true below.
 [tool.setuptools]
 package-dir = { "" = "src" }
 
