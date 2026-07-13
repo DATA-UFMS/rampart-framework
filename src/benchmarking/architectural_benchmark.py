@@ -667,7 +667,7 @@ if __name__ == "__main__":
                     "significance_tests.py",
                 ),
             ],
-            check=False,
+            check=True,
         )
         subprocess_run(
             [
@@ -676,7 +676,7 @@ if __name__ == "__main__":
                     PROJECT_ROOT, "src", "statistical_validation", "equivalence_estimation.py"
                 ),
             ],
-            check=False,
+            check=True,
         )
         # Tamanhos de efeito e correções de múltiplas comparações
         subprocess_run(
@@ -686,13 +686,14 @@ if __name__ == "__main__":
                     PROJECT_ROOT, "src", "statistical_validation", "effect_analysis.py"
                 ),
             ],
-            check=False,
+            check=True,
         )
         # Scorecard consolidado (gera outputs/statistics/architectural_scorecard.tex)
         ms = os.path.join(
             PROJECT_ROOT, "src", "statistical_validation", "make_scorecard.py"
         )
         if os.path.exists(ms):
-            subprocess_run([sys.executable, ms], check=False)
+            subprocess_run([sys.executable, ms], check=True)
     except Exception as exc:
-        print(f"[WARN] Analise pos-benchmark falhou: {exc}")
+        print(f"[ERROR] Post-benchmark analysis failed: {exc}")
+        raise

@@ -192,6 +192,14 @@ def main() -> None:
         run(f"{py} {root}/{info['hierarchical_script']}")
     _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
 
+    # Precedes the benchmark: a latency comparison between paradigms is only
+    # meaningful once they are established to predict the same values for the
+    # same rows. Running it afterwards could report a timing difference between
+    # paradigms that were not doing the same work.
+    print("\nGate de equivalencia de predicoes")
+    run(f"{py} {root}/src/statistical_validation/prediction_equivalence.py")
+    _log("Predicoes identicas entre os paradigmas")
+
     print("\nEtapa 6/9: Benchmark arquitetural")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 10 --warmup 2")
     _log("Etapa 6 concluida")
