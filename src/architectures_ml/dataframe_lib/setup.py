@@ -266,19 +266,15 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
             for warning in warnings[:3]:
                 print(f"  [WARN] {warning}")
 
-        # Schema validation com fallback
+        # The configured target must exist. Substituting a similarly named
+        # column would silently move the experiment to a different target,
+        # invalidating every downstream comparison.
         if self.source_column not in df.columns:
-            print(f"  [WARN] Coluna target '{self.source_column}' nao encontrada")
-
-            completion_cols = [col for col in df.columns if 'completion' in col.lower()]
-            if completion_cols:
-                self.source_column = completion_cols[0]
-                print(f"    Usando alternativa: {self.source_column}")
-            else:
-                raise ValueError(
-                    "Nenhuma variável educacional adequada encontrada.\n"
-                    "Verificar presença de colunas com 'completion' no nome."
-                )
+            raise ValueError(
+                f"Target column '{self.source_column}' declared by "
+                f"{type(self.dataset_config).__name__} is absent from the "
+                f"processed data. Available columns: {sorted(df.columns)}"
+            )
 
         # Análise de qualidade via Polars
 

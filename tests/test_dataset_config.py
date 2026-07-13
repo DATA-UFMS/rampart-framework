@@ -35,7 +35,7 @@ class TestDatasetRegistry:
         inep = get_dataset('inep_censo')
         assert inep.name == 'inep_censo'
         assert inep.temporal_range == (2007, 2024)
-        assert inep.entity_column == 'municipality_code'
+        assert inep.entity_column == 'country_code'
 
     def test_get_nonexistent_raises(self):
         from core.dataset_config import get_dataset
@@ -175,8 +175,87 @@ class TestBaseArchitectureDatasetConfig:
         with tempfile.TemporaryDirectory() as tmpdir:
             inep_cfg = get_dataset('inep_censo')
             arch = MockArch('test', tmpdir, dataset_config=inep_cfg)
-            excluded = arch.get_excluded_features()
-            assert 'municipality_code' in excluded
-            assert 'state_code' in excluded
+            try:
+                excluded = arch.get_excluded_features()
+                assert 'country_code' in excluded
+                assert 'country_stratum' in excluded
+            finally:
+                # A failing assertion must not leave the mock in the global
+                # registry, where it would break unrelated tests.
+                BaseArchitectureML._registry.pop('_test_dataset_excl', None)
 
-        BaseArchitectureML._registry.pop('_test_dataset_excl', None)
+
+class TestInepConfigMatchesCollector:
+    """The declared schema must be the one the collector produces."""
+
+    @staticmethod
+    def _produced_columns():
+        from collection.inep_collector import FEATURE_COLS
+        framework_schema = {
+            'country_code', 'country_name', 'country_stratum', 'year',
+            'lower_secondary_completion_rate',
+        }
+        return framework_schema | set(FEATURE_COLS)
+
+    def test_declared_columns_exist(self):
+        from datasets.inep_censo import InepCensoDatasetConfig as cfg
+        produced = self._produced_columns()
+        for field in ('entity_column', 'entity_name_column',
+                      'stratification_column', 'target_source_column'):
+            column = getattr(cfg, field)
+            assert column in produced, (
+                f"{field}={column!r} is not produced by the collector"
+            )
+
+    def test_declared_features_exist(self):
+        from datasets.inep_censo import InepCensoDatasetConfig as cfg
+        missing = [c for c in cfg.feature_columns
+                   if c not in self._produced_columns()]
+        assert not missing, f"declared features absent from the data: {missing}"
+
+    def test_exclusion_list_reaches_real_columns(self):
+        """An exclusion list of absent names would disable P3 silently."""
+        from datasets.inep_censo import InepCensoDatasetConfig as cfg
+        effective = set(cfg.excluded_columns) & self._produced_columns()
+        assert effective, (
+            "no excluded column exists in the data, so the P3 exclusion list "
+            "has no effect"
+        )
+
+
+class TestTargetSubstitutionIsRejected:
+    """A missing target must abort, never fall back to a similar name."""
+
+    def test_no_setup_substitutes_the_target(self):
+        import ast
+        from pathlib import Path
+        from core.paradigm_registry import discover_paradigms
+
+        root = Path(__file__).resolve().parents[1]
+        for name, meta in sorted(discover_paradigms().items()):
+            if 'setup_script' not in meta:
+                continue
+            source = (root / meta['setup_script']).read_text()
+            tree = ast.parse(source)
+            validate = next(
+                (n for n in ast.walk(tree)
+                 if isinstance(n, ast.FunctionDef) and n.name == 'validate_data'),
+                None,
+            )
+            assert validate is not None, f"{name}: no validate_data"
+
+            body = ast.unparse(validate)
+            assert 'Target column' in body, (
+                f"{name}: validate_data does not abort on a missing target"
+            )
+            # Reassigning source_column here is how the substitution happened.
+            reassigns = [
+                n for n in ast.walk(validate)
+                if isinstance(n, ast.Assign)
+                and any(getattr(t, 'attr', None) == 'source_column'
+                        for t in n.targets)
+            ]
+            assert not reassigns, (
+                f"{name}: validate_data reassigns source_column, substituting "
+                f"the declared target"
+            )

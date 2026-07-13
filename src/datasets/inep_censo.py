@@ -22,55 +22,40 @@ class InepCensoDatasetConfig:
     temporal_range = (2007, 2024)
     year_column = "year"
 
-    # Entidade geográfica
-    entity_column = "municipality_code"
-    entity_name_column = "municipality_name"
-    stratification_column = "state_code"
+    # Geographic entity.
+    #
+    # The collector maps each municipality onto the framework's internal schema
+    # (country_code / country_name / country_stratum), so the pipeline needs no
+    # dataset-specific handling. The stratum carries the state abbreviation.
+    entity_column = "country_code"
+    entity_name_column = "country_name"
+    stratification_column = "country_stratum"
     strata = {
-        "norte": ["11", "12", "13", "14", "15", "16", "17"],
-        "nordeste": ["21", "22", "23", "24", "25", "26", "27", "28", "29"],
-        "sudeste": ["31", "32", "33", "35"],
-        "sul": ["41", "42", "43"],
-        "centro_oeste": ["50", "51", "52", "53"],
+        "norte": ["AC", "AM", "AP", "PA", "RO", "RR", "TO"],
+        "nordeste": ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"],
+        "sudeste": ["ES", "MG", "RJ", "SP"],
+        "sul": ["PR", "RS", "SC"],
+        "centro_oeste": ["DF", "GO", "MS", "MT"],
     }
 
-    # Target: taxa de abandono por município/ano
-    # abandono_rate = count(Deixou de frequentar) / count(matriculas) * 100
-    target_source_column = "abandono_rate"
+    # Target. The collector inverts the upper-secondary abandonment rate into a
+    # completion rate, from which the framework derives dropout_rate.
+    target_source_column = "lower_secondary_completion_rate"
     target_expected_range = (0.0, 100.0)
     min_valid_count = 5000
 
-    # Features agregadas município × ano
+    # Candidate features: INEP's lower-secondary rendimento rates, mirroring
+    # FEATURE_COLS in collection/inep_collector.py. Upper-secondary rates are
+    # absent by design -- they partition the target exactly.
     feature_columns = [
-        # Demográficas do alunado
-        "pct_feminino",
-        "pct_cor_branca",
-        "pct_cor_preta",
-        "pct_cor_parda",
-        "media_idade",
-        "pct_zona_rural",
-        # Modalidade e turno
-        "pct_noturno",
-        "pct_integral",
-        "total_matriculas",
-        # Infraestrutura escolar (da tabela ESCOLA)
-        "pct_internet",
-        "pct_lab_informatica",
-        "pct_lab_ciencias",
-        "pct_biblioteca",
-        "pct_quadra_esportes",
-        "pct_agua_potavel",
-        "pct_esgoto_rede_publica",
-        "pct_energia_rede_publica",
-        # Recursos humanos
-        "media_docentes_por_escola",
-        "media_turmas_por_escola",
+        "aprov_ef", "aprov_ef_ai", "aprov_ef_af",
+        "reprov_ef", "reprov_ef_ai", "reprov_ef_af",
+        "abandono_ef", "abandono_ef_ai", "abandono_ef_af",
     ]
 
     excluded_columns = [
-        "municipality_code", "municipality_name", "year",
-        "state_code", "state_name", "region",
-        "abandono_rate",  # target source
+        "country_code", "country_name", "year", "country_stratum",
+        "lower_secondary_completion_rate",  # target source
         "data_completeness_score",
     ]
 

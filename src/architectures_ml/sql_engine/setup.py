@@ -156,9 +156,8 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             - Presença obrigatória de country_code, year (identificadores únicos)
             - Target coverage >20% para evitar extreme class imbalance
         
-        Robustez:
-            Implementa fallback automático para variáveis target alternativas
-            baseado em correspondência semântica (completion rate variants).
+        Aborts when the configured target column is absent, rather than
+        substituting a similarly named one.
         """
         print("Validando integridade dos dados")
         
@@ -173,34 +172,21 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             AND column_name = '{target_source_col}'
         """)
         
+        # The configured target must exist. Substituting a similarly named
+        # column would silently move the experiment to a different target,
+        # invalidating every downstream comparison.
         if not column_exists:
-            print(f"  [WARN] Coluna target '{target_source_col}' nao encontrada")
-            print("    Buscando variaveis alternativas...")
-            
-            alternative_col = self.conn_manager.execute_scalar("""
+            available = self.conn_manager.execute_sql("""
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name = 'analytics_wide'
-                AND (LOWER(column_name) LIKE '%completion%'
-                     OR LOWER(column_name) LIKE '%enrollment%'
-                     OR LOWER(column_name) LIKE '%graduation%')
-                ORDER BY
-                    CASE
-                        WHEN LOWER(column_name) LIKE '%completion%' THEN 1
-                        WHEN LOWER(column_name) LIKE '%enrollment%' THEN 2
-                        ELSE 3
-                    END
-                LIMIT 1
+                ORDER BY column_name
             """)
-            
-            if alternative_col:
-                self.source_column = alternative_col
-                print(f"    Usando variavel alternativa: {self.source_column}")
-            else:
-                raise ValueError(
-                    "Nenhuma variável educacional adequada encontrada. "
-                    "Verifique se dados foram processados corretamente."
-                )
+            raise ValueError(
+                f"Target column '{target_source_col}' declared by "
+                f"{type(self.dataset_config).__name__} is absent from "
+                f"analytics_wide. Available columns: {available}"
+            )
         
         # 2. Análise de Cobertura
         print("  [2/4] Analise de cobertura")
