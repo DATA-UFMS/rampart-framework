@@ -30,6 +30,7 @@ _actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '
 if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
 
+from core.prediction_store import PredictionRecorder, predictions_path
 from core.scientific_config import RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
@@ -299,6 +300,7 @@ class HierarchicalModelSQLFirst:
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
+            'entities': [str(c) for c in countries_test],
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
             'country_sample_counts': {str(k): int(v) for k, v in country_sample_counts.items()},
             'regularization_applied': f'RidgeCV: alpha={final_alpha:.2f} (logspace 0.1-1000, cv interno)',
@@ -363,6 +365,7 @@ class HierarchicalModelSQLFirst:
             'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2,
             'predictions': predictions.tolist(),
             'y_true': y_test.tolist(),
+            'entities': [str(c) for c in countries_test],
             'feature_importance': {k: float(v) for k, v in feature_importance.items()},
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
             'regularization_applied': f'Regularizado: n_est=200, depth={max_depth}, split=15, leaf={min_samples_leaf}',
@@ -497,6 +500,33 @@ class HierarchicalModelSQLFirst:
             'models': models
         }
     
+    def _write_prediction_artifact(self, all_results: Dict) -> None:
+        """Persist the test prediction vectors of every fold and model.
+
+        Cross-paradigm equivalence is asserted over these vectors; the aggregate
+        metrics stored alongside them cannot establish it.
+        """
+        recorder = PredictionRecorder('sql_engine')
+        for fold in all_results.get('folds', []):
+            fold_id = fold.get('fold_id')
+            for model_name, splits in fold.get('models', {}).items():
+                evaluation = splits.get('test', {})
+                if 'predictions' not in evaluation or 'y_true' not in evaluation:
+                    continue
+                recorder.record(
+                    fold=fold_id,
+                    model=model_name,
+                    y_true=evaluation['y_true'],
+                    y_pred=evaluation['predictions'],
+                    entities=evaluation.get('entities'),
+                )
+
+        path = predictions_path('sql_engine')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        written = recorder.write(path)
+        if written:
+            print(f"Prediction vectors written: {written}")
+
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa via ML Data Warehouse Consumer."""
         print("Análise hierárquica DuckDB")
@@ -567,6 +597,8 @@ class HierarchicalModelSQLFirst:
                 
                 print(f"\nResumo hierárquico DuckDB")
             
+            self._write_prediction_artifact(all_results)
+
             results_file = f"{self.results_path}/hierarchical_analysis_sql_engine_results.json"
             with open(results_file, 'w') as f:
                 json.dump(all_results, f, indent=2)
