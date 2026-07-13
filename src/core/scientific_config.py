@@ -39,6 +39,9 @@ SCIENTIFIC_CONFIG = {
     # Limiar para detecção de proxy features (Kapoor & Narayanan, 2023)
     # Alinhado com max_corr da seleção de features (defense-in-depth)
     'proxy_correlation_threshold': 0.80,
+    # Ceiling on how much of the target the selected features may jointly
+    # explain. Catches additive identities that pairwise correlation misses.
+    'identity_r2_threshold': 0.95,
 
     # Validação Temporal
     'temporal_gap_years': 2,

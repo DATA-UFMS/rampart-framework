@@ -10,7 +10,11 @@ Protocolo anti-leakage (P1-P5):
     P2 — Gap mínimo: N anos entre splits (default 2), configurável via
          temporal_gap_years. Embargo opcional para dados sub-anuais.
     P3 — Separação de features: lista de exclusão (derivadas do target,
-         metadados) + detecção de proxy (|r| > 0.95 com target).
+         metadados) + detecção de proxy (|r| com target acima de
+         proxy_correlation_threshold, medido no painel completo) + rejeição
+         de reconstrução conjunta (R2 de mínimos quadrados do target sobre as
+         features selecionadas acima de identity_r2_threshold, medido na
+         janela de treino).
     P4 — Escopo de seleção: feature selection restrita ao período de
          treino do primeiro fold (Kapoor & Narayanan, 2023).
     P5 — Escopo de preprocessing: scaling e imputação ajustados

@@ -433,6 +433,46 @@ class BaseArchitectureML(ABC):
             return len(data)
         return len(data)
 
+    def _materialise_pandas(self, data: Any, columns: List[str]) -> pd.DataFrame:
+        """Materialise the given columns as a pandas frame.
+
+        Mirrors the dispatch of _filter_by_year so that checks needing a dense
+        matrix stay in this class instead of becoming a per-paradigm obligation.
+        """
+        if _HAS_POLARS and isinstance(data, pl.DataFrame):
+            return data.select(columns).to_pandas()
+        elif hasattr(data, 'compute'):  # Dask DataFrame
+            return data[columns].compute()
+        elif isinstance(data, pd.DataFrame):
+            return data[columns].copy()
+        else:
+            raise TypeError(f"Unsupported data type for materialisation: {type(data)}")
+
+    def _linear_reconstruction_r2(self, data: Any, features: List[str]) -> Optional[float]:
+        """R2 of an ordinary least squares fit of the target on `features`.
+
+        Returns None when the fit is not determined -- too few complete rows for
+        the number of predictors, or a constant target.
+        """
+        if not features:
+            return None
+
+        frame = self._materialise_pandas(
+            data, list(features) + [self.target_column]
+        ).dropna()
+        if len(frame) <= len(features) + 1:
+            return None
+
+        X = frame[list(features)].to_numpy(dtype=float)
+        y = frame[self.target_column].to_numpy(dtype=float)
+        design = np.column_stack([X, np.ones(len(X))])
+        coefficients, *_ = np.linalg.lstsq(design, y, rcond=None)
+        residual = y - design @ coefficients
+        total = ((y - y.mean()) ** 2).sum()
+        if total <= 0:
+            return None
+        return float(1.0 - (residual ** 2).sum() / total)
+
     def get_excluded_features(self) -> List[str]:
         """
         Retorna lista de features a excluir (vazamento/metadados).
@@ -592,19 +632,49 @@ class BaseArchitectureML(ABC):
                 f"excluded features found in final selection: {leaked}"
             )
 
-        # P3 estendido: detecção de features proxy do target
-        # (Kapoor & Narayanan, 2023; Kaufman et al., 2012)
-        # Threshold alinhado com max_corr da seleção para evitar gap entre filtros
+        # P3 extended: proxy detection (Kapoor & Narayanan, 2023; Kaufman et
+        # al., 2012).
+        #
+        # Selection and auditing serve different purposes and use different
+        # data. Selection reads only the P4 window, because choosing features by
+        # their agreement with future target values is look-ahead bias. The
+        # audit below reads the full panel: a feature whose correlation clears
+        # the threshold only outside the first training window is still a proxy,
+        # and restricting the audit to that window is what let one through here.
+        #
+        # The audit may only abort, never filter. Aborting reports that the
+        # design is invalid without letting full-panel information reach the
+        # model; silently dropping the feature would.
         PROXY_THRESHOLD = float(self.config.get('proxy_correlation_threshold', 0.80))
+        audit_correlations = self.compute_feature_correlations(data, final_features)
         proxies = {
-            feat: corr for feat, corr in correlations.items()
+            feat: corr for feat, corr in audit_correlations.items()
             if feat in final_features and abs(corr) > PROXY_THRESHOLD
         }
         if proxies:
             raise ValueError(
                 f"Anti-leakage violation (P3 proxy detection): "
                 f"features with |correlation| > {PROXY_THRESHOLD} with target "
-                f"suggest proxy leakage (Kapoor & Narayanan, 2023): {proxies}"
+                f"over the full panel suggest proxy leakage "
+                f"(Kapoor & Narayanan, 2023): {proxies}"
+            )
+
+        # P3 extended: joint reconstruction of the target.
+        #
+        # Pairwise correlation cannot see an additive identity. Where the target
+        # partitions into several features -- rates that sum to a constant, for
+        # instance -- each one correlates weakly while together they determine
+        # the target exactly. Fitted on the training window, so an exact
+        # identity is detected without consulting the evaluation periods.
+        IDENTITY_THRESHOLD = float(self.config.get('identity_r2_threshold', 0.95))
+        identity_r2 = self._linear_reconstruction_r2(data_train_only, final_features)
+        if identity_r2 is not None and identity_r2 > IDENTITY_THRESHOLD:
+            raise ValueError(
+                f"Anti-leakage violation (P3 joint reconstruction): selected "
+                f"features explain the target with R2 = {identity_r2:.4f} > "
+                f"{IDENTITY_THRESHOLD} on the training window, indicating the "
+                f"target is an algebraic function of the feature set: "
+                f"{sorted(final_features)}"
             )
 
         # Estatísticas de seleção
