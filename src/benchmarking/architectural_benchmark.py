@@ -311,9 +311,15 @@ class BenchmarkRunner:
                 print(f"[WARN] Falha ao gravar log de recursos: {exc}")
 
     # --------------------------- utilitários de contagem -------------------
-    def _count_rows_parquet(self, abs_path: str) -> int:
+    def _count_rows_parquet(self, abs_path: str) -> Optional[int]:
+        """Conta linhas de um Parquet.
+
+        Devolve None quando a contagem não é possível -- artefato ausente ou
+        ilegível. Devolver 0 nesse caso tornaria indistinguível "sem dados" de
+        "não medido", e mascarou por completo um erro no nome do artefato.
+        """
         if not os.path.exists(abs_path):
-            return 0
+            return None
         try:
             import pyarrow.parquet as pq
             return pq.read_metadata(abs_path).num_rows
@@ -322,7 +328,7 @@ class BenchmarkRunner:
                 df = pd.read_parquet(abs_path, columns=[])
                 return int(len(df))
             except Exception:
-                return 0
+                return None
 
     # --------------------------- fases medidas -----------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
@@ -366,8 +372,12 @@ class BenchmarkRunner:
         t1 = time.perf_counter_ns()
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
+            # Nem todo paradigma materializa um artefato master em Parquet: o
+            # sql_engine mantem os dados no proprio DuckDB, de modo que a
+            # contagem fica indisponivel (None) e o throughput nao e reportado
+            # para ele. Isso e uma limitacao de instrumentacao, nao uma falha.
             master_path = get_absolute_output_path(
-                f"ml_pipeline/architectures/{paradigm_name}/prep/master_{paradigm_name}.parquet"
+                f"ml_pipeline/architectures/{paradigm_name}/prep/master_data_{paradigm_name}.parquet"
             )
             rows = self._count_rows_parquet(master_path)
         return t1 - t0, rows
@@ -402,7 +412,7 @@ class BenchmarkRunner:
             f"ml_pipeline/architectures/{paradigm_name}/prep/temporal_folds_{paradigm_name}.json"
         )
         master_path = get_absolute_output_path(
-            f"ml_pipeline/architectures/{paradigm_name}/prep/master_{paradigm_name}.parquet"
+            f"ml_pipeline/architectures/{paradigm_name}/prep/master_data_{paradigm_name}.parquet"
         )
         try:
             with open(folds_path, "r") as f:

@@ -1027,14 +1027,16 @@ def main():
 
         print(f"\nResultados:")
         for key, value in results.items():
-            if key not in ['success', 'error']:
+            if key not in ['status', 'error']:
                 print(f"  {key}: {value}")
-                
+
+        return results
+
     except Exception as e:
         print(f"\n[ERROR] Pipeline falhou: {e}")
         print("  Verifique se DuckDB foi processado corretamente")
         print("  Execute sql_engine/processor.py antes deste script")
-        return {'success': False, 'error': str(e)}
+        return {'status': 'failed', 'error': str(e)}
     
 
 

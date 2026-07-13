@@ -977,11 +977,13 @@ def main():
         for key, value in results.items():
             if key not in ['status', 'error']:
                 print(f"  {key}: {value}")
-                
+
+        return results
+
     except Exception as e:
         print(f"\n[ERROR] Pipeline Dask falhou: {e}")
         print("  Verificar se dados foram processados pelo task_graph/processor.py")
-        return {'success': False, 'error': str(e)}
+        return {'status': 'failed', 'error': str(e)}
     
 
 
