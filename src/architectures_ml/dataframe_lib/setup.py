@@ -478,27 +478,17 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
             print(f"    Val: {fold['val_count']} obs, {fold['val_countries']} paises")
             print(f"    Test: {fold['test_count']} obs, {fold['test_countries']} paises")
 
-    def get_numeric_features(self, df: pl.DataFrame) -> List[str]:
+    def discover_numeric_columns(self, df: pl.DataFrame) -> List[str]:
         """
-        Identifica features numéricas candidatas para modelagem ML via type inference Polars.
+        Identifica colunas numéricas via schema de tipos nativo de Polars.
 
         Args:
             df: DataFrame Polars com dados educacionais
 
         Returns:
-            Lista de nomes de variáveis numéricas adequadas para ML temporal
-
-        Metodologia Polars:
-            Utiliza schema de tipos nativo de Polars para identificação rápida
-            de features numéricas, permitindo flexibilidade na entrada.
-
-        Critérios de seleção:
-            1. Tipos numéricos: Int*, Float*, UInt*, Decimal
-            2. Exclusão automática: Identificadores, targets, derivadas
-            3. Preservação de ordem: Determinismo para reprodutibilidade
+            Lista de nomes de colunas numéricas
         """
-        # Obter colunas numéricas via schema Polars
-        numeric_cols = [
+        return [
             col for col in df.columns
             if df[col].dtype in [
                 pl.Int8, pl.Int16, pl.Int32, pl.Int64,
@@ -506,19 +496,6 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
                 pl.Float32, pl.Float64
             ]
         ]
-
-        # Exclusão sistemática de metadados, targets e features derivadas
-        exclude_cols = ['year', 'country_code', self.target_column, self.source_column]
-        exclude_prefixes = ('dropout_rate_lag_',)
-
-        # Filtro preservando ordem para determinismo
-        numeric_features = sorted([
-            col for col in numeric_cols
-            if col not in exclude_cols
-            and not any(col.startswith(p) for p in exclude_prefixes)
-        ])
-
-        return numeric_features
 
     def compute_feature_correlations(self, df: pl.DataFrame,
                                      features: List[str]) -> Dict[str, float]:

@@ -62,6 +62,10 @@ class BaseArchitectureML(ABC):
 
     _registry: Dict[str, type] = {}
 
+    # Radical dos nomes derivados do target: o target de cada paradigma
+    # (TARGET_STEM_<paradigma>) e seus lags (TARGET_STEM_lag_<k>).
+    TARGET_STEM = 'dropout_rate'
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Registrar apenas classes completamente concretas (sem métodos abstratos restantes).
@@ -139,7 +143,7 @@ class BaseArchitectureML(ABC):
         self.dataset_config = dataset_config
 
         # Configuração de target (derivada do dataset)
-        self.target_column = f"dropout_rate_{architecture_name}"
+        self.target_column = f"{self.TARGET_STEM}_{architecture_name}"
         self.source_column = dataset_config.target_source_column
         
         self._create_directory_structure()
@@ -604,8 +608,7 @@ class BaseArchitectureML(ABC):
         print(f"\nFeature selection {self.architecture_name}...")
 
         exclude_cols = self.get_excluded_features()
-        all_features = self.get_numeric_features(data)
-        feature_cols = [col for col in all_features if col not in exclude_cols]
+        feature_cols = self.get_numeric_features(data)
 
         print(f"   {len(feature_cols)} candidatas ({len(exclude_cols)} excluidas)")
 
@@ -703,18 +706,90 @@ class BaseArchitectureML(ABC):
         return selection_stats
     
     @abstractmethod
-    def get_numeric_features(self, data: Any) -> List[str]:
+    def discover_numeric_columns(self, data: Any) -> List[str]:
         """
-        Obtém lista de features numéricas dos dados.
-        
+        Lista as colunas de tipo numérico presentes nos dados.
+
+        Descoberta apenas: cada paradigma inspeciona o schema com seus próprios
+        meios (metadados do catálogo, inferência de dtype). A política de quais
+        colunas são candidatas legítimas não pertence aqui — vive em
+        candidate_exclusions(), única para todos os paradigmas.
+
         Args:
             data: Dados de entrada
-            
+
         Returns:
-            Lista de nomes de colunas numéricas
+            Lista de nomes de colunas numéricas, em qualquer ordem
         """
         pass
-    
+
+    def candidate_exclusions(self) -> Tuple[set, str]:
+        """
+        Nomes e prefixo que desqualificam uma coluna como candidata.
+
+        Derivada da configuração, não enumerada. Uma lista enumerada envelhece
+        em silêncio: foi assim que a coluna-fonte do target (correlação -1.0 com
+        o target) entrou no pool de um paradigma e sobreviveu ao gate P3, sendo
+        descartada apenas pelo teto de correlação da seleção.
+
+        O prefixo derivado do target cobre, de uma vez, o target deste
+        paradigma, os targets dos demais paradigmas e os lags do target —
+        nenhum deles é candidato à seleção.
+
+        Returns:
+            (nomes a excluir, prefixo a excluir)
+        """
+        excluded = set(self.get_excluded_features())
+        excluded.add(self.source_column)
+        for attr in ('entity_column', 'entity_name_column',
+                     'year_column', 'stratification_column'):
+            name = getattr(self.dataset_config, attr, None)
+            if name:
+                excluded.add(name)
+        return excluded, f'{self.TARGET_STEM}_'
+
+    def get_numeric_features(self, data: Any) -> List[str]:
+        """
+        Pool de candidatas à seleção de features.
+
+        Idêntico entre paradigmas por construção: um pool divergente faria a
+        comparação cross-paradigma partir de espaços de busca diferentes.
+
+        Args:
+            data: Dados de entrada
+
+        Returns:
+            Lista ordenada de candidatas
+        """
+        excluded, derived_prefix = self.candidate_exclusions()
+
+        # Uma feature declarada que casasse com o prefixo derivado seria
+        # descartada em silêncio, alterando o resultado sem aviso.
+        declared = set(getattr(self.dataset_config, 'feature_columns', None) or ())
+        shadowed = {c for c in declared if c.startswith(derived_prefix)} - excluded
+        if shadowed:
+            raise ValueError(
+                f"{self.architecture_name}: declared features collide with the "
+                f"prefix reserved for target-derived columns "
+                f"('{derived_prefix}'): {sorted(shadowed)}. Rename them or "
+                f"change TARGET_STEM; leaving them would drop them silently."
+            )
+
+        candidates = sorted(
+            col for col in self.discover_numeric_columns(data)
+            if col not in excluded and not col.startswith(derived_prefix)
+        )
+
+        if len(candidates) < 5:
+            print(f"  [WARN] Poucas candidatas ({len(candidates)}) podem "
+                  f"limitar capacidade preditiva")
+        if len(candidates) > 100:
+            print(f"  [WARN] Muitas candidatas ({len(candidates)}) requerem "
+                  f"selecao cuidadosa (curse of dimensionality)")
+
+        return candidates
+
+
     @abstractmethod
     def prepare_features(self, data: Any, selected_features: List[str]) -> Any:
         """

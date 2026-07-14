@@ -490,47 +490,26 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             print(f"    Val: {fold['val_count']} obs, {fold['val_countries']} paises")
             print(f"    Test: {fold['test_count']} obs, {fold['test_countries']} paises")
     
-    def get_numeric_features(self, ddf: dd.DataFrame) -> List[str]:
+    def discover_numeric_columns(self, ddf: dd.DataFrame) -> List[str]:
         """
-        Identifica features numéricas candidatas para modelagem ML via type inference.
-        
+        Identifica colunas numéricas via type inference sobre o schema inferido.
+
         Args:
             ddf: DataFrame Dask com dados educacionais
-            
+
         Returns:
-            Lista de nomes de variáveis numéricas adequadas para ML temporal
-            
+            Lista de nomes de colunas numéricas
+
         Metodologia Schema-on-Read:
             Utiliza Pandas.select_dtypes() sobre schema inferido dinamicamente,
             permitindo flexibilidade na estrutura de entrada típica de Data Lakes.
-            
-        Critérios de seleção:
-            1. Tipos numéricos: int*, float*, complex (NumPy hierarchy)
-            2. Exclusão automática: Identificadores temporais/geográficos, targets
-            3. Preservação de ordem: Determinismo para reprodutibilidade
-            
+
         Limitações:
             - Não detecta variáveis categóricas numéricas (códigos, IDs)
             - Ignora features derivadas não materializadas no DataFrame
             - Schema inference pode ser custoso para DataFrames muito largos
         """
-        # Schema-on-read: Type inference dinâmico
-        numeric_cols = ddf.select_dtypes(include=[np.number]).columns.tolist()
-        
-        # Exclusão sistemática de metadados, targets e features derivadas
-        # Lag features (dropout_rate_lag_*) são adicionadas em prepare_features,
-        # não devem participar do filtro de colinearidade — análogo ao DW,
-        # que cria lags via self-join temporal somente em prepare_features.
-        exclude_cols = ['year', 'country_code', self.target_column, self.source_column]
-        exclude_prefixes = ('dropout_rate_lag_',)
-
-        numeric_features = sorted([
-            col for col in numeric_cols
-            if col not in exclude_cols
-            and not any(col.startswith(p) for p in exclude_prefixes)
-        ])
-
-        return numeric_features
+        return ddf.select_dtypes(include=[np.number]).columns.tolist()
     
     def compute_feature_correlations(self, ddf: dd.DataFrame,
                                     features: List[str]) -> Dict[str, float]:

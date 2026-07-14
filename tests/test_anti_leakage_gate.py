@@ -32,7 +32,7 @@ class _Probe(BaseArchitectureML):
     def apply_collinearity_filter(self, *a, **k): pass
     def compute_feature_correlations(self, *a, **k): pass
     def create_target_implementation(self, *a, **k): pass
-    def get_numeric_features(self, *a, **k): pass
+    def discover_numeric_columns(self, *a, **k): pass
     def load_data(self, *a, **k): pass
     def prepare_features(self, *a, **k): pass
     def save_folds(self, *a, **k): pass
@@ -154,7 +154,7 @@ class TestViolationIsUnrecoverable:
             def save_folds(self, data, folds): pass
             def compute_feature_correlations(self, data, features): return {}
             def apply_collinearity_filter(self, data, features): return features
-            def get_numeric_features(self, data): return []
+            def discover_numeric_columns(self, data): return []
             def prepare_features(self, data, features): return data
 
         return Probe

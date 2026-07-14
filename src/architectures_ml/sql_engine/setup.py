@@ -662,55 +662,33 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         
         print(f"  DuckDB: Views temporais criadas, zero file I/O")
     
-    def get_numeric_features(self, data: Any) -> List[str]:
+    def discover_numeric_columns(self, data: Any) -> List[str]:
         """
-        Identifica features numéricas candidatas para modelagem ML via análise de schema.
-        
+        Identifica colunas numéricas consultando o catálogo do engine.
+
         Args:
             data: Ignorado - análise executada via SQL metadata queries
-            
+
         Returns:
-            Lista de nomes de colunas numéricas adequadas para ML, ordenadas
-            alfabeticamente para reprodutibilidade determinística
-            
-        Critérios de seleção:
-            1. Tipo numérico: DOUBLE, INTEGER, FLOAT, DECIMAL, NUMERIC
-            2. Exclusão automática: Identificadores (country_code, year), targets
-            3. Ordenação alfabética: Garantia de determinismo entre execuções
-            
-        Schema-based filtering via information_schema evita scan de dados.
-        
+            Lista de nomes de colunas numéricas
+
+        Consulta a information_schema em vez de varrer os dados, o que é a
+        forma nativa de um engine SQL responder essa pergunta.
+
         Limitações:
             - Não detecta variáveis categóricas numéricas (e.g., códigos país)
             - Ignora features derivadas não persistidas no schema
             - Assume que todos os tipos numéricos são apropriados para ML
         """
-        numeric_features_query = """
+        numeric_columns_query = """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = 'analytics_wide'
             AND data_type IN ('DOUBLE', 'INTEGER', 'FLOAT', 'DECIMAL', 'NUMERIC')
-            AND column_name NOT IN (
-                'country_code', 'year',                    -- Identificadores
-                'dropout_rate_sql_engine',              -- Target variables
-                'dropout_rate_task_graph',
-                'data_completeness_score'                   -- Quality metadata
-            )
-            ORDER BY column_name                            -- Determinismo
+            ORDER BY column_name
         """
-        
-        result = self.conn_manager.execute_sql(numeric_features_query)
-        numeric_features = result['column_name'].tolist()
-        
-        print(f"  {len(numeric_features)} variaveis numericas identificadas")
-
-        if len(numeric_features) < 5:
-            print("  [WARN] Poucas features numericas (<5) podem limitar capacidade preditiva")
-
-        if len(numeric_features) > 100:
-            print("  [WARN] Muitas features (>100) requerem selecao cuidadosa (curse of dimensionality)")
-        
-        return numeric_features
+        result = self.conn_manager.execute_sql(numeric_columns_query)
+        return result['column_name'].tolist()
     
     def compute_feature_correlations(self, data: Any,
                                     features: List[str]) -> Dict[str, float]:

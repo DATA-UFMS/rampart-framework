@@ -168,7 +168,7 @@ class TestBaseArchitectureDatasetConfig:
             def save_folds(self, d, f): pass
             def compute_feature_correlations(self, d, f): pass
             def apply_collinearity_filter(self, d, f): pass
-            def get_numeric_features(self, d): pass
+            def discover_numeric_columns(self, d): pass
             def prepare_features(self, d, f, t): pass
 
         import tempfile

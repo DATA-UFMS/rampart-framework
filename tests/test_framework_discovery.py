@@ -28,7 +28,7 @@ _ABSTRACT_METHOD_NAMES = [
     'save_folds',
     'compute_feature_correlations',
     'apply_collinearity_filter',
-    'get_numeric_features',
+    'discover_numeric_columns',
     'prepare_features',
 ]
 
