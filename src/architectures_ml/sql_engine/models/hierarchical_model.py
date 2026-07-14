@@ -521,7 +521,7 @@ class HierarchicalModelSQLFirst:
                     entities=evaluation.get('entities'),
                 )
 
-        path = predictions_path('sql_engine')
+        path = predictions_path('sql_engine', 'hierarchical')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         written = recorder.write(path)
         if written:

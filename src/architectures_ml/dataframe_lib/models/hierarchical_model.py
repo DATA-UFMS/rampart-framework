@@ -484,7 +484,7 @@ class HierarchicalModelDataFrameLib:
                     entities=evaluation.get('entities'),
                 )
 
-        path = predictions_path('dataframe_lib')
+        path = predictions_path('dataframe_lib', 'hierarchical')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         written = recorder.write(path)
         if written:

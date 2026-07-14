@@ -38,6 +38,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from config import get_absolute_output_path
+from core.prediction_store import PredictionRecorder, predictions_path
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
@@ -71,6 +72,7 @@ class BaselineModelAnalysisSqlEngine:
     """
     
     def __init__(self):
+        self._prediction_recorder = PredictionRecorder('sql_engine')
         """Inicializa a análise baseline para arquitetura Data Warehouse."""
         print("Inicializando análise baseline DuckDB")
         
@@ -542,6 +544,14 @@ class BaselineModelAnalysisSqlEngine:
                 'target_stats': {}
             }
     
+    def _write_prediction_artifact(self) -> None:
+        """Persist the baseline test prediction vectors of every fold."""
+        path = predictions_path('sql_engine', 'baseline')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        written = self._prediction_recorder.write(path)
+        if written:
+            print(f"Prediction vectors written: {written}")
+
     def test_baseline_models(self) -> Dict:
         """
         Testar modelos baseline científicos via Data Warehouse.
@@ -816,8 +826,23 @@ class BaselineModelAnalysisSqlEngine:
             else:
                 print(f"      Gap elevado: Possível instabilidade temporal ({abs_gap:.3f})")
             
+            self._prediction_recorder.record(
+                fold=fold_id, model='global_mean', y_true=y_test,
+                y_pred=test_pred_global, entities=test_clean['country_code'])
+            self._prediction_recorder.record(
+                fold=fold_id, model='linear_trend', y_true=y_test,
+                y_pred=test_pred_trend, entities=test_clean['country_code'])
+            self._prediction_recorder.record(
+                fold=fold_id, model='naive_with_lag', y_true=y_test,
+                y_pred=test_pred_naive, entities=test_clean['country_code'])
+            self._prediction_recorder.record(
+                fold=fold_id, model='cross_country', y_true=y_test,
+                y_pred=test_pred_cross, entities=test_clean['country_code'])
+
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
             baseline_results[f'fold_{fold_id}'] = fold_results
+
+        self._write_prediction_artifact()
 
         return baseline_results
 

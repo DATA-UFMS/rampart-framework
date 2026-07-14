@@ -465,7 +465,7 @@ class HierarchicalModelTaskGraph:
                     entities=evaluation.get('entities'),
                 )
 
-        path = predictions_path('task_graph')
+        path = predictions_path('task_graph', 'hierarchical')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         written = recorder.write(path)
         if written:

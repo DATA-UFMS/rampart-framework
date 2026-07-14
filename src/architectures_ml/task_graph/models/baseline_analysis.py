@@ -20,6 +20,7 @@ warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGr
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from core.config import get_absolute_output_path
+from core.prediction_store import PredictionRecorder, predictions_path
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
 setup_reproducibility()
@@ -29,6 +30,7 @@ class BaselineModelAnalysisTaskGraph:
     """Análise de modelos baseline para arquitetura Data Lake."""
     
     def __init__(self):
+        self._prediction_recorder = PredictionRecorder('task_graph')
         """Inicializa a análise baseline para arquitetura Data Lake."""
         print("Inicializando análise baseline Dask")
         
@@ -199,6 +201,14 @@ class BaselineModelAnalysisTaskGraph:
         
         return analysis
     
+    def _write_prediction_artifact(self) -> None:
+        """Persist the baseline test prediction vectors of every fold."""
+        path = predictions_path('task_graph', 'baseline')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        written = self._prediction_recorder.write(path)
+        if written:
+            print(f"Prediction vectors written: {written}")
+
     def test_baseline_models(self) -> Dict:
         """Testar modelos baseline com validação temporal walk-forward."""
         print(f"\nBaselines com validação temporal")
@@ -452,8 +462,23 @@ class BaselineModelAnalysisTaskGraph:
             else:
                 print(f"      Gap elevado: Possível instabilidade temporal ({abs_gap:.3f})")
             
+            self._prediction_recorder.record(
+                fold=fold_id, model='global_mean', y_true=y_test,
+                y_pred=test_pred_global, entities=test_clean['country_code'])
+            self._prediction_recorder.record(
+                fold=fold_id, model='linear_trend', y_true=y_test,
+                y_pred=test_pred_trend, entities=test_clean['country_code'])
+            self._prediction_recorder.record(
+                fold=fold_id, model='naive_with_lag', y_true=y_test,
+                y_pred=test_pred_naive, entities=test_clean['country_code'])
+            self._prediction_recorder.record(
+                fold=fold_id, model='cross_country', y_true=y_test,
+                y_pred=test_pred_cross, entities=test_clean['country_code'])
+
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
             baseline_results[f'fold_{fold_id}'] = fold_results
+
+        self._write_prediction_artifact()
 
         return baseline_results
 

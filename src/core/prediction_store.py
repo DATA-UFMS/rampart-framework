@@ -87,21 +87,46 @@ class PredictionRecorder:
         return path
 
 
-def predictions_path(paradigm: str) -> str:
-    """Absolute path of a paradigm's prediction artifact."""
+def predictions_path(paradigm: str, stage: str) -> str:
+    """Absolute path of one stage's prediction artifact for a paradigm.
+
+    Baseline and hierarchical models run as separate processes, so each writes
+    its own file; a single shared path would have the second overwrite the first.
+    """
     from core.config import get_absolute_output_path
 
     return get_absolute_output_path(
         f"ml_pipeline/architectures/{paradigm}/{PREDICTIONS_SUBDIR}/"
-        f"predictions_{paradigm}.parquet"
+        f"predictions_{stage}_{paradigm}.parquet"
     )
 
 
 def load_predictions(paradigm: str) -> Optional[pd.DataFrame]:
-    """Read a paradigm's prediction artifact, or None when absent."""
+    """Read every stage's predictions for a paradigm, or None when absent."""
+    import glob
     import os
 
-    path = predictions_path(paradigm)
-    if not os.path.exists(path):
+    from core.config import get_absolute_output_path
+
+    pattern = get_absolute_output_path(
+        f"ml_pipeline/architectures/{paradigm}/{PREDICTIONS_SUBDIR}/"
+        f"predictions_*_{paradigm}.parquet"
+    )
+    paths = sorted(glob.glob(pattern))
+    if not paths:
         return None
-    return pd.read_parquet(path)
+
+    frames = [pd.read_parquet(path) for path in paths]
+    combined = pd.concat(frames, ignore_index=True)
+    if combined.empty:
+        return None
+
+    duplicated = combined.duplicated(subset=["fold", "model", "row"])
+    if duplicated.any():
+        offending = combined.loc[duplicated, ["fold", "model"]].drop_duplicates()
+        raise ValueError(
+            f"{paradigm}: prediction artifacts overlap on "
+            f"{len(offending)} (fold, model) pair(s); one stage overwrote "
+            f"another's vectors"
+        )
+    return combined

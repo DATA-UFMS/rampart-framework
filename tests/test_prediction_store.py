@@ -77,3 +77,57 @@ class TestArtifact:
 
         assert np.array_equal(restored['y_true'].to_numpy(), values)
         assert np.array_equal(restored['y_pred'].to_numpy(), values / 3.0)
+
+
+class TestPerStageArtifacts:
+    """Baseline and hierarchical stages run separately and must not collide."""
+
+    @staticmethod
+    def _redirect(tmp_path, monkeypatch):
+        import core.config as config
+        import core.prediction_store as store
+        monkeypatch.setattr(
+            config, 'get_absolute_output_path',
+            lambda rel: str(tmp_path / rel), raising=False)
+        monkeypatch.setattr(
+            store, 'get_absolute_output_path',
+            lambda rel: str(tmp_path / rel), raising=False)
+        return store
+
+    def _write(self, store, paradigm, stage, models):
+        import os
+        recorder = PredictionRecorder(paradigm)
+        for model in models:
+            recorder.record(fold=0, model=model, y_true=[1.0, 2.0],
+                            y_pred=[1.0, 2.0], entities=['AR', 'BR'])
+        path = store.predictions_path(paradigm, stage)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        recorder.write(path)
+
+    def test_stages_use_distinct_paths(self, tmp_path, monkeypatch):
+        store = self._redirect(tmp_path, monkeypatch)
+        assert (store.predictions_path('task_graph', 'baseline')
+                != store.predictions_path('task_graph', 'hierarchical'))
+
+    def test_load_combines_every_stage(self, tmp_path, monkeypatch):
+        pytest.importorskip('pyarrow')
+        store = self._redirect(tmp_path, monkeypatch)
+        self._write(store, 'task_graph', 'baseline', ['global_mean'])
+        self._write(store, 'task_graph', 'hierarchical', ['simple_hierarchical'])
+
+        combined = store.load_predictions('task_graph')
+        assert set(combined['model']) == {'global_mean', 'simple_hierarchical'}
+
+    def test_absent_artifacts_load_as_none(self, tmp_path, monkeypatch):
+        store = self._redirect(tmp_path, monkeypatch)
+        assert store.load_predictions('task_graph') is None
+
+    def test_overlapping_stages_are_rejected(self, tmp_path, monkeypatch):
+        """The same vector written twice would silently double the comparison."""
+        pytest.importorskip('pyarrow')
+        store = self._redirect(tmp_path, monkeypatch)
+        self._write(store, 'task_graph', 'baseline', ['global_mean'])
+        self._write(store, 'task_graph', 'other', ['global_mean'])
+
+        with pytest.raises(ValueError, match='overlap'):
+            store.load_predictions('task_graph')
