@@ -610,6 +610,21 @@ class BaseArchitectureML(ABC):
         exclude_cols = self.get_excluded_features()
         feature_cols = self.get_numeric_features(data)
 
+        # P3: o target e a coluna de que ele deriva não podem ser candidatos.
+        # Verificado sobre o pool, e não apenas sobre a seleção final: a
+        # auditoria de proxy roda depois da seleção, então uma candidata que o
+        # teto de correlação descarte nunca chega a ser auditada. Foi assim que
+        # a coluna-fonte do target, com correlação -1.0, atravessou o gate.
+        # Redundante com a política de candidatas por decisão: uma regressão
+        # naquela política aparece aqui como parada, não como contaminação.
+        forbidden = {self.target_column, self.source_column} & set(feature_cols)
+        if forbidden:
+            raise AntiLeakageViolation(
+                f"Anti-leakage violation (P3 data separation): candidate pool "
+                f"contains the target or the column it is derived from: "
+                f"{sorted(forbidden)}"
+            )
+
         print(f"   {len(feature_cols)} candidatas ({len(exclude_cols)} excluidas)")
 
         # P4: Restringir ao período de treino para evitar leakage na seleção

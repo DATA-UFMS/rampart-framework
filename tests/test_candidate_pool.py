@@ -24,6 +24,7 @@ if _SRC not in sys.path:
 
 from core.base_architecture import BaseArchitectureML
 from core.paradigm_registry import discover_paradigms
+from core.validation import AntiLeakageViolation
 
 
 # Mirrors the real schema: legitimate features, the target of every paradigm,
@@ -143,6 +144,70 @@ class TestPoolPolicy:
         arch.dataset_config = Config()
         with pytest.raises(ValueError, match='reserved for target-derived'):
             arch.get_numeric_features(None)
+
+
+class TestPoolGate:
+    """P3 applied to the pool, independent of the policy that builds it.
+
+    A candidate the correlation ceiling discards is never audited, so the pool
+    itself has to be checked. These probes override the policy to simulate the
+    regression the gate is there to survive.
+
+    The panel is real and the correlations are empty, so without the gate
+    run_feature_selection completes normally. A failure is then attributable to
+    the gate rather than to the probe tripping over something else.
+    """
+
+    @staticmethod
+    def _panel():
+        import numpy as np
+        import pandas as pd
+        rng = np.random.default_rng(3)
+        years = list(range(2000, 2016))
+        return pd.DataFrame({
+            'year': years,
+            'country_code': ['BRA'] * len(years),
+            'gini_index': rng.normal(size=len(years)),
+            'lower_secondary_completion_rate': rng.normal(size=len(years)),
+            'dropout_rate_sql_engine': rng.normal(size=len(years)),
+        })
+
+    @staticmethod
+    def _leaking_probe(leak):
+        class Leaking(_probe('sql_engine')):
+            def get_numeric_features(self, data):
+                return sorted(['gini_index', leak(self)])
+
+        return Leaking
+
+    def test_completes_without_the_leak(self, tmp_path):
+        """Baseline: the probe reaches the end when the pool is clean."""
+        class Clean(_probe('sql_engine')):
+            def get_numeric_features(self, data):
+                return ['gini_index']
+
+        stats = Clean('sql_engine', str(tmp_path)).run_feature_selection(
+            self._panel())
+        assert stats['total_features_analyzed'] == 1
+
+    def test_target_in_the_pool_halts(self, tmp_path):
+        Leaking = self._leaking_probe(lambda s: s.target_column)
+        with pytest.raises(AntiLeakageViolation, match='P3 data separation'):
+            Leaking('sql_engine', str(tmp_path)).run_feature_selection(
+                self._panel())
+
+    def test_source_column_in_the_pool_halts(self, tmp_path):
+        Leaking = self._leaking_probe(lambda s: s.source_column)
+        with pytest.raises(AntiLeakageViolation, match='P3 data separation'):
+            Leaking('sql_engine', str(tmp_path)).run_feature_selection(
+                self._panel())
+
+    def test_the_halt_names_the_offending_column(self, tmp_path):
+        Leaking = self._leaking_probe(lambda s: s.source_column)
+        with pytest.raises(AntiLeakageViolation) as exc:
+            Leaking('sql_engine', str(tmp_path)).run_feature_selection(
+                self._panel())
+        assert 'lower_secondary_completion_rate' in str(exc.value)
 
 
 class TestPolicyIsNotOverridden:
