@@ -17,7 +17,7 @@ import os
 _discovered = False
 
 
-def discover_paradigms(*, force: bool = False) -> dict:
+def discover_paradigms(*, force: bool = False, strict: bool = True) -> dict:
     """
     Percorre architectures_ml/*/ e importa cada módulo setup.
     Retorna dicionário mapeando nome do paradigma -> dict PARADIGM_META.
@@ -45,6 +45,14 @@ def discover_paradigms(*, force: bool = False) -> dict:
                     try:
                         importlib.import_module(module_name)
                     except Exception as e:
+                        # A paradigm that fails to import would otherwise be
+                        # absent from the comparison, silently reducing a
+                        # three-way study to two.
+                        if strict:
+                            raise ImportError(
+                                f"Paradigm module {module_name} failed to "
+                                f"import: {e}"
+                            ) from e
                         print(f"[WARN] Não foi possível importar {module_name}: {e}")
         _discovered = True
 

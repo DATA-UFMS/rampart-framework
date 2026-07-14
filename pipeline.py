@@ -109,7 +109,7 @@ def _discover():
     return paradigms
 
 
-def _validate_anti_leakage_gate(root: str) -> None:
+def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
     """Valida integridade temporal de todos os folds antes de prosseguir ao benchmark."""
     if TemporalValidator is None:
         raise RuntimeError("TemporalValidator não disponível — validação anti-leakage impossível")
@@ -129,6 +129,22 @@ def _validate_anti_leakage_gate(root: str) -> None:
         with open(folds_path, 'r') as f:
             folds_config = json.load(f)
 
+        # Folds left by an earlier run would be validated in place of the ones
+        # the models are about to consume, so the gate would attest to
+        # artifacts that no longer exist.
+        created = folds_config.get('creation_timestamp')
+        if created is None:
+            raise ValueError(
+                f"{arch}: fold configuration carries no creation_timestamp, so "
+                f"it cannot be shown to belong to this run: {folds_path}"
+            )
+        if datetime.fromisoformat(created) < started_at:
+            raise ValueError(
+                f"{arch}: fold configuration predates this run "
+                f"(created {created}, run started {started_at.isoformat()}). "
+                f"Stale folds must not be validated in place of current ones."
+            )
+
         folds = folds_config.get('folds', [])
         validator.enforce_walk_forward(folds)
         _log(f"  {arch}: {len(folds)} folds — integridade temporal verificada")
@@ -146,6 +162,7 @@ def main() -> None:
     os.environ['DATASET_NAME'] = dataset_name  # propaga via run() para subprocessos
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
+    started_at = datetime.now()
 
     print(f"\nPipeline iniciado (dataset: {dataset_name})")
     _snapshot_scientific_config(root)
@@ -179,7 +196,7 @@ def main() -> None:
     _log(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
 
     print("\nGate anti-leakage")
-    _validate_anti_leakage_gate(root)
+    _validate_anti_leakage_gate(root, started_at)
     _log("Todos os folds passaram na validacao temporal")
 
     for i, (arch, info) in enumerate(paradigms.items(), 1):

@@ -822,13 +822,16 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                 return selected
 
             else:
-                print(f"  Dados insuficientes ({len(corr_data)}<=10) - fallback top-10")
-                return features[:10]
+                raise ValueError(
+                    f"Collinearity filtering needs more than 10 complete rows; "
+                    f"got {len(corr_data)}. Returning an arbitrary subset would "
+                    f"give this paradigm a different feature set from the "
+                    f"others, and the comparison assumes they share one."
+                )
 
         except Exception as e:
-            print(f"[ERROR] Falha na filtragem de colinearidade: {e}")
-            print(f"  Fallback: retornando primeiras 10 features")
-            return features[:10]
+            print(f"[ERROR] Collinearity filtering failed: {e}")
+            raise
     
     def prepare_features(self, data: Any, selected_features: List[str]) -> None:
         """

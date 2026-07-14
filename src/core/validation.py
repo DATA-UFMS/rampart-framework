@@ -195,7 +195,12 @@ class TemporalValidator:
                     report['walk_forward_valid'] = False
                     break
         
-        report['all_valid'] = report['invalid_folds'] == 0
+        # A structural walk-forward violation is recorded above and must
+        # reach the verdict; counting invalid folds alone would let an
+        # invalid fold sequence pass with every fold individually valid.
+        report['all_valid'] = (
+            report['invalid_folds'] == 0 and report['walk_forward_valid']
+        )
 
         return report['all_valid'], report
 
