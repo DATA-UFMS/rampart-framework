@@ -22,14 +22,23 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+_SRC_DIR = os.path.join(BASE_DIR, "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
+
+DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
+DEFAULT_SEED = RANDOM_SEED
+
 STATS_DIR = os.path.join(BASE_DIR, "outputs", "statistics")
 
 ALL_PAIRS = [
@@ -96,7 +105,8 @@ def hedges_g(d: float, n: int) -> float:
     return d * J
 
 
-def _effect_size_ci(diff: np.ndarray, n_boot: int = 3000, seed: int = 42, ci: float = 0.95) -> Tuple[float, float]:
+def _effect_size_ci(diff: np.ndarray, n_boot: int = DEFAULT_BOOTSTRAP_ITERS,
+                    seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, float]:
     """IC bootstrap percentil para Cohen's d_z."""
     rng = np.random.default_rng(seed)
     ds = []
@@ -131,7 +141,8 @@ def benjamini_hochberg(pvals: List[float]) -> List[float]:
 
 
 def _prospective_power_wilcoxon(n: int, effect_size: float, alpha: float = 0.05,
-                                 n_sim: int = 5000, seed: int = 42) -> float:
+                                 n_sim: int = 5000,
+                                 seed: int = DEFAULT_SEED) -> float:
     """Power prospectiva por simulação Monte Carlo para Wilcoxon signed-rank.
 
     Gera pares com efeito d sob distribuição normal, aplica Wilcoxon,

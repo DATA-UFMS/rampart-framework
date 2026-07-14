@@ -142,7 +142,10 @@ def main(argv: List[str] = None) -> int:
         "--bootstrap-iters",
         nargs="*",
         type=int,
-        default=[1000, 3000, 5000],
+        # Spans the previously used count, Hesterberg's routine figure and the
+        # requirement for percentile interval endpoints, so the report shows
+        # whether the decision moves with the resample count.
+        default=[1000, 3000, 10000, 15000],
         help="Números de iterações de bootstrap a serem avaliados.",
     )
     parser.add_argument(

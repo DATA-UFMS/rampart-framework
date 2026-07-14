@@ -96,8 +96,24 @@ SCIENTIFIC_CONFIG = {
     'fold_sizes_max_diff_pct': 0.05,    # 5%
     'float_precision_tolerance': 1e-9,
     # Parâmetros estatísticos
-    # Número padrão de iterações de bootstrap para ICs
-    'bootstrap_iters': 3000,
+    #
+    # Bootstrap resamples. The latency and effect-size intervals are percentile
+    # intervals; the equivalence estimate uses BCa and falls back to percentile.
+    # All of them read quantiles of the bootstrap distribution, so all inherit
+    # the sensitivity Hesterberg (2015) quantifies: r >= 15000 for Monte Carlo
+    # variability in percentile endpoints to stay within 10% of the exhaustive
+    # value, with 10^4 as his figure for routine use. At n=10 folds the whole
+    # family of comparisons runs in a few seconds, so the stricter requirement
+    # costs nothing.
+    #
+    # Single source of truth: the statistical modules read this value and must
+    # not carry a default of their own, or the reported resample count and the
+    # executed one can drift apart.
+    #
+    #   Hesterberg, T. C. (2015). What Teachers Should Know About the
+    #     Bootstrap: Resampling in the Undergraduate Statistics Curriculum.
+    #     The American Statistician, 69(4), 371-386.
+    'bootstrap_iters': 15000,
 
     # SESOI (Smallest Effect Size Of Interest) — Lakens et al. (2018)
     #

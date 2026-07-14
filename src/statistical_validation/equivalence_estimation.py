@@ -53,19 +53,16 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__fi
 _SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
-try:
-    from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
-    DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG.get('bootstrap_iters', 3000))
-    DEFAULT_SEED = RANDOM_SEED
-    DEFAULT_SESOI_R2 = float(SCIENTIFIC_CONFIG.get('sesoi_r2', 0.01))
-    DEFAULT_SESOI_MASE = float(SCIENTIFIC_CONFIG.get('sesoi_mase', 0.05))
-    DEFAULT_SESOI_WAPE = float(SCIENTIFIC_CONFIG.get('sesoi_wape', 0.05))
-except Exception:
-    DEFAULT_BOOTSTRAP_ITERS = 3000
-    DEFAULT_SEED = 42
-    DEFAULT_SESOI_R2 = 0.01
-    DEFAULT_SESOI_MASE = 0.05
-    DEFAULT_SESOI_WAPE = 0.05
+# No fallback: silently substituting the resample count or a SESOI would make
+# the reported protocol differ from the executed one. The SESOI values in
+# particular are the decision thresholds, defined a priori.
+from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
+
+DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
+DEFAULT_SEED = RANDOM_SEED
+DEFAULT_SESOI_R2 = float(SCIENTIFIC_CONFIG['sesoi_r2'])
+DEFAULT_SESOI_MASE = float(SCIENTIFIC_CONFIG['sesoi_mase'])
+DEFAULT_SESOI_WAPE = float(SCIENTIFIC_CONFIG['sesoi_wape'])
 
 # Comparações par-a-par
 PREDICTIVE_PAIRS = [("dl", "dw"), ("dl", "pl"), ("dw", "pl")]

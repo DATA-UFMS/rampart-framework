@@ -42,11 +42,12 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__fi
 _SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
-try:
-    from core.scientific_config import SCIENTIFIC_CONFIG
-    DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG.get('bootstrap_iters', 3000))
-except Exception:
-    DEFAULT_BOOTSTRAP_ITERS = 3000
+# No fallback: a local default would let the analysis run with a resample count
+# other than the configured one, which is how the reported figure drifts from
+# the executed one. Without the configuration the run is not reproducible.
+from core.scientific_config import SCIENTIFIC_CONFIG
+
+DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
 
 
 # Pares de arquiteturas para comparação (3-way)
