@@ -131,3 +131,78 @@ class TestMaterialisation:
     def test_unsupported_type_is_rejected(self, probe):
         with pytest.raises(TypeError):
             probe._materialise_pandas(object(), ['a'])
+
+
+class TestViolationIsUnrecoverable:
+    """A protocol violation must reach the caller and stop the run."""
+
+    @staticmethod
+    def _probe(error):
+        import pandas as pd
+        from core.base_architecture import BaseArchitectureML
+
+        class Probe(BaseArchitectureML):
+            PARADIGM_META = {'name': '_probe_enforcement'}
+            def setup_environment(self): pass
+            def load_data(self): return pd.DataFrame({'year': [2000]})
+            def validate_data(self, data):
+                if error is not None:
+                    raise error
+            def create_target_implementation(self, data): return data
+            def _compute_target_statistics(self, data): pass
+            def _validate_temporal_folds(self, data, folds): pass
+            def save_folds(self, data, folds): pass
+            def compute_feature_correlations(self, data, features): return {}
+            def apply_collinearity_filter(self, data, features): return features
+            def get_numeric_features(self, data): return []
+            def prepare_features(self, data, features): return data
+
+        return Probe
+
+    def test_violation_propagates(self, tmp_path):
+        from core.base_architecture import BaseArchitectureML
+        from core.validation import AntiLeakageViolation
+
+        Probe = self._probe(AntiLeakageViolation('Anti-leakage violation (P1)'))
+        try:
+            with pytest.raises(AntiLeakageViolation):
+                Probe('_probe_enforcement', str(tmp_path)).run_setup()
+        finally:
+            BaseArchitectureML._registry.pop('_probe_enforcement', None)
+
+    def test_operational_failure_stays_recoverable(self, tmp_path):
+        """Only violations are unrecoverable; I/O errors still report status."""
+        from core.base_architecture import BaseArchitectureML
+
+        Probe = self._probe(FileNotFoundError('missing input'))
+        try:
+            result = Probe('_probe_enforcement', str(tmp_path)).run_setup()
+            assert result['status'] == 'failed'
+            assert 'missing input' in result['error']
+        finally:
+            BaseArchitectureML._registry.pop('_probe_enforcement', None)
+
+    def test_violation_is_a_value_error(self):
+        """Existing handlers and tests match on ValueError."""
+        from core.validation import AntiLeakageViolation
+        assert issubclass(AntiLeakageViolation, ValueError)
+
+
+class TestSetupExitStatus:
+    """Each setup must report failure through its exit status."""
+
+    def test_every_setup_exits_on_failure(self):
+        import ast
+        from pathlib import Path
+        from core.paradigm_registry import discover_paradigms
+
+        root = Path(__file__).resolve().parents[1]
+        for name, meta in sorted(discover_paradigms().items()):
+            if 'setup_script' not in meta:
+                continue
+            source = (root / meta['setup_script']).read_text()
+            guard = source[source.index("if __name__"):]
+            assert 'exit(' in guard, (
+                f"{name}: module guard does not propagate an exit status, so a "
+                f"failed setup reports success to the pipeline"
+            )

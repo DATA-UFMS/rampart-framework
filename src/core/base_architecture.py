@@ -18,6 +18,7 @@ from scipy import stats
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
+from core.validation import AntiLeakageViolation
 
 try:
     import polars as pl
@@ -627,7 +628,7 @@ class BaseArchitectureML(ABC):
         # P3: Impor que nenhuma feature excluída/derivada do target esteja na seleção
         leaked = set(final_features) & set(exclude_cols)
         if leaked:
-            raise ValueError(
+            raise AntiLeakageViolation(
                 f"Anti-leakage violation (P3 data separation): "
                 f"excluded features found in final selection: {leaked}"
             )
@@ -652,7 +653,7 @@ class BaseArchitectureML(ABC):
             if feat in final_features and abs(corr) > PROXY_THRESHOLD
         }
         if proxies:
-            raise ValueError(
+            raise AntiLeakageViolation(
                 f"Anti-leakage violation (P3 proxy detection): "
                 f"features with |correlation| > {PROXY_THRESHOLD} with target "
                 f"over the full panel suggest proxy leakage "
@@ -669,7 +670,7 @@ class BaseArchitectureML(ABC):
         IDENTITY_THRESHOLD = float(self.config.get('identity_r2_threshold', 0.95))
         identity_r2 = self._linear_reconstruction_r2(data_train_only, final_features)
         if identity_r2 is not None and identity_r2 > IDENTITY_THRESHOLD:
-            raise ValueError(
+            raise AntiLeakageViolation(
                 f"Anti-leakage violation (P3 joint reconstruction): selected "
                 f"features explain the target with R2 = {identity_r2:.4f} > "
                 f"{IDENTITY_THRESHOLD} on the training window, indicating the "
@@ -864,9 +865,16 @@ class BaseArchitectureML(ABC):
                 'folds_created': len(folds)
             }
             
+        except AntiLeakageViolation:
+            # Never reported as a recoverable failure. A violation means the
+            # experiment does not hold the guarantees its results would be
+            # reported under, so it must reach the caller and stop the run.
+            print(f"\nAnti-leakage violation in {self.architecture_name}")
+            raise
+
         except Exception as e:
             print(f"\nErro no setup {self.architecture_name}: {e}")
-            
+
             return {
                 'architecture': self.architecture_name,
                 'status': 'failed',
@@ -899,7 +907,7 @@ class BaseArchitectureML(ABC):
         # P1: Verificar ordem temporal
         # val/test podem ter 1 ano (start == end), portanto <=
         if not (train_years[1] < val_years[0] <= val_years[1] < test_years[0]):
-            raise ValueError(
+            raise AntiLeakageViolation(
                 f"Anti-leakage violation (P1 temporal ordering): "
                 f"Train: {train_years}, Val: {val_years}, Test: {test_years}"
             )
@@ -911,13 +919,13 @@ class BaseArchitectureML(ABC):
         MIN_GAP = int(self.config.get('temporal_gap_years', 2))
 
         if train_val_gap < MIN_GAP:
-            raise ValueError(
+            raise AntiLeakageViolation(
                 f"Anti-leakage violation (P2 gap sufficiency): "
                 f"train-val gap={train_val_gap} < {MIN_GAP}"
             )
 
         if val_test_gap < MIN_GAP:
-            raise ValueError(
+            raise AntiLeakageViolation(
                 f"Anti-leakage violation (P2 gap sufficiency): "
                 f"val-test gap={val_test_gap} < {MIN_GAP}"
             )

@@ -34,6 +34,16 @@ from typing import Dict, List, Tuple, Any
 from datetime import datetime
 
 
+class AntiLeakageViolation(ValueError):
+    """A property of the anti-leakage protocol was violated.
+
+    Distinguished from operational failures because it is not recoverable: the
+    experiment is invalid, and continuing would produce measurements of a
+    pipeline that does not hold the guarantees the results are reported under.
+    Subclasses ValueError so existing handlers and tests continue to match.
+    """
+
+
 class TemporalValidator:
     """
     Validador temporal para prevenção de vazamento em séries temporais.
@@ -199,7 +209,7 @@ class TemporalValidator:
         all_valid, report = self.validate_walk_forward(folds)
         if not all_valid:
             errors = report.get('fold_errors', {})
-            raise ValueError(
+            raise AntiLeakageViolation(
                 f"Anti-leakage violation: {report['invalid_folds']} of "
                 f"{report['total_folds']} folds failed temporal integrity. "
                 f"Errors: {errors}"

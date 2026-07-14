@@ -984,4 +984,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    results = main()
+    # A failed setup must not report success to the pipeline, which runs each
+    # stage as a subprocess and reads its exit status.
+    sys.exit(0 if isinstance(results, dict)
+             and results.get('status') == 'success' else 1)
