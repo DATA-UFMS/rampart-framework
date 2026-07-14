@@ -810,6 +810,16 @@ class BaseArchitectureML(ABC):
         
         return folds_path
     
+    def audit_final_features(self, data: Any, features: List[str]) -> Dict:
+        """Apply the P3 checks to the feature set the models train on.
+
+        Delegates to core.validation.audit_feature_set, which the model classes
+        call directly since they do not inherit from this class.
+        """
+        from core.validation import audit_feature_set
+
+        return audit_feature_set(data, features, self.target_column, self.config)
+
     def run_setup(self) -> Dict:
         """
         Executa pipeline completo de setup da arquitetura.

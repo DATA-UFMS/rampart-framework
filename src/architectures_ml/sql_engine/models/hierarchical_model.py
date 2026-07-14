@@ -30,8 +30,9 @@ _actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '
 if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
 
+from core.validation import audit_feature_set
 from core.prediction_store import PredictionRecorder, predictions_path
-from core.scientific_config import RANDOM_SEED, setup_reproducibility
+from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
 
@@ -190,6 +191,11 @@ class HierarchicalModelSQLFirst:
 
         all_columns = list(train_clean.columns)
         available_features = [feat for feat in available_features if feat in all_columns]
+
+        # The lags above bypassed run_feature_selection, so the set the models
+        # train on is audited here.
+        self.feature_audit = audit_feature_set(
+            train_clean, available_features, self.target_col, SCIENTIFIC_CONFIG)
 
         return available_features
     

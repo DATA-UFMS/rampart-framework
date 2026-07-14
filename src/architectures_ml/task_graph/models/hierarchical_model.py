@@ -38,8 +38,9 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
 project_root = os.path.abspath(project_root)
 if project_root not in sys.path:
     sys.path.append(project_root)
+from core.validation import audit_feature_set
 from core.prediction_store import PredictionRecorder, predictions_path
-from core.scientific_config import RANDOM_SEED, setup_reproducibility
+from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
 
@@ -115,6 +116,10 @@ class HierarchicalModelTaskGraph:
                 existing = [c for c in selected if c in self.ddf.columns]
                 self.available_features = existing
                 print(f"Features disponíveis (seleção científica): {len(self.available_features)}")
+                # The lags above bypassed run_feature_selection, so the
+                # set the models train on is audited here.
+                self.feature_audit = audit_feature_set(
+                    self.ddf, existing, self.target_col, SCIENTIFIC_CONFIG)
             except Exception as e:
                 print(f"Falha ao carregar seleção de features: {e}")
                 raise

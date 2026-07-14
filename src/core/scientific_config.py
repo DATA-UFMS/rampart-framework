@@ -42,6 +42,12 @@ SCIENTIFIC_CONFIG = {
     # Ceiling on how much of the target the selected features may jointly
     # explain. Catches additive identities that pairwise correlation misses.
     'identity_r2_threshold': 0.95,
+    # Autoregressive features: lagged values of the target itself. Exempt from
+    # the pairwise proxy check, since predicting a series from its own past is
+    # the task rather than a leak, and a lag correlates with the target by
+    # construction. The exemption is recorded with the measured correlation, and
+    # does not extend to the joint reconstruction check.
+    'autoregressive_feature_marker': '_lag_',
 
     # Validação Temporal
     'temporal_gap_years': 2,

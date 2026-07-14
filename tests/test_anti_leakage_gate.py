@@ -206,3 +206,82 @@ class TestSetupExitStatus:
                 f"{name}: module guard does not propagate an exit status, so a "
                 f"failed setup reports success to the pipeline"
             )
+
+
+class TestFinalFeatureSetAudit:
+    """P3 applied to the set the models train on, including appended lags."""
+
+    @staticmethod
+    def _panel(n=300, seed=13):
+        rng = np.random.default_rng(seed)
+        target = rng.normal(size=n)
+        return pd.DataFrame({
+            'gini': rng.normal(size=n),
+            'internet': rng.normal(size=n),
+            # A lag correlates with the target by construction.
+            'dropout_rate_lag_2': target * 0.85 + rng.normal(0, 0.3, n),
+            'target': target,
+        })
+
+    def test_autoregressive_feature_is_exempt_and_recorded(self):
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import audit_feature_set
+
+        panel = self._panel()
+        report = audit_feature_set(
+            panel, ['gini', 'internet', 'dropout_rate_lag_2'],
+            'target', SCIENTIFIC_CONFIG)
+
+        exemptions = report['autoregressive_exemptions']
+        assert 'dropout_rate_lag_2' in exemptions
+        assert exemptions['dropout_rate_lag_2'] > \
+            SCIENTIFIC_CONFIG['proxy_correlation_threshold'], (
+            'the fixture no longer demonstrates an exemption that matters')
+
+    def test_non_autoregressive_proxy_still_aborts(self):
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import AntiLeakageViolation, audit_feature_set
+
+        panel = self._panel()
+        panel['sneaky'] = panel['target'] * 0.97
+        with pytest.raises(AntiLeakageViolation, match='proxy detection'):
+            audit_feature_set(panel, ['gini', 'sneaky'], 'target',
+                              SCIENTIFIC_CONFIG)
+
+    def test_exemption_does_not_cover_joint_reconstruction(self):
+        """A lag that reconstructs the target must still abort."""
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import AntiLeakageViolation, audit_feature_set
+
+        panel = self._panel()
+        panel['dropout_rate_lag_0'] = panel['target']
+        with pytest.raises(AntiLeakageViolation, match='joint reconstruction'):
+            audit_feature_set(panel, ['gini', 'dropout_rate_lag_0'], 'target',
+                              SCIENTIFIC_CONFIG)
+
+    @pytest.mark.parametrize('kind', ['pandas', 'polars', 'polars_lazy', 'dask'])
+    def test_verdict_is_identical_across_frame_types(self, kind):
+        """A cross-paradigm gate must not depend on the frame it is handed."""
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import audit_feature_set
+
+        panel = self._panel()
+        features = ['gini', 'internet', 'dropout_rate_lag_2']
+        expected = audit_feature_set(panel, features, 'target',
+                                     SCIENTIFIC_CONFIG)
+
+        if kind == 'pandas':
+            data = panel
+        elif kind == 'polars':
+            pl = pytest.importorskip('polars')
+            data = pl.from_pandas(panel)
+        elif kind == 'polars_lazy':
+            pl = pytest.importorskip('polars')
+            data = pl.from_pandas(panel).lazy()
+        else:
+            dd = pytest.importorskip('dask.dataframe')
+            data = dd.from_pandas(panel, npartitions=3)
+
+        report = audit_feature_set(data, features, 'target', SCIENTIFIC_CONFIG)
+        assert report['joint_reconstruction_r2'] == pytest.approx(
+            expected['joint_reconstruction_r2'], abs=1e-12)

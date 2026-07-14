@@ -30,7 +30,7 @@ P5 é enforced por contrato (docstring + testes unitários).
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 
@@ -42,6 +42,114 @@ class AntiLeakageViolation(ValueError):
     pipeline that does not hold the guarantees the results are reported under.
     Subclasses ValueError so existing handlers and tests continue to match.
     """
+
+
+try:
+    import polars as pl
+    _HAS_POLARS = True
+except ImportError:
+    _HAS_POLARS = False
+
+
+def materialise_pandas(data: Any, columns: List[str]) -> pd.DataFrame:
+    """Materialise the given columns of any supported frame as pandas."""
+    if _HAS_POLARS and isinstance(data, pl.LazyFrame):
+        return data.select(columns).collect().to_pandas()
+    if _HAS_POLARS and isinstance(data, pl.DataFrame):
+        return data.select(columns).to_pandas()
+    if hasattr(data, 'compute'):  # Dask
+        return data[columns].compute()
+    if isinstance(data, pd.DataFrame):
+        return data[columns].copy()
+    raise TypeError(f"Unsupported data type for materialisation: {type(data)}")
+
+
+def linear_reconstruction_r2(
+    data: Any, features: List[str], target_column: str
+) -> Optional[float]:
+    """R2 of an ordinary least squares fit of the target on `features`.
+
+    None when the fit is not determined: no features, too few complete rows for
+    the number of predictors, or a constant target.
+    """
+    if not features:
+        return None
+
+    frame = materialise_pandas(data, list(features) + [target_column]).dropna()
+    if len(frame) <= len(features) + 1:
+        return None
+
+    X = frame[list(features)].to_numpy(dtype=float)
+    y = frame[target_column].to_numpy(dtype=float)
+    design = np.column_stack([X, np.ones(len(X))])
+    coefficients, *_ = np.linalg.lstsq(design, y, rcond=None)
+    residual = y - design @ coefficients
+    total = ((y - y.mean()) ** 2).sum()
+    if total <= 0:
+        return None
+    return float(1.0 - (residual ** 2).sum() / total)
+
+
+def audit_feature_set(
+    data: Any, features: List[str], target_column: str, config: Dict
+) -> Dict:
+    """Apply the P3 checks to the feature set a model actually trains on.
+
+    Feature selection audits what it produced. Features appended afterwards --
+    autoregressive lags of the target, added by the models -- never passed
+    through it, so the set the models consume was never the set the gate saw.
+
+    Autoregressive features are exempt from the pairwise proxy check: predicting
+    a series from its own past is the task rather than a leak, and a lag
+    correlates with the target by construction. The exemption is recorded with
+    the measured correlation, and does not extend to the joint reconstruction
+    check, which covers the whole set.
+
+    Correlations are computed here rather than through each paradigm's own
+    implementation, so the gate behaves identically whichever paradigm invokes
+    it.
+    """
+    marker = str(config.get('autoregressive_feature_marker', '_lag_'))
+    proxy_threshold = float(config.get('proxy_correlation_threshold', 0.80))
+    identity_threshold = float(config.get('identity_r2_threshold', 0.95))
+
+    features = list(features)
+    frame = materialise_pandas(data, features + [target_column])
+    correlations = {}
+    for feature in features:
+        pair = frame[[feature, target_column]].dropna()
+        if len(pair) < 3 or pair[feature].nunique() < 2:
+            continue
+        correlations[feature] = float(abs(pair.corr().iloc[0, 1]))
+
+    autoregressive = [f for f in features if marker in f]
+    proxies = {
+        feature: value for feature, value in correlations.items()
+        if marker not in feature and value > proxy_threshold
+    }
+    if proxies:
+        raise AntiLeakageViolation(
+            f"Anti-leakage violation (P3 proxy detection) in the final feature "
+            f"set: |correlation| > {proxy_threshold} with target "
+            f"(Kapoor & Narayanan, 2023): {proxies}"
+        )
+
+    identity_r2 = linear_reconstruction_r2(data, features, target_column)
+    if identity_r2 is not None and identity_r2 > identity_threshold:
+        raise AntiLeakageViolation(
+            f"Anti-leakage violation (P3 joint reconstruction) in the final "
+            f"feature set: R2 = {identity_r2:.4f} > {identity_threshold}"
+        )
+
+    return {
+        'features_audited': sorted(features),
+        'proxy_correlation_threshold': proxy_threshold,
+        'identity_r2_threshold': identity_threshold,
+        'joint_reconstruction_r2': identity_r2,
+        'autoregressive_exemptions': {
+            f: correlations[f] for f in autoregressive if f in correlations
+        },
+    }
 
 
 class TemporalValidator:
