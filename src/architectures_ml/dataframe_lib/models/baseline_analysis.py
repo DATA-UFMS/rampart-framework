@@ -10,7 +10,6 @@ Resumo técnico:
 - Validação temporal com gaps (mínimo 2 anos) para prevenir vazamento
 - Modelos baseline: média global, tendência linear, naive com lag, cross-country
 - Métricas: R², RMSE, gaps de generalização
-- Usa modelos centralizados de core/models/baseline.py
 """
 import time
 

@@ -10,7 +10,6 @@ Resumo técnico:
 - Validação temporal com gaps (mínimo 2 anos) para prevenir vazamento
 - Modelos baseline: média global, tendência linear, naive com lag, cross-country
 - Acesso via SQL nativo (DuckDB) sem I/O de arquivos durante treinamento
-- Usa modelos centralizados de core/models/baseline.py
 """
 import time
 
