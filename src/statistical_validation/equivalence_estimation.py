@@ -31,8 +31,13 @@ Nota sobre poder estatístico:
     - "superior"/"inferior": requer corroboração pela sensibilidade
 
   A análise de sensibilidade (bootstrap_sensitivity.py) varia SESOI
-  (0.5x, 1.0x, 1.5x) e iterações (1000, 3000, 5000) para verificar
-  estabilidade das decisões.
+  (0.5x, 1.0x, 1.5x) e iterações (1000, 3000, 10000, 15000) para
+  verificar estabilidade das decisões.
+
+O método que produziu cada IC é registrado em 'ci95_method': BCa,
+fallback percentil (com a razão) ou degenerado por variância zero.
+Os três não são intercambiáveis, e um IC sem essa informação não
+permite ao leitor distinguir entre eles.
 
 Saidas:
 - JSON: outputs/statistics/equivalence_estimation.json
@@ -84,18 +89,26 @@ def _median_hodges_lehmann(deltas: np.ndarray) -> float:
     return float(np.median(walsh))
 
 
-def _bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, Tuple[float, float]]:
-    """IC bootstrap (BCa com fallback percentil)."""
+def _bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, Tuple[float, float], str]:
+    """IC bootstrap (BCa com fallback percentil).
+
+    Returns the point estimate, the interval, and which method produced it.
+    Three methods can produce an interval here and they are not interchangeable,
+    so reporting an interval without naming its method leaves the reader unable
+    to tell BCa from a percentile fallback.
+    """
     if len(values) == 0 or np.all(np.isnan(values)):
-        return float('nan'), (float('nan'), float('nan'))
+        return float('nan'), (float('nan'), float('nan')), 'insufficient_data'
     clean = values[~np.isnan(values)]
     if len(clean) == 0:
-        return float('nan'), (float('nan'), float('nan'))
+        return float('nan'), (float('nan'), float('nan')), 'insufficient_data'
     point = float(np.mean(clean))
 
-    # Caso degenerado: variância zero (predições numericamente idênticas)
+    # Zero variance: every resample has the same mean, so the interval is the
+    # point estimate exactly. Not an approximation, and not optional -- BCa's
+    # acceleration divides by the spread.
     if np.std(clean) < np.finfo(float).eps * 100:
-        return point, (point, point)
+        return point, (point, point), 'degenerate_zero_variance'
 
     try:
         from scipy.stats import bootstrap as scipy_bootstrap
@@ -105,15 +118,21 @@ def _bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed
             random_state=np.random.default_rng(seed)
         )
         lo, hi = float(res.confidence_interval.low), float(res.confidence_interval.high)
-    except Exception:
-        # Fallback: percentil simples (n muito pequeno para BCa)
+        if not (math.isfinite(lo) and math.isfinite(hi)):
+            raise ValueError(f"BCa returned a non-finite interval: [{lo}, {hi}]")
+        return point, (lo, hi), 'bca'
+    except Exception as exc:
+        # BCa needs enough distinct resample values to estimate acceleration;
+        # small n makes it fail or return non-finite endpoints. The percentile
+        # interval is the documented fallback, recorded as such rather than
+        # reported as BCa.
+        reason = type(exc).__name__
         rng = np.random.default_rng(seed)
         n = len(clean)
         means = np.array([np.mean(clean[rng.integers(0, n, size=n)]) for _ in range(iters)])
         alpha = (1 - ci) / 2
         lo, hi = float(np.quantile(means, alpha)), float(np.quantile(means, 1 - alpha))
-
-    return point, (lo, hi)
+        return point, (lo, hi), f'percentile_fallback:{reason}'
 
 
 def _decision_equivalence(ci_lo: float, ci_hi: float, delta: float) -> str:
@@ -218,7 +237,7 @@ def _analyze_predictive_metrics(args) -> Dict:
         pair_results = {}
         for metric, delta in cfg.items():
             deltas = _paired_deltas_for_metric(pairs, metric, arch_a, arch_b)
-            point, (lo, hi) = _bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
+            point, (lo, hi), ci_method = _bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
             decision = _decision_equivalence(lo, hi, delta)
             wilcoxon_p = None
             hl = None
@@ -234,6 +253,7 @@ def _analyze_predictive_metrics(args) -> Dict:
                 'n_pairs': int(len(deltas)),
                 'point_estimate': point,
                 'ci95': [lo, hi],
+                'ci95_method': ci_method,
                 'decision': decision,
                 'wilcoxon_p': wilcoxon_p,
                 'hodges_lehmann': hl,
@@ -291,7 +311,7 @@ def _analyze_latency(args) -> Dict:
             if lr.size == 0:
                 phase_results[pair_key] = {'status': 'insufficient_data'}
                 continue
-            point, (lo, hi) = _bootstrap_ci(lr, iters=args.bootstrap, seed=args.seed, ci=0.95)
+            point, (lo, hi), ci_method = _bootstrap_ci(lr, iters=args.bootstrap, seed=args.seed, ci=0.95)
             delta_pct = profile.get(str(phase).lower(), profile['total'])
             delta_lr = math.log(1.0 + delta_pct)
             decision = _decision_equivalence(lo, hi, delta_lr)
@@ -306,6 +326,7 @@ def _analyze_latency(args) -> Dict:
                 'n_pairs': int(lr.size),
                 'point_estimate_lr': float(point),
                 'ci95_lr': [float(lo), float(hi)],
+                'ci95_method': ci_method,
                 'decision': decision,
                 'wilcoxon_p': p,
                 'hodges_lehmann_lr': hl,
