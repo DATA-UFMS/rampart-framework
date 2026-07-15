@@ -9,8 +9,9 @@ Métricas:
   - Cohen's d (paired; d_z = mean(diff)/sd(diff))
   - Hedges' g (correção small-sample) opcional
   - Eta squared (para t pareado: eta2 = t^2 / (t^2 + df))
-  - Correções: Bonferroni e FDR (Benjamini-Hochberg)
-  - Power analysis prospectiva via Monte Carlo (Wilcoxon signed-rank; Lehmann & Romano, 2005)
+  - Wilcoxon signed-rank pareado, ao lado do t pareado
+  - Correções: Bonferroni e FDR (Benjamini-Hochberg), por família de teste
+  - Power observada via Monte Carlo no alpha corrigido (Hoenig & Heisey, 2001)
 
 Saídas:
   - outputs/statistics/effect_sizes_summary.json
@@ -148,28 +149,55 @@ def benjamini_hochberg(pvals: List[float]) -> List[float]:
     return np.minimum(out, 1.0).tolist()
 
 
-def _prospective_power_wilcoxon(n: int, effect_size: float, alpha: float = 0.05,
-                                 n_sim: int = 5000,
-                                 seed: int = DEFAULT_SEED) -> float:
-    """Power prospectiva por simulação Monte Carlo para Wilcoxon signed-rank.
+def _observed_power_wilcoxon(n: int, effect_size: float, alpha: float,
+                             n_sim: int = 5000,
+                             seed: int = DEFAULT_SEED) -> float:
+    """Power of the signed-rank test at an observed effect, by simulation.
 
-    Gera pares com efeito d sob distribuição normal, aplica Wilcoxon,
-    e conta a fração de rejeições (Lehmann & Romano, 2005).
+    Observed power, not prospective: the effect comes from the same data as the
+    test, which makes it a monotone transform of the p-value rather than
+    independent evidence (Hoenig & Heisey, 2001). Reported for the record, and
+    not to be read as support for a null result.
+
+    The samples are drawn as paired differences directly. Drawing two
+    independent groups and subtracting them gives differences with standard
+    deviation sqrt(2), so the simulated paired effect would be effect_size/sqrt(2)
+    -- at d_z = 0.8 and n = 10 that reports 0.33 where the power is 0.59.
+
+    alpha must be the threshold the decision actually uses, so that reported
+    power and reported significance refer to the same test.
+
+      Hoenig, J. M., & Heisey, D. M. (2001). The Abuse of Power: The Pervasive
+        Fallacy of Power Calculations for Data Analysis. The American
+        Statistician, 55(1), 19-24.
     """
     if n < 4 or abs(effect_size) < 1e-10:
         return float('nan')
     rng = np.random.default_rng(seed)
     rejections = 0
     for _ in range(n_sim):
-        x = rng.normal(0, 1, n)
-        y = rng.normal(effect_size, 1, n)
+        diff = rng.normal(effect_size, 1.0, n)
         try:
-            _, p = stats.wilcoxon(x - y)
+            p = stats.wilcoxon(diff).pvalue
             if p < alpha:
                 rejections += 1
         except Exception:
             pass
     return rejections / n_sim
+
+
+def _signed_rank(diff: np.ndarray) -> Tuple[float, float]:
+    """Wilcoxon signed-rank on the paired differences.
+
+    Reported alongside the paired t-test: it is the test the reported power
+    refers to, and it does not assume normality of the differences, which n=10
+    cannot establish.
+    """
+    try:
+        res = stats.wilcoxon(diff)
+        return float(res.statistic), float(res.pvalue)
+    except Exception:
+        return float('nan'), float('nan')
 
 
 def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
@@ -194,10 +222,10 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
                 continue
             # t-test pareado (one-sample em diff)
             t_stat, t_p = stats.ttest_rel(x, y)
+            w_stat, w_p = _signed_rank(diff)
             d = cohens_dz(diff)
             g = hedges_g(d, n)
             eta2 = eta_squared_from_t(float(t_stat), n)
-            power_est = _prospective_power_wilcoxon(n, d)
             d_ci_lo, d_ci_hi = _effect_size_ci(diff)
             rec = dict(
                 n=n,
@@ -208,7 +236,8 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
                 eta_squared=float(eta2),
                 t_stat=float(t_stat),
                 t_p=float(t_p),
-                power_est=power_est,
+                wilcoxon_stat=w_stat,
+                wilcoxon_p=w_p,
             )
             res[p] = rec
             p_values.append(float(t_p))
@@ -220,10 +249,10 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
         n = len(diff)
         if n >= 2:
             t_stat, t_p = stats.ttest_rel(x, y)
+            w_stat, w_p = _signed_rank(diff)
             d = cohens_dz(diff)
             g = hedges_g(d, n)
             eta2 = eta_squared_from_t(float(t_stat), n)
-            power_est = _prospective_power_wilcoxon(n, d)
             d_ci_lo, d_ci_hi = _effect_size_ci(diff)
             res['total_architectural'] = dict(
                 n=n,
@@ -234,7 +263,8 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
                 eta_squared=float(eta2),
                 t_stat=float(t_stat),
                 t_p=float(t_p),
-                power_est=power_est,
+                wilcoxon_stat=w_stat,
+                wilcoxon_p=w_p,
             )
             p_values.append(float(t_p))
             keys.append('total_architectural')
@@ -251,13 +281,35 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
 
     if all_p:
         n_tests = len(all_p)
+        # Recorded rather than left implicit: the family size determines the
+        # threshold, and a reader cannot recover it from the adjusted values.
+        alpha_family = 0.05 / n_tests
+
         bonf = [min(1.0, p * n_tests) for p in all_p]
         # Already clamped to 1, and NaN where the test produced no p-value;
         # min(1.0, nan) would report it as 1.0.
         fdr = benjamini_hochberg(all_p)
+
+        # Wilcoxon is corrected over its own family. Mixing p-values from two
+        # tests into one family would correct neither.
+        all_w = [results[pk][fk].get('wilcoxon_p', float('nan'))
+                 for pk, fk in all_refs]
+        w_bonf = [min(1.0, p * n_tests) if np.isfinite(p) else float('nan')
+                  for p in all_w]
+        w_fdr = benjamini_hochberg(all_w)
+
         for i, (pk, fk) in enumerate(all_refs):
-            results[pk][fk]['p_bonferroni'] = float(bonf[i])
-            results[pk][fk]['p_fdr_bh'] = float(fdr[i])
+            rec = results[pk][fk]
+            rec['family_size'] = n_tests
+            rec['alpha_bonferroni'] = alpha_family
+            rec['p_bonferroni'] = float(bonf[i])
+            rec['p_fdr_bh'] = float(fdr[i])
+            rec['wilcoxon_p_bonferroni'] = float(w_bonf[i])
+            rec['wilcoxon_p_fdr_bh'] = float(w_fdr[i])
+            # Computed here so it uses the threshold the decision uses, which is
+            # only known once the family is closed.
+            rec['observed_power'] = _observed_power_wilcoxon(
+                rec['n'], rec['cohen_dz'], alpha=alpha_family)
 
     return results
 
@@ -271,7 +323,10 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
     rows = []
     cols = [
         'n', 'mean_diff_s', 'cohen_dz', 'hedges_g', 'eta_squared',
-        't_stat', 't_p', 'p_bonferroni', 'p_fdr_bh', 'power_est'
+        't_stat', 't_p', 'p_bonferroni', 'p_fdr_bh',
+        'wilcoxon_stat', 'wilcoxon_p', 'wilcoxon_p_bonferroni',
+        'wilcoxon_p_fdr_bh', 'family_size', 'alpha_bonferroni',
+        'observed_power'
     ]
     for pair_key, pair_results in results.items():
         for phase, metrics in pair_results.items():
