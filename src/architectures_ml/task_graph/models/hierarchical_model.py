@@ -166,6 +166,9 @@ class HierarchicalModelTaskGraph:
         """
         Modelo hierárquico simples: médias por país + resíduos com Ridge regularizado.
         """
+        # Read once: the return payload describes the grid even when the
+        # residual branch below is not taken.
+        _hm = SCIENTIFIC_CONFIG['hierarchical_model']
         global_mean = y_train.mean()
         n_countries = countries_train.nunique()
         total_samples = len(y_train)
@@ -205,8 +208,16 @@ class HierarchicalModelTaskGraph:
             samples_count = len(residuals_y)
             
             # Seleção de alpha via CV interna (Hoerl & Kennard, 1970)
-            alphas = np.logspace(-1, 3, 20)  # 0.1 a 1000
-            ridge_cv = RidgeCV(alphas=alphas, cv=min(3, len(residuals_X)))
+            alphas = np.logspace(_hm['ridge_alpha_log10_start'],
+                                 _hm['ridge_alpha_log10_stop'],
+                                 _hm['ridge_alpha_count'])
+            # RidgeCV rejects cv < 2; with fewer residual rows than that,
+            # cv=None selects alpha by generalised cross-validation instead
+            # of raising.
+            n_residuals = len(residuals_X)
+            inner_folds = min(_hm['ridge_cv_folds'], n_residuals)
+            ridge_cv = RidgeCV(alphas=alphas,
+                               cv=inner_folds if inner_folds >= 2 else None)
             ridge_cv.fit(residuals_X, residuals_y)
             final_alpha = ridge_cv.alpha_
             residual_model = ridge_cv
@@ -260,7 +271,12 @@ class HierarchicalModelTaskGraph:
             'regularization_details': {
                 'ridgecv_alpha': float(final_alpha),
                 'shrinkage_applied': True,
-                'alpha_selection': 'RidgeCV com logspace(-1, 3, 20)',
+                'alpha_selection': (
+                    f"RidgeCV com logspace("
+                    f"{_hm['ridge_alpha_log10_start']}, "
+                    f"{_hm['ridge_alpha_log10_stop']}, "
+                    f"{_hm['ridge_alpha_count']})"
+                ),
                 'residual_shrinkage': float(residual_shrinkage)
             }
         }
@@ -289,14 +305,15 @@ class HierarchicalModelTaskGraph:
         X_train_augmented['country_effect'] = train_country_effects
         X_test_augmented['country_effect'] = test_country_effects
         
+        _hm = SCIENTIFIC_CONFIG['hierarchical_model']
         rf_model = RandomForestRegressor(
-            n_estimators=200,
+            n_estimators=_hm['rf_n_estimators'],
             max_depth=max_depth,
-            min_samples_split=15,
+            min_samples_split=_hm['rf_min_samples_split'],
             min_samples_leaf=min_samples_leaf,
-            max_features='sqrt',
+            max_features=_hm['rf_max_features'],
             random_state=RANDOM_SEED,
-            n_jobs=1
+            n_jobs=_hm['rf_n_jobs']
         )
         
         rf_model.fit(X_train_augmented, y_train)
@@ -394,7 +411,7 @@ class HierarchicalModelTaskGraph:
         # 1. Simple Hierarchical (tuning de residual_shrinkage por validação)
         best_shrink = 0.8
         best_val_r2 = -1e9
-        for rs in [0.6, 0.8, 1.0]:
+        for rs in SCIENTIFIC_CONFIG['hierarchical_model']['residual_shrinkage_grid']:
             tmp = self.simple_hierarchical_model(X_train_scaled, y_train, X_val_scaled, y_val, countries_train, countries_val, residual_shrinkage=rs)
             if tmp['r2'] > best_val_r2:
                 best_val_r2 = tmp['r2']
@@ -406,8 +423,9 @@ class HierarchicalModelTaskGraph:
         # 2. Random Forest Hierarchical (tuning leve por validação)
         best_params = (6, 8)
         best_val_r2 = -1e9
-        for depth in [5, 6, 7]:
-            for leaf in [5, 8, 12]:
+        _hm = SCIENTIFIC_CONFIG['hierarchical_model']
+        for depth in _hm['rf_max_depth_grid']:
+            for leaf in _hm['rf_min_samples_leaf_grid']:
                 tmp = self.random_forest_hierarchical(X_train_scaled, y_train, X_val_scaled, y_val, countries_train, countries_val, max_depth=depth, min_samples_leaf=leaf)
                 if tmp['r2'] > best_val_r2:
                     best_val_r2 = tmp['r2']

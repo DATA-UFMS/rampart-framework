@@ -3,8 +3,8 @@
 Módulo de Configuração Científica Centralizada para o Benchmark.
 
 Este arquivo define constantes e configurações que devem ser IDÊNTICAS
-entre as arquiteturas Data Warehouse e Data Lake para garantir um
-benchmark válido.
+entre os três paradigmas (sql_engine, task_graph, dataframe_lib) para
+que o benchmark seja válido.
 
 Parâmetros definidos aqui governam:
 - Reprodutibilidade (seeds)
@@ -13,10 +13,15 @@ Parâmetros definidos aqui governam:
 - Detecção de proxy (P3)
 - Escopo temporal de seleção (P4)
 - Transformações de features
+- Espaço de busca dos modelos hierárquicos
+- Parâmetros estatísticos (bootstrap, SESOI)
 
-Parâmetros de P5 (escopo de preprocessing) e HPO são enforced
-diretamente no código dos modelos (ver BaseArchitectureML e
-hierarchical_model.py) e validados por testes unitários.
+Este dicionário é serializado no snapshot de reprodutibilidade, então um
+parâmetro definido fora daqui é um parâmetro ausente do snapshot.
+
+P5 (escopo de preprocessing) é enforced no código dos modelos, por ser
+uma propriedade de onde as estatísticas são ajustadas, e não um valor;
+os testes unitários verificam esse enforcement.
 """
 
 import random
@@ -88,6 +93,35 @@ SCIENTIFIC_CONFIG = {
     #   SQL:    SIGN(x) * LN(ABS(x) + 1)
     #   Python: np.sign(x) * np.log(np.abs(x) + 1)
     'feature_transform': 'symmetric_log',
+
+    # Search space of the hierarchical stage.
+    #
+    # Defined here rather than inside each paradigm for two reasons. Three copies
+    # can drift apart, and paradigms searching different spaces are not fitting
+    # the same model -- which is the premise the equivalence check rests on. And
+    # the reproducibility snapshot records this dictionary, so a search space
+    # living in the paradigms is a search space absent from the snapshot.
+    'hierarchical_model': {
+        # RidgeCV alphas as logspace(start, stop, count).
+        'ridge_alpha_log10_start': -1,
+        'ridge_alpha_log10_stop': 3,
+        'ridge_alpha_count': 20,
+        # Inner folds for alpha selection. RidgeCV rejects fewer than two,
+        # so a panel with a single residual row falls back to its
+        # leave-one-out generalised cross-validation.
+        'ridge_cv_folds': 3,
+        # Shrinkage applied to the residual component.
+        'residual_shrinkage_grid': (0.6, 0.8, 1.0),
+        # Random forest over entity effects, tuned on the validation window.
+        'rf_max_depth_grid': (5, 6, 7),
+        'rf_min_samples_leaf_grid': (5, 8, 12),
+        'rf_n_estimators': 200,
+        'rf_min_samples_split': 15,
+        'rf_max_features': 'sqrt',
+        # Single-threaded: parallel tree building would make latency depend on
+        # core availability rather than on the paradigm under measurement.
+        'rf_n_jobs': 1,
+    },
 
     # Validação de Equivalência
     'target_stats_max_diff': 0.01,      # 1%
