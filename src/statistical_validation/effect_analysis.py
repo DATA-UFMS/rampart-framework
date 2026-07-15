@@ -130,14 +130,22 @@ def eta_squared_from_t(t_stat: float, n: int) -> float:
 
 
 def benjamini_hochberg(pvals: List[float]) -> List[float]:
-    m = len(pvals)
-    order = np.argsort(pvals)
-    ranked = np.empty(m)
-    for rank, idx in enumerate(order, start=1):
-        ranked[idx] = pvals[idx] * m / rank
-    for i in range(m - 2, -1, -1):
-        ranked[i] = min(ranked[i], ranked[i + 1])
-    return ranked.tolist()
+    """Benjamini-Hochberg adjusted p-values.
+
+    Delegates to SciPy's reference implementation rather than reimplementing the
+    step-up. The monotonicity pass has to run in the order of the sorted
+    p-values; running it in the order the tests happen to be listed produces
+    adjusted values below the raw ones, which the procedure cannot produce.
+
+    A test without a p-value is not part of the family and comes back as NaN, so
+    the family size reflects the tests actually performed.
+    """
+    p = np.asarray(pvals, dtype=float)
+    out = np.full(p.shape, np.nan)
+    valid = np.isfinite(p)
+    if valid.any():
+        out[valid] = stats.false_discovery_control(p[valid], method='bh')
+    return np.minimum(out, 1.0).tolist()
 
 
 def _prospective_power_wilcoxon(n: int, effect_size: float, alpha: float = 0.05,
@@ -244,10 +252,12 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
     if all_p:
         n_tests = len(all_p)
         bonf = [min(1.0, p * n_tests) for p in all_p]
+        # Already clamped to 1, and NaN where the test produced no p-value;
+        # min(1.0, nan) would report it as 1.0.
         fdr = benjamini_hochberg(all_p)
         for i, (pk, fk) in enumerate(all_refs):
             results[pk][fk]['p_bonferroni'] = float(bonf[i])
-            results[pk][fk]['p_fdr_bh'] = float(min(1.0, fdr[i]))
+            results[pk][fk]['p_fdr_bh'] = float(fdr[i])
 
     return results
 
