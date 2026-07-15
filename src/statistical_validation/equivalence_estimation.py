@@ -8,6 +8,15 @@ Substitui o TOST formal e é adequada a n pequeno entre folds:
 - Decide equivalência ou qual lado excede o outro, e inconclusivo
 - Aplica Wilcoxon pareado e Hodges-Lehmann como robustez
 
+Por que não há TOST explícito:
+  Dois testes unilaterais a alpha=0.05 são idênticos a verificar se o
+  IC de 90% (1-2*alpha) cai inteiramente dentro de +-delta. A decisão
+  aqui usa IC de 95%, que é mais largo e portanto mais difícil de
+  conter em +-delta: concluir equivalência por este critério é
+  estritamente mais conservador do que pelo TOST a alpha=0.05, e o
+  intervalo informa a magnitude, que o valor-p do TOST não informa
+  (Lakens, Scheel & Isager, 2018).
+
 Limiares SESOI definidos a priori (ver scientific_config.py):
   R2=0.01  — metade do efeito pequeno de Cohen (1988, f2=0.02)
   MASE=0.05 — 5% relativo ao baseline naive (Hyndman & Koehler 2006)
