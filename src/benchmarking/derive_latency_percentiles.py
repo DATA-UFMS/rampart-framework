@@ -26,8 +26,19 @@ import numpy as np
 import pandas as pd
 
 
-RESULTS_CSV = Path("outputs/benchmarks/architectural_benchmark_results.csv")
-OUT_DIR = Path("outputs/statistics")
+import os
+import sys
+
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SRC_DIR = os.path.join(_BASE_DIR, "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from core.config import get_absolute_output_path
+
+RESULTS_CSV = Path(get_absolute_output_path(
+    "outputs/benchmarks/architectural_benchmark_results.csv"))
+OUT_DIR = Path(get_absolute_output_path("outputs/statistics"))
 OUT_JSON = OUT_DIR / "architectural_latency_percentiles.json"
 OUT_TEX = OUT_DIR / "architectural_latency_percentiles.tex"
 

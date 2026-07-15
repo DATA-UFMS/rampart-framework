@@ -38,13 +38,13 @@ _SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+from core.config import get_absolute_output_path
 from core.paradigm_registry import discover_paradigms
 from core.prediction_store import load_predictions
 from core.scientific_config import SCIENTIFIC_CONFIG
 
-REPORT_PATH = os.path.join(
-    PROJECT_ROOT, 'outputs', 'statistics', 'prediction_equivalence.json'
-)
+REPORT_PATH = get_absolute_output_path(
+    'outputs/statistics/prediction_equivalence.json')
 
 
 def _vectors(frame: pd.DataFrame) -> Dict[Tuple[Any, str], pd.DataFrame]:

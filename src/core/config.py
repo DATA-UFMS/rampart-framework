@@ -74,17 +74,48 @@ def get_project_root() -> str:
     
     raise FileNotFoundError("Não foi possível encontrar o root do projeto (README.md não encontrado)")
 
-def get_absolute_output_path(relative_path: str) -> str:
+DEFAULT_DATASET = 'worldbank'
+
+
+def get_dataset_name() -> str:
     """
-    Converte path relativo 'outputs/...' para path absoluto
-    Exemplo: 'outputs/data_collection/sql_first' -> '/full/path/to/project/outputs/data_collection/sql_first'
+    Dataset em execução, propagado pelo pipeline via DATASET_NAME.
+
+    Um único ponto de leitura: o default replicado em dois lugares permitiria
+    que um módulo resolvesse um dataset e outro resolvesse outro na mesma
+    execução.
     """
     import os
-    project_root = get_project_root()
-    if relative_path.startswith('outputs/'):
-        return os.path.join(project_root, relative_path)
-    else:
-        return os.path.join(project_root, 'outputs', relative_path)
+    return os.environ.get('DATASET_NAME', DEFAULT_DATASET)
+
+
+def get_outputs_root() -> str:
+    """
+    Raiz dos artefatos do dataset em execução.
+
+    Segregada por dataset. Sem isso, executar um segundo dataset sobrescreve os
+    artefatos do primeiro sob os mesmos nomes, e uma execução interrompida
+    deixa artefatos de dois datasets convivendo sem que nada o registre — os
+    resultados publicados foram separados em diretórios manualmente, e não pelo
+    código.
+    """
+    import os
+    return os.path.join(get_project_root(), 'outputs', get_dataset_name())
+
+
+def get_absolute_output_path(relative_path: str) -> str:
+    """
+    Converte path relativo 'outputs/...' em path absoluto sob a raiz do dataset.
+
+    Exemplo, com DATASET_NAME=inep_censo:
+      'outputs/statistics' -> '/<projeto>/outputs/inep_censo/statistics'
+    """
+    import os
+    prefix = 'outputs' + os.sep
+    if relative_path.startswith(prefix) or relative_path.startswith('outputs/'):
+        relative_path = relative_path.split('/', 1)[1] if '/' in relative_path \
+            else ''
+    return os.path.join(get_outputs_root(), relative_path)
 
 def get_execution_metadata() -> Dict:
     """Retorna metadados da execução atual"""

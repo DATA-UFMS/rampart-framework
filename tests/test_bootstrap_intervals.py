@@ -80,6 +80,48 @@ class TestMethodIsRecorded:
         assert np.isfinite(lo) and np.isfinite(hi)
 
 
+class TestSensitivityGridConsumesTheInterval:
+    """The sensitivity grid unpacks whatever _bootstrap_ci returns.
+
+    It went unnoticed that the grid still unpacked two values after the method
+    was added as a third: without baseline results on disk the metric dictionary
+    is empty, the loop body never executes, and the script reports success having
+    computed nothing. Running a script without error is not evidence that its
+    inner loop works.
+    """
+
+    @staticmethod
+    def _deltas():
+        return np.array([0.01, -0.02, 0.005, 0.0, 0.013,
+                         -0.008, 0.002, 0.011, -0.004])
+
+    def _grid(self):
+        from statistical_validation import bootstrap_sensitivity as bs
+        return bs._sensitivity_grid({'dl_vs_dw_r2': self._deltas()},
+                                    [1.0], [500], 42)
+
+    def test_grid_produces_a_row(self):
+        rows = self._grid()
+        assert len(rows) == 1, 'the loop body did not execute'
+
+    def test_row_carries_the_interval_and_its_method(self):
+        row = self._grid()[0]
+        for key in ('point', 'ci_lo', 'ci_hi', 'ci95_method', 'decision',
+                    'advantage'):
+            assert key in row, key
+        assert row['ci_lo'] <= row['point'] <= row['ci_hi']
+
+    def test_row_uses_the_directional_labels(self):
+        row = self._grid()[0]
+        assert row['decision'] in ('equivalent', 'inconclusive', 'a_exceeds_b',
+                                   'b_exceeds_a', 'insufficient_data')
+        assert row['decision'] not in ('superior', 'inferior')
+
+    def test_empty_metrics_produce_no_rows(self):
+        from statistical_validation import bootstrap_sensitivity as bs
+        assert bs._sensitivity_grid({}, [1.0], [500], 42) == []
+
+
 class TestMethodReachesTheArtifact:
     """An interval recorded without its method is unattributable."""
 

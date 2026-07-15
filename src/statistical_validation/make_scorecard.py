@@ -22,7 +22,17 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-BASE = Path('outputs/statistics')
+import os
+import sys
+
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SRC_DIR = os.path.join(_BASE_DIR, "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from core.config import get_absolute_output_path
+
+BASE = Path(get_absolute_output_path('outputs/statistics'))
 
 
 def read_text(p: Path) -> str:

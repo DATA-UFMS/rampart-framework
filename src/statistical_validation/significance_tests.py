@@ -45,6 +45,7 @@ if _SRC_DIR not in sys.path:
 # No fallback: a local default would let the analysis run with a resample count
 # other than the configured one, which is how the reported figure drifts from
 # the executed one. Without the configuration the run is not reproducible.
+from core.config import get_absolute_output_path
 from core.scientific_config import SCIENTIFIC_CONFIG
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
@@ -64,11 +65,7 @@ PAIR_LABELS = {
 }
 
 
-RESULTS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-    "outputs",
-    "statistics",
-)
+RESULTS_DIR = get_absolute_output_path("outputs/statistics")
 
 
 def ensure_dir(path: str) -> None:
@@ -375,12 +372,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Testes de significância estatística para benchmark arquitetural")
     p.add_argument(
         "--csv",
-        default=os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "outputs",
-            "benchmarks",
-            "architectural_benchmark_results.csv",
-        ),
+        default=get_absolute_output_path(
+            "outputs/benchmarks/architectural_benchmark_results.csv"),
         help="Caminho para o CSV do benchmark",
     )
     p.add_argument("--bootstrap", type=int, default=DEFAULT_BOOTSTRAP_ITERS, help=f"Iterações bootstrap (default={DEFAULT_BOOTSTRAP_ITERS})")

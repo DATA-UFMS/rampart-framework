@@ -75,6 +75,7 @@ if _SRC_DIR not in sys.path:
 # No fallback: silently substituting the resample count or a SESOI would make
 # the reported protocol differ from the executed one. The SESOI values in
 # particular are the decision thresholds, defined a priori.
+from core.config import get_absolute_output_path
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
@@ -245,9 +246,15 @@ def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
 
 def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
     paths = {
-        'dw': 'outputs/ml_pipeline/architectures/sql_engine/models/baseline_analysis_sql_engine_consumer_results.json',
-        'dl': 'outputs/ml_pipeline/architectures/task_graph/models/baseline_results/baseline_analysis_task_graph_results.json',
-        'pl': 'outputs/ml_pipeline/architectures/dataframe_lib/models/baseline_results/baseline_analysis_dataframe_lib_results.json',
+        'dw': get_absolute_output_path(
+            'outputs/ml_pipeline/architectures/sql_engine/models/'
+            'baseline_analysis_sql_engine_consumer_results.json'),
+        'dl': get_absolute_output_path(
+            'outputs/ml_pipeline/architectures/task_graph/models/baseline_results/'
+            'baseline_analysis_task_graph_results.json'),
+        'pl': get_absolute_output_path(
+            'outputs/ml_pipeline/architectures/dataframe_lib/models/baseline_results/'
+            'baseline_analysis_dataframe_lib_results.json'),
     }
     out = {}
     for arch, p in paths.items():
@@ -306,7 +313,7 @@ def _analyze_predictive_metrics(args) -> Dict:
 
 
 def _load_benchmark_csv() -> Optional[pd.DataFrame]:
-    p = 'outputs/benchmarks/architectural_benchmark_results.csv'
+    p = get_absolute_output_path('outputs/benchmarks/architectural_benchmark_results.csv')
     try:
         return pd.read_csv(p)
     except Exception:
@@ -385,8 +392,9 @@ def _analyze_latency(args) -> Dict:
 
 
 def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
-    os.makedirs('outputs/statistics', exist_ok=True)
-    with open('outputs/statistics/equivalence_estimation.json', 'w') as f:
+    stats_dir = get_absolute_output_path('outputs/statistics')
+    os.makedirs(stats_dir, exist_ok=True)
+    with open(os.path.join(stats_dir, 'equivalence_estimation.json'), 'w') as f:
         json.dump(obj, f, indent=2)
     if write_tex:
         lines = [
@@ -445,7 +453,7 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             '\\end{tabular}',
             '\\end{table}',
         ]
-        with open('outputs/statistics/equivalence_estimation.tex', 'w') as f:
+        with open(os.path.join(stats_dir, 'equivalence_estimation.tex'), 'w') as f:
             f.write("\n".join(lines))
 
 

@@ -26,19 +26,19 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.scientific_config import SCIENTIFIC_CONFIG
+from core.config import get_absolute_output_path
 from statistical_validation.equivalence_estimation import (
+    _advantage,
     _bootstrap_ci,
     _decision_equivalence,
     _load_baseline_pairs,
     _paired_deltas_for_metric,
 )
 
-DEFAULT_OUTPUT_JSON = os.path.join(
-    PROJECT_ROOT, "outputs", "statistics", "bootstrap_sensitivity.json"
-)
-DEFAULT_OUTPUT_LATEX = os.path.join(
-    PROJECT_ROOT, "outputs", "statistics", "bootstrap_sensitivity.tex"
-)
+DEFAULT_OUTPUT_JSON = get_absolute_output_path(
+    "outputs/statistics/bootstrap_sensitivity.json")
+DEFAULT_OUTPUT_LATEX = get_absolute_output_path(
+    "outputs/statistics/bootstrap_sensitivity.tex")
 
 MetricConfig = Dict[str, Dict[str, float]]
 
@@ -82,12 +82,15 @@ def _sensitivity_grid(
             continue
         # Extrair métrica base (r2/wape/mase) da key composta (dl_vs_dw_r2)
         base_metric = metric_key.rsplit('_', 1)[-1]
+        arch_a, arch_b = metric_key.rsplit('_', 1)[0].split('_vs_')
         if base_metric not in base_deltas:
             continue
         for scale, iters in product(delta_scales, bootstrap_iters):
             sesoi = base_deltas[base_metric]["delta"] * scale
-            point, (ci_lo, ci_hi) = _bootstrap_ci(deltas, iters=iters, seed=seed)
+            point, (ci_lo, ci_hi), ci_method = _bootstrap_ci(
+                deltas, iters=iters, seed=seed)
             decision = _decision_equivalence(ci_lo, ci_hi, sesoi)
+            advantage = _advantage(decision, base_metric, arch_a, arch_b)
             rows.append(
                 {
                     "metric": metric_key,
@@ -99,6 +102,8 @@ def _sensitivity_grid(
                     "ci_lo": float(ci_lo),
                     "ci_hi": float(ci_hi),
                     "decision": decision,
+                    "advantage": advantage,
+                    "ci95_method": ci_method,
                 }
             )
     return rows

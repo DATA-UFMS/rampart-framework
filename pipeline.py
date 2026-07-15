@@ -35,7 +35,7 @@ if _SRC_DIR not in sys.path:
 # thresholds -- behind a warning on stdout, and record that empty configuration
 # in the reproducibility snapshot. A run that cannot read its own configuration
 # is not a run worth completing.
-from core.config import get_execution_metadata
+from core.config import get_absolute_output_path, get_dataset_name, get_execution_metadata
 from core.scientific_config import SCIENTIFIC_CONFIG
 from core.validation import TemporalValidator
 
@@ -52,7 +52,7 @@ def run(cmd: str) -> None:
 
 def _snapshot_scientific_config(root: str) -> None:
     """Salva snapshot da configuração científica e do ambiente."""
-    snapshot_dir = os.path.join(root, "outputs")
+    snapshot_dir = get_absolute_output_path("outputs")
     os.makedirs(snapshot_dir, exist_ok=True)
     payload = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -60,6 +60,8 @@ def _snapshot_scientific_config(root: str) -> None:
         "python": sys.version,
         "platform": platform.platform(),
         "cwd": root,
+        # Recorded so a stray artifact can be traced back to its dataset.
+        "dataset": get_dataset_name(),
     }
     try:
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
@@ -110,8 +112,8 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
 
     for arch in _discover():
         folds_path = os.path.join(
-            root, 'outputs', 'ml_pipeline', 'architectures', arch, 'prep',
-            f'temporal_folds_{arch}.json'
+            get_absolute_output_path('outputs/ml_pipeline/architectures'),
+            arch, 'prep', f'temporal_folds_{arch}.json'
         )
         if not os.path.exists(folds_path):
             raise FileNotFoundError(f"Folds não encontrados: {folds_path}")
@@ -158,7 +160,7 @@ def main() -> None:
     _snapshot_scientific_config(root)
     paradigms = _discover()
     print("\nEtapa 0: Snapshot de reprodutibilidade")
-    _log("Snapshot salvo em outputs/scientific_config_snapshot.json")
+    _log(f"Snapshot salvo em {get_absolute_output_path('outputs')}")
 
     if dataset_name == 'worldbank':
         print("\nEtapa 1/7: Coleta")
@@ -217,8 +219,8 @@ def main() -> None:
     # reports success while producing an incomplete set of artifacts. The
     # benchmark stage above runs with check=True, so its absence here means
     # something upstream is wrong.
-    benchmark_csv = os.path.join(root, 'outputs', 'benchmarks',
-                                 'architectural_benchmark_results.csv')
+    benchmark_csv = get_absolute_output_path(
+        'outputs/benchmarks/architectural_benchmark_results.csv')
     if not os.path.exists(benchmark_csv):
         raise FileNotFoundError(
             f"Benchmark results absent after the benchmark stage: "
@@ -255,7 +257,7 @@ def main() -> None:
     _log("Etapa 7 concluida")
 
     print("\nPipeline concluido")
-    print("Resultados em: outputs/")
+    print(f"Resultados em: {get_absolute_output_path('outputs')}")
 
 if __name__ == "__main__":
     main()

@@ -18,9 +18,22 @@ import json
 from pathlib import Path
 import numpy as np
 
-LAT_JSON = Path("outputs/statistics/architectural_latency_percentiles.json")
-RES_JSON = Path("outputs/statistics/architectural_resource_usage.json")
-OUT_TEX = Path("outputs/statistics/architectural_operational_panel.tex")
+import os
+import sys
+
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SRC_DIR = os.path.join(_BASE_DIR, "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from core.config import get_absolute_output_path
+
+LAT_JSON = Path(get_absolute_output_path(
+    "outputs/statistics/architectural_latency_percentiles.json"))
+RES_JSON = Path(get_absolute_output_path(
+    "outputs/statistics/architectural_resource_usage.json"))
+OUT_TEX = Path(get_absolute_output_path(
+    "outputs/statistics/architectural_operational_panel.tex"))
 
 
 def _fmt_s(x):

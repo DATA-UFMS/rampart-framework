@@ -35,12 +35,13 @@ _SRC_DIR = os.path.join(BASE_DIR, "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+from core.config import get_absolute_output_path
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
 DEFAULT_SEED = RANDOM_SEED
 
-STATS_DIR = os.path.join(BASE_DIR, "outputs", "statistics")
+STATS_DIR = get_absolute_output_path("outputs/statistics")
 
 ALL_PAIRS = [
     ("task_graph", "sql_engine"),
@@ -340,7 +341,8 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
 def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Effect sizes 3-way pairwise")
-    parser.add_argument("--csv", default=os.path.join(BASE_DIR, 'outputs', 'benchmarks', 'architectural_benchmark_results.csv'),
+    parser.add_argument("--csv", default=get_absolute_output_path(
+                            'outputs/benchmarks/architectural_benchmark_results.csv'),
                         help="Caminho para o CSV do benchmark")
     args = parser.parse_args()
     csv_path = args.csv
