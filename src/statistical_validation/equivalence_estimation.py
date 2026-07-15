@@ -5,7 +5,7 @@ Equivalência por Estimativa (SESOI + IC) com robustez (Wilcoxon + Hodges-Lehman
 Substitui o TOST formal e é adequada a n pequeno entre folds:
 - Define delta (SESOI) por métrica
 - Estima efeito pareado DL vs DW com bootstrap (IC95%)
-- Decide equivalência/superioridade/inferioridade/inconclusivo
+- Decide equivalência ou qual lado excede o outro, e inconclusivo
 - Aplica Wilcoxon pareado e Hodges-Lehmann como robustez
 
 Limiares SESOI definidos a priori (ver scientific_config.py):
@@ -28,11 +28,16 @@ Nota sobre poder estatístico:
     - "equivalent": forte — difícil de atingir com pouca precisão
     - "inconclusive": esperado — reflete a precisão disponível, não
       falha metodológica (Lakens et al. 2018)
-    - "superior"/"inferior": requer corroboração pela sensibilidade
+    - "a_exceeds_b"/"b_exceeds_a": requer corroboração pela sensibilidade
 
   A análise de sensibilidade (bootstrap_sensitivity.py) varia SESOI
   (0.5x, 1.0x, 1.5x) e iterações (1000, 3000, 10000, 15000) para
   verificar estabilidade das decisões.
+
+A decisão é direcional, não meritória: o efeito é medido como A-B
+(ou log(A/B)), e se um efeito positivo favorece A depende da métrica
+— favorece para R2, não favorece para latência, MASE e WAPE. O campo
+'advantage' nomeia o lado favorecido, já considerando essa direção.
 
 O método que produziu cada IC é registrado em 'ci95_method': BCa,
 fallback percentil (com a razão) ou degenerado por variância zero.
@@ -135,16 +140,43 @@ def _bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed
         return point, (lo, hi), f'percentile_fallback:{reason}'
 
 
+# Whether a larger value of the metric is the better outcome. Latency and the
+# error measures improve downwards; R2 improves upwards. The decision function
+# cannot know this, which is why it does not name a winner.
+HIGHER_IS_BETTER = {'r2': True, 'mase': False, 'wape': False, 'latency': False}
+
+
 def _decision_equivalence(ci_lo: float, ci_hi: float, delta: float) -> str:
+    """Where the interval sits relative to +-delta, in neutral terms.
+
+    Labelled by direction rather than by merit. The effect is measured as A - B
+    (or log(A/B)), and whether a positive effect favours A depends on the metric:
+    it does for R2, and it does not for latency, MASE or WAPE. Calling a positive
+    effect 'superior' reported Dask as superior on the stages where it was
+    slower, and inferior on the stages where it was faster.
+    """
     if math.isnan(ci_lo) or math.isnan(ci_hi):
         return 'insufficient_data'
     if -delta <= ci_lo and ci_hi <= delta:
         return 'equivalent'
     if ci_lo > delta:
-        return 'superior'
+        return 'a_exceeds_b'
     if ci_hi < -delta:
-        return 'inferior'
+        return 'b_exceeds_a'
     return 'inconclusive'
+
+
+def _advantage(decision: str, metric: str, label_a: str, label_b: str) -> Optional[str]:
+    """Which side the interval favours, once the metric's direction is known.
+
+    None when the comparison does not name a winner: equivalent, inconclusive or
+    without data.
+    """
+    if decision not in ('a_exceeds_b', 'b_exceeds_a'):
+        return None
+    higher_is_better = HIGHER_IS_BETTER[metric]
+    a_is_greater = decision == 'a_exceeds_b'
+    return label_a if a_is_greater == higher_is_better else label_b
 
 
 def _load_json(path: str) -> Optional[Dict]:
@@ -239,6 +271,7 @@ def _analyze_predictive_metrics(args) -> Dict:
             deltas = _paired_deltas_for_metric(pairs, metric, arch_a, arch_b)
             point, (lo, hi), ci_method = _bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
             decision = _decision_equivalence(lo, hi, delta)
+            advantage = _advantage(decision, metric, arch_a, arch_b)
             wilcoxon_p = None
             hl = None
             if len(deltas) >= 1 and not np.all(np.isnan(deltas)):
@@ -255,6 +288,7 @@ def _analyze_predictive_metrics(args) -> Dict:
                 'ci95': [lo, hi],
                 'ci95_method': ci_method,
                 'decision': decision,
+                'advantage': advantage,
                 'wilcoxon_p': wilcoxon_p,
                 'hodges_lehmann': hl,
             }
@@ -315,6 +349,7 @@ def _analyze_latency(args) -> Dict:
             delta_pct = profile.get(str(phase).lower(), profile['total'])
             delta_lr = math.log(1.0 + delta_pct)
             decision = _decision_equivalence(lo, hi, delta_lr)
+            advantage = _advantage(decision, 'latency', label_a, label_b)
             try:
                 w = stats.wilcoxon(lr, zero_method='wilcox', alternative='two-sided', method='auto')
                 p = float(w.pvalue)
@@ -328,6 +363,7 @@ def _analyze_latency(args) -> Dict:
                 'ci95_lr': [float(lo), float(hi)],
                 'ci95_method': ci_method,
                 'decision': decision,
+                'advantage': advantage,
                 'wilcoxon_p': p,
                 'hodges_lehmann_lr': hl,
                 'interpretation': {
@@ -349,9 +385,9 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             '\\begin{table}[htb]',
             '\\centering',
             '\\caption{Equivalência prática por estimativa — predição (3-way pairwise)}',
-            '\\begin{tabular}{llrrrrl}',
+            '\\begin{tabular}{llrrrrll}',
             '\\toprule',
-            'Par & Métrica & n & Estim. & IC95\\% & $\\delta$ & Decisão \\\\ ',
+            'Par & Métrica & n & Estim. & IC95\\% & $\\delta$ & Decisão & Vantagem \\\\ ',
             '\\midrule',
         ]
         pred = obj.get('predictive', {})
@@ -366,7 +402,8 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
                 ci = r.get('ci95', [float('nan'), float('nan')])
                 d = r.get('delta', float('nan'))
                 dec = r.get('decision', '')
-                lines.append(f"{pair_key} & {m} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & {dec} \\\\")
+                adv = r.get('advantage') or '--'
+                lines.append(f"{pair_key} & {m} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & {dec} & {adv} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',
@@ -375,9 +412,9 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             '\\begin{table}[htb]',
             '\\centering',
             '\\caption{Equivalência prática por estimativa — latência (log‑ratio, 3-way pairwise)}',
-            '\\begin{tabular}{llrrrrl}',
+            '\\begin{tabular}{llrrrrll}',
             '\\toprule',
-            'Fase & Par & n & Estim. (LR) & IC95\\% & $\\delta$(%) & Decisão \\\\ ',
+            'Fase & Par & n & Estim. (LR) & IC95\\% & $\\delta$(%) & Decisão & Vantagem \\\\ ',
             '\\midrule',
         ]
         lat = obj.get('latency', {})
@@ -392,7 +429,8 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
                 ci = r.get('ci95_lr', [float('nan'), float('nan')])
                 d_pct = r.get('delta_pct', float('nan')) * 100.0
                 dec = r.get('decision', '')
-                lines.append(f"{phase} & {pair_key} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d_pct:.1f} & {dec} \\\\")
+                adv = r.get('advantage') or '--'
+                lines.append(f"{phase} & {pair_key} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d_pct:.1f} & {dec} & {adv} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',
