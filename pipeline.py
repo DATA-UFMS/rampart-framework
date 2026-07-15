@@ -3,13 +3,17 @@
 Pipeline orquestrador da pesquisa: executa as fases na ordem com caminhos absolutos.
 
 Fases:
-  1) Coleta bruta (World Bank)
-  2) Processamento arquitetural (Data Lake, Data Warehouse, Polars DataFrame)
+  1) Coleta bruta (World Bank ou INEP Censo Escolar)
+  2) Processamento por paradigma (sql_engine, task_graph, dataframe_lib)
   3) Setup ML (folds idênticos com gaps de 2 anos; seleção de features)
-  4) Baselines (3 arquiteturas)
-  5) Hierárquicos (3 arquiteturas)
-  6) Benchmark arquitetural (3 arquiteturas)
-  7) Testes estatísticos de validação
+  4) Baselines (um por paradigma)
+  5) Hierárquicos (um por paradigma)
+  6) Benchmark arquitetural (um por paradigma)
+  7) Análise estatística e tabelas derivadas
+
+Cada artefato publicado é produzido por uma etapa daqui. Um script de análise
+fora deste orquestrador significa que reproduzir os resultados exige conhecer
+uma sequência que não está escrita em lugar algum.
 """
 import argparse
 import hashlib
@@ -26,29 +30,17 @@ _SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
-try:
-    from core.scientific_config import SCIENTIFIC_CONFIG
-except Exception as exc:
-    print(f"[WARN] Falha ao importar SCIENTIFIC_CONFIG: {exc}")
-    SCIENTIFIC_CONFIG = {}
-
-try:
-    from core.config import get_execution_metadata
-except Exception as exc:
-    print(f"[WARN] Falha ao importar get_execution_metadata: {exc}")
-    get_execution_metadata = None
-
-try:
-    from core.validation import TemporalValidator
-except Exception as exc:
-    print(f"[WARN] Falha ao importar TemporalValidator: {exc}")
-    TemporalValidator = None
+# Imported without a fallback. An empty SCIENTIFIC_CONFIG would let the whole
+# experiment run on implicit defaults -- the temporal gap, the seed, the SESOI
+# thresholds -- behind a warning on stdout, and record that empty configuration
+# in the reproducibility snapshot. A run that cannot read its own configuration
+# is not a run worth completing.
+from core.config import get_execution_metadata
+from core.scientific_config import SCIENTIFIC_CONFIG
+from core.validation import TemporalValidator
 
 def _log(msg: str) -> None:
     print(f"  {msg}")
-
-def _log_error(msg: str) -> None:
-    print(f"  ERRO: {msg}")
 
 def run(cmd: str) -> None:
     """Executa um subprocesso com PYTHONPATH configurado para src/ para imports consistentes."""
@@ -83,11 +75,10 @@ def _snapshot_scientific_config(root: str) -> None:
     except Exception:
         payload["installed_packages"] = "unavailable"
 
-    if get_execution_metadata is not None:
-        try:
-            payload["hardware"] = get_execution_metadata()
-        except Exception:
-            payload["hardware"] = "unavailable"
+    try:
+        payload["hardware"] = get_execution_metadata()
+    except Exception:
+        payload["hardware"] = "unavailable"
 
     req_path = os.path.join(root, "requirements.txt")
     if os.path.exists(req_path):
@@ -111,11 +102,10 @@ def _discover():
 
 def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
     """Valida integridade temporal de todos os folds antes de prosseguir ao benchmark."""
-    if TemporalValidator is None:
-        raise RuntimeError("TemporalValidator não disponível — validação anti-leakage impossível")
-
-    gap = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
-    embargo = int(SCIENTIFIC_CONFIG.get('embargo_years', 0))
+    # Indexado, não .get com default: um default silencioso aqui deixaria o
+    # gate validar um gap diferente do configurado.
+    gap = int(SCIENTIFIC_CONFIG['temporal_gap_years'])
+    embargo = int(SCIENTIFIC_CONFIG['embargo_years'])
     validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
 
     for arch in _discover():
@@ -171,18 +161,18 @@ def main() -> None:
     _log("Snapshot salvo em outputs/scientific_config_snapshot.json")
 
     if dataset_name == 'worldbank':
-        print("\nEtapa 1/9: Coleta")
+        print("\nEtapa 1/7: Coleta")
         _log("Fonte: World Bank")
         run(f"{py} {root}/src/collection/raw_data_collector.py")
     else:
-        print("\nEtapa 1/9: Coleta")
+        print("\nEtapa 1/7: Coleta")
         _log("Fonte: INEP Censo Escolar")
         run(f"{py} {root}/src/collection/inep_collector.py")
     _log("Etapa 1 concluida")
 
     n_paradigms = len(paradigms)
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print(f"\nEtapa 2{chr(96+i)}/9: Processamento {arch}")
+        print(f"\nEtapa 2{chr(96+i)}/7: Processamento {arch}")
         _log(f"Arquitetura: {info['label']}")
         run(f"{py} {root}/{info['processor_script']}")
     _log(f"Etapa 2 concluida ({n_paradigms} paradigmas)")
@@ -190,7 +180,7 @@ def main() -> None:
     print("\nEtapa 3: Setup ML")
     _log("Gaps temporais: 2 anos (P1-P3)")
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print(f"\nEtapa 3{chr(96+i)}/9: Setup ML {arch}")
+        print(f"\nEtapa 3{chr(96+i)}/7: Setup ML {arch}")
         _log(f"Arquitetura: {info['label']}")
         run(f"{py} {root}/{info['setup_script']}")
     _log(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
@@ -200,11 +190,11 @@ def main() -> None:
     _log("Todos os folds passaram na validacao temporal")
 
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print(f"\nEtapa 4{chr(96+i)}/9: Baselines {arch}")
+        print(f"\nEtapa 4{chr(96+i)}/7: Baselines {arch}")
         run(f"{py} {root}/{info['baseline_script']}")
     _log(f"Etapa 4 concluida ({n_paradigms} paradigmas)")
 
-    print("\nEtapa 5/9: Hierarquicos")
+    print("\nEtapa 5/7: Hierarquicos")
     for arch, info in paradigms.items():
         run(f"{py} {root}/{info['hierarchical_script']}")
     _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
@@ -217,21 +207,50 @@ def main() -> None:
     run(f"{py} {root}/src/statistical_validation/prediction_equivalence.py")
     _log("Predicoes identicas entre os paradigmas")
 
-    print("\nEtapa 6/9: Benchmark arquitetural")
+    print("\nEtapa 6/7: Benchmark arquitetural")
     run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 10 --warmup 2")
     _log("Etapa 6 concluida")
 
-    print("\nEtapa 7/9: Testes estatisticos")
+    print("\nEtapa 7/7: Analise estatistica e tabelas derivadas")
 
-    benchmark_csv = f"{root}/outputs/benchmarks/architectural_benchmark_results.csv"
-    if os.path.exists(benchmark_csv):
-        _log("Etapa 7a/9: Significancia (bootstrap)")
-        run(f"{py} {root}/src/statistical_validation/significance_tests.py")
-    else:
-        _log_error("Arquivo de benchmark nao encontrado, pulando testes de significancia")
+    # Skipping the analysis on a missing benchmark would leave a run that
+    # reports success while producing an incomplete set of artifacts. The
+    # benchmark stage above runs with check=True, so its absence here means
+    # something upstream is wrong.
+    benchmark_csv = os.path.join(root, 'outputs', 'benchmarks',
+                                 'architectural_benchmark_results.csv')
+    if not os.path.exists(benchmark_csv):
+        raise FileNotFoundError(
+            f"Benchmark results absent after the benchmark stage: "
+            f"{benchmark_csv}. The statistical analysis cannot be derived."
+        )
 
-    _log("Etapa 7b/9: Equivalencia (SESOI + IC)")
-    run(f"{py} {root}/src/statistical_validation/equivalence_estimation.py --latex")
+    # Ordered by dependency, not by convenience:
+    #   the panel consumes the latency percentiles and the resource table;
+    #   the scorecard consumes significance, equivalence and the resource table.
+    ANALYSIS_STAGES = [
+        ('a', 'Significancia (bootstrap)',
+         'src/statistical_validation/significance_tests.py', ''),
+        ('b', 'Equivalencia (SESOI + IC)',
+         'src/statistical_validation/equivalence_estimation.py', '--latex'),
+        ('c', 'Tamanhos de efeito e comparacoes multiplas',
+         'src/statistical_validation/effect_analysis.py', ''),
+        ('d', 'Sensibilidade ao numero de resamples',
+         'src/statistical_validation/bootstrap_sensitivity.py', ''),
+        ('e', 'Percentis de latencia',
+         'src/benchmarking/derive_latency_percentiles.py', ''),
+        ('f', 'Percentis de throughput',
+         'src/benchmarking/derive_throughput_percentiles.py', ''),
+        ('g', 'Uso de recursos',
+         'src/benchmarking/derive_resource_usage_table.py', ''),
+        ('h', 'Painel operacional',
+         'src/benchmarking/derive_operational_panel.py', ''),
+        ('i', 'Scorecard',
+         'src/statistical_validation/make_scorecard.py', ''),
+    ]
+    for suffix, description, script, script_args in ANALYSIS_STAGES:
+        _log(f"Etapa 7{suffix}/7: {description}")
+        run(f"{py} {root}/{script} {script_args}".rstrip())
 
     _log("Etapa 7 concluida")
 
