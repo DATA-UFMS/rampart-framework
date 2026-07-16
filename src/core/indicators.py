@@ -64,7 +64,6 @@ HEALTH_INDICATORS = {
 # ============================================================================
 GOVERNANCE_INDICATORS = {
     'VC.IHR.PSRC.P5': 'intentional_homicides_per_100k',
-    'GE.EST': 'government_effectiveness',
 }
 
 # ============================================================================

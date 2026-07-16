@@ -84,8 +84,11 @@ class RawDataCollector:
     de coeficientes de variação em painel 1990-2020 (dados não mostrados).
     """
     
-    def __init__(self):
+    def __init__(self, allow_missing_indicators: bool = False):
         print("Coleta de dados")
+        # Ausência de um indicador declarado é falha, não aviso: precisa ser
+        # aceita explicitamente para que fique registrada como decisão.
+        self.allow_missing_indicators = allow_missing_indicators
         
         self.indicator_categories = {
             'education': {
@@ -288,9 +291,20 @@ class RawDataCollector:
             final_df = pd.concat(all_dataframes, ignore_index=True)
             print(f"\n{len(final_df)} registros totais coletados")
 
+            if failed_indicators and not self.allow_missing_indicators:
+                # Um aviso no stdout deixou o painel publicado com 22 dos 23
+                # indicadores declarados: o conjunto coletado passou a diferir do
+                # declarado sem que artefato algum registrasse a diferença.
+                raise RuntimeError(
+                    f"Indicadores declarados que não foram coletados: "
+                    f"{failed_indicators}. O painel resultante não corresponde "
+                    f"à declaração em core/indicators.py. Corrija a declaração "
+                    f"ou use --allow-missing-indicators para registrar a "
+                    f"ausência deliberadamente."
+                )
             if failed_indicators:
-                print(f"[WARN] Falhas na coleta: {failed_indicators}")
-                
+                print(f"[WARN] Ausências aceitas explicitamente: {failed_indicators}")
+
             return final_df
         else:
             raise Exception("Nenhum dado foi coletado com sucesso")
