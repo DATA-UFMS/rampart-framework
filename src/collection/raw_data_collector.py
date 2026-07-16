@@ -688,8 +688,18 @@ class RawDataCollector:
         financial_log_transforms = {}
         numeric_columns = df_imputed.select_dtypes(include=[np.number]).columns
         imputation_log = {}
-        
+
+        # A coluna-fonte do target não é imputada em nenhuma hipótese: preencher y
+        # fabrica o alvo contra o qual a acurácia é medida, e uma média é
+        # sistematicamente mais fácil de predizer que dado real, inflando R2 sem
+        # conteúdo preditivo. Linhas que sigam sem target são removidas depois.
+        target_source = getattr(self, 'target_source_column',
+                                'lower_secondary_completion_rate')
+
         for column in numeric_columns:
+            if column == target_source:
+                print(f"\nIndicador: {column} — alvo, não imputado")
+                continue
             print(f"\nIndicador: {column}")
             
             original_na_mask = df_imputed[column].isna()
@@ -756,51 +766,25 @@ class RawDataCollector:
             
             df_imputed = df_sorted.sort_index()
             
-            category_config = self.get_indicator_category_config(column)
-            is_zero_centered = self.is_zero_centered_indicator(column)
-            use_robust = category_config['use_robust_imputation']
-            
-            if is_zero_centered:
-                print(f"      Indicador centrado em zero: usando mediana")
-            elif use_robust:
-                print(f"      Indicador volatil: usando mediana robusta")
-            else:
-                print(f"      Indicador estavel: usando media")
-                
-            stratum_values = self._apply_geographic_imputation(df_imputed, column)
-            geographic_mask = df_imputed[column].isna() & stratum_values.notna()
-            df_imputed.loc[geographic_mask, column] = stratum_values[geographic_mask]
-            geographic_count = geographic_mask.sum()
-            
-            global_mask = df_imputed[column].isna()
-            if global_mask.any():
-                if is_zero_centered or use_robust:
-                    global_value = df_imputed[column].median()
-                else:
-                    global_value = df_imputed[column].mean()
-                df_imputed.loc[global_mask, column] = global_value
-                global_count = global_mask.sum()
-            else:
-                global_count = 0
-            
-            print(f"      Adicionando ruido calibrado pela volatilidade")
-            
-            original_std = df_imputed.loc[~original_na_mask, column].std()
-            imputed_mask = original_na_mask & df_imputed[column].notna()
-            
-            if imputed_mask.any() and original_std > 0:
-                noise_factor = 0.15 if category == 'economic' else 0.05
-                if column in {'unemployment_total', 'intentional_homicides_per_100k', 
-                             'gdp_per_capita_constant_2015'}:
-                    noise_factor = 0.30  # Alta volatilidade documentada
-                if column in {'poverty_headcount_national'}:
-                    noise_factor = max(noise_factor, 0.15)
-                    
-                noise_std = original_std * noise_factor
-                rng = np.random.RandomState(RANDOM_SEED)
-                noise = rng.normal(0, noise_std, imputed_mask.sum())
-                df_imputed.loc[imputed_mask, column] += noise
-            
+            # Sem imputação cross-seccional nem de painel completo.
+            #
+            # A média por (estrato, ano) preenchia uma célula com valores de OUTROS
+            # países, e a média global com o painel inteiro, todos os anos --
+            # estatística ajustada sobre validação e teste, escrita em células de
+            # treino, ou seja P5 violado no estágio que antecede a existência dos
+            # folds, onde os gates P1-P5 não alcançam.
+            #
+            # O forward fill acima não ajusta estatística alguma: usa apenas o
+            # passado da própria entidade, e por isso é P5-safe por construção e
+            # não precisa ser ciente de fold. Células que ele não alcança
+            # permanecem ausentes, e são resolvidas na camada com escopo de fold
+            # (BaseArchitectureML), onde P5 já é imposto e testado.
+            #
+            # O ruído calibrado também sai: somava variância fabricada a células
+            # imputadas que depois eram avaliadas como observações.
+            geographic_count = 0
+            global_count = 0
+
             # Reverter transformações
             if column in financial_log_transforms:
                 print(f"      Revertendo transformacao")
@@ -852,6 +836,31 @@ class RawDataCollector:
             }, f, indent=2)
         
         print(f"\nImputacao concluida - log salvo: {log_path}")
+
+        # Linhas sem target observado nem preenchível pelo passado da própria
+        # entidade são removidas, e não preenchidas: não há como pontuar uma
+        # predição contra um alvo que não existe. É o que a descrição do método
+        # sempre afirmou fazer.
+        before = len(df_imputed)
+        df_imputed = df_imputed[df_imputed[target_source].notna()].copy()
+        removed = before - len(df_imputed)
+        coverage = {
+            'target_source_column': target_source,
+            'rows_before': int(before),
+            'rows_after': int(len(df_imputed)),
+            'rows_removed_missing_target': int(removed),
+            # Cobertura observada por coluna, para que a extensão da imputação
+            # seja auditável no artefato em vez de ficar num log que ninguém abre.
+            'observed_fraction': {
+                col: float(df_imputed[col].notna().mean())
+                for col in df_imputed.select_dtypes(include=[np.number]).columns
+            },
+        }
+        print(f"  Target: {removed} linhas removidas sem alvo observado "
+              f"({before} -> {len(df_imputed)})")
+        with open(f"{self.output_dir}/target_coverage.json", 'w') as handler:
+            json.dump(coverage, handler, indent=2)
+
         return df_imputed
     
     def perform_leave_one_out_validation(self, df_wide: pd.DataFrame) -> Dict:

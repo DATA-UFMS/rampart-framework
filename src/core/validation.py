@@ -490,3 +490,65 @@ class DataIntegrityValidator:
         
         return validation_report['is_valid'], validation_report
     
+
+
+def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
+                               strategy: str = 'median'
+                               ) -> Tuple[List[pd.DataFrame], Dict]:
+    """Fill missing feature values with statistics fitted on the training window.
+
+    P5 (preprocessing scope; Kaufman et al., 2012) requires that any fitted
+    statistic come from training data alone. The collection stage previously
+    imputed with the mean of stratum peers in the same year and with the mean of
+    the whole panel across all years -- statistics computed over validation and
+    test periods and written into training cells, before folds existed, where the
+    P1-P5 gates could not reach.
+
+    Forward fill within an entity needs no fitted statistic, so it stays in
+    collection and is P5-safe by construction. Everything that needs a statistic
+    happens here, once, for every paradigm: three implementations of this would be
+    three chances for the paradigms to preprocess differently, and the equivalence
+    claim assumes they do not.
+
+    A column with no observed value in the training window is left untouched
+    rather than filled with a global constant, and reported: inventing a value for
+    a feature the training window never observed is the practice this replaces.
+
+    Args:
+        train: the fold's training frame; the only source of statistics
+        apply_to: further frames (validation, test) receiving the same values
+        strategy: 'median' (default, resistant to outliers) or 'mean'
+
+    Returns:
+        ([train, *apply_to] filled, report) with the fitted value per column and
+        the columns left untouched.
+    """
+    if strategy not in ('median', 'mean'):
+        raise ValueError(f"unsupported strategy: {strategy}")
+
+    fitted: Dict[str, float] = {}
+    unfilled: List[str] = []
+    for column in train.columns:
+        observed = train[column].dropna()
+        if observed.empty:
+            if train[column].isna().any():
+                unfilled.append(column)
+            continue
+        fitted[column] = float(observed.median() if strategy == 'median'
+                               else observed.mean())
+
+    filled = []
+    for frame in (train, *apply_to):
+        out = frame.copy()
+        for column, value in fitted.items():
+            if column in out.columns:
+                out[column] = out[column].fillna(value)
+        filled.append(out)
+
+    report = {
+        'strategy': strategy,
+        'fitted_on_rows': int(len(train)),
+        'values': fitted,
+        'columns_without_training_observation': unfilled,
+    }
+    return filled, report

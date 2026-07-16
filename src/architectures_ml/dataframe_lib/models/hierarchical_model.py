@@ -39,6 +39,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 from core.validation import audit_feature_set
 from core.prediction_store import PredictionRecorder, predictions_path
+from core.validation import impute_from_training_window
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
@@ -412,7 +413,15 @@ class HierarchicalModelDataFrameLib:
         X_val, y_val, countries_val = self._prepare_data(val_lazy, train_lazy)
         X_test, y_test, countries_test = self._prepare_data(test_lazy, train_lazy)
 
-        # P5: scaler ajustado exclusivamente no treino
+        # P5: imputação e scaler ajustados exclusivamente no treino
+        # (Kaufman et al. 2012). A imputação vem antes porque o scaler não
+        # aceita ausentes, e ambas as estatísticas saem da mesma janela.
+        (X_train, X_val, X_test), imputation_report = \
+            impute_from_training_window(X_train, X_val, X_test)
+        if imputation_report['columns_without_training_observation']:
+            print(f"   [WARN] Sem observação no treino, deixadas ausentes: "
+                  f"{imputation_report['columns_without_training_observation']}")
+
         scaler = StandardScaler()
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
