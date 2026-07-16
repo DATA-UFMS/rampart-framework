@@ -13,6 +13,7 @@ Uso:
 
 import importlib
 import os
+from typing import Dict, List, Tuple
 
 _discovered = False
 
@@ -60,3 +61,44 @@ def discover_paradigms(*, force: bool = False, strict: bool = True) -> dict:
         name: dict(cls.PARADIGM_META)
         for name, cls in BaseArchitectureML.get_registered_paradigms().items()
     }
+
+
+def paradigm_pairs(*, force: bool = False) -> List[Tuple[str, str]]:
+    """Ordered pairs of paradigms for pairwise comparison.
+
+    Derived from the registry rather than enumerated. The paradigm names appeared
+    in eleven files, so a fourth paradigm was compared only after each analysis
+    module was edited by hand -- which is the opposite of what an extensible
+    framework claims.
+
+    Ordering is lexicographic, and it is load-bearing: the effect of a pair is
+    measured as A minus B, so swapping a pair flips the sign of every estimate
+    involving it. Lexicographic order is arbitrary but stable, whereas the
+    previous hand-written order was arbitrary and undocumented. The 'advantage'
+    field reported alongside each decision is invariant to it.
+
+    Returns:
+        Pairs (a, b) with a < b, covering every combination exactly once.
+    """
+    names = sorted(discover_paradigms(force=force))
+    return [(a, b) for i, a in enumerate(names) for b in names[i + 1:]]
+
+
+def baseline_results_paths(*, force: bool = False) -> Dict[str, str]:
+    """Absolute path of each paradigm's baseline results, keyed by paradigm.
+
+    The three paradigms write to different layouts, so the location is declared
+    in PARADIGM_META instead of reconstructed by the reader.
+    """
+    from core.config import get_absolute_output_path
+
+    paths = {}
+    for name, meta in sorted(discover_paradigms(force=force).items()):
+        relative = meta.get('baseline_results_json')
+        if not relative:
+            raise KeyError(
+                f"Paradigm {name} does not declare 'baseline_results_json' in "
+                f"PARADIGM_META, so its baseline results cannot be located."
+            )
+        paths[name] = get_absolute_output_path(relative)
+    return paths

@@ -76,6 +76,7 @@ if _SRC_DIR not in sys.path:
 # the reported protocol differ from the executed one. The SESOI values in
 # particular are the decision thresholds, defined a priori.
 from core.config import get_absolute_output_path
+from core.paradigm_registry import baseline_results_paths, paradigm_pairs
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
@@ -84,13 +85,11 @@ DEFAULT_SESOI_R2 = float(SCIENTIFIC_CONFIG['sesoi_r2'])
 DEFAULT_SESOI_MASE = float(SCIENTIFIC_CONFIG['sesoi_mase'])
 DEFAULT_SESOI_WAPE = float(SCIENTIFIC_CONFIG['sesoi_wape'])
 
-# Comparações par-a-par
-PREDICTIVE_PAIRS = [("dl", "dw"), ("dl", "pl"), ("dw", "pl")]
-LATENCY_PAIRS = [
-    ("task_graph", "sql_engine", "dl", "dw"),
-    ("task_graph", "dataframe_lib", "dl", "pl"),
-    ("sql_engine", "dataframe_lib", "dw", "pl"),
-]
+# Comparações par-a-par, derivadas do registro. As abreviações dl/dw/pl
+# codificavam os nomes anteriores ao rename (data_lake, data_warehouse, polars)
+# e deixaram de nomear qualquer coisa depois dele.
+PREDICTIVE_PAIRS = paradigm_pairs()
+LATENCY_PAIRS = paradigm_pairs()
 
 
 def _median_hodges_lehmann(deltas: np.ndarray) -> float:
@@ -245,17 +244,8 @@ def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
 
 
 def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
-    paths = {
-        'dw': get_absolute_output_path(
-            'outputs/ml_pipeline/architectures/sql_engine/models/'
-            'baseline_analysis_sql_engine_consumer_results.json'),
-        'dl': get_absolute_output_path(
-            'outputs/ml_pipeline/architectures/task_graph/models/baseline_results/'
-            'baseline_analysis_task_graph_results.json'),
-        'pl': get_absolute_output_path(
-            'outputs/ml_pipeline/architectures/dataframe_lib/models/baseline_results/'
-            'baseline_analysis_dataframe_lib_results.json'),
-    }
+    # Declarados em PARADIGM_META: os paradigmas gravam em layouts distintos.
+    paths = baseline_results_paths()
     out = {}
     for arch, p in paths.items():
         d = _load_json(p)
@@ -263,7 +253,7 @@ def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
     return out
 
 
-def _paired_deltas_for_metric(pairs: Dict[str, Dict[int, Dict[str, float]]], metric: str, arch_a: str = 'dl', arch_b: str = 'dw') -> np.ndarray:
+def _paired_deltas_for_metric(pairs: Dict[str, Dict[int, Dict[str, float]]], metric: str, arch_a: str, arch_b: str) -> np.ndarray:
     a = pairs.get(arch_a, {})
     b = pairs.get(arch_b, {})
     common_ids = sorted(set(a.keys()) & set(b.keys()))
@@ -350,12 +340,12 @@ def _analyze_latency(args) -> Dict:
     for phase, pdf in piv.groupby(level=0):
         vals = pdf.droplevel(0)
         phase_results = {}
-        for arch_name_a, arch_name_b, arch_a, arch_b in LATENCY_PAIRS:
-            if arch_name_a not in vals.columns or arch_name_b not in vals.columns:
+        for arch_a, arch_b in LATENCY_PAIRS:
+            if arch_a not in vals.columns or arch_b not in vals.columns:
                 continue
             pair_key = f"{arch_a}_vs_{arch_b}"
-            x = vals[arch_name_a].to_numpy(dtype=float)
-            y = vals[arch_name_b].to_numpy(dtype=float)
+            x = vals[arch_a].to_numpy(dtype=float)
+            y = vals[arch_b].to_numpy(dtype=float)
             mask = np.isfinite(x) & np.isfinite(y) & (x > 0) & (y > 0)
             lr = np.log(x[mask] / y[mask])
             if lr.size == 0:
@@ -365,7 +355,7 @@ def _analyze_latency(args) -> Dict:
             delta_pct = profile.get(str(phase).lower(), profile['total'])
             delta_lr = math.log(1.0 + delta_pct)
             decision = _decision_equivalence(lo, hi, delta_lr)
-            advantage = _advantage(decision, 'latency', label_a, label_b)
+            advantage = _advantage(decision, 'latency', arch_a, arch_b)
             try:
                 w = stats.wilcoxon(lr, zero_method='wilcox', alternative='two-sided', method='auto')
                 p = float(w.pvalue)

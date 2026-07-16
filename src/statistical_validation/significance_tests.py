@@ -46,23 +46,16 @@ if _SRC_DIR not in sys.path:
 # other than the configured one, which is how the reported figure drifts from
 # the executed one. Without the configuration the run is not reproducible.
 from core.config import get_absolute_output_path
+from core.paradigm_registry import paradigm_pairs
 from core.scientific_config import SCIENTIFIC_CONFIG
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
 
 
-# Pares de arquiteturas para comparação (3-way)
-ALL_PAIRS = [
-    ("task_graph", "sql_engine"),
-    ("task_graph", "dataframe_lib"),
-    ("sql_engine", "dataframe_lib"),
-]
-
-PAIR_LABELS = {
-    ("task_graph", "sql_engine"): ("dl", "dw"),
-    ("task_graph", "dataframe_lib"): ("dl", "pl"),
-    ("sql_engine", "dataframe_lib"): ("dw", "pl"),
-}
+# Derived from the registry, so a fourth paradigm enters the comparison without
+# this module being edited. The abbreviations dl/dw/pl are gone: they encoded the
+# pre-rename names (data_lake, data_warehouse, polars) and named nothing after it.
+ALL_PAIRS = paradigm_pairs()
 
 
 RESULTS_DIR = get_absolute_output_path("outputs/statistics")
@@ -80,17 +73,13 @@ def load_benchmark(csv_path: str) -> pd.DataFrame:
 
 
 def paired_vectors_for_phase(
-    df: pd.DataFrame, phase: str, arch_a: str = "task_graph", arch_b: str = "sql_engine"
+    df: pd.DataFrame, phase: str, arch_a: str, arch_b: str
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Retorna vetores alinhados para dois arquiteturas por run_id em uma fase."""
     a = df[(df["phase"] == phase) & (df["architecture"] == arch_a)]
     b = df[(df["phase"] == phase) & (df["architecture"] == arch_b)]
 
-    pair_key = (arch_a, arch_b)
-    if pair_key in PAIR_LABELS:
-        suffix_a, suffix_b = PAIR_LABELS[pair_key]
-    else:
-        suffix_a, suffix_b = ("a", "b")
+    suffix_a, suffix_b = arch_a, arch_b
 
     merged = pd.merge(
         a[["run_id", "duration_s"]],
@@ -107,8 +96,8 @@ def paired_vectors_for_phase(
 
 def paired_vectors_total(
     df: pd.DataFrame,
-    arch_a: str = "task_graph",
-    arch_b: str = "sql_engine",
+    arch_a: str,
+    arch_b: str,
     exclude_phases: Optional[List[str]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Soma durations por run_id e arquitetura nas fases especificadas (excluindo collection)."""
@@ -124,11 +113,7 @@ def paired_vectors_total(
     a = tot[tot["architecture"] == arch_a][["run_id", "duration_s"]]
     b = tot[tot["architecture"] == arch_b][["run_id", "duration_s"]]
 
-    pair_key = (arch_a, arch_b)
-    if pair_key in PAIR_LABELS:
-        suffix_a, suffix_b = PAIR_LABELS[pair_key]
-    else:
-        suffix_a, suffix_b = ("a", "b")
+    suffix_a, suffix_b = arch_a, arch_b
 
     merged = pd.merge(a, b, on="run_id", suffixes=(f"_{suffix_a}", f"_{suffix_b}"), how="inner").sort_values("run_id")
     col_a = f"duration_s_{suffix_a}"
@@ -139,8 +124,8 @@ def paired_vectors_total(
 def bootstrap_ci(
     x: np.ndarray,
     y: np.ndarray,
-    label_a: str = "dl",
-    label_b: str = "dw",
+    label_a: str,
+    label_b: str,
     iters: int = DEFAULT_BOOTSTRAP_ITERS,
     rng: Optional[np.random.Generator] = None,
 ) -> Dict[str, Tuple[float, float]]:
@@ -168,8 +153,8 @@ def bootstrap_ci(
 def run_tests(
     x: np.ndarray,
     y: np.ndarray,
-    label_a: str = "dl",
-    label_b: str = "dw",
+    label_a: str,
+    label_b: str,
     bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS,
 ) -> Dict[str, float]:
     """Executa testes de significância e normalidade sobre as diferenças (x - y)."""
@@ -235,7 +220,7 @@ def analyze(csv_path: str, bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS) -> Di
 
     # Para cada par de arquiteturas
     for arch_a, arch_b in ALL_PAIRS:
-        la, lb = PAIR_LABELS[(arch_a, arch_b)]
+        la, lb = arch_a, arch_b
         pair_key = f"{la}_vs_{lb}"
         pair_results: Dict[str, Dict[str, float]] = {}
 

@@ -27,6 +27,7 @@ if _SRC_DIR not in sys.path:
 
 from core.scientific_config import SCIENTIFIC_CONFIG
 from core.config import get_absolute_output_path
+from core.paradigm_registry import paradigm_pairs
 from statistical_validation.equivalence_estimation import (
     _advantage,
     _bootstrap_ci,
@@ -43,11 +44,8 @@ DEFAULT_OUTPUT_LATEX = get_absolute_output_path(
 MetricConfig = Dict[str, Dict[str, float]]
 
 
-PAIR_CONFIGS = [
-    ("dl", "dw"),
-    ("dl", "pl"),
-    ("dw", "pl"),
-]
+# Derivado do registro, como nos demais módulos de análise.
+PAIR_CONFIGS = paradigm_pairs()
 
 
 def _collect_deltas() -> Dict[str, np.ndarray]:

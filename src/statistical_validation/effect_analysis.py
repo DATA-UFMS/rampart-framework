@@ -36,6 +36,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
+from core.paradigm_registry import paradigm_pairs
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
@@ -43,16 +44,10 @@ DEFAULT_SEED = RANDOM_SEED
 
 STATS_DIR = get_absolute_output_path("outputs/statistics")
 
-ALL_PAIRS = [
-    ("task_graph", "sql_engine"),
-    ("task_graph", "dataframe_lib"),
-    ("sql_engine", "dataframe_lib"),
-]
-PAIR_LABELS = {
-    ("task_graph", "sql_engine"): ("dl", "dw"),
-    ("task_graph", "dataframe_lib"): ("dl", "pl"),
-    ("sql_engine", "dataframe_lib"): ("dw", "pl"),
-}
+# Derived from the registry, so a fourth paradigm enters the comparison without
+# this module being edited. The abbreviations dl/dw/pl are gone: they encoded the
+# pre-rename names (data_lake, data_warehouse, polars) and named nothing after it.
+ALL_PAIRS = paradigm_pairs()
 
 
 def ensure_dir(path: str) -> None:
@@ -69,7 +64,7 @@ def load_benchmark(csv_path: str) -> pd.DataFrame:
 def paired_vectors_for_phase(df: pd.DataFrame, phase: str, arch_a: str, arch_b: str) -> Tuple[np.ndarray, np.ndarray]:
     a = df[(df["phase"] == phase) & (df["architecture"] == arch_a)]
     b = df[(df["phase"] == phase) & (df["architecture"] == arch_b)]
-    la, lb = PAIR_LABELS[(arch_a, arch_b)]
+    la, lb = arch_a, arch_b
     merged = pd.merge(
         a[["run_id", "duration_s"]],
         b[["run_id", "duration_s"]],
@@ -88,7 +83,7 @@ def paired_vectors_total(df: pd.DataFrame, exclude_phases: List[str], arch_a: st
         .sum()
         .reset_index()
     )
-    la, lb = PAIR_LABELS[(arch_a, arch_b)]
+    la, lb = arch_a, arch_b
     a = tot[tot["architecture"] == arch_a][["run_id", "duration_s"]]
     b = tot[tot["architecture"] == arch_b][["run_id", "duration_s"]]
     merged = pd.merge(a, b, on="run_id", suffixes=(f"_{la}", f"_{lb}"), how="inner").sort_values("run_id")
@@ -208,7 +203,7 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
 
     # Por par
     for arch_a, arch_b in ALL_PAIRS:
-        la, lb = PAIR_LABELS[(arch_a, arch_b)]
+        la, lb = arch_a, arch_b
         pair_key = f"{la}_vs_{lb}"
         res: Dict[str, Dict[str, float]] = {}
 

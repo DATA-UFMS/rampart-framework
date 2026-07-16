@@ -117,11 +117,13 @@ class TestBothTestsAreReported:
                     )
 
     def test_signed_rank_matches_scipy(self, benchmark_csv, results):
+        # Pair and key both derived, so the test does not restate the pairing
+        # the module is supposed to own.
+        arch_a, arch_b = ea.ALL_PAIRS[0]
         df = ea.load_benchmark(benchmark_csv)
-        x, y = ea.paired_vectors_for_phase(df, 'baseline',
-                                           'task_graph', 'sql_engine')
+        x, y = ea.paired_vectors_for_phase(df, 'baseline', arch_a, arch_b)
         expected = sps.wilcoxon(x - y)
-        rec = results['dl_vs_dw']['baseline']
+        rec = results[f'{arch_a}_vs_{arch_b}']['baseline']
         assert rec['wilcoxon_p'] == pytest.approx(float(expected.pvalue))
 
 

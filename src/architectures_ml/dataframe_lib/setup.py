@@ -52,6 +52,10 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
         'processor_script': 'src/collection/dataframe_lib/processor.py',
         'baseline_script': 'src/architectures_ml/dataframe_lib/models/baseline_analysis.py',
         'hierarchical_script': 'src/architectures_ml/dataframe_lib/models/hierarchical_model.py',
+        # Declarado aqui porque os três paradigmas gravam em layouts
+        # distintos; sem isso um módulo de análise precisa conhecer o
+        # layout de cada paradigma para encontrar seus resultados.
+        'baseline_results_json': 'ml_pipeline/architectures/dataframe_lib/models/baseline_results/baseline_analysis_dataframe_lib_results.json',
     }
 
     def _safe_write_parquet_file(self, df: pl.DataFrame, file_path: str) -> None:

@@ -48,6 +48,10 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         'processor_script': 'src/collection/task_graph/processor.py',
         'baseline_script': 'src/architectures_ml/task_graph/models/baseline_analysis.py',
         'hierarchical_script': 'src/architectures_ml/task_graph/models/hierarchical_model.py',
+        # Declarado aqui porque os três paradigmas gravam em layouts
+        # distintos; sem isso um módulo de análise precisa conhecer o
+        # layout de cada paradigma para encontrar seus resultados.
+        'baseline_results_json': 'ml_pipeline/architectures/task_graph/models/baseline_results/baseline_analysis_task_graph_results.json',
     }
 
     def _safe_write_parquet_file(self, df: pd.DataFrame, file_path: str) -> None:

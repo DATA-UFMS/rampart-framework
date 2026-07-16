@@ -47,6 +47,10 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         'processor_script': 'src/collection/sql_engine/processor.py',
         'baseline_script': 'src/architectures_ml/sql_engine/models/baseline_analysis.py',
         'hierarchical_script': 'src/architectures_ml/sql_engine/models/hierarchical_model.py',
+        # Declarado aqui porque os três paradigmas gravam em layouts
+        # distintos; sem isso um módulo de análise precisa conhecer o
+        # layout de cada paradigma para encontrar seus resultados.
+        'baseline_results_json': 'ml_pipeline/architectures/sql_engine/models/baseline_analysis_sql_engine_consumer_results.json',
     }
 
     def __init__(self):
