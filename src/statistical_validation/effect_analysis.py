@@ -58,6 +58,21 @@ def load_benchmark(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     if "run_id" not in df.columns and "rep" in df.columns:
         df = df.rename(columns={"rep": "run_id"})
+
+    # A failed phase used to be recorded as duration_ns = -1, which reached this
+    # point as a latency of -1e-09 and was averaged in as a measurement. The
+    # benchmark now aborts instead, but a CSV produced before that must not be
+    # consumed silently either.
+    if "duration_s" in df.columns:
+        invalid = df[~(df["duration_s"] > 0)]
+        if not invalid.empty:
+            offenders = invalid[["run_id", "phase", "architecture",
+                                 "duration_s"]].head(5).to_dict("records")
+            raise ValueError(
+                f"{csv_path}: {len(invalid)} rows carry a non-positive "
+                f"duration, which cannot be a latency measurement. A failed "
+                f"phase must not enter the comparison: {offenders}"
+            )
     return df
 
 

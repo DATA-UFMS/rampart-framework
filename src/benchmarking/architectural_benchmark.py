@@ -119,6 +119,14 @@ class PhaseResult:
 
     @property
     def duration_s(self) -> float:
+        # A failed phase used to reach the CSV as -1e-09, a value no consumer
+        # filters: it would enter the paired vectors and the percentiles as a
+        # negative latency.
+        if self.duration_ns <= 0:
+            raise ValueError(
+                f"{self.phase}/{self.architecture}/{self.step}: non-positive "
+                f"duration ({self.duration_ns} ns) has no latency to report"
+            )
         return self.duration_ns / 1e9
 
     @property
@@ -467,17 +475,14 @@ class BenchmarkRunner:
                     peak_rss_mb=mon.peak_rss_mb,
                 )
             except Exception as exc:
-                import traceback
-                print(f"Benchmark error: {phase}/{arch}/{step_name}: {exc}")
-                traceback.print_exc()
-                return PhaseResult(
-                    run_id=run_id,
-                    phase=phase,
-                    architecture=arch,
-                    step=step_name,
-                    duration_ns=-1,
-                    records=None,
-                )
+                # Aborts rather than recording a sentinel. A latency comparison
+                # with a missing phase is not a comparison: the paradigms stop
+                # having the same paired observations, and a sentinel duration
+                # would be averaged in as if it were a measurement.
+                raise RuntimeError(
+                    f"Benchmark phase failed and the run cannot be compared: "
+                    f"{phase}/{arch}/{step_name} on repetition {run_id}"
+                ) from exc
 
         # --- Fase 1: upstream (coleta) - executa UMA vez -------------------------
         run_id = -1
