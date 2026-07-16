@@ -52,15 +52,41 @@ def deterministic_environment() -> dict:
     PYTHONHASHSEED fixa a ordem de iteração de conjuntos e dicionários com
     chaves textuais, da qual dependem alguns caminhos de agregação.
     """
-    threads = str(int(SCIENTIFIC_CONFIG['blas_threads']))
+    blas = str(int(SCIENTIFIC_CONFIG['blas_threads']))
+    engine = str(int(SCIENTIFIC_CONFIG['engine_threads']))
     return {
-        'OMP_NUM_THREADS': threads,
-        'OPENBLAS_NUM_THREADS': threads,
-        'MKL_NUM_THREADS': threads,
-        'NUMEXPR_NUM_THREADS': threads,
-        'VECLIB_MAXIMUM_THREADS': threads,
+        # Componente comum aos paradigmas: todos materializam em pandas antes do
+        # scikit-learn, então o pool do BLAS não é propriedade de paradigma algum.
+        'OMP_NUM_THREADS': blas,
+        'OPENBLAS_NUM_THREADS': blas,
+        'MKL_NUM_THREADS': blas,
+        'NUMEXPR_NUM_THREADS': blas,
+        'VECLIB_MAXIMUM_THREADS': blas,
+        # Componente do paradigma: o Polars dimensiona seu pool Rayon no import,
+        # de modo que só uma variável de ambiente o alcança. DuckDB e Dask são
+        # configurados nos seus próprios pontos de entrada.
+        'POLARS_MAX_THREADS': engine,
         'PYTHONHASHSEED': str(int(SCIENTIFIC_CONFIG['random_seed'])),
     }
+
+
+def _validate_core_budget() -> None:
+    """O orçamento declarado precisa caber na máquina.
+
+    Sobrescrever os núcleos faria a latência refletir contenção de escalonamento
+    em vez do paradigma, e faria isso em silêncio.
+    """
+    import multiprocessing
+    available = multiprocessing.cpu_count()
+    engine = int(SCIENTIFIC_CONFIG['engine_threads'])
+    blas = int(SCIENTIFIC_CONFIG['blas_threads'])
+    if engine + blas - 1 > available:
+        raise RuntimeError(
+            f"Orçamento de núcleos não cabe nesta máquina: engine_threads="
+            f"{engine} e blas_threads={blas}, com {available} núcleos "
+            f"disponíveis. Ajuste scientific_config em vez de sobrescrever os "
+            f"núcleos: a latência medida passaria a refletir contenção."
+        )
 
 
 def run(argv: list) -> None:
@@ -183,7 +209,10 @@ def main() -> None:
     py = sys.executable
     started_at = datetime.now()
 
+    _validate_core_budget()
     print(f"\nPipeline iniciado (dataset: {dataset_name})")
+    _log(f"Orcamento: {SCIENTIFIC_CONFIG['engine_threads']} nucleos por engine, "
+         f"{SCIENTIFIC_CONFIG['blas_threads']} thread(s) de BLAS")
     _snapshot_scientific_config(root)
     paradigms = _discover()
     print("\nEtapa 0: Snapshot de reprodutibilidade")

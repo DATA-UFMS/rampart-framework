@@ -68,6 +68,7 @@ warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGr
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from core.config import get_absolute_output_path
+from core.scientific_config import SCIENTIFIC_CONFIG
 from core.indicators import ALL_INDICATORS
 
 class TaskGraphProcessor:
@@ -109,6 +110,11 @@ class TaskGraphProcessor:
         
         # Desabilita otimizações automáticas para garantir reprodutibilidade
         dask.config.set({'dataframe.query-planning': False})
+        # Orçamento explícito de núcleos, igual ao dos outros paradigmas.
+        # Sem isto o scheduler dimensiona o pool pela máquina, e a
+        # comparação passa a depender de onde foi executada.
+        dask.config.set(
+            {'num_workers': int(SCIENTIFIC_CONFIG['engine_threads'])})
         
         print(f"Fonte de dados: {self.complete_data_path}")
         print(f"Diretorio de processamento: {self.processed_dir}")

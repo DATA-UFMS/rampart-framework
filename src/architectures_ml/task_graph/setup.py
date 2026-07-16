@@ -20,6 +20,7 @@ from typing import Any, List, Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from core.base_architecture import BaseArchitectureML
 from core.config import get_absolute_output_path
+from core.scientific_config import SCIENTIFIC_CONFIG
 from core.validation import TemporalValidator, DataIntegrityValidator
 from core.logging_config import get_logger, log_ml_pipeline
 
@@ -129,6 +130,11 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         print("Configurando Dask")
         
         dask.config.set({'dataframe.query-planning': True})      # Otimização de queries
+        # Orçamento explícito de núcleos, igual ao dos outros paradigmas.
+        # Sem isto o scheduler dimensiona o pool pela máquina, e a
+        # comparação passa a depender de onde foi executada.
+        dask.config.set(
+            {'num_workers': int(SCIENTIFIC_CONFIG['engine_threads'])})
         dask.config.set({'distributed.worker.memory.target': 0.8})  # 80% RAM target
         dask.config.set({'distributed.worker.memory.spill': 0.9})   # 90% RAM spill
         

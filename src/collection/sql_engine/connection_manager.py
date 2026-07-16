@@ -7,6 +7,8 @@ incluindo suporte transacional, retry automático e tratamento de erros.
 """
 
 import duckdb
+
+from core.scientific_config import SCIENTIFIC_CONFIG
 import time
 import logging
 from typing import Optional, List, Any
@@ -67,7 +69,14 @@ class DuckDBConnectionManager:
             try:
                 self.logger.info(f"Creating new DuckDB connection to: {self.db_path}")
                 self._connection = duckdb.connect(self.db_path)
-                self.logger.info("DuckDB connection established successfully")
+                # Orçamento explícito de núcleos: sem isto o engine dimensiona
+                # seu pool pela máquina, e a latência medida deixa de ser
+                # comparável a outra execução ou a outro paradigma.
+                threads = int(SCIENTIFIC_CONFIG['engine_threads'])
+                self._connection.execute(f"SET threads = {threads}")
+                self.logger.info(
+                    f"DuckDB connection established successfully "
+                    f"({threads} threads)")
             except Exception as e:
                 self.logger.error(f"Failed to create DuckDB connection: {e}")
                 raise SQLProcessingError(f"Failed to connect to DuckDB: {e}")

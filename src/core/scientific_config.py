@@ -94,6 +94,29 @@ SCIENTIFIC_CONFIG = {
     #   Python: np.sign(x) * np.log(np.abs(x) + 1)
     'feature_transform': 'symmetric_log',
 
+    # Cores made available to each engine's own execution.
+    #
+    # The paradigms are parallel systems: a SQL engine vectorises across threads,
+    # a DataFrame library schedules work-stealing over Arrow, a task-graph
+    # scheduler runs workers. Pinning these to one would not remove a confound --
+    # it would measure a configuration nobody deploys and dissolve the premise of
+    # the comparison, since a scheduler with a single worker is not a scheduler.
+    #
+    # The criterion is an equal hardware budget: every paradigm gets the same
+    # number of cores and is free to exploit them as its design dictates. How
+    # well each does so is a property of the paradigm, and a finding rather than
+    # noise. Left unset -- as it was -- each engine sized itself from the host's
+    # core count, so the comparison silently depended on the machine and no
+    # artifact recorded how many cores any engine had.
+    #
+    # Declared as an integer rather than derived from the host, so the
+    # configuration is reproducible elsewhere. Validated against the available
+    # cores: oversubscription would make latency reflect scheduling contention.
+    #
+    # Every latency result, including the scale crossover, is conditional on this
+    # value.
+    'engine_threads': 8,
+
     # Threads made available to the numerical libraries beneath scikit-learn.
     #
     # Pinned to one, and this is a measurement decision rather than a
