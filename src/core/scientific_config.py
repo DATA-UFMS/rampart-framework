@@ -94,6 +94,20 @@ SCIENTIFIC_CONFIG = {
     #   Python: np.sign(x) * np.log(np.abs(x) + 1)
     'feature_transform': 'symmetric_log',
 
+    # Threads made available to the numerical libraries beneath scikit-learn.
+    #
+    # Pinned to one, and this is a measurement decision rather than a
+    # performance one. Left unset, OpenBLAS sizes its pool from the available
+    # cores -- twelve on the development machine -- so a stage's latency depends
+    # on how many cores it happens to get. That is not merely irreproducible
+    # across machines: the paradigms do not contend for cores equally, since the
+    # task-graph scheduler runs workers alongside the fit, so part of a measured
+    # difference would be thread contention rather than the paradigm.
+    #
+    # Raising this reintroduces that confound. It must be set before NumPy is
+    # imported, which is why the pipeline exports it to each subprocess.
+    'blas_threads': 1,
+
     # Search space of the hierarchical stage.
     #
     # Defined here rather than inside each paradigm for two reasons. Three copies

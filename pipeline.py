@@ -42,13 +42,40 @@ from core.validation import TemporalValidator
 def _log(msg: str) -> None:
     print(f"  {msg}")
 
-def run(cmd: str) -> None:
-    """Executa um subprocesso com PYTHONPATH configurado para src/ para imports consistentes."""
-    print(f"\n$ {cmd}")
+def deterministic_environment() -> dict:
+    """Variáveis que precisam existir antes do import de NumPy.
+
+    As bibliotecas numéricas dimensionam seus pools de threads no momento do
+    carregamento, e não há como reduzi-los depois de dentro do processo — por
+    isso são exportadas ao subprocesso, não definidas no orquestrador.
+
+    PYTHONHASHSEED fixa a ordem de iteração de conjuntos e dicionários com
+    chaves textuais, da qual dependem alguns caminhos de agregação.
+    """
+    threads = str(int(SCIENTIFIC_CONFIG['blas_threads']))
+    return {
+        'OMP_NUM_THREADS': threads,
+        'OPENBLAS_NUM_THREADS': threads,
+        'MKL_NUM_THREADS': threads,
+        'NUMEXPR_NUM_THREADS': threads,
+        'VECLIB_MAXIMUM_THREADS': threads,
+        'PYTHONHASHSEED': str(int(SCIENTIFIC_CONFIG['random_seed'])),
+    }
+
+
+def run(argv: list) -> None:
+    """Executa um subprocesso com PYTHONPATH apontando para src/.
+
+    Argumentos em lista, sem shell: um caminho de repositório com espaços
+    quebraria a forma em string, e não há razão para interpretar metacaracteres
+    em caminhos que este módulo mesmo constrói.
+    """
+    print(f"\n$ {' '.join(argv)}")
     env = os.environ.copy()
     src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
     env["PYTHONPATH"] = src_dir + os.pathsep + env.get("PYTHONPATH", "")
-    subprocess.run(cmd, shell=True, check=True, env=env)
+    env.update(deterministic_environment())
+    subprocess.run(argv, check=True, env=env)
 
 def _snapshot_scientific_config(root: str) -> None:
     """Salva snapshot da configuração científica e do ambiente."""
@@ -165,18 +192,18 @@ def main() -> None:
     if dataset_name == 'worldbank':
         print("\nEtapa 1/7: Coleta")
         _log("Fonte: World Bank")
-        run(f"{py} {root}/src/collection/raw_data_collector.py")
+        run([py, os.path.join(root, "src/collection/raw_data_collector.py")])
     else:
         print("\nEtapa 1/7: Coleta")
         _log("Fonte: INEP Censo Escolar")
-        run(f"{py} {root}/src/collection/inep_collector.py")
+        run([py, os.path.join(root, "src/collection/inep_collector.py")])
     _log("Etapa 1 concluida")
 
     n_paradigms = len(paradigms)
     for i, (arch, info) in enumerate(paradigms.items(), 1):
         print(f"\nEtapa 2{chr(96+i)}/7: Processamento {arch}")
         _log(f"Arquitetura: {info['label']}")
-        run(f"{py} {root}/{info['processor_script']}")
+        run([py, os.path.join(root, info["processor_script"])])
     _log(f"Etapa 2 concluida ({n_paradigms} paradigmas)")
 
     print("\nEtapa 3: Setup ML")
@@ -184,7 +211,7 @@ def main() -> None:
     for i, (arch, info) in enumerate(paradigms.items(), 1):
         print(f"\nEtapa 3{chr(96+i)}/7: Setup ML {arch}")
         _log(f"Arquitetura: {info['label']}")
-        run(f"{py} {root}/{info['setup_script']}")
+        run([py, os.path.join(root, info["setup_script"])])
     _log(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
 
     print("\nGate anti-leakage")
@@ -193,12 +220,12 @@ def main() -> None:
 
     for i, (arch, info) in enumerate(paradigms.items(), 1):
         print(f"\nEtapa 4{chr(96+i)}/7: Baselines {arch}")
-        run(f"{py} {root}/{info['baseline_script']}")
+        run([py, os.path.join(root, info["baseline_script"])])
     _log(f"Etapa 4 concluida ({n_paradigms} paradigmas)")
 
     print("\nEtapa 5/7: Hierarquicos")
     for arch, info in paradigms.items():
-        run(f"{py} {root}/{info['hierarchical_script']}")
+        run([py, os.path.join(root, info["hierarchical_script"])])
     _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
 
     # Precedes the benchmark: a latency comparison between paradigms is only
@@ -206,11 +233,13 @@ def main() -> None:
     # same rows. Running it afterwards could report a timing difference between
     # paradigms that were not doing the same work.
     print("\nGate de equivalencia de predicoes")
-    run(f"{py} {root}/src/statistical_validation/prediction_equivalence.py")
+    run([py, os.path.join(root, "src/statistical_validation/prediction_equivalence.py")])
     _log("Predicoes identicas entre os paradigmas")
 
     print("\nEtapa 6/7: Benchmark arquitetural")
-    run(f"{py} {root}/src/benchmarking/architectural_benchmark.py --repetitions 10 --warmup 2")
+    # Sem --repetitions/--warmup: o benchmark lê BENCHMARK_CONFIG, e repetir os
+    # valores aqui criaria uma segunda fonte para o n do protocolo.
+    run([py, os.path.join(root, "src/benchmarking/architectural_benchmark.py")])
     _log("Etapa 6 concluida")
 
     print("\nEtapa 7/7: Analise estatistica e tabelas derivadas")
@@ -232,27 +261,27 @@ def main() -> None:
     #   the scorecard consumes significance, equivalence and the resource table.
     ANALYSIS_STAGES = [
         ('a', 'Significancia (bootstrap)',
-         'src/statistical_validation/significance_tests.py', ''),
+         'src/statistical_validation/significance_tests.py', []),
         ('b', 'Equivalencia (SESOI + IC)',
-         'src/statistical_validation/equivalence_estimation.py', '--latex'),
+         'src/statistical_validation/equivalence_estimation.py', ['--latex']),
         ('c', 'Tamanhos de efeito e comparacoes multiplas',
-         'src/statistical_validation/effect_analysis.py', ''),
+         'src/statistical_validation/effect_analysis.py', []),
         ('d', 'Sensibilidade ao numero de resamples',
-         'src/statistical_validation/bootstrap_sensitivity.py', ''),
+         'src/statistical_validation/bootstrap_sensitivity.py', []),
         ('e', 'Percentis de latencia',
-         'src/benchmarking/derive_latency_percentiles.py', ''),
+         'src/benchmarking/derive_latency_percentiles.py', []),
         ('f', 'Percentis de throughput',
-         'src/benchmarking/derive_throughput_percentiles.py', ''),
+         'src/benchmarking/derive_throughput_percentiles.py', []),
         ('g', 'Uso de recursos',
-         'src/benchmarking/derive_resource_usage_table.py', ''),
+         'src/benchmarking/derive_resource_usage_table.py', []),
         ('h', 'Painel operacional',
-         'src/benchmarking/derive_operational_panel.py', ''),
+         'src/benchmarking/derive_operational_panel.py', []),
         ('i', 'Scorecard',
-         'src/statistical_validation/make_scorecard.py', ''),
+         'src/statistical_validation/make_scorecard.py', []),
     ]
     for suffix, description, script, script_args in ANALYSIS_STAGES:
         _log(f"Etapa 7{suffix}/7: {description}")
-        run(f"{py} {root}/{script} {script_args}".rstrip())
+        run([py, os.path.join(root, script)] + script_args)
 
     _log("Etapa 7 concluida")
 
