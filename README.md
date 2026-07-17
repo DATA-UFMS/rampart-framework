@@ -17,14 +17,50 @@ python pipeline.py --dataset inep_censo   # INEP Censo Escolar
 pytest tests/                             # testes unitários
 ```
 
-O pipeline gera artefatos em `outputs/`: folds temporais, métricas de benchmark (CSV/JSON) e tabelas LaTeX.
+O pipeline gera artefatos em `outputs/<dataset>/`: folds temporais, métricas de
+benchmark (CSV/JSON) e tabelas LaTeX. A raiz é separada por dataset, de modo que
+executar o segundo não sobrescreve o primeiro.
+
+### Reprodução verificada
+
+O caminho acima assume que se conhece a sequência. Este não:
+
+```bash
+scripts/reproduce.sh                          # World Bank
+scripts/reproduce.sh --dataset inep_censo     # INEP
+```
+
+Instala a partir de `requirements-lock.txt`, verifica que o orçamento de núcleos
+declarado cabe na máquina **antes** de começar, roda o pipeline e a suíte.
+
+Em contêiner, com a imagem base fixada por digest:
+
+```bash
+docker build -t rampart .
+docker run --rm rampart bash scripts/reproduce.sh
+```
+
+**Snapshot de dados.** A coleta lê uma API externa cujos valores são revisados, e
+sem isso uma diferença entre execuções é indistinguível de uma mudança de código.
+Um snapshot com hash separa as duas coisas, e dispensa rede:
+
+```bash
+python scripts/verify_data_snapshot.py --snapshot dados/ --dataset worldbank --record
+scripts/reproduce.sh --data-snapshot dados/
+```
+
+**Orçamento de núcleos.** Cada paradigma recebe o mesmo número de núcleos
+(`engine_threads`), e as bibliotecas numéricas sob o scikit-learn rodam com uma
+thread (`blas_threads`) — elas são o componente comum aos três, e deixá-las
+dimensionar pela máquina fazia parte da diferença medida ser contenção de threads.
+Toda latência publicada é condicional a esses valores, que ficam no snapshot.
 
 **Custo de execução.** A etapa de benchmark domina o tempo total: ela reexecuta as fases de
 setup, baseline e hierárquico dos três paradigmas `warmup + n` vezes (por padrão 2 + 10 = 12
 passagens completas). Cache de coleta e processamento reduz apenas as etapas a montante, não o
 benchmark. Na prática, o World Bank leva horas e o INEP Censo Escolar leva mais de um dia em
-uma VM de 4 vCPUs. Para uma execução exploratória, reduza `--repetitions` — ciente de que isso
-não reproduz a tabela de latência.
+uma VM de 4 vCPUs. Para uma execução exploratória, reduza `repetitions` em
+`src/core/config.py` — ciente de que isso não reproduz a tabela de latência.
 
 ## O que faz
 
