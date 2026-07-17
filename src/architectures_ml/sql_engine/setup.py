@@ -50,6 +50,9 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         # Declarado aqui porque os três paradigmas gravam em layouts
         # distintos; sem isso um módulo de análise precisa conhecer o
         # layout de cada paradigma para encontrar seus resultados.
+        # O engine mantém os dados no próprio banco: não há parquet master.
+        'master_artifact': {'kind': 'duckdb_table', 'table': 'analytics_wide',
+                            'database': 'collection/sql_engine/{dataset}_data.duckdb'},
         'baseline_results_json': 'ml_pipeline/architectures/sql_engine/models/baseline_analysis_sql_engine_consumer_results.json',
     }
 

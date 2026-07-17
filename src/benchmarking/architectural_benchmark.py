@@ -63,6 +63,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from core.config import get_absolute_output_path, BENCHMARK_CONFIG
+from core.paradigm_registry import discover_paradigms
 
 
 def _import_modules():
@@ -411,30 +412,81 @@ class BenchmarkRunner:
         del model
         return end_ns - start_ns, records
 
-    def _count_fold_records(self, paradigm_name: str) -> Optional[int]:
-        """Conta o total de registros em todos os folds de um paradigma."""
-        folds_path = get_absolute_output_path(
-            f"ml_pipeline/architectures/{paradigm_name}/prep/temporal_folds_{paradigm_name}.json"
-        )
-        master_path = get_absolute_output_path(
-            f"ml_pipeline/architectures/{paradigm_name}/prep/master_data_{paradigm_name}.parquet"
-        )
-        try:
-            with open(folds_path, "r") as f:
-                folds_cfg = json.load(f)["folds"]
-            if not os.path.exists(master_path):
+    def _fold_years(self, paradigm_name: str) -> Optional[List[int]]:
+        """Anos presentes no artefato master do paradigma.
+
+        A localização vem de PARADIGM_META, e não de um template: o engine SQL
+        mantém os dados no próprio banco e não grava parquet master, então o
+        template assumia um arquivo que nunca existiu para ele.
+        """
+        meta = discover_paradigms()[paradigm_name]
+        artifact = meta.get('master_artifact')
+        if artifact is None:
+            raise KeyError(
+                f"{paradigm_name} não declara 'master_artifact' em "
+                f"PARADIGM_META, então seus registros não podem ser contados."
+            )
+
+        kind = artifact['kind']
+        if kind == 'parquet':
+            path = get_absolute_output_path(artifact['path'])
+            if not os.path.exists(path):
+                print(f"  [WARN] {paradigm_name}: master ausente em {path}")
                 return None
             import pyarrow.parquet as pq
-            table = pq.read_table(master_path, columns=["year"])
+            table = pq.read_table(path, columns=["year"])
             years = table.column("year").to_pylist()
             del table
-            records = 0
-            for fold in folds_cfg:
-                for s, e in [("train_start", "train_end"), ("val_start", "val_end"), ("test_start", "test_end")]:
-                    records += sum(1 for y in years if fold[s] <= y <= fold[e])
-            return records
-        except Exception:
+            return years
+
+        if kind == 'duckdb_table':
+            from core.config import get_dataset_name
+            database = get_absolute_output_path(
+                artifact['database'].format(dataset=get_dataset_name()))
+            if not os.path.exists(database):
+                print(f"  [WARN] {paradigm_name}: banco ausente em {database}")
+                return None
+            import duckdb
+            conn = duckdb.connect(database, read_only=True)
+            try:
+                rows = conn.execute(
+                    f"SELECT year FROM {artifact['table']}").fetchall()
+            finally:
+                conn.close()
+            return [r[0] for r in rows]
+
+        raise ValueError(
+            f"{paradigm_name}: master_artifact de tipo desconhecido {kind!r}")
+
+    def _count_fold_records(self, paradigm_name: str) -> Optional[int]:
+        """Total de registros somados sobre os folds de um paradigma.
+
+        Sem `except Exception: return None`: aquele bloco devolvia None para
+        qualquer causa, e a ausência silenciosa deixou throughput sem medição nas
+        fases de ML de todos os paradigmas -- o que fez a tabela de percentis de
+        throughput nunca chegar a ser gerada.
+        """
+        folds_path = get_absolute_output_path(
+            f"ml_pipeline/architectures/{paradigm_name}/prep/"
+            f"temporal_folds_{paradigm_name}.json"
+        )
+        if not os.path.exists(folds_path):
+            print(f"  [WARN] {paradigm_name}: folds ausentes em {folds_path}")
             return None
+        with open(folds_path, "r") as handler:
+            folds_cfg = json.load(handler)["folds"]
+
+        years = self._fold_years(paradigm_name)
+        if years is None:
+            return None
+
+        records = 0
+        for fold in folds_cfg:
+            for start, end in (("train_start", "train_end"),
+                               ("val_start", "val_end"),
+                               ("test_start", "test_end")):
+                records += sum(1 for y in years if fold[start] <= y <= fold[end])
+        return records
 
     # --------------------------- execução ----------------------------------
     # Fases "upstream" (coleta + processamento) são infraestrutura compartilhada
@@ -593,11 +645,14 @@ class BenchmarkRunner:
         try:
             import matplotlib.pyplot as plt
 
-            # Mapeamento fixo: cor por arquitetura (independente da ordem de sort)
+            # Cor por paradigma, derivada do ciclo de propriedades do matplotlib
+            # em ordem lexicográfica: estável entre execuções e independente da
+            # ordem de sort, e um quarto paradigma recebe cor sem que ninguém
+            # precise escolhê-la aqui.
+            cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
             arch_color_map = {
-                "task_graph": "#4C78A8",
-                "sql_engine": "#72B7B2",
-                "dataframe_lib": "#F58518",
+                name: cycle[index % len(cycle)]
+                for index, name in enumerate(sorted(discover_paradigms()))
             }
 
             for phase in df["phase"].unique():

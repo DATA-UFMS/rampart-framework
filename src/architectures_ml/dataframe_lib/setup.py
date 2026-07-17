@@ -55,6 +55,9 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
         # Declarado aqui porque os três paradigmas gravam em layouts
         # distintos; sem isso um módulo de análise precisa conhecer o
         # layout de cada paradigma para encontrar seus resultados.
+        'master_artifact': {'kind': 'parquet',
+                            'path': 'ml_pipeline/architectures/dataframe_lib/prep/'
+                                    'master_data_dataframe_lib.parquet'},
         'baseline_results_json': 'ml_pipeline/architectures/dataframe_lib/models/baseline_results/baseline_analysis_dataframe_lib_results.json',
     }
 

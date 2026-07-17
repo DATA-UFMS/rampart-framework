@@ -52,6 +52,9 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         # Declarado aqui porque os três paradigmas gravam em layouts
         # distintos; sem isso um módulo de análise precisa conhecer o
         # layout de cada paradigma para encontrar seus resultados.
+        'master_artifact': {'kind': 'parquet',
+                            'path': 'ml_pipeline/architectures/task_graph/prep/'
+                                    'master_data_task_graph.parquet'},
         'baseline_results_json': 'ml_pipeline/architectures/task_graph/models/baseline_results/baseline_analysis_task_graph_results.json',
     }
 
