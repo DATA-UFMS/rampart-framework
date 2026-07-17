@@ -392,7 +392,10 @@ class HierarchicalModelSQLFirst:
             'entities': [str(c) for c in countries_test],
             'feature_importance': {k: float(v) for k, v in feature_importance.items()},
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
-            'regularization_applied': f'Regularizado: n_est=200, depth={max_depth}, split=15, leaf={min_samples_leaf}',
+            'regularization_applied': (
+                f"Regularizado: n_est={_hm['rf_n_estimators']}, "
+                f"depth={max_depth}, split={_hm['rf_min_samples_split']}, "
+                f"leaf={min_samples_leaf}"),
             'country_effect_importance': feature_importance.get('country_effect', 0),
             'rf_params': {'n_estimators': 200, 'max_depth': int(max_depth), 'min_samples_split': 15, 'min_samples_leaf': int(min_samples_leaf)},
             'features_count': X_train_augmented.shape[1]
@@ -400,6 +403,11 @@ class HierarchicalModelSQLFirst:
     
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
         """Executar análise completa para um fold via ML Data Warehouse Consumer pattern."""
+        # Latência decomposta: o carregamento do fold é do engine,
+        # o ajuste é comum aos três paradigmas, que materializam em
+        # pandas antes do scikit-learn. Medir o estágio inteiro
+        # atribuía ao paradigma uma parcela que ele não controla.
+        _load_t0 = time.perf_counter()
         fold_id = fold_info['fold_id']
         print(f"\nFold {fold_id}: Train({fold_info['train_start']}-{fold_info['train_end']}) -> Val({fold_info['val_start']}-{fold_info['val_end']}) -> Test({fold_info['test_start']}-{fold_info['test_end']})")
         
@@ -439,6 +447,9 @@ class HierarchicalModelSQLFirst:
         X_val, y_val, countries_val = self._prepare_data(val_data, train_data, available_features)
         X_test, y_test, countries_test = self._prepare_data(test_data, train_data, available_features)
         
+        _fold_load_s = time.perf_counter() - _load_t0
+        _fit_t0 = time.perf_counter()
+
         # P5: imputação e scaler ajustados exclusivamente no treino
         # (Kaufman et al. 2012). A imputação vem antes porque o scaler não
         # aceita ausentes, e ambas as estatísticas saem da mesma janela.
@@ -526,7 +537,11 @@ class HierarchicalModelSQLFirst:
         else:
             print(f"      RF: Gap elevado")
         
+        _fit_predict_s = time.perf_counter() - _fit_t0
+
         return {
+            'fold_load_s': _fold_load_s,
+            'fit_predict_s': _fit_predict_s,
             'fold_id': fold_id,
             'architecture': 'sql_engine',
             'total_features': len(available_features),
@@ -566,14 +581,23 @@ class HierarchicalModelSQLFirst:
         print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
         
         try:
+            _meta = SCIENTIFIC_CONFIG['hierarchical_model']
             all_results = {
                 'architecture': 'sql_engine',
                 'version': 'hierarchical_analysis',
                 'target': self.target_col,
                 'mode': 'normal',
                 'corrections_applied': {
-                    'simple_hierarchical': 'RidgeCV com alphas logspace(0.1, 1000) + Shrinkage James-Stein',
-                    'random_forest': 'Regularizado: n_est=200, depth=6, split=15, leaf=8',
+                    'simple_hierarchical': (
+                    f"RidgeCV com alphas logspace("
+                    f"{_meta['ridge_alpha_log10_start']}, "
+                    f"{_meta['ridge_alpha_log10_stop']}, "
+                    f"{_meta['ridge_alpha_count']}) + Shrinkage James-Stein"),
+                    'random_forest': (
+                    f"Regularizado: n_est={_meta['rf_n_estimators']}, "
+                    f"depth in {tuple(_meta['rf_max_depth_grid'])}, "
+                    f"split={_meta['rf_min_samples_split']}, "
+                    f"leaf in {tuple(_meta['rf_min_samples_leaf_grid'])}"),
                     'regularization_approach': 'RidgeCV (Hoerl & Kennard 1970) + Shrinkage (Efron & Morris 1975)'
                 },
                 'folds': []
