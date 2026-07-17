@@ -88,6 +88,69 @@ class TestTargetIsNeverImputed:
         assert 'rows_removed_missing_target' in source
 
 
+class TestDiagnosticsMeasureWhatIsApplied:
+    """A published diagnostic of an unapplied method is worse than none.
+
+    Both diagnostics replicated the old cascade. The leave-one-out estimate
+    reported the error of temporal-then-geographic filling, and the sensitivity
+    report compared three methods as though the results depended on the choice
+    among them. Their outputs are published artifacts.
+    """
+
+    def test_leave_one_out_no_longer_imputes_geographically(self):
+        source = COLLECTOR.read_text()
+        block = source[source.index('def perform_leave_one_out_validation'):]
+        block = block[:block.index('\n    def ', 1)]
+        assert '_apply_geographic_imputation' not in block, (
+            'the estimate would report the error of a method not applied'
+        )
+
+    def test_leave_one_out_still_measures_forward_fill(self):
+        source = COLLECTOR.read_text()
+        block = source[source.index('def perform_leave_one_out_validation'):]
+        block = block[:block.index('\n    def ', 1)]
+        assert 'shift(1)' in block, 'nothing is being measured any more'
+        assert 'mae' in block.lower()
+
+    def test_the_comparison_is_not_called_a_sensitivity_analysis(self):
+        source = COLLECTOR.read_text()
+        assert 'def perform_sensitivity_analysis' not in source, (
+            'the results do not depend on a choice among the three, since only '
+            'one is applied'
+        )
+        assert 'def compare_candidate_imputation_methods' in source
+
+    def test_the_comparison_records_which_method_is_applied(self):
+        source = COLLECTOR.read_text()
+        assert "'applied_method': 'temporal_only'" in source
+        assert "'not_applied'" in source
+
+    def test_geographic_helper_declares_it_is_not_applied(self):
+        """It survives only to quantify the rejected alternative."""
+        source = COLLECTOR.read_text()
+        block = source[source.index('def _apply_geographic_imputation'):]
+        block = block[:block.index('"""', block.index('"""') + 3)]
+        assert 'NÃO É APLICADA' in block
+
+    def test_no_unverifiable_claims_remain(self):
+        """"Reduces RMSE by 23% (data not shown)" is not a citation."""
+        source = COLLECTOR.read_text()
+        for claim in ('dados não mostrados', 'análise não mostrada',
+                      'Reduz RMSE em 23%'):
+            assert claim not in source, f'unverifiable claim: {claim}'
+
+    def test_function_docstring_no_longer_describes_the_removed_tiers(self):
+        source = COLLECTOR.read_text()
+        block = source[source.index('def apply_conservative_imputation'):]
+        block = block[:block.index('"""', block.index('"""') + 3)]
+        for stale in ('GEOGRÁFICA ESTRATIFICADA', 'GLOBAL CONSERVADORA',
+                      'RUÍDO ESTOCÁSTICO'):
+            assert stale not in block, (
+                f'the docstring still describes {stale}, which the code no '
+                f'longer does'
+            )
+
+
 class TestFoldScopedImputation:
 
     @staticmethod

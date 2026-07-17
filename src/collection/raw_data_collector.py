@@ -75,13 +75,12 @@ class RawDataCollector:
     a geração de dataset analítico com tratamento de dados faltantes,
     seguindo metodologia publicável em periódicos de ciências sociais computacionais.
     
-    Hierarquia de Imputação (ordem de preferência baseada em confiabilidade):
-    1. TEMPORAL LAG-1: Correlação serial típica de 0.85-0.95 em indicadores educacionais
-    2. GEOGRÁFICA ESTRATIFICADA: Correlação intra-cluster de 0.60-0.75 
-    3. GLOBAL CONSERVADORA: Último recurso, preserva distribuição populacional
-    
-    A categorização de indicadores em voláteis/estáveis segue análise empírica
-    de coeficientes de variação em painel 1990-2020 (dados não mostrados).
+    Imputação: forward fill dentro da entidade, e nada mais neste estágio.
+    Não ajusta estatística, logo não pode ter visto validação ou teste, e é o
+    único mecanismo que pode ser aplicado antes de os folds existirem sem
+    violar P5. A mediana que cobre o restante tem escopo de fold
+    (core.validation.impute_from_training_window). A coluna-fonte do target não
+    é imputada, e linhas sem alvo observado são removidas.
     """
     
     def __init__(self, allow_missing_indicators: bool = False):
@@ -180,12 +179,18 @@ class RawDataCollector:
     
     def _apply_geographic_imputation(self, df: pd.DataFrame, column: str, indicator_name: str = None) -> pd.Series:
         """
-        Aplica imputação geográfica estratificada por similaridade econômica.
-        
-        Estratificação baseada em clusters de PIB per capita reduz RMSE em 23%
-        comparado a imputação regional simples (análise não mostrada). Uso de
-        mediana para indicadores voláteis segue recomendação de Tukey (1977)
-        para estimadores resistentes em presença de outliers.
+        Média ou mediana dos pares do mesmo estrato no mesmo ano.
+
+        NÃO É APLICADA AOS DADOS. Preencher uma célula com valores de outras
+        entidades escreve informação cross-seccional no alvo e nas features, e a
+        variante global equivalente ajusta estatística sobre validação e teste
+        (violação de P5, Kaufman et al. 2012). A coleta usa apenas forward fill
+        dentro da entidade.
+
+        Mantida como referência para
+        compare_candidate_imputation_methods(), que quantifica a distorção
+        distribucional desta alternativa e da global — a evidência que motiva
+        rejeitá-las. Mediana para indicadores voláteis segue Tukey (1977).
         """
         if indicator_name is None:
             indicator_name = column
@@ -652,35 +657,31 @@ class RawDataCollector:
     
     def apply_conservative_imputation(self, df_wide: pd.DataFrame) -> pd.DataFrame:
         """
-        Implementa imputação hierárquica com prevenção de data leakage.
-        
-        HIERARQUIA DE CONFIABILIDADE (baseada em análise empírica):
-        
-        1. TEMPORAL LAG-1 ONLY: 
-           - Usa apenas t-1 (nunca t+1) para garantir causalidade unidirecional
-           - Autocorrelação típica: 0.85-0.95 para educação, 0.40-0.60 para economia
-           - Forward fill limitado a 3 períodos para indicadores de baixa frequência
-             (unemployment, GDP) onde mudanças estruturais são graduais
-        
-        2. GEOGRÁFICA ESTRATIFICADA:
-           - Agrupamento por PIB per capita, não geografia física
-           - Reduz RMSE em 23% vs. imputação regional simples (dados não mostrados)
-           - Mediana para voláteis (robustez), média para estáveis (eficiência)
-        
-        3. GLOBAL CONSERVADORA:
-           - Último recurso quando correlações espaciais/temporais falham
-           - Preserva momentos populacionais mas perde estrutura local
-        
-        4. RUÍDO ESTOCÁSTICO:
-           - Previne subestimação de incerteza (Rubin, 1987)
-           - Calibrado por volatilidade histórica do indicador
-           - 5% para estáveis, 15-30% para voláteis (valores empiricamente derivados)
-        
+        Preenche ausências usando exclusivamente o passado da própria entidade.
+
+        Um único mecanismo, e a escolha é o que o torna P5-safe: forward fill
+        dentro da entidade não ajusta estatística alguma, então não há estatística
+        que possa ter visto validação ou teste. Por isso pode viver aqui, antes de
+        os folds existirem.
+
+        - t-1 apenas, nunca t+1, para causalidade unidirecional
+        - forward fill limitado a 3 períodos em indicadores de baixa frequência
+          (unemployment, GDP), onde mudanças estruturais são graduais
+        - média móvel dos 3 anteriores para unemployment, suavizando ciclos
+
+        A coluna-fonte do target não passa por aqui: preencher y fabrica o alvo
+        contra o qual a acurácia é medida. Linhas que sigam sem alvo observado são
+        removidas ao final.
+
+        Tudo que exige estatística ajustada — a mediana que cobre as células que o
+        passado não alcança — vive em core.validation.impute_from_training_window,
+        com escopo de fold, ao lado do scaler.
+
         Args:
             df_wide: DataFrame com missingness original
-            
+
         Returns:
-            DataFrame imputado com preservação de variabilidade
+            DataFrame com o forward fill aplicado e sem linhas sem alvo
         """
         print("\nImputacao hierarquica: temporal -> geografica -> global")
         
@@ -918,11 +919,13 @@ class RawDataCollector:
             df_sorted.loc[temporal_imputable, indicator] = lag1[temporal_imputable]
             df_validation = df_sorted.sort_index()
             
-            # Geográfica
-            stratum_values = self._apply_geographic_imputation(df_validation, indicator)
-            geographic_imputable = df_validation[indicator].isna() & stratum_values.notna()
-            df_validation.loc[geographic_imputable, indicator] = stratum_values[geographic_imputable]
-            
+            # Sem passo geográfico: a coleta aplica apenas forward fill por
+            # entidade, e um diagnóstico que imputasse com pares do mesmo estrato
+            # estimaria o erro de um método que não é usado.
+            #
+            # Células que o passado da própria entidade não alcança permanecem
+            # ausentes e ficam fora da comparação — é o comportamento real.
+
             # Comparar
             predicted_values = df_validation.loc[test_indices, indicator]
             valid_predictions = predicted_values.notna()
@@ -989,20 +992,27 @@ class RawDataCollector:
             'reference': 'Stekhoven & Bühlmann (2012)'
         }
     
-    def perform_sensitivity_analysis(self, df_wide: pd.DataFrame) -> Dict:
+    def compare_candidate_imputation_methods(self, df_wide: pd.DataFrame) -> Dict:
         """
-        Análise de robustez comparando métodos alternativos de imputação.
-        
-        Testa estabilidade dos resultados sob diferentes especificações
-        metodológicas. Convergência entre métodos indica robustez.
-        
+        Quantifica a distorção distribucional de cada método candidato.
+
+        Não é análise de sensibilidade dos resultados: apenas um dos três métodos
+        comparados é aplicado. O forward fill por entidade é o método usado; a
+        média por estrato e a média global entram para documentar quanto deslocam
+        os momentos da distribuição observada, que é a evidência de por que foram
+        rejeitados.
+
+        Cada registro carrega 'applied_method' para que nenhum leitor conclua que
+        as três variantes foram usadas.
+
         Args:
-            df_wide: DataFrame original
-            
+            df_wide: DataFrame original, antes de qualquer imputação
+
         Returns:
-            Comparação entre métodos com identificação do mais robusto
+            Momentos por método candidato, contra os momentos observados
         """
-        print("\nAnalise de sensibilidade da imputacao")
+        print("\nComparacao de metodos candidatos de imputacao")
+        print("  Aplicado: apenas forward fill por entidade")
         
         numeric_columns = [col for col in df_wide.columns if col in [
             'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
@@ -1048,6 +1058,10 @@ class RawDataCollector:
             original_std = original_values.std()
             
             sensitivity_results[col] = {
+                # Explícito no artefato: só um destes é aplicado. Os outros dois
+                # entram para quantificar a distorção que motivou rejeitá-los.
+                'applied_method': 'temporal_only',
+                'not_applied': ['geographic_only', 'global_only'],
                 'original_mean': float(original_mean),
                 'original_std': float(original_std),
                 'temporal_only': {
@@ -1300,7 +1314,7 @@ class RawDataCollector:
             quality_metrics = self.calculate_imputation_quality_metrics(df_wide_original, df_wide_imputed)
             
             # 8. Análise de sensibilidade
-            sensitivity_analysis = self.perform_sensitivity_analysis(df_wide_original)
+            sensitivity_analysis = self.compare_candidate_imputation_methods(df_wide_original)
             
             # 9. Validação inteligente de outliers
             df_wide_final = self.validate_outliers_intelligently(df_wide_imputed)
