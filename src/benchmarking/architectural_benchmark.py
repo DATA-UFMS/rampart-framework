@@ -62,7 +62,8 @@ if PROJECT_ROOT not in sys.path:
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from core.config import get_absolute_output_path, BENCHMARK_CONFIG
+from core.config import (BENCHMARK_CONFIG, get_absolute_output_path,
+                         write_environment_snapshot)
 from core.paradigm_registry import discover_paradigms
 
 
@@ -608,6 +609,17 @@ class BenchmarkRunner:
     def save_reports(self, results: List[PhaseResult]) -> Tuple[str, str]:
         if not results:
             raise RuntimeError("Sem resultados para salvar")
+
+        # Registro de ambiente ao lado dos resultados. O orquestrador grava o
+        # seu, mas uma execução do benchmark isolada não produzia nenhum -- e uma
+        # latência sem o ambiente e o orçamento de núcleos que a produziram não é
+        # comparável a outra execução.
+        snapshot = write_environment_snapshot(
+            self.output_dir,
+            extra={'measured_phases': sorted(self.phases),
+                   'repetitions': self.repetitions,
+                   'warmup_runs': self.warmup_runs})
+        print(f"  Ambiente registrado em {snapshot}")
 
         df = pd.DataFrame(
             [

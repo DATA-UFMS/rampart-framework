@@ -31,6 +31,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
+from core.paradigm_registry import discover_paradigms
 
 BASE = Path(get_absolute_output_path('outputs/statistics'))
 
@@ -120,39 +121,32 @@ def summarize_equivalence(metric: str, pair_key: str = 'dl_vs_dw') -> Optional[s
     return f"{status} ($\\delta={delta:.3f}$, IC=[{ci[0]:.3f},{ci[1]:.3f}])"
 
 
-def get_resources_processing() -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """Retorna (cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl) de resource_usage.tex para fase de processamento."""
-    tex = read_text(BASE / 'architectural_resource_usage.tex')
-    if not tex:
-        return (None, None, None, None, None, None)
-    cpu_dl = cpu_dw = cpu_pl = rss_dl = rss_dw = rss_pl = None
-    for line in tex.splitlines():
-        if line.startswith('%'):
+def get_resources_processing(phase: str = 'processing') -> Dict[str, Dict[str, Optional[float]]]:
+    """CPU e RSS por paradigma numa fase, lidos do JSON.
+
+    Antes isto parseava a tabela LaTeX que outro script gera, recuperando por
+    texto números que existem em JSON. Duas consequências: qualquer mudança de
+    formato quebrava a extração em silêncio, e o nome de um paradigma ficou
+    desatualizado -- procurava-se 'processing & polars', que deixou de existir no
+    rename, então o terceiro paradigma nunca era extraído e o `except` escondia.
+
+    Os nomes vêm do registro, e não de literais, pelo mesmo motivo.
+    """
+    payload = load_json(BASE / 'architectural_resource_usage.json')
+    if not payload:
+        return {}
+    per_phase = payload.get('per_phase', {}).get(phase, {})
+    resources: Dict[str, Dict[str, Optional[float]]] = {}
+    for paradigm in sorted(discover_paradigms()):
+        row = per_phase.get(paradigm)
+        if row is None:
             continue
-        # Normalizar underscores escapados do LaTeX para comparação
-        norm = line.replace('\\_', '_')
-        if 'processing & task_graph' in norm:
-            parts = [p.strip() for p in norm.split('&')]
-            try:
-                cpu_dl = float(re.sub(r'[\\%\s]', '', parts[2]))
-                rss_dl = float(re.sub(r'[\\%\s]', '', parts[4]))
-            except Exception:
-                pass
-        elif 'processing & sql_engine' in norm:
-            parts = [p.strip() for p in norm.split('&')]
-            try:
-                cpu_dw = float(re.sub(r'[\\%\s]', '', parts[2]))
-                rss_dw = float(re.sub(r'[\\%\s]', '', parts[4]))
-            except Exception:
-                pass
-        elif 'processing & polars' in norm:
-            parts = [p.strip() for p in norm.split('&')]
-            try:
-                cpu_pl = float(re.sub(r'[\\%\s]', '', parts[2]))
-                rss_pl = float(re.sub(r'[\\%\s]', '', parts[4]))
-            except Exception:
-                pass
-    return (cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl)
+        resources[paradigm] = {
+            'cpu_proc_mean': row.get('cpu_proc_mean'),
+            'rss_mb_mean': row.get('rss_mb_mean'),
+        }
+    return resources
+
 
 
 def build_scorecard() -> str:
@@ -191,16 +185,20 @@ def build_scorecard() -> str:
         equiv_rows[pair_key] = f"R$^2$: {r2}; MASE: {mase}; WAPE: {wape}"
 
     # Informações de recursos
-    cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl = get_resources_processing()
+    # Uma linha por paradigma presente, nomeado: as abreviações DL/DW/PL
+    # designavam os nomes anteriores ao rename.
+    resources = get_resources_processing()
     resource_lines = []
-    if cpu_dl is not None and cpu_dw is not None:
-        resource_lines.append(f"CPU(proc) média: DL={cpu_dl:.1f}\\%, DW={cpu_dw:.1f}\\%")
-    if cpu_pl is not None:
-        resource_lines.append(f"CPU(proc) média PL={cpu_pl:.1f}\\%")
-    if rss_dl is not None and rss_dw is not None:
-        resource_lines.append(f"RSS (MB): DL={rss_dl:.1f}, DW={rss_dw:.1f}")
-    if rss_pl is not None:
-        resource_lines.append(f"RSS (MB) PL={rss_pl:.1f}")
+    for paradigm, values in sorted(resources.items()):
+        cpu, rss = values['cpu_proc_mean'], values['rss_mb_mean']
+        if cpu is None and rss is None:
+            continue
+        parts = [paradigm.replace('_', r'\_')]
+        if cpu is not None:
+            parts.append(f"CPU(proc) {cpu:.1f}\\%")
+        if rss is not None:
+            parts.append(f"RSS {rss:.1f} MB")
+        resource_lines.append(' '.join(parts))
     resource_s = '; '.join(resource_lines) if resource_lines else '—'
 
     # Tabela 3-way

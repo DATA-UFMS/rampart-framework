@@ -13,6 +13,7 @@ artifact landed depended on where the process was started.
 
 import ast
 import importlib
+import json
 import os
 import re
 import sys
@@ -172,8 +173,47 @@ class TestProducersAndConsumersAgree:
 
 
 class TestSnapshotRecordsTheDataset:
+    """Checked by writing one, not by looking for a string in a module.
 
-    def test_pipeline_snapshot_includes_the_dataset_field(self):
-        """A stray artifact must be traceable to the dataset that produced it."""
-        source = (_ROOT / 'pipeline.py').read_text()
-        assert '"dataset": get_dataset_name()' in source
+    The snapshot moved out of the orchestrator so the benchmark could write the
+    same record; a test tied to the orchestrator's source would pass or fail for
+    reasons unrelated to what the snapshot contains.
+    """
+
+    def test_the_snapshot_names_the_dataset(self, tmp_path, dataset):
+        from core.config import write_environment_snapshot
+        name = dataset('inep_censo')
+        payload = json.loads(
+            Path(write_environment_snapshot(str(tmp_path))).read_text())
+        assert payload['dataset'] == name
+
+    def test_the_snapshot_carries_the_core_budget(self, tmp_path, dataset):
+        """A latency without the budget that produced it is not comparable."""
+        from core.config import write_environment_snapshot
+        dataset('worldbank')
+        payload = json.loads(
+            Path(write_environment_snapshot(str(tmp_path))).read_text())
+        for key in ('engine_threads', 'blas_threads'):
+            assert key in payload['scientific_config']
+
+    def test_the_snapshot_records_provenance(self, tmp_path, dataset):
+        from core.config import write_environment_snapshot
+        dataset('worldbank')
+        payload = json.loads(
+            Path(write_environment_snapshot(str(tmp_path))).read_text())
+        for key in ('git_commit', 'processor', 'platform', 'python',
+                    'installed_packages', 'requirements_lock_sha256'):
+            assert key in payload, key
+
+    def test_callers_may_add_their_own_fields(self, tmp_path, dataset):
+        from core.config import write_environment_snapshot
+        dataset('worldbank')
+        payload = json.loads(Path(write_environment_snapshot(
+            str(tmp_path), extra={'measured_phases': ['baseline']})).read_text())
+        assert payload['measured_phases'] == ['baseline']
+
+    def test_both_writers_use_the_shared_implementation(self):
+        """Two copies would diverge in the file that says how the run was made."""
+        for module in (_ROOT / 'pipeline.py',
+                       _SRC / 'benchmarking' / 'architectural_benchmark.py'):
+            assert 'write_environment_snapshot(' in module.read_text(), module.name

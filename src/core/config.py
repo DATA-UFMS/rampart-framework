@@ -3,7 +3,7 @@ Configurações compartilhadas entre arquiteturas
 """
 
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 
 # ============================================================================
 # CONFIGURAÇÃO TEMPORAL
@@ -132,3 +132,73 @@ def get_execution_metadata() -> Dict:
         'config_version': '1.0.0',
         'project_root': get_project_root()
     }
+
+
+def write_environment_snapshot(destination: str, *, extra: Optional[Dict] = None) -> str:
+    """Grava o registro de configuração e ambiente da execução.
+
+    Vive aqui, e não no orquestrador, porque o benchmark também precisa dele: uma
+    execução do benchmark isolada não produzia registro algum, e uma latência sem
+    o ambiente que a produziu não é comparável a nada.
+
+    Args:
+        destination: diretório onde gravar
+        extra: campos adicionais do chamador (a fase medida, por exemplo)
+
+    Returns:
+        Caminho do arquivo gravado.
+    """
+    import hashlib
+    import importlib.metadata
+    import json
+    import os
+    import platform
+    import subprocess
+    import sys
+    from datetime import datetime, timezone
+
+    from core.scientific_config import SCIENTIFIC_CONFIG
+
+    os.makedirs(destination, exist_ok=True)
+    payload: Dict = {
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'dataset': get_dataset_name(),
+        'scientific_config': SCIENTIFIC_CONFIG,
+        'python': sys.version,
+        'platform': platform.platform(),
+        'processor': platform.processor(),
+    }
+
+    root = get_project_root()
+    try:
+        payload['git_commit'] = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
+    except Exception:
+        payload['git_commit'] = 'unavailable'
+
+    try:
+        payload['installed_packages'] = {
+            dist.metadata['Name']: dist.version
+            for dist in importlib.metadata.distributions()
+        }
+    except Exception:
+        payload['installed_packages'] = 'unavailable'
+
+    try:
+        payload['hardware'] = get_execution_metadata()
+    except Exception:
+        payload['hardware'] = 'unavailable'
+
+    lock_path = os.path.join(root, 'requirements-lock.txt')
+    if os.path.exists(lock_path):
+        with open(lock_path, 'rb') as handler:
+            payload['requirements_lock_sha256'] = hashlib.sha256(
+                handler.read()).hexdigest()
+
+    if extra:
+        payload.update(extra)
+
+    path = os.path.join(destination, 'scientific_config_snapshot.json')
+    with open(path, 'w', encoding='utf-8') as handler:
+        json.dump(payload, handler, indent=2, ensure_ascii=False)
+    return path

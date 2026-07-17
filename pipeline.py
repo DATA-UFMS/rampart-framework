@@ -16,11 +16,8 @@ fora deste orquestrador significa que reproduzir os resultados exige conhecer
 uma sequência que não está escrita em lugar algum.
 """
 import argparse
-import hashlib
-import importlib.metadata
 import json
 import os
-import platform
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -35,7 +32,8 @@ if _SRC_DIR not in sys.path:
 # thresholds -- behind a warning on stdout, and record that empty configuration
 # in the reproducibility snapshot. A run that cannot read its own configuration
 # is not a run worth completing.
-from core.config import get_absolute_output_path, get_dataset_name, get_execution_metadata
+from core.config import (get_absolute_output_path, get_dataset_name,
+                         write_environment_snapshot)
 from core.scientific_config import SCIENTIFIC_CONFIG
 from core.validation import TemporalValidator
 
@@ -104,46 +102,14 @@ def run(argv: list) -> None:
     subprocess.run(argv, check=True, env=env)
 
 def _snapshot_scientific_config(root: str) -> None:
-    """Salva snapshot da configuração científica e do ambiente."""
-    snapshot_dir = get_absolute_output_path("outputs")
-    os.makedirs(snapshot_dir, exist_ok=True)
-    payload = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "scientific_config": SCIENTIFIC_CONFIG,
-        "python": sys.version,
-        "platform": platform.platform(),
-        "cwd": root,
-        # Recorded so a stray artifact can be traced back to its dataset.
-        "dataset": get_dataset_name(),
-    }
-    try:
-        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
-        payload["git_commit"] = commit
-    except Exception:
-        payload["git_commit"] = "unavailable"
+    """Registra configuração e ambiente da execução.
 
-    try:
-        payload["installed_packages"] = {
-            dist.metadata["Name"]: dist.version
-            for dist in importlib.metadata.distributions()
-        }
-    except Exception:
-        payload["installed_packages"] = "unavailable"
-
-    try:
-        payload["hardware"] = get_execution_metadata()
-    except Exception:
-        payload["hardware"] = "unavailable"
-
-    req_path = os.path.join(root, "requirements.txt")
-    if os.path.exists(req_path):
-        with open(req_path, "rb") as f:
-            payload["requirements_txt_sha256"] = hashlib.sha256(f.read()).hexdigest()
-
-    snapshot_path = os.path.join(snapshot_dir, "scientific_config_snapshot.json")
-    with open(snapshot_path, "w", encoding="utf-8") as handler:
-        json.dump(payload, handler, indent=2, ensure_ascii=False)
-    print(f"\nSnapshot científico registrado em {snapshot_path}")
+    Delega a core.config: o benchmark grava o mesmo registro, e duas cópias
+    divergiriam justamente no arquivo que existe para dizer como a execução foi
+    feita.
+    """
+    path = write_environment_snapshot(get_absolute_output_path("outputs"))
+    print(f"\nSnapshot científico registrado em {path}")
 
 
 def _discover():
