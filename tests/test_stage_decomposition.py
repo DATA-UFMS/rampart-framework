@@ -28,6 +28,7 @@ if str(_SRC) not in sys.path:
 from core.scientific_config import SCIENTIFIC_CONFIG
 
 MODELS = sorted((_SRC / 'architectures_ml').glob('*/models/hierarchical_model.py'))
+BASELINES = sorted((_SRC / 'architectures_ml').glob('*/models/baseline_analysis.py'))
 
 
 def _fold_analysis(path):
@@ -157,3 +158,66 @@ class TestDecompositionRunsForEveryParadigm:
         for path in MODELS:
             source = path.read_text()
             assert 'time.time()' not in source.replace('time.perf_counter()', '')
+
+
+class TestBaselineStageIsDecomposedToo:
+    """Dask wins the baseline stage on INEP as well, by 2.0x.
+
+    Attributing only the hierarchical stage would leave half the claim without a
+    measurement. The invariants are the same, and one of them matters more here:
+    in the SQL engine the boundary sits inside a try whose except continues, so
+    the timers are initialised at the top of the fold loop. Depending on control
+    flow to define a name is how a NameError is produced.
+    """
+
+    def test_all_three_baselines_were_found(self):
+        assert len(BASELINES) == 3
+
+    @pytest.mark.parametrize('path', BASELINES, ids=lambda p: p.parts[-3])
+    def test_the_boundary_exists(self, path):
+        source = path.read_text()
+        assert '_fold_load_s = time.perf_counter() - _fold_t0' in source, (
+            f'{path.parts[-3]} does not separate materialisation from the fit'
+        )
+
+    @pytest.mark.parametrize('path', BASELINES, ids=lambda p: p.parts[-3])
+    def test_timers_are_initialised_at_the_top_of_the_loop(self, path):
+        """Not only at the boundary, which a branch may skip."""
+        source = path.read_text()
+        assert '_fit_t0 = _fold_t0' in source, (
+            f'{path.parts[-3]} defines the fit timer only at the boundary, so a '
+            f'branch that skips it leaves the name undefined'
+        )
+        assert '_fold_load_s = None' in source, (
+            'an unmeasured load must read as absent, not as zero'
+        )
+
+    @pytest.mark.parametrize('path', BASELINES, ids=lambda p: p.parts[-3])
+    def test_assignment_dominates_use(self, path):
+        """Indentation of the assignment must not exceed that of the use."""
+        source = path.read_text()
+        tree = ast.parse(source)
+        lines = source.splitlines()
+
+        def indent(lineno):
+            return len(lines[lineno - 1]) - len(lines[lineno - 1].lstrip())
+
+        for variable in ('_fit_t0', '_fold_load_s'):
+            assigns = [n.lineno for n in ast.walk(tree)
+                       if isinstance(n, ast.Assign)
+                       and any(getattr(t, 'id', None) == variable
+                               for t in n.targets)]
+            uses = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Name)
+                    and n.id == variable and isinstance(n.ctx, ast.Load)]
+            assert assigns and uses, variable
+            assert min(assigns) < min(uses)
+            assert indent(min(assigns)) <= indent(min(uses)), (
+                f'{path.parts[-3]}: {variable} is assigned more deeply nested '
+                f'than it is used, so a skipped branch raises NameError'
+            )
+
+    @pytest.mark.parametrize('path', BASELINES, ids=lambda p: p.parts[-3])
+    def test_both_durations_reach_the_fold_record(self, path):
+        source = path.read_text()
+        assert "fold_results['fold_load_s']" in source
+        assert "fold_results['fit_predict_s']" in source

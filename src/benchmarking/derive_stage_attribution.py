@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Atribui a latência do estágio hierárquico ao engine ou à parte comum.
+"""Atribui a latência dos estágios de ML ao engine ou à parte comum.
 
 Entrada:
   - outputs/<dataset>/ml_pipeline/architectures/<paradigma>/models/... (por fold)
@@ -37,21 +37,47 @@ from core.paradigm_registry import discover_paradigms
 OUT_DIR = Path(get_absolute_output_path("outputs/statistics"))
 
 
-def _results_path(paradigm: str) -> Optional[Path]:
-    """Localiza o JSON de resultados hierárquicos de um paradigma."""
+STAGES = {
+    # O padrão de nome do artefato de cada estágio. Os dois estágios de ML são
+    # decompostos, e o Dask ganha em ambos no INEP, então atribuir só um deixaria
+    # metade da afirmação sem medição.
+    'hierarchical': "hierarchical_analysis*results*.json",
+    'baseline': "baseline_analysis*results*.json",
+}
+
+
+def _results_path(paradigm: str, pattern: str) -> Optional[Path]:
+    """Localiza o JSON de resultados de um estágio de um paradigma."""
     root = Path(get_absolute_output_path(
         f"outputs/ml_pipeline/architectures/{paradigm}/models"))
     if not root.exists():
         return None
-    candidates = sorted(root.rglob("hierarchical_analysis*results*.json"))
+    candidates = sorted(root.rglob(pattern))
     return candidates[0] if candidates else None
+
+
+def _folds_of(payload: Dict) -> List[Dict]:
+    """Os folds, sob a chave que cada estágio usa.
+
+    O estágio hierárquico grava uma lista sob 'folds'; o de baselines grava um
+    dicionário com chaves 'fold_<n>'. A diferença é de layout, não de conteúdo.
+    """
+    if isinstance(payload.get("folds"), list):
+        return payload["folds"]
+    container = (payload.get("baseline_model_results")
+                 or payload.get("baseline_models") or payload)
+    if not isinstance(container, dict):
+        return []
+    return [value for key, value in sorted(container.items())
+            if isinstance(key, str) and key.startswith("fold_")
+            and isinstance(value, dict)]
 
 
 def _fold_segments(path: Path) -> List[Dict[str, float]]:
     """Pares (fold_load_s, fit_predict_s) por fold, quando registrados."""
     payload = json.loads(path.read_text())
     segments = []
-    for fold in payload.get("folds", []):
+    for fold in _folds_of(payload):
         load = fold.get("fold_load_s")
         fit = fold.get("fit_predict_s")
         if load is None or fit is None:
@@ -65,46 +91,51 @@ def _fold_segments(path: Path) -> List[Dict[str, float]]:
 
 
 def attribute() -> Dict:
-    per_paradigm: Dict[str, Dict] = {}
-    for paradigm in sorted(discover_paradigms()):
-        path = _results_path(paradigm)
-        if path is None:
-            print(f"  [WARN] {paradigm}: resultados hierárquicos ausentes")
-            continue
-        segments = _fold_segments(path)
-        if not segments:
-            # Um resultado anterior à decomposição não tem os campos. Reportado,
-            # e não preenchido com zero, que entraria nas somas como medição.
-            print(f"  [WARN] {paradigm}: {path.name} não registra a decomposição")
-            continue
-        load_total = sum(s["fold_load_s"] for s in segments)
-        fit_total = sum(s["fit_predict_s"] for s in segments)
-        total = load_total + fit_total
-        per_paradigm[paradigm] = {
-            "folds": len(segments),
-            "fold_load_s": load_total,
-            "fit_predict_s": fit_total,
-            "total_s": total,
-            # A fração que o engine controla é o que torna a comparação
-            # atribuível; o resto é comum aos três por construção.
-            "engine_share": load_total / total if total > 0 else None,
-            "per_fold": segments,
-        }
-
-    report: Dict = {"paradigms": per_paradigm}
-    if len(per_paradigm) >= 2:
-        # Razões entre paradigmas, por segmento: um ganho no total que não
-        # aparece em fold_load não vem do engine.
-        baseline = min(per_paradigm, key=lambda p: per_paradigm[p]["total_s"])
-        report["fastest_total"] = baseline
-        report["ratios_against_fastest"] = {
-            paradigm: {
-                segment: (values[segment] / per_paradigm[baseline][segment]
-                          if per_paradigm[baseline][segment] > 0 else None)
-                for segment in ("fold_load_s", "fit_predict_s", "total_s")
+    report: Dict = {"stages": {}}
+    for stage, pattern in sorted(STAGES.items()):
+        per_paradigm: Dict[str, Dict] = {}
+        for paradigm in sorted(discover_paradigms()):
+            path = _results_path(paradigm, pattern)
+            if path is None:
+                print(f"  [WARN] {paradigm}/{stage}: resultados ausentes")
+                continue
+            segments = _fold_segments(path)
+            if not segments:
+                # Um resultado anterior à decomposição não tem os campos.
+                # Reportado, e não preenchido com zero, que entraria nas somas
+                # como se fosse medição.
+                print(f"  [WARN] {paradigm}/{stage}: {path.name} não registra "
+                      f"a decomposição")
+                continue
+            load_total = sum(s["fold_load_s"] for s in segments)
+            fit_total = sum(s["fit_predict_s"] for s in segments)
+            total = load_total + fit_total
+            per_paradigm[paradigm] = {
+                "folds": len(segments),
+                "fold_load_s": load_total,
+                "fit_predict_s": fit_total,
+                "total_s": total,
+                # A fração que o engine controla é o que torna a comparação
+                # atribuível; o resto é comum aos três por construção.
+                "engine_share": load_total / total if total > 0 else None,
+                "per_fold": segments,
             }
-            for paradigm, values in per_paradigm.items()
-        }
+
+        entry: Dict = {"paradigms": per_paradigm}
+        if len(per_paradigm) >= 2:
+            # Razões por segmento: um ganho no total que não aparece em
+            # fold_load não vem do engine.
+            baseline = min(per_paradigm, key=lambda p: per_paradigm[p]["total_s"])
+            entry["fastest_total"] = baseline
+            entry["ratios_against_fastest"] = {
+                paradigm: {
+                    segment: (values[segment] / per_paradigm[baseline][segment]
+                              if per_paradigm[baseline][segment] > 0 else None)
+                    for segment in ("fold_load_s", "fit_predict_s", "total_s")
+                }
+                for paradigm, values in per_paradigm.items()
+            }
+        report["stages"][stage] = entry
     return report
 
 
@@ -115,26 +146,28 @@ def _latex(report: Dict) -> str:
         "\\centering",
         "\\caption{Latência do estágio hierárquico decomposta em carregamento do "
         "fold (engine) e ajuste (comum aos paradigmas).}",
-        "\\begin{tabular}{lrrrr}",
+        "\\begin{tabular}{llrrrr}",
         "\\toprule",
-        "Paradigma & Folds & Carregamento (s) & Ajuste (s) & Parcela do engine \\\\",
+        "Estagio & Paradigma & Folds & Carregamento (s) & Ajuste (s) & "
+        "Parcela do engine \\\\",
         "\\midrule",
     ]
-    for paradigm, values in sorted(report.get("paradigms", {}).items()):
-        share = values["engine_share"]
-        lines.append(
-            f"{paradigm} & {values['folds']} & {values['fold_load_s']:.2f} & "
-            f"{values['fit_predict_s']:.2f} & "
-            f"{'—' if share is None else f'{share:.1%}'.replace('%', r'\\%')} \\\\"
-        )
+    for stage, entry in sorted(report.get("stages", {}).items()):
+        for paradigm, values in sorted(entry.get("paradigms", {}).items()):
+            share = values["engine_share"]
+            pct = '—' if share is None else f"{share * 100:.1f}\\%"
+            lines.append(
+                f"{stage} & {paradigm} & {values['folds']} & "
+                f"{values['fold_load_s']:.2f} & "
+                f"{values['fit_predict_s']:.2f} & {pct} \\\\")
     lines += ["\\bottomrule", "\\end{tabular}", "\\end{table}"]
     return "\n".join(lines)
 
 
 def main() -> int:
     report = attribute()
-    if not report.get("paradigms"):
-        print("  Nenhum paradigma registra a decomposição; nada a atribuir.")
+    if not any(e.get("paradigms") for e in report.get("stages", {}).values()):
+        print("  Nenhum estagio registra a decomposicao; nada a atribuir.")
         return 0
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -145,7 +178,8 @@ def main() -> int:
         "status": "ok",
         "json": str(OUT_DIR / "stage_attribution.json"),
         "tex": str(OUT_DIR / "stage_attribution.tex"),
-        "paradigms": sorted(report["paradigms"]),
+        "stages": {k: sorted(v.get("paradigms", {}))
+                   for k, v in report["stages"].items()},
     }, indent=2))
     return 0
 

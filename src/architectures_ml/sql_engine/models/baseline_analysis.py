@@ -569,6 +569,12 @@ class BaselineModelAnalysisSqlEngine:
         
         for fold_id, fold in enumerate(self.folds):
             _fold_t0 = time.perf_counter()
+            # Inicializados aqui, e não só na fronteira: no engine SQL a
+            # fronteira fica dentro de um try, e depender do fluxo de
+            # controle para definir um nome é como se produz NameError.
+            # None significa não medido, e não zero, que entraria nas somas.
+            _fold_load_s = None
+            _fit_t0 = _fold_t0
             print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) -> Val({fold['val_start']}-{fold['val_end']}) -> Test({fold['test_start']}-{fold['test_end']})")
 
             try:
@@ -583,6 +589,10 @@ class BaselineModelAnalysisSqlEngine:
                 train_clean = train_data
                 val_clean = val_data
                 test_clean = test_data
+                # Fronteira da decomposição: acima é materialização do fold, que é
+                # do engine; abaixo é o ajuste dos baselines, comum aos três.
+                _fold_load_s = time.perf_counter() - _fold_t0
+                _fit_t0 = time.perf_counter()
                 
             except Exception as e:
                 print(f"   Erro ao carregar dados do fold {fold_id}: {e}")
@@ -839,6 +849,8 @@ class BaselineModelAnalysisSqlEngine:
                 y_pred=test_pred_cross, entities=test_clean['country_code'])
 
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
+            fold_results['fold_load_s'] = _fold_load_s
+            fold_results['fit_predict_s'] = time.perf_counter() - _fit_t0
             baseline_results[f'fold_{fold_id}'] = fold_results
 
         self._write_prediction_artifact()

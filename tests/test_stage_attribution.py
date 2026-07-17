@@ -46,6 +46,12 @@ def attribution(tmp_path, monkeypatch):
                   'fit_predict_s': 4.0} for i in range(3)]
         (directory / f'hierarchical_analysis_{paradigm}_results.json').write_text(
             json.dumps({'folds': folds}))
+        # O estágio de baselines grava um dicionário com chaves fold_<n>, e não
+        # uma lista: o leitor tem de aceitar os dois layouts.
+        (directory / f'baseline_analysis_{paradigm}_results.json').write_text(
+            json.dumps({'baseline_model_results': {
+                f'fold_{i}': {'fold_load_s': loads[paradigm] / 2,
+                              'fit_predict_s': 1.0} for i in range(3)}}))
     return module
 
 
@@ -53,24 +59,27 @@ class TestAttribution:
 
     def test_every_paradigm_is_covered(self, attribution):
         report = attribution.attribute()
-        assert set(report['paradigms']) == set(discover_paradigms())
+        for stage, entry in report['stages'].items():
+            assert set(entry['paradigms']) == set(discover_paradigms()), stage
 
     def test_segments_sum_to_the_total(self, attribution):
-        for values in attribution.attribute()['paradigms'].values():
-            assert values['fold_load_s'] + values['fit_predict_s'] == \
-                pytest.approx(values['total_s'])
+        for entry in attribution.attribute()['stages'].values():
+            for values in entry['paradigms'].values():
+                assert values['fold_load_s'] + values['fit_predict_s'] == \
+                    pytest.approx(values['total_s'])
 
     def test_engine_share_is_a_fraction(self, attribution):
-        for values in attribution.attribute()['paradigms'].values():
-            assert 0.0 <= values['engine_share'] <= 1.0
+        for entry in attribution.attribute()['stages'].values():
+            for values in entry['paradigms'].values():
+                assert 0.0 <= values['engine_share'] <= 1.0
 
     def test_the_fastest_total_is_identified(self, attribution):
-        report = attribution.attribute()
-        assert report['fastest_total'] == 'task_graph'
+        for entry in attribution.attribute()['stages'].values():
+            assert entry['fastest_total'] == 'task_graph'
 
     def test_the_fit_segment_ratio_is_one_when_fits_are_equal(self, attribution):
         """The discriminating check: equal fits, so the gap is all in loading."""
-        ratios = attribution.attribute()['ratios_against_fastest']
+        ratios = attribution.attribute()['stages']['hierarchical']['ratios_against_fastest']
         for paradigm, values in ratios.items():
             assert values['fit_predict_s'] == pytest.approx(1.0), (
                 f'{paradigm} differs in the shared fit, which every paradigm '
@@ -78,7 +87,7 @@ class TestAttribution:
             )
 
     def test_a_load_advantage_shows_up_in_the_load_ratio(self, attribution):
-        ratios = attribution.attribute()['ratios_against_fastest']
+        ratios = attribution.attribute()['stages']['hierarchical']['ratios_against_fastest']
         assert ratios['sql_engine']['fold_load_s'] == pytest.approx(2.5)
         assert ratios['sql_engine']['total_s'] < \
             ratios['sql_engine']['fold_load_s'], (
@@ -86,10 +95,23 @@ class TestAttribution:
             'alone cannot support an engine-level explanation'
         )
 
-    def test_folds_are_counted(self, attribution):
-        for values in attribution.attribute()['paradigms'].values():
+    def test_the_baseline_layout_is_read(self, attribution):
+        """Baselines key folds in a dict; the hierarchical stage uses a list."""
+        entry = attribution.attribute()['stages']['baseline']
+        assert set(entry['paradigms']) == set(discover_paradigms())
+        for values in entry['paradigms'].values():
             assert values['folds'] == 3
-            assert len(values['per_fold']) == 3
+
+    def test_both_ml_stages_are_attributed(self, attribution):
+        """Dask wins both on INEP, so attributing one leaves half unmeasured."""
+        assert set(attribution.attribute()['stages']) == {'baseline',
+                                                          'hierarchical'}
+
+    def test_folds_are_counted(self, attribution):
+        for entry in attribution.attribute()['stages'].values():
+            for values in entry['paradigms'].values():
+                assert values['folds'] == 3
+                assert len(values['per_fold']) == 3
 
 
 class TestMissingDecompositionIsReported:
@@ -112,7 +134,7 @@ class TestMissingDecompositionIsReported:
             json.dumps({'folds': [{'fold_id': 0, 'r2': 0.5}]}))
 
         report = module.attribute()
-        assert paradigm not in report['paradigms']
+        assert paradigm not in report['stages']['hierarchical']['paradigms']
         assert 'não registra a decomposição' in capsys.readouterr().out
 
     def test_absent_results_are_reported(self, tmp_path, monkeypatch, capsys):
@@ -123,7 +145,7 @@ class TestMissingDecompositionIsReported:
         from benchmarking import derive_stage_attribution as module
         importlib.reload(module)
 
-        assert module.attribute()['paradigms'] == {}
+        assert all(not e['paradigms'] for e in module.attribute()['stages'].values())
         assert 'ausentes' in capsys.readouterr().out
 
     def test_main_succeeds_with_nothing_to_attribute(self, tmp_path,
@@ -146,8 +168,7 @@ class TestOutputs:
         assert (stats / 'stage_attribution.tex').exists()
 
     def test_latex_names_both_segments(self, attribution):
-        report = attribution.attribute()
-        table = attribution._latex(report)
+        table = attribution._latex(attribution.attribute())
         assert 'Carregamento' in table and 'Ajuste' in table
         assert 'engine' in table.lower()
 

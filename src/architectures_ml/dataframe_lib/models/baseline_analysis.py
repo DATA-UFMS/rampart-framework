@@ -234,6 +234,12 @@ class BaselineModelAnalysisDataFrameLib:
 
         for fold_id, fold in enumerate(self.folds):
             _fold_t0 = time.perf_counter()
+            # Inicializados aqui, e não só na fronteira: no engine SQL a
+            # fronteira fica dentro de um try, e depender do fluxo de
+            # controle para definir um nome é como se produz NameError.
+            # None significa não medido, e não zero, que entraria nas somas.
+            _fold_load_s = None
+            _fit_t0 = _fold_t0
             print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) ->"
                   f"Val({fold['val_start']}-{fold['val_end']}) ->"
                   f"Test({fold['test_start']}-{fold['test_end']})")
@@ -270,6 +276,10 @@ class BaselineModelAnalysisDataFrameLib:
             train_clean = train_df.dropna(subset=[self.target_col])
             val_clean = val_df.dropna(subset=[self.target_col])
             test_clean = test_df.dropna(subset=[self.target_col])
+            # Fronteira da decomposição: acima é materialização do fold, que é
+            # do engine; abaixo é o ajuste dos baselines, comum aos três.
+            _fold_load_s = time.perf_counter() - _fold_t0
+            _fit_t0 = time.perf_counter()
 
             if len(train_clean) == 0 or len(test_clean) == 0:
                 print(f"   Fold {fold_id}: Dados insuficientes")
@@ -496,6 +506,8 @@ class BaselineModelAnalysisDataFrameLib:
                 y_pred=test_pred_cross, entities=test_clean['country_code'])
 
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
+            fold_results['fold_load_s'] = _fold_load_s
+            fold_results['fit_predict_s'] = time.perf_counter() - _fit_t0
             baseline_results[f'fold_{fold_id}'] = fold_results
 
         self._write_prediction_artifact()
