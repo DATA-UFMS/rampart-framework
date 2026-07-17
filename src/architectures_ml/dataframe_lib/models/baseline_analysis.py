@@ -29,6 +29,8 @@ warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGr
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from core.config import get_absolute_output_path
+from core.models.hierarchical import (
+    write_baseline_predictions as shared_write_baseline_predictions)
 from core.prediction_store import PredictionRecorder, predictions_path
 from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 
@@ -214,12 +216,9 @@ class BaselineModelAnalysisDataFrameLib:
         return analysis
 
     def _write_prediction_artifact(self) -> None:
-        """Persist the baseline test prediction vectors of every fold."""
-        path = predictions_path('dataframe_lib', 'baseline')
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        written = self._prediction_recorder.write(path)
-        if written:
-            print(f"Prediction vectors written: {written}")
+        """Delega à implementação compartilhada."""
+        shared_write_baseline_predictions(self._prediction_recorder,
+                                         architecture='dataframe_lib')
 
     def test_baseline_models(self) -> Dict:
         """
