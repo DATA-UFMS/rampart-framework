@@ -305,7 +305,9 @@ def main() -> None:
          'src/benchmarking/derive_resource_usage_table.py', []),
         ('h', 'Painel operacional',
          'src/benchmarking/derive_operational_panel.py', []),
-        ('i', 'Scorecard',
+        ('i', 'Atribuicao do estagio (engine vs ajuste)',
+         'src/benchmarking/derive_stage_attribution.py', []),
+        ('j', 'Scorecard',
          'src/statistical_validation/make_scorecard.py', []),
     ]
     for suffix, description, script, script_args in ANALYSIS_STAGES:
