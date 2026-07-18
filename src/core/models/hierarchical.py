@@ -22,6 +22,7 @@ from typing import Dict
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import RidgeCV
+from sklearn.model_selection import GroupKFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from core.prediction_store import PredictionRecorder, predictions_path
@@ -48,6 +49,7 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
     country_means = {}
     country_residuals_X = []
     country_residuals_y = []
+    residual_groups = []
     country_sample_counts = {}
     
     print(f"Processamento hierárquico distribuído: {n_countries} países, {total_samples} amostras")
@@ -70,6 +72,7 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
 
         country_residuals_X.append(country_X)
         country_residuals_y.extend(country_residuals)
+        residual_groups.extend([country] * country_samples)
 
     if len(country_residuals_X) > 0:
         residuals_X = pd.concat(country_residuals_X, ignore_index=True)
@@ -85,10 +88,35 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
         # RidgeCV rejects cv < 2; with fewer residual rows than that,
         # cv=None selects alpha by generalised cross-validation instead
         # of raising.
+        # Partição da CV interna, deliberada em vez de acidental.
+        #
+        # cv=<int> faz o RidgeCV usar KFold sem shuffle, e como os resíduos são
+        # concatenados por entidade os blocos contíguos eram blocos de entidade:
+        # a seleção de alpha vinha fazendo leave-some-entities-out sem que
+        # ninguém a tivesse escolhido, e mudaria em silêncio se a ordem de
+        # concatenação mudasse.
+        #
+        # Declarado como GroupKFold pela entidade, o que preserva a partição e a
+        # torna independente da ordem das linhas. Não é leakage em nenhuma das
+        # duas formas -- todos os resíduos vêm da janela de treino.
+        #
+        # TimeSeriesSplit seria mais coerente com a tarefa, que é extrapolação
+        # temporal e não generalização para entidades novas. Exigiria carregar o
+        # ano através do _prepare_data de cada paradigma, que é específico de
+        # engine; fica registrado como escolha de desenho em aberto, e não como
+        # detalhe de implementação.
         n_residuals = len(residuals_X)
-        inner_folds = min(_hm['ridge_cv_folds'], n_residuals)
-        ridge_cv = RidgeCV(alphas=alphas,
-                           cv=inner_folds if inner_folds >= 2 else None)
+        n_groups = len(set(residual_groups))
+        inner_folds = min(_hm['ridge_cv_folds'], n_groups)
+        if inner_folds >= 2:
+            splitter = GroupKFold(n_splits=inner_folds)
+            cv = list(splitter.split(residuals_X, residuals_y,
+                                     groups=residual_groups))
+        else:
+            # Menos de duas entidades: sem grupos para separar, o RidgeCV recai
+            # na validação cruzada generalizada.
+            cv = None
+        ridge_cv = RidgeCV(alphas=alphas, cv=cv)
         ridge_cv.fit(residuals_X, residuals_y)
         final_alpha = ridge_cv.alpha_
         residual_model = ridge_cv

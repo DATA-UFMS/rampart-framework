@@ -412,59 +412,79 @@ class TestAntiLeakageP4:
 # 9. Anti-leakage: P5 (escopo de preprocessing) e HPO
 
 class TestPreprocessingIsolation:
-    """Valida que preprocessing (scaling, imputação) respeita o escopo temporal."""
+    """P5 (escopo de preprocessing) no código que roda, não em biblioteca.
 
-    def test_scaler_fit_on_train_only(self):
-        """StandardScaler ajustado no treino produz estatísticas diferentes
-        de um scaler ajustado no conjunto completo."""
-        from sklearn.preprocessing import StandardScaler
+    Os três testes anteriores aqui exercitavam o StandardScaler do sklearn, o
+    .fillna() do pandas e o max() do Python sobre dicts literais. Passavam com o
+    framework inteiro deletado, porque nenhum deles o mencionava. Um deles
+    asseverava que max({1: 0.85, 10: 0.80}, key=...) == 1.
 
-        np.random.seed(42)
-        X_train = pd.DataFrame({'feat': np.random.normal(0, 1, 100)})
-        X_test = pd.DataFrame({'feat': np.random.normal(10, 1, 50)})
+    O contrato da imputação está coberto em test_imputation_scope.py, incluindo a
+    propriedade que importa -- alterar a janela de teste não move a estatística.
+    Aqui ficam as duas ligações que faltavam: o scaler e a seleção de
+    hiperparâmetros, verificadas no corpo de run_fold_analysis de cada paradigma.
+    """
 
-        scaler_correct = StandardScaler()
-        scaler_correct.fit(X_train)
-        test_scaled_correct = scaler_correct.transform(X_test)
+    MODELS = sorted((Path(__file__).resolve().parents[1] / 'src'
+                     / 'architectures_ml').glob('*/models/hierarchical_model.py'))
 
-        X_full = pd.concat([X_train, X_test], ignore_index=True)
-        scaler_leaked = StandardScaler()
-        scaler_leaked.fit(X_full)
-        test_scaled_leaked = scaler_leaked.transform(X_test)
+    def test_the_models_were_found(self):
+        assert len(self.MODELS) == 3
 
-        assert not np.allclose(test_scaled_correct, test_scaled_leaked), \
-            "Scaler fit no treino vs completo deveria produzir resultados distintos"
+    @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
+    def test_scaler_is_fitted_on_training_data_only(self, path):
+        """fit_transform no treino; transform em validação e teste."""
+        import ast as _ast
+        tree = _ast.parse(path.read_text())
+        fold = next(n for n in _ast.walk(tree)
+                    if isinstance(n, _ast.FunctionDef)
+                    and n.name == 'run_fold_analysis')
+        fitted_on = [n.args[0].id for n in _ast.walk(fold)
+                     if isinstance(n, _ast.Call)
+                     and getattr(n.func, 'attr', None) == 'fit_transform'
+                     and n.args and hasattr(n.args[0], 'id')]
+        assert fitted_on == ['X_train'], (
+            f'{path.parts[-3]}: scaler ajustado em {fitted_on}, e não apenas no '
+            f'treino'
+        )
+        transformed = [n.args[0].id for n in _ast.walk(fold)
+                       if isinstance(n, _ast.Call)
+                       and getattr(n.func, 'attr', None) == 'transform'
+                       and n.args and hasattr(n.args[0], 'id')]
+        assert 'X_test' in transformed and 'X_val' in transformed
 
-        assert test_scaled_correct.mean() > 5, \
-            "Scaler fit no treino deve preservar deslocamento do teste"
+    @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
+    def test_no_fit_touches_the_test_window(self, path):
+        import ast as _ast
+        tree = _ast.parse(path.read_text())
+        fold = next(n for n in _ast.walk(tree)
+                    if isinstance(n, _ast.FunctionDef)
+                    and n.name == 'run_fold_analysis')
+        for call in _ast.walk(fold):
+            if isinstance(call, _ast.Call) and \
+                    getattr(call.func, 'attr', None) in ('fit', 'fit_transform'):
+                names = [a.id for a in call.args if hasattr(a, 'id')]
+                assert 'X_test' not in names and 'y_test' not in names, (
+                    f'{path.parts[-3]}: ajuste sobre a janela de teste'
+                )
 
-    def test_imputation_uses_train_reference(self):
-        """Imputação com mediana do treino produz valores diferentes
-        de imputação com mediana do conjunto completo."""
-        train = pd.DataFrame({'feat': [1, 3, 5, 7, 9]})
-        test = pd.DataFrame({'feat': [40, np.nan, 60]})
+    @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
+    def test_hyperparameters_are_selected_on_validation(self, path):
+        """A busca compara r2 de validação; o teste é avaliado depois."""
+        source = path.read_text()
+        fold_start = source.index('def run_fold_analysis')
+        body = source[fold_start:]
+        selection = body.index('best_val_r2')
+        assert 'X_val_scaled' in body[:selection + 2000], (
+            f'{path.parts[-3]}: a seleção não consulta a janela de validação'
+        )
+        assert "best_val_r2 = -1e9" in body, 'sem inicialização da busca'
 
-        imputed_correct = test['feat'].fillna(train['feat'].median())
-
-        full = pd.concat([train['feat'], test['feat']])
-        imputed_leaked = test['feat'].fillna(full.median())
-
-        assert imputed_correct.iloc[1] == 5.0, \
-            "Imputação deve usar mediana do treino"
-        assert imputed_correct.iloc[1] != imputed_leaked.iloc[1], \
-            "Imputação com referências diferentes deve divergir"
-
-    def test_hpo_selects_on_validation_not_test(self):
-        """Simula HPO com grid search: melhor hiperparâmetro deve ser
-        escolhido pelo desempenho na validação, não no teste."""
-        val_scores = {1: 0.85, 10: 0.80, 100: 0.70}
-        test_scores = {1: 0.60, 10: 0.65, 100: 0.90}
-
-        best_alpha = max(val_scores, key=val_scores.get)
-        assert best_alpha == 1, \
-            "HPO deve selecionar hiperparâmetro com melhor score na validação"
-
-        best_test_alpha = max(test_scores, key=test_scores.get)
-        assert best_alpha != best_test_alpha, \
-            "Cenário de teste garante que val e test têm ótimos distintos"
+    @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
+    def test_the_selected_parameters_are_applied_to_the_test_window(self, path):
+        source = path.read_text()
+        body = source[source.index('def run_fold_analysis'):]
+        assert 'best_shrink' in body and 'best_params' in body, (
+            f'{path.parts[-3]}: parâmetros escolhidos não reaproveitados'
+        )
 

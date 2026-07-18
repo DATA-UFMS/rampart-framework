@@ -194,3 +194,63 @@ class TestWhatWasNotExtracted:
                  if isinstance(n, ast.FunctionDef)}
         assert names == {'simple_hierarchical_model', 'write_prediction_artifact',
                          'write_baseline_predictions'}, names
+
+
+class TestInnerCrossValidationIsDeliberate:
+    """A partição da seleção de alpha, explícita em vez de acidental.
+
+    cv=<int> faz o RidgeCV usar KFold sem shuffle. Como os resíduos são
+    concatenados por entidade, os blocos contíguos eram blocos de entidade: a
+    seleção de alpha fazia leave-some-entities-out sem que ninguém a tivesse
+    escolhido, e mudaria em silêncio se a ordem das linhas mudasse.
+
+    Não é leakage em nenhuma das duas formas -- todos os resíduos vêm da janela
+    de treino. O que a mudança compra é determinismo, e é isso que este teste
+    fixa: comportamento idêntico sob permutação das linhas. Um teste de saída
+    não distinguiria as duas versões, porque a partição resultante é a mesma.
+    """
+
+    @staticmethod
+    def _alpha(X, y, entities):
+        from core.models.hierarchical import simple_hierarchical_model
+        result = simple_hierarchical_model(X, y, X, y, entities, entities,
+                                           architecture='probe')
+        return result['regularization_details']['ridgecv_alpha']
+
+    def test_alpha_does_not_depend_on_row_order(self):
+        X, y, entities = _panel()
+        original = self._alpha(X, y, entities)
+        order = np.random.default_rng(11).permutation(len(X))
+        permuted = self._alpha(X.iloc[order].reset_index(drop=True),
+                               y.iloc[order].reset_index(drop=True),
+                               entities.iloc[order].reset_index(drop=True))
+        assert original == permuted, (
+            f'alpha mudou com a ordem das linhas: {original} != {permuted}, '
+            f'o que significa que a partição da CV interna é implícita'
+        )
+
+    def test_the_splitter_is_declared_not_an_integer(self):
+        """cv=<int> delega a escolha da partição ao sklearn."""
+        source = SHARED.read_text()
+        assert 'GroupKFold' in source
+        tree = ast.parse(source)
+        for call in ast.walk(tree):
+            if isinstance(call, ast.Call) and \
+                    getattr(call.func, 'id', None) == 'RidgeCV':
+                for keyword in call.keywords:
+                    if keyword.arg == 'cv':
+                        assert not isinstance(keyword.value, ast.Constant), (
+                            'cv passado como literal reintroduz a partição '
+                            'implícita'
+                        )
+
+    def test_the_groups_follow_the_entities(self):
+        source = SHARED.read_text()
+        assert 'groups=residual_groups' in source
+        assert 'residual_groups.extend(' in source
+
+    def test_alpha_still_varies_with_the_data(self):
+        """Sem isto, a estabilidade acima poderia ser um valor constante."""
+        X, y, entities = _panel()
+        other = _panel(seed=99)
+        assert self._alpha(X, y, entities) != self._alpha(*other)
