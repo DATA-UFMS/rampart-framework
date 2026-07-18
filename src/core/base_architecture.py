@@ -379,6 +379,19 @@ class BaseArchitectureML(ABC):
                 'total_test_years': int(test_len),
                 'train_val_gap': int(train_val_gap),
                 'val_test_gap': int(val_test_gap),
+                # Separação efetiva entre a última observação usada para ajustar
+                # o modelo e a primeira observação avaliada.
+                #
+                # Registrada porque é maior que o gap declarado, e por decisão: o
+                # modelo avaliado no teste é ajustado apenas na janela de treino,
+                # e a validação serve exclusivamente para selecionar
+                # hiperparâmetros. Reajustar em treino+validação usaria 25% mais
+                # anos e aproximaria a origem, mas reduziria esta separação ao
+                # mínimo declarado em P2 -- trocaria margem de segurança na
+                # garantia anti-leakage por eficiência estatística num
+                # dispositivo cuja acurácia não é o objeto de estudo.
+                'fit_to_test_gap': int(test_start - train_end - 1),
+                'fit_window': 'train_only',
                 'description': f'Walk-forward auto (gap={gap}y, val={val_len}y, test={test_len}y)',
                 'forecast_horizon': '1-2 anos à frente'
             }
