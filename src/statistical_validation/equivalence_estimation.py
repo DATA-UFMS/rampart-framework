@@ -262,7 +262,11 @@ def _paired_deltas_for_metric(pairs: Dict[str, Dict[int, Dict[str, float]]], met
         va = a[fid].get(metric)
         vb = b[fid].get(metric)
         if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
-            deltas.append(vb - va)
+            # A menos B, como o resto do módulo: a docstring, _decision_equivalence
+            # e paradigm_pairs assumem essa ordem, e a via de latência já usa
+            # log(A/B). Com B-A o campo 'advantage' nomeava o paradigma pior em
+            # todas as métricas preditivas.
+            deltas.append(va - vb)
     return np.array(deltas, dtype=float)
 
 
