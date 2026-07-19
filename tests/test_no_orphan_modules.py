@@ -27,6 +27,13 @@ if str(_SRC) not in sys.path:
 DECLARED_TOOLS = {
     'scripts/validation/leakage_injection.py':
         'negative validation of the anti-leakage gate; invoked by CI',
+    'scripts/reproduce.sh':
+        'entry point that installs, checks the core budget and runs the pipeline',
+    'scripts/verify_data_snapshot.py':
+        'records and verifies the hash of an input snapshot',
+    'scripts/derive_paper_tables.py':
+        'spans both datasets, so it runs after both pipelines rather than inside '
+        'one',
 }
 
 
