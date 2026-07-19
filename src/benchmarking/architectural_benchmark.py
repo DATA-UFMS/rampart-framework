@@ -367,6 +367,16 @@ class BenchmarkRunner:
         t0 = time.perf_counter_ns()
         res = getattr(proc, run_method_name)()
         t1 = time.perf_counter_ns()
+        # Um estágio que falhou é rápido: sem esta checagem a repetição entra
+        # no CSV como uma latência curta e legítima, puxando a distribuição do
+        # paradigma para baixo. measure() foi escrito para abortar, mas o status
+        # de falha vem dentro do dict de retorno, não como exceção.
+        if not (isinstance(res, dict) and res.get("status") == "success"):
+            status = res.get("status") if isinstance(res, dict) else type(res).__name__
+            raise RuntimeError(
+                f"{paradigm_name}: {'processing'} retornou status {status!r}; "
+                f"a repetição não pode entrar na comparação de latência"
+            )
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
             out_path = res.get("output_path", "")
@@ -379,6 +389,16 @@ class BenchmarkRunner:
         t0 = time.perf_counter_ns()
         res = setup_module.main()
         t1 = time.perf_counter_ns()
+        # Um estágio que falhou é rápido: sem esta checagem a repetição entra
+        # no CSV como uma latência curta e legítima, puxando a distribuição do
+        # paradigma para baixo. measure() foi escrito para abortar, mas o status
+        # de falha vem dentro do dict de retorno, não como exceção.
+        if not (isinstance(res, dict) and res.get("status") == "success"):
+            status = res.get("status") if isinstance(res, dict) else type(res).__name__
+            raise RuntimeError(
+                f"{paradigm_name}: {'setup'} retornou status {status!r}; "
+                f"a repetição não pode entrar na comparação de latência"
+            )
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
             # sql_engine keeps its data in DuckDB and materialises no master

@@ -818,10 +818,18 @@ class RawDataCollector:
             
             imputation_log[column] = {
                 'temporal_count': int(temporal_count),
+                # Mantidos em zero e registrados: os tiers que os preenchiam
+                # foram removidos, e omiti-los faria um log antigo e um novo
+                # parecerem o mesmo artefato.
                 'geographic_count': int(geographic_count),
                 'global_count': int(global_count),
                 'category': category,
-                'method_used': 'median' if (is_zero_centered or use_robust) else 'mean'
+                # Um único mecanismo desde a remoção dos tiers cross-seccionais.
+                # A chave anterior escolhia entre mediana e média a partir de
+                # duas variáveis que deixaram de existir neste escopo, e a
+                # referência pendurada matava a coleta na primeira coluna com
+                # célula ausente.
+                'method_used': 'entity_forward_fill'
             }
             
             total_imputed = temporal_count + geographic_count + global_count
@@ -1335,6 +1343,11 @@ class RawDataCollector:
 
 
 if __name__ == "__main__":
+    # Sem status de saída, uma falha aqui chega ao orquestrador como sucesso:
+    # pipeline.py usa subprocess check=True, que só lê o código de retorno.
+    # Foi assim que a coleta pôde morrer e as etapas seguintes rodarem sobre
+    # o painel da execução anterior.
     collector = RawDataCollector()
     success = collector.run()
     print(f"\nExecucao: {'ok' if success else 'falha'}")
+    sys.exit(0 if success else 1)

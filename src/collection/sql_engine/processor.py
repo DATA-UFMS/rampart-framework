@@ -522,6 +522,12 @@ class SqlEngineProcessor:
             }
 
 if __name__ == "__main__":
+    # Sem status de saída, uma falha aqui chega ao orquestrador como sucesso:
+    # pipeline.py usa subprocess check=True, que só lê o código de retorno.
+    # Foi assim que a coleta pôde morrer e as etapas seguintes rodarem sobre
+    # o painel da execução anterior.
     processor = SqlEngineProcessor()
     results = processor.run_sql_engine_processing()
-    print(f"\nStatus: {results.get('status', 'failed')}")
+    status = results.get('status', 'failed')
+    print(f"\nStatus: {status}")
+    sys.exit(0 if status == 'success' else 1)

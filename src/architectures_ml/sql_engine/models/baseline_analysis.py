@@ -1106,12 +1106,10 @@ class BaselineModelAnalysisSqlEngine:
             return results
             
         except Exception as e:
+            # Re-levanta pelo mesmo motivo do modelo hierárquico: um dicionário
+            # com status 'failed' atravessa como execução bem-sucedida.
             print(f"\n[ERROR] Análise DuckDB: {e}")
-            return {
-                'architecture': 'sql_engine_consumer',
-                'status': 'failed',
-                'error': str(e)
-            }
+            raise
         finally:
             self.cleanup()
 

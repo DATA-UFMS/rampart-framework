@@ -502,6 +502,12 @@ class HierarchicalModelTaskGraph:
         return all_results
 
 if __name__ == "__main__":
-    model = HierarchicalModelTaskGraph()
-    results = model.run_hierarchical_analysis()
-    print("\nAnálise hierárquica Dask concluída!")
+    # Sem status de saída a falha chega ao pipeline como sucesso: subprocess
+    # check=True lê apenas o código de retorno.
+    try:
+        model = HierarchicalModelTaskGraph()
+        results = model.run_hierarchical_analysis()
+        print("\nAnálise hierárquica Dask concluída!")
+    except Exception as exc:
+        print(f"\n[ERROR] {exc}")
+        sys.exit(1)

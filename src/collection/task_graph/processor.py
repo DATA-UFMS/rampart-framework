@@ -643,6 +643,12 @@ class TaskGraphProcessor:
             }
 
 if __name__ == "__main__":
+    # Sem status de saída, uma falha aqui chega ao orquestrador como sucesso:
+    # pipeline.py usa subprocess check=True, que só lê o código de retorno.
+    # Foi assim que a coleta pôde morrer e as etapas seguintes rodarem sobre
+    # o painel da execução anterior.
     processor = TaskGraphProcessor()
     results = processor.run_task_graph_processing()
-    print(f"Execucao: {results.get('status', 'failed')}")
+    status = results.get('status', 'failed')
+    print(f"Execucao: {status}")
+    sys.exit(0 if status == 'success' else 1)

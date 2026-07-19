@@ -536,12 +536,12 @@ class HierarchicalModelSQLFirst:
             return all_results
             
         except Exception as e:
+            # Re-levanta: devolver um dicionário com 'folds': [] fazia o
+            # orquestrador e o benchmark tratarem a falha como uma execução
+            # rápida e bem-sucedida, e o gate de equivalência não vê um
+            # paradigma que não escreveu vetor nenhum.
             print(f"Erro na análise hierárquica: {e}")
-            return {
-                'architecture': 'sql_engine',
-                'error': str(e),
-                'folds': []
-            }
+            raise
         finally:
             # Cleanup connection
             if hasattr(self, 'conn_manager') and self.conn_manager:
@@ -563,3 +563,4 @@ if __name__ == "__main__":
         print(f"\nAnálise hierárquica DuckDB concluída!")
     except Exception as e:
         print(f"\n[ERROR] {e}")
+        sys.exit(1)
