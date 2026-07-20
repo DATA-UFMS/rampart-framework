@@ -182,13 +182,35 @@ class TestFoldScopedImputation:
         assert not filled_train['a'].isna().any()
         assert not filled_test['a'].isna().any()
 
-    def test_column_unobserved_in_training_is_left_alone_and_reported(self):
-        """Inventing a value for what training never saw is the old practice."""
+    def test_column_unobserved_in_training_raises(self):
+        """Não pode ocorrer sob janela expansiva + seleção P4; se ocorrer, para.
+
+        As alternativas são piores: constante fabrica um valor que o treino nunca
+        observou e torna a feature constante no treino e variável no teste;
+        descartar muda o conjunto de features entre folds e entre paradigmas;
+        deixar ausente adia a falha para o RidgeCV, porque o StandardScaler
+        propaga NaN em silêncio em vez de rejeitar.
+        """
         train = pd.DataFrame({'a': [1.0, 2.0], 'empty': [np.nan, np.nan]})
         test = pd.DataFrame({'a': [np.nan], 'empty': [np.nan]})
-        (_, filled_test), report = impute_from_training_window(train, test)
-        assert report['columns_without_training_observation'] == ['empty']
-        assert filled_test['empty'].isna().all()
+        with pytest.raises(ValueError, match='nenhuma observação'):
+            impute_from_training_window(train, test)
+
+    def test_the_error_names_the_offending_columns(self):
+        train = pd.DataFrame({'a': [1.0], 'x': [np.nan], 'y': [np.nan]})
+        with pytest.raises(ValueError) as exc:
+            impute_from_training_window(train)
+        assert "'x'" in str(exc.value) and "'y'" in str(exc.value)
+
+    def test_the_scaler_would_not_have_caught_it(self):
+        """Justifica levantar aqui: o scaler propaga NaN sem reclamar."""
+        from sklearn.preprocessing import StandardScaler
+
+        frame = pd.DataFrame({'a': [1.0, 2.0], 'empty': [np.nan, np.nan]})
+        scaled = StandardScaler().fit_transform(frame)
+        assert np.isnan(scaled[:, 1]).all(), (
+            'se o scaler rejeitasse NaN, levantar aqui seria redundante'
+        )
 
     def test_median_is_the_default(self):
         train = pd.DataFrame({'a': [1.0, 2.0, 100.0, np.nan]})
@@ -258,10 +280,66 @@ class TestEveryParadigmUsesTheSharedImplementation:
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_no_paradigm_rolls_its_own_fill(self, path):
+        """O arquivo inteiro, e os idiomas dos três engines.
+
+        A versão anterior fatiava a partir de run_fold_analysis, e _prepare_data
+        vem antes dele nos três arquivos -- então o preenchimento que tornava o
+        helper compartilhado um no-op ficava fora do trecho examinado. A tupla
+        proibida também não incluía fill_null, que é como o polars preenche.
+        """
         source = path.read_text()
-        body = source[source.index('def run_fold_analysis'):]
-        for forbidden in ('.fillna(', '.interpolate(', 'SimpleImputer'):
-            assert forbidden not in body, (
-                f'{path.parts[-3]} fills values outside the shared '
-                f'implementation, so the paradigms can preprocess differently'
+        for forbidden in ('.fillna(', '.fill_null(', '.interpolate(',
+                          'SimpleImputer', 'KNNImputer', '.bfill(', '.ffill('):
+            assert forbidden not in source, (
+                f'{path.parts[-3]} preenche ausentes fora da implementação '
+                f'compartilhada ({forbidden}), então os paradigmas podem '
+                f'preprocessar de forma diferente -- e o helper vira no-op'
             )
+
+    @pytest.mark.parametrize('paradigm', ['sql_engine', 'task_graph',
+                                          'dataframe_lib'])
+    def test_materialisation_leaves_gaps_for_the_shared_layer(self, paradigm):
+        """Comportamental: _prepare_data devolve o ausente que recebeu.
+
+        Um teste textual não distingue "não preenche" de "preenche em um idioma
+        que a lista não cobre". Este entrega um fold com lacuna e exige que ela
+        chegue intacta à camada compartilhada.
+        """
+        import importlib
+        import warnings
+
+        warnings.filterwarnings('ignore')
+        rng = np.random.default_rng(3)
+        n = 16
+        frame = pd.DataFrame({
+            'country_code': ['AAA', 'BBB'] * (n // 2),
+            'year': np.repeat(np.arange(2000, 2000 + n // 2), 2),
+            'gini': rng.normal(40, 5, n),
+            'internet': rng.normal(50, 8, n),
+        })
+        frame['dropout_rate'] = rng.normal(10, 2, n)
+        frame.loc[2, 'gini'] = np.nan          # a lacuna sob teste
+
+        module = importlib.import_module(
+            f'architectures_ml.{paradigm}.models.hierarchical_model')
+        cls = next(getattr(module, name) for name in dir(module)
+                   if isinstance(getattr(module, name), type)
+                   and hasattr(getattr(module, name), '_prepare_data'))
+        instance = cls.__new__(cls)
+        instance.target_col = 'dropout_rate'
+        instance.available_features = ['gini', 'internet']
+
+        if paradigm == 'sql_engine':
+            X, _, _ = instance._prepare_data(frame, ['gini', 'internet'])
+        elif paradigm == 'task_graph':
+            import dask.dataframe as dd
+            X, _, _ = instance._prepare_data(dd.from_pandas(frame, npartitions=1))
+        else:
+            import polars as pl
+            X, _, _ = instance._prepare_data(pl.from_pandas(frame).lazy())
+
+        assert pd.DataFrame(X)['gini'].isna().any(), (
+            f'{paradigm}._prepare_data preencheu a lacuna, o que torna '
+            f'impute_from_training_window um no-op e devolve as três '
+            f'implementações que a centralização removeu'
+        )

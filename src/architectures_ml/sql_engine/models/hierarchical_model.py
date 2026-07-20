@@ -203,16 +203,24 @@ class HierarchicalModelSQLFirst:
 
         return available_features
     
-    def _prepare_data(self, data, reference_data, available_features):
+    def _prepare_data(self, data, available_features):
         """
-        Preparar dados para treinamento.
+        Materializar um fold já carregado do banco.
 
-        P5 (escopo de preprocessing): imputação usa mediana de
-        reference_data (= train), nunca do conjunto completo.
-        Chamadas: _prepare_data(val, train, ...), _prepare_data(test, train, ...).
+        Materialização apenas. Toda estatística -- a mediana que preenche
+        ausentes -- vive em core.validation.impute_from_training_window, ajustada
+        na janela de treino do fold. Três implementações de uma estatística são
+        três chances de os paradigmas calcularem coisas diferentes, e a afirmação
+        de equivalência assume que eles diferem apenas em como movem dados.
+
+        Sem parâmetro de referência: materializar não precisa da janela de
+        treino, só ajustar estatística precisa.
+
+        A view do fold já aplica WHERE target IS NOT NULL e ORDER BY
+        country_code, year -- o mesmo recorte e a mesma ordem que os outros
+        paradigmas produzem em Python.
         """
-        # P5: imputar com mediana do treino; fallback 0 para features sem dados
-        X = data[available_features].fillna(reference_data[available_features].median()).fillna(0)
+        X = data[available_features]
         y = data[self.target_col]
         countries = data['country_code']
         return X, y, countries
@@ -337,9 +345,9 @@ class HierarchicalModelSQLFirst:
         except Exception:
             pass
         
-        X_train, y_train, countries_train = self._prepare_data(train_data, train_data, available_features)
-        X_val, y_val, countries_val = self._prepare_data(val_data, train_data, available_features)
-        X_test, y_test, countries_test = self._prepare_data(test_data, train_data, available_features)
+        X_train, y_train, countries_train = self._prepare_data(train_data, available_features)
+        X_val, y_val, countries_val = self._prepare_data(val_data, available_features)
+        X_test, y_test, countries_test = self._prepare_data(test_data, available_features)
         
         _fold_load_s = time.perf_counter() - _load_t0
         _fit_t0 = time.perf_counter()

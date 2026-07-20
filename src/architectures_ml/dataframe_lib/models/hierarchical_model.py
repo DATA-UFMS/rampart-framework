@@ -140,36 +140,22 @@ class HierarchicalModelDataFrameLib:
         else:
             raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
 
-    def _prepare_data(self, data_lazy, reference_lazy):
+    def _prepare_data(self, data_lazy):
         """
-        Preparar dados com computação seletiva.
+        Materializar um fold com computação seletiva.
 
-        P5 (escopo de preprocessing): medianas/médias para imputação
-        são computadas a partir de reference_lazy (= train), nunca do
-        conjunto completo.
+        Materialização apenas. Toda estatística -- a mediana que preenche
+        ausentes -- vive em core.validation.impute_from_training_window, ajustada
+        na janela de treino do fold. Três implementações de uma estatística são
+        três chances de os paradigmas calcularem coisas diferentes, e a afirmação
+        de equivalência assume que eles diferem apenas em como movem dados.
+
+        Sem parâmetro de referência: materializar não precisa da janela de
+        treino, só ajustar estatística precisa.
         """
-        # Computar medianas/médias da referência
-        medians = {}
-        for feature in self.available_features:
-            try:
-                median_val = reference_lazy.select(
-                    pl.col(feature).median()
-                ).collect().to_dicts()[0][feature]
-                medians[feature] = median_val if median_val is not None else 0.0
-            except (KeyError, pl.exceptions.ColumnNotFoundError, pl.exceptions.ComputeError):
-                mean_val = reference_lazy.select(
-                    pl.col(feature).mean()
-                ).collect().to_dicts()[0][feature]
-                medians[feature] = mean_val if mean_val is not None else 0.0
-
         data_filtered = data_lazy.filter(pl.col(self.target_col).is_not_null()).sort(['country_code', 'year'])
 
-        # Aplicar imputação
         X_lazy = data_filtered.select(self.available_features)
-        for feature, median_val in medians.items():
-            X_lazy = X_lazy.with_columns(
-                pl.col(feature).fill_null(median_val)
-            )
 
         # Materializar para operações pandas
         X_df = X_lazy.collect().to_pandas()
@@ -312,9 +298,9 @@ class HierarchicalModelDataFrameLib:
 
         print(f"Dados Normais: Train={n_train}, Val={n_val}, Test={n_test}")
 
-        X_train, y_train, countries_train = self._prepare_data(train_lazy, train_lazy)
-        X_val, y_val, countries_val = self._prepare_data(val_lazy, train_lazy)
-        X_test, y_test, countries_test = self._prepare_data(test_lazy, train_lazy)
+        X_train, y_train, countries_train = self._prepare_data(train_lazy)
+        X_val, y_val, countries_val = self._prepare_data(val_lazy)
+        X_test, y_test, countries_test = self._prepare_data(test_lazy)
 
         _fold_load_s = time.perf_counter() - _load_t0
         _fit_t0 = time.perf_counter()

@@ -510,9 +510,19 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
     three chances for the paradigms to preprocess differently, and the equivalence
     claim assumes they do not.
 
-    A column with no observed value in the training window is left untouched
-    rather than filled with a global constant, and reported: inventing a value for
-    a feature the training window never observed is the practice this replaces.
+    A column with no observed value in the training window raises. It cannot occur
+    while the invariants hold: the training window is expansive (train_start is
+    fixed at the start year), and feature selection runs on the first fold's
+    training window under P4, so a feature that was selected has observations in
+    that window and therefore in every later one. If it occurs, an invariant broke.
+
+    The three alternatives are all worse. Filling a constant fabricates a value the
+    training window never observed, and makes the feature constant in training and
+    variable in test -- a distribution shift introduced by preprocessing itself.
+    Dropping the column changes the feature set between folds and possibly between
+    paradigms, which breaks both cross-fold comparability and the equivalence
+    claim. Leaving the value missing defers the failure to RidgeCV, since
+    StandardScaler propagates NaN silently rather than rejecting it.
 
     Args:
         train: the fold's training frame; the only source of statistics
@@ -527,15 +537,24 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
         raise ValueError(f"unsupported strategy: {strategy}")
 
     fitted: Dict[str, float] = {}
-    unfilled: List[str] = []
+    unobserved: List[str] = []
     for column in train.columns:
         observed = train[column].dropna()
         if observed.empty:
-            if train[column].isna().any():
-                unfilled.append(column)
+            unobserved.append(column)
             continue
         fitted[column] = float(observed.median() if strategy == 'median'
                                else observed.mean())
+
+    if unobserved:
+        raise ValueError(
+            f"Features com nenhuma observação na janela de treino: "
+            f"{sorted(unobserved)}. Com janela expansiva e seleção sob P4 na "
+            f"janela do primeiro fold, isso não pode ocorrer: uma feature "
+            f"selecionada tem dados ali e portanto em toda janela posterior. "
+            f"Preencher com constante fabricaria um valor que o treino nunca "
+            f"observou."
+        )
 
     filled = []
     for frame in (train, *apply_to):
@@ -549,6 +568,8 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
         'strategy': strategy,
         'fitted_on_rows': int(len(train)),
         'values': fitted,
-        'columns_without_training_observation': unfilled,
+        # Mantido, sempre vazio: a condição levanta acima. A chave permanece
+        # para que um artefato antigo e um novo sejam comparáveis.
+        'columns_without_training_observation': [],
     }
     return filled, report

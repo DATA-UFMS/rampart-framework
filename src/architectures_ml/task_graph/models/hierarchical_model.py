@@ -130,25 +130,21 @@ class HierarchicalModelTaskGraph:
         else:
             raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
     
-    def _prepare_data(self, data_ddf, reference_ddf):
+    def _prepare_data(self, data_ddf):
         """
-        Preparar dados usando processamento distribuído com batch compute.
+        Materializar um fold com um único compute em lote.
 
-        P5 (escopo de preprocessing): medianas/médias para imputação
-        são computadas a partir de reference_ddf (= train), nunca do
-        conjunto completo. Chamadas usam _prepare_data(val, train),
-        _prepare_data(test, train).
+        Materialização apenas. Toda estatística -- a mediana que preenche
+        ausentes -- vive em core.validation.impute_from_training_window, ajustada
+        na janela de treino do fold. Três implementações de uma estatística são
+        três chances de os paradigmas calcularem coisas diferentes, e a afirmação
+        de equivalência assume que eles diferem apenas em como movem dados.
+
+        Sem parâmetro de referência: materializar não precisa da janela de
+        treino, só ajustar estatística precisa.
         """
-        ref_pd = reference_ddf[self.available_features].compute()
-        medians = {}
-        for feature in self.available_features:
-            median_val = ref_pd[feature].median()
-            medians[feature] = median_val if not pd.isna(median_val) else 0.0
-        
         X_ddf = data_ddf[self.available_features]
-        for feature, median_val in medians.items():
-            X_ddf = X_ddf.assign(**{feature: X_ddf[feature].fillna(median_val)})
-        
+
         final_data = {
             'X': X_ddf,
             'y': data_ddf[self.target_col],
@@ -292,9 +288,9 @@ class HierarchicalModelTaskGraph:
         )
         print(f"Dados Normais: Train={n_train}, Val={n_val}, Test={n_test}")
 
-        X_train, y_train, countries_train = self._prepare_data(train_ddf, train_ddf)
-        X_val, y_val, countries_val = self._prepare_data(val_ddf, train_ddf)
-        X_test, y_test, countries_test = self._prepare_data(test_ddf, train_ddf)
+        X_train, y_train, countries_train = self._prepare_data(train_ddf)
+        X_val, y_val, countries_val = self._prepare_data(val_ddf)
+        X_test, y_test, countries_test = self._prepare_data(test_ddf)
         
         _fold_load_s = time.perf_counter() - _load_t0
         _fit_t0 = time.perf_counter()
