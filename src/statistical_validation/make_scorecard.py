@@ -31,13 +31,9 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
-from core.paradigm_registry import discover_paradigms
+from core.paradigm_registry import discover_paradigms, paradigm_pairs
 
 BASE = Path(get_absolute_output_path('outputs/statistics'))
-
-
-def read_text(p: Path) -> str:
-    return p.read_text(encoding='utf-8') if p.exists() else ''
 
 
 def load_json(p: Path) -> Optional[dict]:
@@ -45,29 +41,6 @@ def load_json(p: Path) -> Optional[dict]:
         return json.loads(p.read_text(encoding='utf-8')) if p.exists() else None
     except Exception:
         return None
-
-
-def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
-    """Extrai speedup e IC 95% de significance_summary.tex.
-    Retorna dict fase -> (speedup, lo, hi).
-    """
-    res: Dict[str, Tuple[float, float, float]] = {}
-    # Linhas esperadas: "Processing & 10.00 & 1.00 & 9.00 [8.00, 10.00] & 13.70 [10.32, 18.18] & ..."
-    for line in tex.splitlines():
-        if not line or '&' not in line or line.startswith('%'):
-            continue
-        parts = [p.strip() for p in line.split('&')]
-        if len(parts) < 6:
-            continue
-        phase = parts[0].lower()
-        # Campo speedup no formato: "7.10 [6.58, 7.67]"
-        m = re.search(r"([0-9]+\.?[0-9]*)\s*\[\s*([0-9]+\.?[0-9]*),\s*([0-9]+\.?[0-9]*)\s*\]", parts[5])
-        if m:
-            val = float(m.group(1))
-            lo = float(m.group(2))
-            hi = float(m.group(3))
-            res[phase] = (val, lo, hi)
-    return res
 
 
 def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
@@ -96,15 +69,14 @@ def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
                 out[pair_key] = pair_speedups
         if out:
             return out
-    # Fallback para estrutura legada
-    tex = read_text(BASE / 'significance_summary.tex')
-    if tex:
-        flat_speedups = parse_significance_tex(tex)
-        return {'dl_vs_dw': flat_speedups} if flat_speedups else {}
+    # Sem fallback por parsing de LaTeX. Ele recuperava números da tabela que
+    # outro script renderiza e os chaveava sob 'dl_vs_dw', um par que deixou de
+    # existir no rename -- então o resultado nunca casava com nada e a ausência
+    # do JSON aparecia como scorecard vazio em vez de como ausência.
     return {}
 
 
-def summarize_equivalence(metric: str, pair_key: str = 'dl_vs_dw') -> Optional[str]:
+def summarize_equivalence(metric: str, pair_key: str) -> Optional[str]:
     """Lê equivalence_estimation.json e retorna resumo para a métrica dada."""
     data = load_json(BASE / 'equivalence_estimation.json')
     if not data:
@@ -152,8 +124,18 @@ def get_resources_processing(phase: str = 'processing') -> Dict[str, Dict[str, O
 def build_scorecard() -> str:
     speedups_by_pair = get_speedups()
 
-    # Pares e rótulos
-    pairs = [('dl_vs_dw', 'DL vs DW'), ('dl_vs_pl', 'DL vs PL'), ('dw_vs_pl', 'DW vs PL')]
+    # Pares derivados do registro. As chaves literais eram pré-rename
+    # ('dl_vs_dw' etc.) enquanto os artefatos passaram a usar os nomes dos
+    # paradigmas, então nenhum par casava e o scorecard saía com travessão em
+    # duas das três linhas -- 12 speedups e 9 decisões SESOI perdidos em silêncio.
+    pairs = [(f'{left}_vs_{right}',
+              f"{left.replace('_', chr(92) + '_')} vs {right.replace('_', chr(92) + '_')}")
+             for left, right in paradigm_pairs()]
+    if speedups_by_pair and not any(k in speedups_by_pair for k, _ in pairs):
+        raise KeyError(
+            f"Nenhum par do registro {[k for k, _ in pairs]} aparece nos "
+            f"artefatos {sorted(speedups_by_pair)}: o scorecard sairia vazio."
+        )
 
     # Linhas de speedup por par
     speedup_rows = {}
@@ -208,12 +190,16 @@ def build_scorecard() -> str:
     parts.append('\\centering')
     parts.append('\\caption{Painel de evidências (resumo consolidado 3-way)}')
     parts.append('\\label{tab:architectural-scorecard}')
-    parts.append('\\begin{tabular}{p{0.18\\linewidth}p{0.26\\linewidth}p{0.26\\linewidth}p{0.26\\linewidth}}')
+    width = 0.78 / max(len(pairs), 1)
+    parts.append('\\begin{tabular}{p{0.18\\linewidth}'
+                 + f'p{{{width:.2f}\\linewidth}}' * len(pairs) + '}')
     parts.append('\\toprule')
-    parts.append(' & DL vs DW & DL vs PL & DW vs PL \\\\')
+    parts.append(' & ' + ' & '.join(label for _, label in pairs) + ' \\\\')
     parts.append('\\midrule')
-    parts.append('\\textbf{Speedup por fase} & ' + speedup_rows['dl_vs_dw'] + ' & ' + speedup_rows['dl_vs_pl'] + ' & ' + speedup_rows['dw_vs_pl'] + ' \\\\')
-    parts.append('\\textbf{Equivalência (SESOI+IC)} & ' + equiv_rows['dl_vs_dw'] + ' & ' + equiv_rows['dl_vs_pl'] + ' & ' + equiv_rows['dw_vs_pl'] + ' \\\\')
+    parts.append('\\textbf{Speedup por fase} & '
+                 + ' & '.join(speedup_rows[k] for k, _ in pairs) + ' \\\\')
+    parts.append('\\textbf{Equivalência (SESOI+IC)} & '
+                 + ' & '.join(equiv_rows[k] for k, _ in pairs) + ' \\\\')
     parts.append('\\textbf{Recursos (processing)} & \\multicolumn{3}{l}{' + resource_s + '} \\\\')
     parts.append('\\bottomrule')
     parts.append('\\end{tabular}')

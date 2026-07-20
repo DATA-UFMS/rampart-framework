@@ -34,6 +34,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
+from core.paradigm_registry import discover_paradigms
 
 RESULTS_CSV = Path(get_absolute_output_path(
     "outputs/benchmarks/architectural_benchmark_results.csv"))
@@ -110,62 +111,51 @@ def resumir(df: pd.DataFrame) -> Dict:
 
 
 def para_latex(resumo: Dict) -> str:
-    wrapper_prefix = [
+    """Tabela transposta: uma linha por (fase, paradigma).
+
+    O cabeçalho anterior nomeava dois paradigmas em colunas fixas, e o terceiro
+    não aparecia na tabela publicada. Transposta, as linhas vêm do registro e
+    nenhum paradigma pode ficar de fora.
+    """
+    paradigms = sorted(discover_paradigms())
+    prefix = [
         r"\begingroup",
         r"\setlength{\tabcolsep}{4pt}",
         r"\scriptsize",
         r"\begin{center}",
-        r"\begin{tabular}{@{}lrrrrrr@{}}",
+        r"\begin{tabular}{@{}llrrr@{}}",
         r"\hline",
-        r"Fase & DL P50 & DL P95 & DL P99 & DW P50 & DW P95 & DW P99 \\",
+        r"Fase & Paradigma & P50 & P95 & P99 \\",
         r"\hline",
     ]
-
-    wrapper_suffix = [
-        r"\hline",
-        r"\end{tabular}",
-        r"\end{center}",
-        r"\endgroup",
-    ]
+    suffix = [r"\hline", r"\end{tabular}", r"\end{center}", r"\endgroup"]
 
     if not resumo or "per_phase" not in resumo:
-        linhas_erro = wrapper_prefix + [
-            r"Sem dados & — & — & — & — & — & — \\",
-        ] + wrapper_suffix
-        return "\n".join(linhas_erro) + "\n"
+        return "\n".join(prefix + [r"Sem dados & — & — & — & — \\"] + suffix) + "\n"
 
     linhas: List[str] = [
         "% Gerado automaticamente por derive_throughput_percentiles.py",
-        "% P50/P95/P99 de throughput (registros/segundo)",
+        "% P50/P95/P99 de throughput (registros/segundo), por fase e paradigma",
         "",
     ]
-    linhas.extend(wrapper_prefix)
+    linhas.extend(prefix)
 
-    por_fase = resumo.get("per_phase", {})
-    
-    for fase in sorted(por_fase.keys()):
-        item = por_fase[fase]
-        arquiteturas = item.get("architectures", {})
-        
-        dl = arquiteturas.get("task_graph", {})
-        dw = arquiteturas.get("sql_engine", {})
-        
-        fase_latex = _escape_latex(fase)
-        
+    for fase in sorted(resumo["per_phase"]):
+        arquiteturas = resumo["per_phase"][fase].get("architectures", {})
+        rotulo = _escape_latex(fase)
+        for paradigm in paradigms:
+            stats = arquiteturas.get(paradigm, {})
+            linhas.append(
+                f"{rotulo} & {_escape_latex(paradigm)}"
+                f" & {_fmt(stats.get('p50'))}"
+                f" & {_fmt(stats.get('p95'))}"
+                f" & {_fmt(stats.get('p99'))} \\\\")
+            rotulo = ""
+        linhas.append(r"\hline")
 
-        linha = (
-            f"{fase_latex}"
-            f" & {_fmt(dl.get('p50'))}"
-            f" & {_fmt(dl.get('p95'))}"
-            f" & {_fmt(dl.get('p99'))}"
-            f" & {_fmt(dw.get('p50'))}"
-            f" & {_fmt(dw.get('p95'))}"
-            f" & {_fmt(dw.get('p99'))}"
-            f" \\\\"  
-        )
-        linhas.append(linha)
-
-    linhas.extend(wrapper_suffix)
+    if linhas[-1] == r"\hline":
+        linhas.pop()
+    linhas.extend(suffix)
     return "\n".join(linhas) + "\n"
 
 

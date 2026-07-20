@@ -35,6 +35,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
+from core.paradigm_registry import discover_paradigms, paradigm_pairs
 
 RESULTS_CSV = Path(get_absolute_output_path(
     "outputs/benchmarks/architectural_benchmark_results.csv"))
@@ -47,6 +48,22 @@ EXCLUDE_PHASES = {"collection"}
 
 def _garantir_diretorio() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _speedups(por_arq: Dict[str, Dict]) -> Dict[str, float | None]:
+    """Razão de medianas por par de paradigmas, nomeada a/b na ordem do registro.
+
+    Um par cujo denominador não é positivo devolve None, e o consumidor imprime
+    travessão -- mas por ausência de dado, não por chave escrita com um nome e
+    lida com outro.
+    """
+    out: Dict[str, float | None] = {}
+    for left, right in paradigm_pairs():
+        a = por_arq.get(left, {}).get("p50")
+        b = por_arq.get(right, {}).get("p50")
+        out[f"{left}_vs_{right}"] = (
+            (a / b) if (a is not None and b is not None and b > 0) else None)
+    return out
 
 
 def _fmt_segundos(x: float | None) -> str:
@@ -98,18 +115,12 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
                 "n": int(np.isfinite(vals).sum()),
             }
 
-        dl_med = por_arq.get("task_graph", {}).get("p50")
-        dw_med = por_arq.get("sql_engine", {}).get("p50")
-        pl_med = por_arq.get("dataframe_lib", {}).get("p50")
-
-        def _speedup(a, b):
-            return (a / b) if (a is not None and b is not None and b > 0) else None
-
         resumo["per_phase"][fase] = {
             "architectures": por_arq,
-            "speedup_dl_vs_dw_p50": _speedup(dl_med, dw_med),
-            "speedup_dl_vs_pl_p50": _speedup(dl_med, pl_med),
-            "speedup_dw_vs_pl_p50": _speedup(dw_med, pl_med),
+            # Chaves derivadas do registro e nomeadas na mesma ordem usada no
+            # total. Antes o per_phase gravava speedup_dl_vs_dw_p50 e o LaTeX lia
+            # speedup_dw_vs_dl_p50: a coluna saía vazia em toda linha.
+            "speedups_p50": _speedups(por_arq),
         }
 
     # Totais por execução (somando fases não-excluídas)
@@ -126,66 +137,77 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
             "p99": _pct(arr, 99),
             "n_runs": int(np.isfinite(arr).sum()),
         }
-    dl_med = por_arq_total.get("task_graph", {}).get("p50")
-    dw_med = por_arq_total.get("sql_engine", {}).get("p50")
-    speedup_total = (dl_med / dw_med) if (dl_med is not None and dw_med is not None and dw_med > 0) else None
-    resumo["total"] = {"architectures": por_arq_total, "speedup_dw_vs_dl_p50": speedup_total}
+    resumo["total"] = {
+        "architectures": por_arq_total,
+        "speedups_p50": _speedups(por_arq_total),
+    }
     return resumo
 
 
 def para_latex(resumo: Dict) -> str:
-    if not resumo or "per_phase" not in resumo:
-        return (
-            "\\begin{tabular}{lrrrrrr}\n"
-            "\\hline\n"
-            "Fase & DL P50 & DL P95 & DL P99 & DW P50 & DW P95 & DW P99 \\\\ \n"
-            "\\hline\n"
-            "Sem dados & -- & -- & -- & -- & -- & -- \\\\ \n"
-            "\\hline\n"
-            "\\end{tabular}\n"
-        )
+    """Tabela transposta: uma linha por (fase, paradigma).
 
-    linhas: List[str] = []
-    linhas.append("% Gerado automaticamente por derive_latency_percentiles.py")
-    linhas.append("% P50/P95/P99 em segundos e speedups DW vs DL (P50)")
-    linhas.append("\\begin{tabular}{lrrrrrrr}")
-    linhas.append("\\hline")
-    linhas.append("Fase & DL P50 & DL P95 & DL P99 & DW P50 & DW P95 & DW P99 & Speedup DW (P50) \\\\")
-    linhas.append("\\hline")
-
+    O layout anterior tinha uma coluna por percentil de dois paradigmas, com os
+    nomes escritos no cabeçalho -- o terceiro paradigma não aparecia em lugar
+    nenhum da tabela, e um quarto exigiria reescrever o cabeçalho. Transposta,
+    a tabela escala sem alteração e nenhum paradigma pode ser esquecido, porque
+    as linhas vêm do registro.
+    """
+    paradigms = sorted(discover_paradigms())
     por_fase = resumo.get("per_phase", {})
-    for fase in sorted(por_fase.keys()):
-        item = por_fase[fase]
-        a = item.get("architectures", {})
-        dl = a.get("task_graph", {})
-        dw = a.get("sql_engine", {})
-        sp = item.get("speedup_dw_vs_dl_p50")
-        row = [
-            fase,
-            _fmt_segundos(dl.get("p50")),
-            _fmt_segundos(dl.get("p95")),
-            _fmt_segundos(dl.get("p99")),
-            _fmt_segundos(dw.get("p50")),
-            _fmt_segundos(dw.get("p95")),
-            _fmt_segundos(dw.get("p99")),
-            (f"{sp:.2f}×" if sp and np.isfinite(sp) else "—"),
-        ]
-        linhas.append(" ".join([f"{col}" for col in row]).replace(" ", " & ") + " \\\\")
+    if not por_fase:
+        return ("% Sem dados de latência\n"
+                "\\begin{tabular}{llrrr}\n\\hline\n"
+                "Fase & Paradigma & P50 & P95 & P99 \\\\ \n"
+                "\\hline\n\\end{tabular}\n")
 
-    total = resumo.get("total", {})
-    ta = total.get("architectures", {})
-    dl = ta.get("task_graph", {})
-    dw = ta.get("sql_engine", {})
-    sp = total.get("speedup_dw_vs_dl_p50")
-    linhas.append("\\hline")
-    linhas.append(
-        ("Total" +
-         f" & {_fmt_segundos(dl.get('p50'))} & {_fmt_segundos(dl.get('p95'))} & {_fmt_segundos(dl.get('p99'))}" +
-         f" & {_fmt_segundos(dw.get('p50'))} & {_fmt_segundos(dw.get('p95'))} & {_fmt_segundos(dw.get('p99'))}" +
-         f" & {(f'{sp:.2f}×' if sp and np.isfinite(sp) else '—')} \\\\")
-    )
-    linhas.append("\\hline")
-    linhas.append("\\end{tabular}")
+    linhas: List[str] = [
+        "% Gerado automaticamente por derive_latency_percentiles.py",
+        "% P50/P95/P99 em segundos, por fase e paradigma",
+        "\\begin{tabular}{llrrr}",
+        "\\hline",
+        "Fase & Paradigma & P50 & P95 & P99 \\\\",
+        "\\hline",
+    ]
+
+    def _bloco(rotulo: str, arquiteturas: Dict) -> None:
+        for paradigm in paradigms:
+            stats = arquiteturas.get(paradigm, {})
+            linhas.append(
+                f"{rotulo} & {paradigm.replace('_', chr(92) + '_')}"
+                f" & {_fmt_segundos(stats.get('p50'))}"
+                f" & {_fmt_segundos(stats.get('p95'))}"
+                f" & {_fmt_segundos(stats.get('p99'))} \\\\")
+            rotulo = ""
+
+    for fase in sorted(por_fase):
+        _bloco(fase, por_fase[fase].get("architectures", {}))
+        linhas.append("\\hline")
+    _bloco("Total", resumo.get("total", {}).get("architectures", {}))
+    linhas += ["\\hline", "\\end{tabular}", ""]
+
+    # Speedups em tabela própria: um par por linha, derivado do registro.
+    linhas += [
+        "",
+        "% Speedup de mediana por par (P50 de A dividido por P50 de B)",
+        # Uma coluna de rótulo mais uma por fase mais o total.
+        "\\begin{tabular}{l" + "r" * (len(por_fase) + 1) + "}",
+        "\\hline",
+        "Par & " + " & ".join(sorted(por_fase)) + " & Total \\\\",
+        "\\hline",
+    ]
+    for left, right in paradigm_pairs():
+        key = f"{left}_vs_{right}"
+        celulas = []
+        for fase in sorted(por_fase):
+            value = por_fase[fase].get("speedups_p50", {}).get(key)
+            celulas.append(f"{value:.2f}" if value and np.isfinite(value) else "—")
+        total_value = resumo.get("total", {}).get("speedups_p50", {}).get(key)
+        celulas.append(f"{total_value:.2f}"
+                       if total_value and np.isfinite(total_value) else "—")
+        label = f"{left} / {right}".replace('_', chr(92) + '_')
+        linhas.append(f"{label} & " + " & ".join(celulas) + " \\\\")
+    linhas += ["\\hline", "\\end{tabular}"]
     return "\n".join(linhas) + "\n"
 
 
