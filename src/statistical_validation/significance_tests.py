@@ -65,6 +65,23 @@ def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+# Ordem de leitura das colunas do CSV. É ordenação, não filtragem: a versão
+# anterior era uma lista branca de nomes pré-rename e descartava em silêncio
+# tudo o que não reconhecia -- as médias por paradigma e todos os speedups com
+# seus IC95, que são justamente as colunas cujo nome contém o paradigma.
+# Sobreviviam quatro: n, mean_diff_s e o IC da diferença.
+_COLUMN_ORDER = ("n", "mean_", "speedup_", "diff_mean_ci95_",
+                 "shapiro_", "anderson_", "t_", "wilcoxon_")
+
+
+def column_rank(name: str) -> tuple:
+    """Posição de leitura de uma coluna; desconhecidas vão ao fim, em ordem."""
+    for index, prefix in enumerate(_COLUMN_ORDER):
+        if name == prefix or name.startswith(prefix):
+            return (index, name)
+    return (len(_COLUMN_ORDER), name)
+
+
 def load_benchmark(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     if "run_id" not in df.columns and "rep" in df.columns:
@@ -293,36 +310,10 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
             row.update(metrics)
             rows.append(row)
 
-    possible_cols = [
-        "n",
-        "mean_dl_s",
-        "mean_dw_s",
-        "mean_pl_s",
-        "mean_diff_s",
-        "speedup_dw_vs_dl",
-        "speedup_pl_vs_dl",
-        "speedup_pl_vs_dw",
-        "diff_mean_ci95_lo",
-        "diff_mean_ci95_hi",
-        "speedup_dw_vs_dl_ci95_lo",
-        "speedup_dw_vs_dl_ci95_hi",
-        "speedup_pl_vs_dl_ci95_lo",
-        "speedup_pl_vs_dl_ci95_hi",
-        "speedup_pl_vs_dw_ci95_lo",
-        "speedup_pl_vs_dw_ci95_hi",
-        "shapiro_W",
-        "shapiro_p",
-        "anderson_stat",
-        "t_stat",
-        "t_p",
-        "wilcoxon_stat",
-        "wilcoxon_p",
-    ]
-    # Determina quais colunas realmente existem
     cols_present = set()
     for row in rows:
         cols_present.update(k for k in row.keys() if k not in ["pair", "phase"])
-    cols = [c for c in possible_cols if c in cols_present]
+    cols = sorted(cols_present, key=column_rank)
 
     # CSV
     df = pd.DataFrame(rows)

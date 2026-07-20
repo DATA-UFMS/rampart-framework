@@ -197,3 +197,76 @@ class TestOutputSchema:
         for column in ('wilcoxon_p', 'wilcoxon_p_bonferroni', 'family_size',
                        'alpha_bonferroni', 'observed_power'):
             assert column in frame.columns
+
+
+class TestSignificanceCsvKeepsEveryColumn:
+    """O CSV mantém tudo o que a análise produz.
+
+    Uma lista branca de nomes decidia quais colunas iam para o arquivo, e os
+    nomes eram pré-rename. Ela descartava em silêncio as médias por paradigma e
+    todos os speedups com seus IC95 -- que são exatamente as colunas cujo nome
+    contém o paradigma. Sobreviviam quatro: n, mean_diff_s e o IC da diferença.
+
+    Os testes leem o arquivo escrito, não a função de ordenação: uma lista
+    branca reintroduzida ao lado dela deixaria a ordenação intacta e correta.
+    """
+
+    @staticmethod
+    def _written(tmp_path, monkeypatch):
+        from core.paradigm_registry import discover_paradigms
+        from statistical_validation import significance_tests as module
+
+        rng = np.random.default_rng(11)
+        rows = [{'run_id': run, 'phase': phase, 'architecture': paradigm,
+                 'duration_s': (1.0 + index) * (1 + 0.05 * rng.normal())}
+                for run in range(10)
+                for phase in ('processing', 'baseline')
+                for index, paradigm in enumerate(sorted(discover_paradigms()))]
+        csv = tmp_path / 'architectural_benchmark_results.csv'
+        pd.DataFrame(rows).to_csv(csv, index=False)
+
+        results = module.analyze(str(csv))
+        monkeypatch.setattr(module, 'RESULTS_DIR', str(tmp_path))
+        module.write_outputs(results)
+        written = pd.read_csv(tmp_path / 'significance_summary.csv')
+        produced = {key for pair in results.values()
+                    for metrics in pair.values() for key in metrics}
+        return produced, set(written.columns) - {'pair', 'phase'}
+
+    def test_paradigm_named_columns_reach_the_file(self, tmp_path, monkeypatch):
+        produced, written = self._written(tmp_path, monkeypatch)
+        named = {k for k in produced if 'mean_' in k or 'speedup' in k}
+        assert named, 'a análise não produziu colunas nomeadas por paradigma'
+        assert named <= written, (
+            f'descartadas do CSV: {sorted(named - written)}'
+        )
+
+    def test_nothing_produced_is_dropped(self, tmp_path, monkeypatch):
+        produced, written = self._written(tmp_path, monkeypatch)
+        assert produced <= written, (
+            f'a análise produziu e o CSV perdeu: {sorted(produced - written)}'
+        )
+
+    def test_the_speedups_carry_their_intervals(self, tmp_path, monkeypatch):
+        """Um speedup sem IC não sustenta a tabela de latência do paper."""
+        _, written = self._written(tmp_path, monkeypatch)
+        speedups = {c for c in written
+                    if c.startswith('speedup_') and not c.endswith(
+                        ('_ci95_lo', '_ci95_hi'))}
+        assert speedups
+        for name in speedups:
+            assert f'{name}_ci95_lo' in written, name
+            assert f'{name}_ci95_hi' in written, name
+
+    def test_the_order_is_deterministic(self, tmp_path, monkeypatch):
+        from statistical_validation import significance_tests as module
+        _, written = self._written(tmp_path, monkeypatch)
+        assert sorted(written, key=module.column_rank) == \
+            sorted(written, key=module.column_rank)
+
+    def test_no_whitelist_of_names_remains(self):
+        source = (Path(_SRC) / 'statistical_validation'
+                  / 'significance_tests.py').read_text()
+        for stale in ('mean_dl_s', 'mean_dw_s', 'speedup_dw_vs_dl',
+                      'possible_cols'):
+            assert stale not in source, stale
