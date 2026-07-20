@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -106,6 +107,24 @@ def _stage_rows(data: Dict, paradigms: List[str]) -> List[Dict]:
         # O maior p entre os pares limita a afirmação do estágio.
         worst_p = (float(stage_tests[p_column].max())
                    if not stage_tests.empty else float('nan'))
+
+        # Piso e limiar são independentes: o piso vem das repetições, o limiar
+        # vem do tamanho da família, que cresce com o número de paradigmas. Com
+        # um quarto paradigma a família passa de 15 para 30 e o limiar cai
+        # abaixo do piso -- nenhum estágio pode ser significativo, qualquer que
+        # seja o dado. Sair em silêncio nessa condição é reportar ausência de
+        # diferença quando o que houve foi ausência de resolução.
+        floor = (2.0 / 2 ** n_pairs) if n_pairs else float('nan')
+        if n_pairs and floor > threshold:
+            raise ValueError(
+                f"Estágio '{stage}': o piso do Wilcoxon bilateral com "
+                f"{n_pairs} pares é {floor:.5f}, acima do limiar corrigido "
+                f"{threshold:.5f} (alpha={ALPHA} sobre família de "
+                f"{family_size}). Nenhum estágio pode ser significativo nesta "
+                f"configuração. Aumente as repetições para "
+                f"{math.ceil(math.log2(2.0 / threshold))} ou mais, ou reduza a "
+                f"família."
+            )
         rows.append({
             'stage': stage,
             'cells': cells,
@@ -114,7 +133,7 @@ def _stage_rows(data: Dict, paradigms: List[str]) -> List[Dict]:
             'worst_pair_p': worst_p,
             'family_size': int(family_size),
             'n_observations': n_pairs,
-            'wilcoxon_floor': (2.0 / 2 ** n_pairs) if n_pairs else float('nan'),
+            'wilcoxon_floor': floor,
             'threshold': threshold,
             # Uma única formulação: p bruto contra alpha/m. Reportar também o p
             # multiplicado convidaria a compará-lo com 0,05 por hábito, e as duas

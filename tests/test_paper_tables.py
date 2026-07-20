@@ -17,6 +17,7 @@ Duas decisões que a transcrição escondia ficam pinadas aqui:
 
 import json
 import re
+import math
 import sys
 from pathlib import Path
 
@@ -191,6 +192,67 @@ class TestSignificanceReporting:
         row = report['datasets']['worldbank']['stages'][0]
         assert row['wilcoxon_floor'] == pytest.approx(2 / 2 ** 10)
         assert 'piso' in module.to_latex(report)
+
+
+class TestTheDesignMustBeAbleToResolve:
+    """Piso do teste contra limiar corrigido.
+
+    Os dois são independentes: o piso vem das repetições (2/2^n para o Wilcoxon
+    bilateral), o limiar vem do tamanho da família, que cresce com o número de
+    paradigmas. Com um quarto paradigma a família passa de 15 para 30 e o
+    limiar cai para 0,00167, abaixo do piso de 0,00195 -- nenhum estágio pode
+    ser significativo, qualquer que seja o dado. A tabela saía normalmente, com
+    todos os estágios marcados (n.s.).
+    """
+
+    def test_the_current_design_resolves(self, tables):
+        """Base: 15 testes dão 0,00333, acima do piso de 0,00195."""
+        module, *_ = tables
+        row = module.build(['worldbank'])['datasets']['worldbank']['stages'][0]
+        assert row['threshold'] > row['wilcoxon_floor']
+
+    @staticmethod
+    def _inflate_family(path):
+        """Menor família que não resolve com n=10: alpha/m < 2/2^10 => m >= 26.
+
+        Um quarto paradigma leva 3 pares a 6, e a família de 4 estágios mais o
+        total passa de 15 para 30 -- acima desse limite.
+        """
+        frame = pd.read_csv(path)
+        floor = 2 / 2 ** 10
+        copies = [frame]
+        while sum(len(c) for c in copies) * 1.0 and \
+                0.05 / sum(len(c) for c in copies) >= floor:
+            index = len(copies)
+            copies.append(frame.assign(pair=frame['pair'] + f'_x{index}'))
+        inflated = pd.concat(copies, ignore_index=True)
+        assert 0.05 / len(inflated) < floor
+        inflated.to_csv(path, index=False)
+        return len(inflated)
+
+    def test_a_family_below_the_floor_halts(self, tables, tmp_path):
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        self._inflate_family(path)
+        with pytest.raises(ValueError, match='piso do Wilcoxon'):
+            module.build(['worldbank'])
+
+    def test_the_message_says_how_many_repetitions_would_do(self, tables,
+                                                            tmp_path):
+        """Sem isso o operador sabe que parou, não o que mudar."""
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        size = self._inflate_family(path)
+        with pytest.raises(ValueError) as exc:
+            module.build(['worldbank'])
+        message = str(exc.value)
+        required = math.ceil(math.log2(2.0 / (0.05 / size)))
+        assert str(required) in message, message
+        assert 2 / 2 ** required <= 0.05 / size, (
+            'o número sugerido não resolveria de fato'
+        )
 
 
 class TestLatexIsCompilable:
