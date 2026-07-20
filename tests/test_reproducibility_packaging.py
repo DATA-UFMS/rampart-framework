@@ -142,6 +142,56 @@ class TestSnapshotVerifier:
         assert manifest['file_count'] == 2
 
 
+class TestSnapshotSurvivesItsOwnAge:
+    """Um snapshot verificado é autoritativo, qualquer que seja sua idade.
+
+    copytree preserva mtime, e o coletor invalidava cache por idade, então um
+    snapshot de trinta dias disparava chamada à API -- exatamente o que ele
+    existe para evitar. Estar velho é a característica dele.
+    """
+
+    def test_the_installer_leaves_the_manifest(self):
+        source = VERIFIER.read_text()
+        assert 'ignore_patterns(MANIFEST_NAME)' not in source, (
+            'sem o manifesto no destino o coletor não sabe que os dados vêm de '
+            'um snapshot verificado'
+        )
+
+    def test_the_collector_gates_on_the_manifest(self):
+        source = (_ROOT / 'src' / 'collection'
+                  / 'raw_data_collector.py').read_text()
+        block = source[source.index('def _cache_is_valid'):]
+        block = block[:block.index('\n    def ', 1)]
+        assert 'snapshot_manifest.json' in block
+        assert block.index('snapshot_manifest.json') < block.index('age_hours')
+
+    def test_an_old_snapshot_is_still_accepted(self, tmp_path, monkeypatch):
+        """Reproduzido: arquivos com trinta dias, manifesto presente."""
+        import os
+        import time
+
+        import collection.raw_data_collector as collector
+
+        instance = object.__new__(
+            next(getattr(collector, name) for name in dir(collector)
+                 if isinstance(getattr(collector, name), type)
+                 and hasattr(getattr(collector, name), '_cache_is_valid')))
+        instance.output_dir = str(tmp_path)
+        old = time.time() - 30 * 24 * 3600
+        for name in ('complete_data.parquet', 'raw_data_long.parquet',
+                     'scientific_collection_metadata.json',
+                     'scientific_imputation_log.json'):
+            path = tmp_path / name
+            path.write_text('{}')
+            os.utime(path, (old, old))
+
+        assert not instance._cache_is_valid(), 'sem manifesto deveria expirar'
+        (tmp_path / 'snapshot_manifest.json').write_text('{}')
+        assert instance._cache_is_valid(), (
+            'com manifesto o snapshot verificado deveria ser aceito'
+        )
+
+
 class TestDockerfile:
 
     def test_exists(self):
@@ -175,6 +225,25 @@ class TestDockerfile:
         assert 'pytest' in body, (
             'an image that fails its tests should not come into existence'
         )
+
+    def test_the_dockerfile_is_in_the_image(self):
+        """A suíte roda na construção e inspeciona este arquivo.
+
+        Sem copiá-lo, oito testes falham dentro do build e nenhuma imagem é
+        produzida -- então o caminho documentado no README não funcionava.
+        """
+        body = DOCKERFILE.read_text()
+        copied = [line for line in body.splitlines()
+                  if line.startswith('COPY') and 'Dockerfile' in line]
+        assert copied, 'a imagem não contém o próprio Dockerfile'
+
+    def test_it_is_copied_before_the_suite_runs(self):
+        body = DOCKERFILE.read_text()
+        copy_line = next(i for i, line in enumerate(body.splitlines())
+                         if line.startswith('COPY') and 'Dockerfile' in line)
+        test_line = next(i for i, line in enumerate(body.splitlines())
+                         if 'pytest' in line)
+        assert copy_line < test_line
 
     def test_the_lock_is_copied_before_the_source(self):
         """Otherwise every code change reinstalls every dependency."""

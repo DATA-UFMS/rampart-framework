@@ -31,7 +31,9 @@ WORKDIR /rampart
 COPY requirements-lock.txt ./
 RUN python -m pip install --requirement requirements-lock.txt
 
-COPY pyproject.toml README.md ./
+# O Dockerfile entra na imagem porque a suíte que roda na construção o
+# inspeciona; sem ele oito testes falham e nenhuma imagem é produzida.
+COPY pyproject.toml README.md Dockerfile ./
 COPY src/ src/
 COPY tests/ tests/
 COPY scripts/ scripts/

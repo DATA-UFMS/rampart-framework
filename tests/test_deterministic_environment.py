@@ -68,6 +68,37 @@ class TestThreadBudget:
                    for v in deterministic_environment().values())
 
 
+class TestEngineBudgetReachesEveryStage:
+    """As etapas 4 e 5 rodam como processos separados.
+
+    O dask.config.set da etapa de processamento não as alcança, então elas
+    mediam com o número de núcleos do host enquanto as outras mediam com o
+    orçamento -- e a tabela de latência comparava as duas coisas.
+    """
+
+    def test_dask_receives_the_engine_budget(self):
+        env = deterministic_environment()
+        assert env['DASK_NUM_WORKERS'] == str(
+            SCIENTIFIC_CONFIG['engine_threads'])
+
+    def test_dask_honours_it_in_a_child(self, tmp_path):
+        import os
+        import subprocess
+
+        script = tmp_path / 'probe.py'
+        script.write_text('import dask\n'
+                          'print(dask.config.get("num_workers", "unset"))\n')
+        env = os.environ.copy()
+        env.update(deterministic_environment())
+        out = subprocess.run([sys.executable, str(script)], check=True,
+                             capture_output=True, text=True, env=env)
+        assert out.stdout.strip() == str(SCIENTIFIC_CONFIG['engine_threads'])
+
+    def test_it_matches_the_other_engines(self):
+        env = deterministic_environment()
+        assert env['DASK_NUM_WORKERS'] == env['POLARS_MAX_THREADS']
+
+
 class TestEnvironmentReachesTheSubprocess:
 
     def test_a_child_sees_the_thread_budget(self, tmp_path):

@@ -1237,6 +1237,15 @@ class RawDataCollector:
         for fpath in required_files:
             if not os.path.exists(fpath):
                 return False
+        # Um snapshot verificado é autoritativo, qualquer que seja sua idade.
+        # copytree preserva mtime, então um snapshot de trinta dias parecia
+        # cache vencido e disparava chamada à API -- exatamente o que ele existe
+        # para evitar. Estar velho é a característica dele, não um defeito.
+        manifest = os.path.join(self.output_dir, 'snapshot_manifest.json')
+        if os.path.exists(manifest):
+            print("  Cache: snapshot verificado instalado; idade não se aplica")
+            return True
+
         import time as _time
         age_hours = (_time.time() - os.path.getmtime(required_files[0])) / 3600
         return age_hours < 24

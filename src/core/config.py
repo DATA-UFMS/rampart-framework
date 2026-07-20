@@ -111,11 +111,16 @@ def get_absolute_output_path(relative_path: str) -> str:
       'outputs/statistics' -> '/<projeto>/outputs/inep_censo/statistics'
     """
     import os
-    prefix = 'outputs' + os.sep
-    if relative_path.startswith(prefix) or relative_path.startswith('outputs/'):
-        relative_path = relative_path.split('/', 1)[1] if '/' in relative_path \
-            else ''
-    return os.path.join(get_outputs_root(), relative_path)
+
+    # Por componente, e não por prefixo textual. A forma nua 'outputs' não
+    # começa com 'outputs/', então escapava do descascamento e produzia
+    # outputs/<dataset>/outputs -- foi assim que o snapshot de ambiente passou a
+    # ser gravado um nível abaixo de onde todos os consumidores o leem.
+    parts = [part for part in relative_path.replace(os.sep, '/').split('/')
+             if part]
+    if parts and parts[0] == 'outputs':
+        parts = parts[1:]
+    return os.path.join(get_outputs_root(), *parts)
 
 def get_execution_metadata() -> Dict:
     """Retorna metadados da execução atual"""

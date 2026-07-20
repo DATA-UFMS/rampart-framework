@@ -70,6 +70,10 @@ class TestSegregation:
         'outputs/benchmarks/architectural_benchmark_results.csv',
         'statistics',
         'outputs/ml_pipeline/architectures/sql_engine/prep',
+        # A forma nua não começa com 'outputs/', então escapava do
+        # descascamento por prefixo e produzia outputs/<dataset>/outputs.
+        'outputs',
+        'outputs/',
     ])
     def test_every_form_lands_under_the_dataset_root(self, relative, dataset):
         name = dataset('inep_censo')
@@ -79,6 +83,21 @@ class TestSegregation:
         # 'outputs' must not appear twice in the tail.
         tail = resolved.split(f'outputs{os.sep}{name}{os.sep}')[-1]
         assert not tail.startswith('outputs')
+
+    def test_the_bare_form_is_the_dataset_root(self, dataset):
+        """Era outputs/<dataset>/outputs, um nível abaixo dos consumidores."""
+        dataset('worldbank')
+        assert get_absolute_output_path('outputs') == get_outputs_root()
+        assert get_absolute_output_path('') == get_outputs_root()
+
+    def test_the_snapshot_lands_where_its_readers_look(self, dataset):
+        """O gerador de tabelas avisava e saía 0 sem gerar nada."""
+        dataset('worldbank')
+        written = Path(get_absolute_output_path('outputs')) / \
+            'scientific_config_snapshot.json'
+        read_by_tables = Path(get_outputs_root()) / \
+            'scientific_config_snapshot.json'
+        assert written == read_by_tables
 
     def test_absolute_paths_are_returned(self, dataset):
         dataset('worldbank')

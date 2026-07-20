@@ -61,9 +61,13 @@ def deterministic_environment() -> dict:
         'NUMEXPR_NUM_THREADS': blas,
         'VECLIB_MAXIMUM_THREADS': blas,
         # Componente do paradigma: o Polars dimensiona seu pool Rayon no import,
-        # de modo que só uma variável de ambiente o alcança. DuckDB e Dask são
-        # configurados nos seus próprios pontos de entrada.
+        # de modo que só uma variável de ambiente o alcança. O Dask lê
+        # DASK_NUM_WORKERS da mesma forma, o que o alcança também nas etapas de
+        # baseline e hierárquico -- elas rodam como processos separados e não
+        # herdavam o dask.config.set feito na etapa de processamento, então
+        # mediam com o número de núcleos do host.
         'POLARS_MAX_THREADS': engine,
+        'DASK_NUM_WORKERS': engine,
         'PYTHONHASHSEED': str(int(SCIENTIFIC_CONFIG['random_seed'])),
     }
 

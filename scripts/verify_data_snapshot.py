@@ -123,8 +123,9 @@ def install(snapshot: Path, dataset: str) -> Path:
             f"para que não haja dúvida sobre a origem dos dados usados."
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(snapshot, destination,
-                    ignore=shutil.ignore_patterns(MANIFEST_NAME))
+    # O manifesto vai junto: é ele que diz ao coletor que estes dados vêm de um
+    # snapshot verificado e não devem ser re-baixados por idade.
+    shutil.copytree(snapshot, destination)
     print(f"  instalado em {destination}")
     return destination
 
