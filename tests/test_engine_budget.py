@@ -163,3 +163,97 @@ class TestBudgetReachesTheSnapshot:
                              default=str)
         assert 'engine_threads' in payload
         assert 'blas_threads' in payload
+
+
+class TestStagesFourAndFiveGetItWithoutSetup:
+    """As Etapas 4 e 5 rodam como processos próprios e nunca chamam setup.
+
+    O teste acima chama `setup_environment()` à mão, que é o que a Etapa 2 faz.
+    Nada disso alcança os modelos: eles são lançados por `pipeline.py` como
+    processos separados, e a única coisa que herdam é o ambiente. Se o
+    orçamento dependesse do setup, essas duas etapas mediriam com o número de
+    núcleos da máquina enquanto as outras mediriam com o orçamento -- e a
+    tabela de latência compararia as duas coisas.
+    """
+
+    @staticmethod
+    def _paradigm_scripts():
+        from core.paradigm_registry import discover_paradigms
+        return {name: (meta['baseline_script'], meta['hierarchical_script'])
+                for name, meta in sorted(discover_paradigms().items())}
+
+    def test_no_model_script_configures_threads_itself(self):
+        """A dependência do ambiente é a única; torná-la explícita a protege."""
+        import ast as ast_module
+
+        for name, scripts in self._paradigm_scripts().items():
+            for script in scripts:
+                path = _ROOT / script
+                tree = ast_module.parse(path.read_text())
+                docstrings = {id(node.value) for node in ast_module.walk(tree)
+                              if isinstance(node, ast_module.Expr)
+                              and isinstance(node.value, ast_module.Constant)}
+                for node in ast_module.walk(tree):
+                    if not (isinstance(node, ast_module.Constant)
+                            and isinstance(node.value, str)):
+                        continue
+                    if id(node) in docstrings:
+                        continue
+                    for setting in ('num_workers', 'POLARS_MAX_THREADS',
+                                    'OMP_NUM_THREADS', 'SET threads'):
+                        assert setting not in node.value, (
+                            f'{script}:{node.lineno} define {setting!r} por '
+                            f'conta própria, então o orçamento do pipeline '
+                            f'deixa de valer para esta etapa'
+                        )
+
+    @pytest.fixture(scope='class')
+    def observed_without_setup(self):
+        """Mede os três motores num processo que nunca chama setup_environment."""
+        probe = '''
+import os, sys, tempfile
+sys.path.insert(0, "src")
+import duckdb, polars as pl, dask
+from collection.sql_engine.connection_manager import DuckDBConnectionManager
+
+connection = DuckDBConnectionManager(
+    os.path.join(tempfile.mkdtemp(), "t.duckdb")).get_connection()
+print("BUDGET duckdb",
+      connection.execute("SELECT current_setting('threads')").fetchone()[0])
+print("BUDGET polars", pl.thread_pool_size())
+print("BUDGET dask", dask.config.get("num_workers", -1))
+'''
+        script = _ROOT / '.stage45_probe_tmp.py'
+        script.write_text(probe)
+        try:
+            env = os.environ.copy()
+            env.update(deterministic_environment())
+            out = subprocess.run([sys.executable, str(script)], cwd=str(_ROOT),
+                                 capture_output=True, text=True, env=env)
+            if out.returncode:
+                pytest.skip(f'probe failed: {out.stderr[-300:]}')
+            return {parts[1]: int(parts[2])
+                    for parts in (line.split()
+                                  for line in out.stdout.splitlines())
+                    if len(parts) == 3 and parts[0] == 'BUDGET'}
+        finally:
+            script.unlink(missing_ok=True)
+
+    @pytest.mark.parametrize('engine', ['duckdb', 'polars', 'dask'])
+    def test_the_engine_honours_it_from_the_environment_alone(
+            self, observed_without_setup, engine):
+        assert observed_without_setup[engine] == BUDGET, (
+            f'{engine} nas Etapas 4/5 roda com '
+            f'{observed_without_setup[engine]} contra um orçamento declarado '
+            f'de {BUDGET}'
+        )
+
+    def test_the_budget_is_not_the_host_core_count(self):
+        """Se coincidirem, o teste acima passa com o orçamento ignorado."""
+        available = os.cpu_count() or 1
+        if available == BUDGET:
+            pytest.skip(
+                f'a máquina tem {available} núcleos, igual ao orçamento: '
+                f'nesta máquina o teste não distingue os dois'
+            )
+        assert available != BUDGET
