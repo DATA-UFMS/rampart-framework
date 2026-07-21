@@ -632,3 +632,123 @@ class TestTheParadigmsShareTheirFolds:
         self._write(outputs, {p: [] for p in paradigms}, created)
         with pytest.raises(AntiLeakageViolation, match='empty'):
             pipeline._validate_anti_leakage_gate(str(outputs), started)
+
+
+class TestCreateTemporalFoldsEnforces:
+    """Deleting the enforcement call left the whole suite green.
+
+    `create_temporal_folds` is the only path by which folds reach the models.
+    Nothing checked that the folds it returns were run past the validator, so
+    the generator was free to emit a violating set.
+    """
+
+    @staticmethod
+    def _probe(gap):
+        class Config:
+            temporal_range = (2000, 2023)
+            walk_forward_config = {'min_train': 8, 'val_len': 2, 'test_len': 2}
+            year_column = 'year'
+            entity_column = 'country_code'
+            entity_name_column = 'country_name'
+            stratification_column = None
+            target_source_column = 'source_rate'
+            feature_columns = []
+            excluded_columns = []
+
+        class Probe(BaseArchitectureML):
+            def setup_environment(self): pass
+            def load_data(self): pass
+            def validate_data(self, data): pass
+            def create_target_implementation(self, data): return data
+            def _compute_target_statistics(self, data): pass
+            def _validate_temporal_folds(self, data, folds): pass
+            def save_folds(self, data, folds): pass
+            def compute_feature_correlations(self, data, features): return {}
+            def apply_collinearity_filter(self, data, features,
+                                          threshold=0.8): return features
+            def prepare_features(self, data, features): return data
+            def discover_numeric_columns(self, data): return []
+
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            architecture = Probe('sql_engine', '/tmp', dataset_config=Config())
+        architecture.config = {**architecture.config,
+                               'temporal_gap_years': gap}
+        return architecture
+
+    def test_the_returned_folds_went_through_the_validator(self):
+        """A generator that emits a violating set must not get past here."""
+        from core.validation import AntiLeakageViolation
+
+        architecture = self._probe(gap=2)
+        violating = [{'train_start': 2000, 'train_end': 2009,
+                      'val_start': 2010, 'val_end': 2011,
+                      'test_start': 2014, 'test_end': 2015}]
+        architecture._generate_walkforward_folds_auto = lambda: violating
+        with pytest.raises(AntiLeakageViolation):
+            architecture.create_temporal_folds()
+
+    def test_an_empty_generator_result_halts(self):
+        from core.validation import AntiLeakageViolation
+
+        architecture = self._probe(gap=2)
+        architecture._generate_walkforward_folds_auto = lambda: []
+        with pytest.raises(AntiLeakageViolation, match='empty'):
+            architecture.create_temporal_folds()
+
+    def test_valid_folds_are_returned(self):
+        """Otherwise raising unconditionally would satisfy both tests above."""
+        import contextlib
+        import io
+        architecture = self._probe(gap=2)
+        with contextlib.redirect_stdout(io.StringIO()):
+            folds = architecture.create_temporal_folds()
+        assert len(folds) == 9
+
+    def test_the_validator_reads_the_configured_gap(self):
+        """Enforcing with a gap the generator did not use proves nothing."""
+        import contextlib
+        import io
+        from core.validation import AntiLeakageViolation
+
+        architecture = self._probe(gap=3)
+        # Folds built for a gap of two, enforced under three.
+        architecture._generate_walkforward_folds_auto = lambda: [
+            {'train_start': 2000, 'train_end': 2007,
+             'val_start': 2010, 'val_end': 2011,
+             'test_start': 2014, 'test_end': 2015}]
+        with pytest.raises(AntiLeakageViolation):
+            with contextlib.redirect_stdout(io.StringIO()):
+                architecture.create_temporal_folds()
+
+
+class TestEveryParadigmCallsTheFinalAudit:
+    """No test checked that any paradigm invokes audit_feature_set.
+
+    Removing the call was caught only incidentally, by the unused-import check.
+    Removing the call *and* the import would have passed.
+    """
+
+    @pytest.mark.parametrize('paradigm', ['sql_engine', 'task_graph',
+                                          'dataframe_lib'])
+    def test_the_hierarchical_model_calls_it(self, paradigm):
+        import ast as ast_module
+        path = (_ROOT / 'src' / 'architectures_ml' / paradigm / 'models'
+                / 'hierarchical_model.py')
+        tree = ast_module.parse(path.read_text())
+        called = {node.func.id for node in ast_module.walk(tree)
+                  if isinstance(node, ast_module.Call)
+                  and isinstance(node.func, ast_module.Name)}
+        assert 'audit_feature_set' in called, (
+            f'{paradigm} trains without the final-feature P3 audit, so the '
+            f'lags appended after selection never pass a gate'
+        )
+
+    @pytest.mark.parametrize('paradigm', ['sql_engine', 'task_graph',
+                                          'dataframe_lib'])
+    def test_the_result_is_kept(self, paradigm):
+        """Calling and discarding leaves no record in the artifacts."""
+        source = (_ROOT / 'src' / 'architectures_ml' / paradigm / 'models'
+                  / 'hierarchical_model.py').read_text()
+        assert 'self.feature_audit = audit_feature_set(' in source

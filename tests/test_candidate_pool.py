@@ -235,3 +235,103 @@ class TestPolicyIsNotOverridden:
         """The prefix rule only covers the targets if they share the stem."""
         for name in sorted(discover_paradigms()):
             assert name in f'{BaseArchitectureML.TARGET_STEM}_{name}'
+
+
+class TestSelectionByCorrelation:
+    """The rule that decides which candidates survive, untested until now.
+
+    Widening it to accept everything left the whole suite green. It carries a
+    relaxation branch that fires below five survivors and drops the upper
+    bound entirely -- the bound that keeps a near-perfect proxy out. That
+    branch is the one the real runs take, since the pool is small.
+    """
+
+    @staticmethod
+    def _select(correlations, **kwargs):
+        import contextlib
+        import io
+        architecture = _probe('sql_engine')('sql_engine', '/tmp')
+        with contextlib.redirect_stdout(io.StringIO()):
+            return architecture.select_features_by_correlation(correlations,
+                                                               **kwargs)
+
+    #: Six candidates, so the relaxation branch stays out of the way.
+    BAND = {'a': 0.20, 'b': 0.35, 'c': 0.50, 'd': 0.65, 'e': 0.75, 'f': 0.79}
+
+    def test_a_feature_below_the_floor_is_dropped(self):
+        selected = self._select({**self.BAND, 'weak': 0.05})
+        assert 'weak' not in selected
+
+    def test_a_feature_above_the_ceiling_is_dropped(self):
+        """The ceiling is the last thing between a proxy and the model."""
+        selected = self._select({**self.BAND, 'proxy': 0.99})
+        assert 'proxy' not in selected
+
+    def test_features_inside_the_band_survive(self):
+        assert sorted(self._select(self.BAND)) == sorted(self.BAND)
+
+    def test_the_result_is_sorted(self):
+        """Selection order must not depend on dict insertion order."""
+        reversed_band = dict(reversed(list(self.BAND.items())))
+        selected = self._select(reversed_band)
+        assert selected == sorted(selected)
+
+    def test_the_floor_is_inclusive_and_the_ceiling_is_inclusive(self):
+        selected = self._select({**self.BAND, 'at_floor': 0.15,
+                                 'at_ceiling': 0.80})
+        assert 'at_floor' in selected and 'at_ceiling' in selected
+
+    def test_just_outside_the_band_is_excluded(self):
+        selected = self._select({**self.BAND, 'below': 0.15 - 1e-9,
+                                 'above': 0.80 + 1e-9})
+        assert 'below' not in selected and 'above' not in selected
+
+    def test_negative_correlations_are_not_selected(self):
+        """The rule compares the signed value, not its magnitude.
+
+        Worth pinning: it is why the proxy audit downstream needs an absolute
+        value, and why a feature negative in the training window never reaches
+        the model at all.
+        """
+        selected = self._select({**self.BAND, 'inverse': -0.90})
+        assert 'inverse' not in selected
+
+    def test_the_relaxation_fires_below_five(self):
+        selected = self._select({'a': 0.20, 'b': 0.12})
+        assert 'b' in selected, (
+            'the relaxed floor is 0.15 * 0.67 = 0.1005, so 0.12 qualifies'
+        )
+
+    def test_the_relaxation_drops_the_ceiling(self):
+        """Documented here because it is a real hole, not an oversight.
+
+        With fewer than five survivors the upper bound disappears and a feature
+        correlating 0.99 with the target is selected. What keeps it out of the
+        model is the proxy audit that runs afterwards over the full panel.
+        """
+        selected = self._select({'a': 0.20, 'proxy': 0.99})
+        assert 'proxy' in selected
+
+    def test_the_proxy_audit_covers_what_the_relaxation_admits(self):
+        """So the hole above is closed downstream rather than left open."""
+        import contextlib
+        import io
+        import numpy as np
+        import pandas as pd
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import AntiLeakageViolation, audit_feature_set
+
+        rng = np.random.default_rng(4)
+        target = rng.normal(size=200)
+        panel = pd.DataFrame({'target': target,
+                              'proxy': 0.99 * target
+                                       + 0.01 * rng.normal(size=200)})
+        assert abs(panel['proxy'].corr(panel['target'])) > \
+            SCIENTIFIC_CONFIG['proxy_correlation_threshold']
+        with contextlib.redirect_stdout(io.StringIO()):
+            with pytest.raises(AntiLeakageViolation, match='proxy detection'):
+                audit_feature_set(panel, ['proxy'], 'target',
+                                  SCIENTIFIC_CONFIG)
+
+    def test_an_empty_input_selects_nothing(self):
+        assert self._select({}) == []

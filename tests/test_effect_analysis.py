@@ -325,3 +325,41 @@ class TestNoDeadAccumulators:
                     if isinstance(node, ast_module.Name)
                     and isinstance(node.ctx, ast_module.Store)}
         assert 'p_values' not in assigned
+
+
+class TestTheCorrectionIsTheActualArithmetic:
+    """`adjusted >= raw` is satisfied by `adjusted = raw`.
+
+    Deleting the Bonferroni multiplication left the suite green: the only
+    assertion on it was an inequality that the identity satisfies. Bonferroni
+    is what turns a p of 0.02 into a non-result at a family of 15, so an
+    identity here flips the reported verdict of every borderline stage.
+    """
+
+    def test_bonferroni_multiplies_by_the_family_size(self, results):
+        for rec in _records(results):
+            expected = min(1.0, rec['t_p'] * rec['family_size'])
+            assert rec['p_bonferroni'] == pytest.approx(expected, rel=1e-12)
+
+    def test_the_signed_rank_correction_too(self, results):
+        for rec in _records(results):
+            if not np.isfinite(rec['wilcoxon_p']):
+                continue
+            expected = min(1.0, rec['wilcoxon_p'] * rec['family_size'])
+            assert rec['wilcoxon_p_bonferroni'] == pytest.approx(expected,
+                                                                 rel=1e-12)
+
+    def test_the_correction_is_not_the_identity(self, results):
+        """Without this, a family of one would satisfy the tests above."""
+        differing = [rec for rec in _records(results)
+                     if rec['p_bonferroni'] != pytest.approx(rec['t_p'])]
+        assert differing, (
+            'every corrected p equals its raw value, so these tests cannot '
+            'distinguish the correction from the identity'
+        )
+
+    def test_it_caps_at_one(self, results):
+        for rec in _records(results):
+            assert rec['p_bonferroni'] <= 1.0
+            assert rec['wilcoxon_p_bonferroni'] <= 1.0 or not np.isfinite(
+                rec['wilcoxon_p'])
