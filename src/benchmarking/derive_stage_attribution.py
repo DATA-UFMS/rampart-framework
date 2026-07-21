@@ -122,6 +122,21 @@ def attribute() -> Dict:
             }
 
         entry: Dict = {"paradigms": per_paradigm}
+
+        # As razões dividem totais somados sobre os folds de cada paradigma. Com
+        # contagens diferentes -- um artefato parcial, um fold que falhou -- a
+        # razão compara o trabalho de nove folds contra o de oito, e a diferença
+        # de 12% aparece como se fosse do engine. É a atribuição inteira que o
+        # arquivo existe para fazer.
+        counts = {paradigm: values["folds"]
+                  for paradigm, values in per_paradigm.items()}
+        if len(set(counts.values())) > 1:
+            raise ValueError(
+                f"Estágio '{stage}': os paradigmas registram números de fold "
+                f"diferentes {counts}. As razões entre eles não são "
+                f"atribuíveis ao engine enquanto isso for verdade."
+            )
+
         if len(per_paradigm) >= 2:
             # Razões por segmento: um ganho no total que não aparece em
             # fold_load não vem do engine.
@@ -137,6 +152,15 @@ def attribute() -> Dict:
             }
         report["stages"][stage] = entry
     return report
+
+
+def _escape(text: str) -> str:
+    """Nomes de paradigma e de estágio trazem sublinhado, que o LaTeX não aceita.
+
+    Sem isto o arquivo gerado não compila, e o erro aparece a quem monta o
+    paper, não a quem roda o pipeline.
+    """
+    return str(text).replace('_', r'\_')
 
 
 def _latex(report: Dict) -> str:
@@ -157,7 +181,8 @@ def _latex(report: Dict) -> str:
             share = values["engine_share"]
             pct = '—' if share is None else f"{share * 100:.1f}\\%"
             lines.append(
-                f"{stage} & {paradigm} & {values['folds']} & "
+                f"{_escape(stage)} & {_escape(paradigm)} & "
+                f"{values['folds']} & "
                 f"{values['fold_load_s']:.2f} & "
                 f"{values['fit_predict_s']:.2f} & {pct} \\\\")
     lines += ["\\bottomrule", "\\end{tabular}", "\\end{table}"]

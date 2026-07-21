@@ -175,4 +175,39 @@ class TestOutputs:
     def test_latex_has_a_row_per_paradigm(self, attribution):
         table = attribution._latex(attribution.attribute())
         for paradigm in discover_paradigms():
-            assert paradigm in table
+            assert paradigm.replace('_', r'\_') in table
+
+    def test_latex_escapes_every_underscore(self, attribution):
+        """Every paradigm name carries one, and the file would not compile.
+
+        The error surfaces to whoever assembles the paper, not to whoever ran
+        the pipeline, and by then the run is hours old.
+        """
+        import re
+        table = attribution._latex(attribution.attribute())
+        body = [line for line in table.splitlines()
+                if '&' in line and not line.startswith('%')]
+        assert len(body) >= len(discover_paradigms()), (
+            'no data rows: the test would pass on an empty table'
+        )
+        for line in body:
+            assert not re.search(r'(?<!\\)_', line), line
+
+    def test_a_fold_count_mismatch_halts(self, attribution, monkeypatch):
+        """Ratios over different fold counts are not attributable to the engine.
+
+        Nine folds of work against eight is a 12% difference that the table
+        presents as an engine difference.
+        """
+        paradigms = sorted(discover_paradigms())
+        real = attribution._fold_segments
+
+        def uneven(path):
+            segments = real(path)
+            if paradigms[0] in str(path):
+                return segments[:-1]
+            return segments
+
+        monkeypatch.setattr(attribution, '_fold_segments', uneven)
+        with pytest.raises(ValueError, match='números de fold'):
+            attribution.attribute()

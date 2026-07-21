@@ -58,8 +58,11 @@ Toda latência publicada é condicional a esses valores, que ficam no snapshot.
 **Custo de execução.** A etapa de benchmark domina o tempo total: ela reexecuta as fases de
 setup, baseline e hierárquico dos três paradigmas `warmup + n` vezes (por padrão 2 + 10 = 12
 passagens completas). Cache de coleta e processamento reduz apenas as etapas a montante, não o
-benchmark. Na prática, o World Bank leva horas e o INEP Censo Escolar leva mais de um dia em
-uma VM de 4 vCPUs. Para uma execução exploratória, reduza `repetitions` em
+benchmark. Na prática, o World Bank leva cerca de uma hora e meia e o INEP Censo Escolar
+passa de um dia na máquina de referência. Essa máquina precisa comportar o
+orçamento: `pipeline.py` recusa executar quando `engine_threads + blas_threads
+- 1` excede os núcleos disponíveis, o que com os valores atuais significa oito
+núcleos no mínimo. Para uma execução exploratória, reduza `repetitions` em
 `src/core/config.py` — ciente de que isso não reproduz a tabela de latência.
 
 ## O que faz

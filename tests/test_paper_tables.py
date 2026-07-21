@@ -293,3 +293,78 @@ class TestLatexIsCompilable:
     def test_it_says_it_was_generated(self, tables):
         module, *_ = tables
         assert module.to_latex(module.build(['worldbank'])).startswith('%')
+
+
+class TestProvenanceIsRequired:
+    """A latency table without the commit that produced it is not comparable.
+
+    write_environment_snapshot records 'unavailable' when it cannot resolve the
+    commit -- running outside a git clone, or from a tarball. The caption
+    truncated the commit to ten characters, so the published artifact read "em
+    unavailabl": a meaningless string in the exact place a reader looks for
+    provenance.
+    """
+
+    def test_an_unavailable_commit_halts(self, tables, tmp_path):
+        import json
+        module, *_ = tables
+        path = tmp_path / 'outputs' / 'worldbank' / 'scientific_config_snapshot.json'
+        payload = json.loads(path.read_text())
+        payload['git_commit'] = 'unavailable'
+        path.write_text(json.dumps(payload))
+        with pytest.raises(ValueError, match='não registra o commit'):
+            module.build(['worldbank'])
+
+    def test_an_empty_commit_halts(self, tables, tmp_path):
+        import json
+        module, *_ = tables
+        path = tmp_path / 'outputs' / 'worldbank' / 'scientific_config_snapshot.json'
+        payload = json.loads(path.read_text())
+        payload['git_commit'] = ''
+        path.write_text(json.dumps(payload))
+        with pytest.raises(ValueError, match='não registra o commit'):
+            module.build(['worldbank'])
+
+    def test_a_real_commit_passes(self, tables):
+        """Otherwise raising unconditionally would satisfy the tests above."""
+        module, *_ = tables
+        report = module.build(['worldbank'])
+        assert report['datasets']['worldbank']['commit']
+
+    def test_the_message_says_what_to_do(self, tables, tmp_path):
+        import json
+        module, *_ = tables
+        path = tmp_path / 'outputs' / 'worldbank' / 'scientific_config_snapshot.json'
+        payload = json.loads(path.read_text())
+        payload['git_commit'] = 'unavailable'
+        path.write_text(json.dumps(payload))
+        with pytest.raises(ValueError) as exc:
+            module.build(['worldbank'])
+        assert 'clone git' in str(exc.value)
+
+
+class TestTheReadmeMatchesTheBudgetCheck:
+
+    def test_no_machine_smaller_than_the_budget_is_documented(self):
+        """The README described a VM on which the documented command refuses."""
+        import re
+        import sys
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        if str(root / 'src') not in sys.path:
+            sys.path.insert(0, str(root / 'src'))
+        from core.scientific_config import SCIENTIFIC_CONFIG
+
+        minimum = (SCIENTIFIC_CONFIG['engine_threads']
+                   + SCIENTIFIC_CONFIG['blas_threads'] - 1)
+        readme = (root / 'README.md').read_text()
+        for count in re.findall(r'(\d+)\s*vCPU', readme):
+            assert int(count) >= minimum, (
+                f'README documents a {count}-vCPU machine while pipeline.py '
+                f'requires {minimum} and refuses to start below it'
+            )
+
+    def test_the_minimum_is_stated(self):
+        from pathlib import Path
+        readme = (Path(__file__).resolve().parents[1] / 'README.md').read_text()
+        assert 'oito' in readme or 'no mínimo' in readme

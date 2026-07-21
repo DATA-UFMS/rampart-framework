@@ -47,6 +47,24 @@ def _dataset_root(dataset: str) -> Path:
     return _ROOT / 'outputs' / dataset
 
 
+def _require_commit(commit: str, dataset: str) -> str:
+    """Uma tabela de latência sem o commit que a produziu não é comparável.
+
+    `write_environment_snapshot` grava 'unavailable' quando não consegue
+    resolver o commit. A legenda truncava para dez caracteres, então o artefato
+    publicado dizia "em unavailabl" -- uma cadeia sem significado, no lugar
+    exato onde o leitor procura a procedência.
+    """
+    if not commit or commit == 'unavailable':
+        raise ValueError(
+            f"{dataset}: o snapshot não registra o commit "
+            f"(git_commit={commit!r}). A tabela de latência é condicional ao "
+            f"código que a produziu; sem isso ela não pode ser publicada. "
+            f"Rode o pipeline de um clone git com a árvore limpa."
+        )
+    return commit
+
+
 def _read(dataset: str) -> Optional[Dict]:
     """Benchmark, significância e procedência de um dataset."""
     root = _dataset_root(dataset)
@@ -67,7 +85,7 @@ def _read(dataset: str) -> Optional[Dict]:
         'significance': pd.read_csv(significance),
         # Sem procedência não se publica a tabela: uma latência sem o commit e o
         # orçamento que a produziram não é comparável a nada.
-        'commit': provenance['git_commit'],
+        'commit': _require_commit(provenance['git_commit'], dataset),
         'timestamp': provenance['timestamp'],
         'engine_threads': config['engine_threads'],
         'blas_threads': config['blas_threads'],
