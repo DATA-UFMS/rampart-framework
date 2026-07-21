@@ -16,6 +16,8 @@ _SRC = str(Path(__file__).resolve().parents[1] / 'src')
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
+_ROOT = Path(__file__).resolve().parents[1]
+
 from core.base_architecture import BaseArchitectureML
 from core.scientific_config import SCIENTIFIC_CONFIG
 
@@ -248,16 +250,109 @@ class TestFinalFeatureSetAudit:
             audit_feature_set(panel, ['gini', 'sneaky'], 'target',
                               SCIENTIFIC_CONFIG)
 
-    def test_exemption_does_not_cover_joint_reconstruction(self):
-        """A lag that reconstructs the target must still abort."""
+    def test_a_lag_that_is_not_lagged_aborts(self):
+        """A column labelled as lagged carrying the contemporaneous value.
+
+        This is the defect the whole-set check exists for: an off-by-one join,
+        or a lag of zero. It reproduces the target exactly, which no genuine
+        lag does.
+        """
         from core.scientific_config import SCIENTIFIC_CONFIG
         from core.validation import AntiLeakageViolation, audit_feature_set
 
         panel = self._panel()
         panel['dropout_rate_lag_0'] = panel['target']
-        with pytest.raises(AntiLeakageViolation, match='joint reconstruction'):
+        with pytest.raises(AntiLeakageViolation, match='target reproduction'):
             audit_feature_set(panel, ['gini', 'dropout_rate_lag_0'], 'target',
                               SCIENTIFIC_CONFIG)
+
+    def test_a_strongly_autocorrelated_lag_does_not_abort(self):
+        """The false abort this split prevents.
+
+        On an annual panel pooled across entities, a lag carries the entity's
+        level, so the pooled R2 over the whole set is high by construction.
+        Judging that against the 0.95 identity ceiling aborts a valid run for
+        exhibiting the autocorrelation the task exists to exploit -- and the
+        run costs about thirty hours before reaching this point.
+        """
+        import numpy as np
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import audit_feature_set
+
+        rng = np.random.default_rng(5)
+        rows = []
+        for entity, level in enumerate([2.0, 9.0, 17.0, 26.0, 35.0]):
+            series = level + np.cumsum(rng.normal(0, 0.3, 30))
+            for index in range(3, 30):
+                rows.append({
+                    'entity': entity,
+                    'target': series[index],
+                    'dropout_rate_lag_2': series[index - 2],
+                    'dropout_rate_lag_3': series[index - 3],
+                    'gini': 0.2 * series[index] + rng.normal(0, 3.0),
+                })
+        panel = pd.DataFrame(rows)
+
+        features = ['gini', 'dropout_rate_lag_2', 'dropout_rate_lag_3']
+        from core.validation import linear_reconstruction_r2
+        whole_set = linear_reconstruction_r2(panel, features, 'target')
+        assert whole_set > SCIENTIFIC_CONFIG['identity_r2_threshold'], (
+            f'R2 over the whole set is {whole_set:.4f}, below the old ceiling: '
+            f'this panel does not reproduce the false abort, so passing proves '
+            f'nothing'
+        )
+
+        report = audit_feature_set(panel, features, 'target',
+                                   SCIENTIFIC_CONFIG)
+        assert report['full_set_reconstruction_r2'] == pytest.approx(whole_set)
+        assert report['joint_reconstruction_r2'] < \
+            SCIENTIFIC_CONFIG['identity_r2_threshold']
+
+    def test_an_exogenous_identity_still_aborts(self):
+        """Splitting must not let the leakage case through.
+
+        Two exogenous halves that sum to the target: each correlates weakly, so
+        the pairwise check cannot see it.
+        """
+        import numpy as np
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import AntiLeakageViolation, audit_feature_set
+
+        panel = self._panel()
+        rng = np.random.default_rng(9)
+        target = panel['target'].to_numpy()
+        noise = 2.0 * rng.normal(size=len(panel))
+        noise -= (np.cov(target, noise, bias=True)[0, 1]
+                  / target.var()) * target
+        panel['half_a'] = 0.5 * target + noise
+        panel['half_b'] = 0.5 * target - noise
+        with pytest.raises(AntiLeakageViolation,
+                           match='joint reconstruction'):
+            audit_feature_set(panel, ['half_a', 'half_b',
+                                      'dropout_rate_lag_2'],
+                              'target', SCIENTIFIC_CONFIG)
+
+    def test_lags_cannot_mask_an_exogenous_identity(self):
+        """The identity is judged without the lags, so adding lags cannot help."""
+        import numpy as np
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import AntiLeakageViolation, audit_feature_set
+
+        panel = self._panel()
+        rng = np.random.default_rng(9)
+        target = panel['target'].to_numpy()
+        noise = 2.0 * rng.normal(size=len(panel))
+        noise -= (np.cov(target, noise, bias=True)[0, 1]
+                  / target.var()) * target
+        panel['half_a'] = 0.5 * target + noise
+        panel['half_b'] = 0.5 * target - noise
+        panel['dropout_rate_lag_3'] = panel['dropout_rate_lag_2'].shift(1)
+        for extra in ([], ['dropout_rate_lag_2'],
+                      ['dropout_rate_lag_2', 'dropout_rate_lag_3']):
+            with pytest.raises(AntiLeakageViolation,
+                               match='joint reconstruction'):
+                audit_feature_set(panel, ['half_a', 'half_b'] + extra,
+                                  'target', SCIENTIFIC_CONFIG)
 
     @pytest.mark.parametrize('kind', ['pandas', 'polars', 'polars_lazy', 'dask'])
     def test_verdict_is_identical_across_frame_types(self, kind):
@@ -285,3 +380,140 @@ class TestFinalFeatureSetAudit:
         report = audit_feature_set(data, features, 'target', SCIENTIFIC_CONFIG)
         assert report['joint_reconstruction_r2'] == pytest.approx(
             expected['joint_reconstruction_r2'], abs=1e-12)
+
+
+class TestOneImplementationOfEachCheck:
+    """The setup-level and model-level P3 checks must not drift apart.
+
+    Both materialise a dense matrix and both fit the target on the selected
+    features, and each had its own copy. They had already diverged: the
+    setup-level copy did not handle a Polars LazyFrame, so the same check
+    raised TypeError on input the model-level one accepts.
+    """
+
+    @staticmethod
+    def _frame():
+        import numpy as np
+        import pandas as pd
+        rng = np.random.default_rng(3)
+        target = rng.normal(size=40)
+        return pd.DataFrame({
+            'year': list(range(2000, 2040)),
+            'gini': 0.4 * target + rng.normal(size=40),
+            'target': target,
+        })
+
+    def test_the_architecture_delegates_materialisation(self):
+        source = (_ROOT / 'src' / 'core' / 'base_architecture.py').read_text()
+        block = source[source.index('def _materialise_pandas'):]
+        block = block[:block.index('\n    def ', 1)]
+        assert 'materialise_pandas(data, columns)' in block
+        assert 'isinstance(data, pl.DataFrame)' not in block, (
+            'a second dispatch here is how the two drifted apart'
+        )
+
+    def test_the_architecture_delegates_the_reconstruction(self):
+        source = (_ROOT / 'src' / 'core' / 'base_architecture.py').read_text()
+        block = source[source.index('def _linear_reconstruction_r2'):]
+        block = block[:block.index('\n    def ', 1)]
+        assert 'linear_reconstruction_r2(data, features' in block
+        assert 'np.linalg.lstsq' not in block
+
+    def test_a_lazyframe_is_accepted(self):
+        """The divergence, reproduced: the setup-level copy raised here."""
+        polars = pytest.importorskip('polars')
+        from core.validation import materialise_pandas
+
+        lazy = polars.from_pandas(self._frame()).lazy()
+        materialised = materialise_pandas(lazy, ['gini', 'target'])
+        assert list(materialised.columns) == ['gini', 'target']
+        assert len(materialised) == 40
+
+    def test_both_paths_give_the_same_r2(self):
+        """Whichever entry point is used, the same number comes out."""
+        from core.base_architecture import BaseArchitectureML
+        from core.validation import linear_reconstruction_r2
+
+        class Probe(BaseArchitectureML):
+            def setup_environment(self): pass
+            def load_data(self): pass
+            def validate_data(self, data): pass
+            def create_target_implementation(self, data): return data
+            def _compute_target_statistics(self, data): pass
+            def _validate_temporal_folds(self, data, folds): pass
+            def save_folds(self, data, folds): pass
+            def compute_feature_correlations(self, data, features): return {}
+            def apply_collinearity_filter(self, data, features,
+                                          threshold=0.8): return features
+            def prepare_features(self, data, features): return data
+            def discover_numeric_columns(self, data): return []
+
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            architecture = Probe('sql_engine', '/tmp')
+        frame = self._frame().rename(
+            columns={'target': architecture.target_column})
+        assert architecture._linear_reconstruction_r2(frame, ['gini']) == \
+            linear_reconstruction_r2(frame, ['gini'],
+                                     architecture.target_column)
+
+    def test_the_dead_wrapper_is_gone(self):
+        """audit_final_features delegated to audit_feature_set and had no caller.
+
+        The models call audit_feature_set directly. A second name for the same
+        gate invites one of them to be updated alone.
+        """
+        source = (_ROOT / 'src' / 'core' / 'base_architecture.py').read_text()
+        assert 'audit_final_features' not in source
+
+
+class TestTheTwoThresholdsAnswerDifferentQuestions:
+    """One is a modelling choice, the other is numerical.
+
+    Collapsing them was the defect: judging the whole set, lags included,
+    against the 0.95 identity ceiling.
+    """
+
+    def test_the_reproduction_tolerance_is_numerical(self):
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        tolerance = SCIENTIFIC_CONFIG['target_reproduction_tolerance']
+        assert tolerance <= 1e-6, (
+            f'{tolerance} is a modelling threshold, not a numerical one: at '
+            f'that size a legitimately autocorrelated lag set trips it'
+        )
+        assert tolerance > 0
+
+    def test_the_identity_ceiling_is_a_modelling_choice(self):
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        assert 0.5 < SCIENTIFIC_CONFIG['identity_r2_threshold'] < 1.0
+
+    def test_a_loosened_tolerance_would_abort_a_valid_run(self):
+        """Why the tolerance may not drift upwards.
+
+        The same autocorrelated panel that passes today aborts once the
+        tolerance reaches the identity ceiling's scale.
+        """
+        import numpy as np
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import AntiLeakageViolation, audit_feature_set
+
+        rng = np.random.default_rng(5)
+        rows = []
+        for entity, level in enumerate([2.0, 9.0, 17.0, 26.0, 35.0]):
+            series = level + np.cumsum(rng.normal(0, 0.3, 30))
+            for index in range(3, 30):
+                rows.append({'target': series[index],
+                             'dropout_rate_lag_2': series[index - 2],
+                             'dropout_rate_lag_3': series[index - 3],
+                             'gini': 0.2 * series[index]
+                                     + rng.normal(0, 3.0)})
+        panel = pd.DataFrame(rows)
+        features = ['gini', 'dropout_rate_lag_2', 'dropout_rate_lag_3']
+
+        audit_feature_set(panel, features, 'target', SCIENTIFIC_CONFIG)
+
+        loosened = {**SCIENTIFIC_CONFIG,
+                    'target_reproduction_tolerance': 0.05}
+        with pytest.raises(AntiLeakageViolation, match='target reproduction'):
+            audit_feature_set(panel, features, 'target', loosened)

@@ -102,8 +102,28 @@ def audit_feature_set(
     Autoregressive features are exempt from the pairwise proxy check: predicting
     a series from its own past is the task rather than a leak, and a lag
     correlates with the target by construction. The exemption is recorded with
-    the measured correlation, and does not extend to the joint reconstruction
-    check, which covers the whole set.
+    the measured correlation.
+
+    The joint reconstruction check asks two separate questions, because one
+    threshold cannot answer both:
+
+      * Do the *non-autoregressive* features jointly determine the target?
+        That is the leakage question -- an additive identity that pairwise
+        correlation cannot see, such as rates that sum to a constant. Judged at
+        `identity_r2_threshold`.
+
+      * Does the *whole set*, lags included, reproduce the target exactly?
+        A genuine lag never does: y_t is not an exact linear function of
+        y_{t-2} and y_{t-3}. An R2 at machine precision means a column labelled
+        as lagged is not lagged -- an off-by-one join, or a lag of zero. Judged
+        against `target_reproduction_tolerance`, which is not a modelling
+        choice but a numerical one.
+
+    Applying the 0.95 ceiling to the whole set conflated the two. On an annual
+    panel pooled across entities, a lag carries the entity's level and the
+    pooled R2 is high by construction, so the check would abort a valid run for
+    exhibiting the autocorrelation the task exists to exploit -- and it had
+    never been evaluated on real data, only on fixtures.
 
     Correlations are computed here rather than through each paradigm's own
     implementation, so the gate behaves identically whichever paradigm invokes
@@ -112,6 +132,8 @@ def audit_feature_set(
     marker = str(config.get('autoregressive_feature_marker', '_lag_'))
     proxy_threshold = float(config.get('proxy_correlation_threshold', 0.80))
     identity_threshold = float(config.get('identity_r2_threshold', 0.95))
+    reproduction_tolerance = float(
+        config.get('target_reproduction_tolerance', 1e-9))
 
     features = list(features)
     frame = materialise_pandas(data, features + [target_column])
@@ -134,18 +156,36 @@ def audit_feature_set(
             f"(Kapoor & Narayanan, 2023): {proxies}"
         )
 
-    identity_r2 = linear_reconstruction_r2(data, features, target_column)
+    exogenous = [f for f in features if marker not in f]
+    identity_r2 = linear_reconstruction_r2(data, exogenous, target_column)
     if identity_r2 is not None and identity_r2 > identity_threshold:
         raise AntiLeakageViolation(
             f"Anti-leakage violation (P3 joint reconstruction) in the final "
-            f"feature set: R2 = {identity_r2:.4f} > {identity_threshold}"
+            f"feature set: the non-autoregressive features explain the target "
+            f"with R2 = {identity_r2:.4f} > {identity_threshold}, indicating "
+            f"the target is an algebraic function of them: {sorted(exogenous)}"
+        )
+
+    reproduction_r2 = linear_reconstruction_r2(data, features, target_column)
+    if (reproduction_r2 is not None
+            and reproduction_r2 > 1.0 - reproduction_tolerance):
+        raise AntiLeakageViolation(
+            f"Anti-leakage violation (P3 target reproduction) in the final "
+            f"feature set: R2 = {reproduction_r2:.12f} reproduces the target "
+            f"to numerical precision. No genuine lag does this; a column "
+            f"labelled as lagged is carrying the contemporaneous value: "
+            f"{sorted(features)}"
         )
 
     return {
         'features_audited': sorted(features),
         'proxy_correlation_threshold': proxy_threshold,
         'identity_r2_threshold': identity_threshold,
+        # Over the non-autoregressive features: the leakage question.
         'joint_reconstruction_r2': identity_r2,
+        # Over the whole set: only exact reproduction is a defect here.
+        'full_set_reconstruction_r2': reproduction_r2,
+        'target_reproduction_tolerance': reproduction_tolerance,
         'autoregressive_exemptions': {
             f: correlations[f] for f in autoregressive if f in correlations
         },

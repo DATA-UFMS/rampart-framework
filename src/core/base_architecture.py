@@ -454,42 +454,25 @@ class BaseArchitectureML(ABC):
     def _materialise_pandas(self, data: Any, columns: List[str]) -> pd.DataFrame:
         """Materialise the given columns as a pandas frame.
 
-        Mirrors the dispatch of _filter_by_year so that checks needing a dense
-        matrix stay in this class instead of becoming a per-paradigm obligation.
+        Delegates to core.validation, which the model-level P3 audit also uses.
+        There were two copies of this dispatch and they had already diverged:
+        this one did not handle a Polars LazyFrame, so the same check raised on
+        input the model-level one accepts.
         """
-        if _HAS_POLARS and isinstance(data, pl.DataFrame):
-            return data.select(columns).to_pandas()
-        elif hasattr(data, 'compute'):  # Dask DataFrame
-            return data[columns].compute()
-        elif isinstance(data, pd.DataFrame):
-            return data[columns].copy()
-        else:
-            raise TypeError(f"Unsupported data type for materialisation: {type(data)}")
+        from core.validation import materialise_pandas
 
-    def _linear_reconstruction_r2(self, data: Any, features: List[str]) -> Optional[float]:
+        return materialise_pandas(data, columns)
+
+    def _linear_reconstruction_r2(self, data: Any,
+                                  features: List[str]) -> Optional[float]:
         """R2 of an ordinary least squares fit of the target on `features`.
 
-        Returns None when the fit is not determined -- too few complete rows for
-        the number of predictors, or a constant target.
+        Delegates for the same reason: the setup-level and model-level joint
+        reconstruction checks must answer identically on identical input.
         """
-        if not features:
-            return None
+        from core.validation import linear_reconstruction_r2
 
-        frame = self._materialise_pandas(
-            data, list(features) + [self.target_column]
-        ).dropna()
-        if len(frame) <= len(features) + 1:
-            return None
-
-        X = frame[list(features)].to_numpy(dtype=float)
-        y = frame[self.target_column].to_numpy(dtype=float)
-        design = np.column_stack([X, np.ones(len(X))])
-        coefficients, *_ = np.linalg.lstsq(design, y, rcond=None)
-        residual = y - design @ coefficients
-        total = ((y - y.mean()) ** 2).sum()
-        if total <= 0:
-            return None
-        return float(1.0 - (residual ** 2).sum() / total)
+        return linear_reconstruction_r2(data, features, self.target_column)
 
     def get_excluded_features(self) -> List[str]:
         """
@@ -915,16 +898,6 @@ class BaseArchitectureML(ABC):
         
         return folds_path
     
-    def audit_final_features(self, data: Any, features: List[str]) -> Dict:
-        """Apply the P3 checks to the feature set the models train on.
-
-        Delegates to core.validation.audit_feature_set, which the model classes
-        call directly since they do not inherit from this class.
-        """
-        from core.validation import audit_feature_set
-
-        return audit_feature_set(data, features, self.target_column, self.config)
-
     def run_setup(self) -> Dict:
         """
         Executa pipeline completo de setup da arquitetura.

@@ -49,6 +49,11 @@ SCIENTIFIC_CONFIG = {
     # Ceiling on how much of the target the selected features may jointly
     # explain. Catches additive identities that pairwise correlation misses.
     'identity_r2_threshold': 0.95,
+    # Applies to the whole feature set, lags included, and asks a different
+    # question: whether the target is reproduced to numerical precision. A
+    # genuine lag never does that, so anything above 1 - this value means a
+    # column labelled as lagged carries the contemporaneous value.
+    'target_reproduction_tolerance': 1e-9,
     # Autoregressive features: lagged values of the target itself. Exempt from
     # the pairwise proxy check, since predicting a series from its own past is
     # the task rather than a leak, and a lag correlates with the target by
