@@ -75,7 +75,8 @@ def _probe(name, schema=SCHEMA):
         def _validate_temporal_folds(self, data, folds): pass
         def save_folds(self, data, folds): pass
         def compute_feature_correlations(self, data, features): return {}
-        def apply_collinearity_filter(self, data, features): return features
+        def apply_collinearity_filter(self, data, features, threshold=0.8):
+            return features
         def prepare_features(self, data, features): return data
         def discover_numeric_columns(self, data): return list(schema)
 

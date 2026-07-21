@@ -654,7 +654,9 @@ class BaseArchitectureML(ABC):
         selected_by_corr = self.select_features_by_correlation(correlations)
 
         # Filtragem de colinearidade pairwise (usando dados de treino)
-        final_features = self.apply_collinearity_filter(data_train_only, selected_by_corr)
+        final_features = self.apply_collinearity_filter(
+            data_train_only, selected_by_corr,
+            float(self.config['collinearity_threshold']))
 
         # P3: Impor que nenhuma feature excluída/derivada do target esteja na seleção
         leaked = set(final_features) & set(exclude_cols)

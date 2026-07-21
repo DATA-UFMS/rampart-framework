@@ -39,8 +39,10 @@ SCIENTIFIC_CONFIG = {
     'random_seed': RANDOM_SEED,
 
     # Seleção de Features
+    # Read by run_feature_selection and handed to each paradigm's pairwise
+    # filter. It used to be declared here while the three filters kept their
+    # own default, so changing this value did nothing.
     'collinearity_threshold': 0.8,
-    'correlation_precision': 1e-3,
     # Limiar para detecção de proxy features (Kapoor & Narayanan, 2023)
     # Alinhado com max_corr da seleção de features (defense-in-depth)
     'proxy_correlation_threshold': 0.80,
@@ -92,6 +94,10 @@ SCIENTIFIC_CONFIG = {
     # Implementações equivalentes:
     #   SQL:    SIGN(x) * LN(ABS(x) + 1)
     #   Python: np.sign(x) * np.log(np.abs(x) + 1)
+    # Recorded, not dispatched on. The transform is written out in each
+    # paradigm's own idiom -- a CASE expression in SQL, a Polars expression, a
+    # Dask apply -- so there is nothing here to switch. The three are checked
+    # against this declaration and against each other in the test suite.
     'feature_transform': 'symmetric_log',
 
     # Cores made available to each engine's own execution.
@@ -160,11 +166,13 @@ SCIENTIFIC_CONFIG = {
         'rf_n_jobs': 1,
     },
 
-    # Validação de Equivalência
-    'target_stats_max_diff': 0.01,      # 1%
-    'features_overlap_min_pct': 0.85,   # 85%
-    'correlations_max_mae': 0.001,
-    'fold_sizes_max_diff_pct': 0.05,    # 5%
+    # Cross-paradigm equivalence is verified as bitwise identity of the
+    # predicted vectors, not as agreement within a tolerance. Four tolerances
+    # once lived here -- 85% feature overlap, 1% on target statistics, MAE
+    # 0.001 on correlations, 5% on fold sizes -- and nothing read any of them.
+    # They described a weaker claim than the one the framework makes and
+    # enforces, and they were recorded in the published config snapshot, where
+    # a reader would reasonably take them for the operative criterion.
     'float_precision_tolerance': 1e-9,
     # Parâmetros estatísticos
     #

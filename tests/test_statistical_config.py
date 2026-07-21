@@ -94,3 +94,79 @@ def test_every_module_agrees_on_the_count():
     assert significance_tests.DEFAULT_BOOTSTRAP_ITERS == expected
     assert equivalence_estimation.DEFAULT_BOOTSTRAP_ITERS == expected
     assert effect_analysis.DEFAULT_BOOTSTRAP_ITERS == expected
+
+
+class TestEveryDeclaredParameterIsRead:
+    """A declared parameter nothing reads is a decoy.
+
+    Seven of them sat in the config. Four described cross-paradigm equivalence
+    as agreement within a tolerance -- 85% feature overlap, MAE 0.001 on
+    correlations -- while the framework verifies bitwise identity of the
+    predicted vectors. They reached the published config snapshot, where a
+    reader would reasonably take them for the operative criterion.
+
+    A worse case: `collinearity_threshold` was declared here while each
+    paradigm's filter kept its own default of the same value. Changing the
+    config did nothing, and the agreement was a coincidence of the two numbers
+    being equal.
+    """
+
+    #: Recorded for provenance rather than dispatched on. The transform is
+    #: written out in each paradigm's own idiom, so there is nothing to switch;
+    #: the declaration is checked against the three implementations in
+    #: test_unit_core.
+    RECORDED_ONLY = {'feature_transform'}
+
+    @staticmethod
+    def _declared():
+        import re
+        source = (_ROOT / 'src' / 'core' / 'scientific_config.py').read_text()
+        return sorted(set(re.findall(r"^\s{4}'([a-z0-9_]+)':", source, re.M)))
+
+    @staticmethod
+    def _production_sources():
+        roots = [_ROOT / 'src', _ROOT / 'scripts']
+        files = [path for root in roots for path in root.rglob('*.py')
+                 if path.name != 'scientific_config.py']
+        files.append(_ROOT / 'pipeline.py')
+        return '\n'.join(path.read_text() for path in files if path.exists())
+
+    def test_no_declared_parameter_goes_unread(self):
+        haystack = self._production_sources()
+        unread = [name for name in self._declared()
+                  if name not in self.RECORDED_ONLY and name not in haystack]
+        assert not unread, (
+            f'declared and never read by production: {unread}. Either wire '
+            f'them or drop them: a value in the published snapshot that no '
+            f'code consults describes a framework that does not exist.'
+        )
+
+    def test_the_collinearity_threshold_reaches_the_filter(self):
+        source = (_ROOT / 'src' / 'core' / 'base_architecture.py').read_text()
+        call = source[source.index('apply_collinearity_filter(\n'):]
+        call = call[:call.index(')') + 1]
+        assert 'collinearity_threshold' in call, (
+            'the filter is called without the declared threshold, so each '
+            'paradigm falls back to its own default'
+        )
+
+    def test_the_recorded_exemption_stays_small(self):
+        """An exemption list is how the rule above gets hollowed out."""
+        assert len(self.RECORDED_ONLY) <= 1
+        for name in self.RECORDED_ONLY:
+            assert name in self._declared()
+
+    def test_no_weak_equivalence_tolerance_returns(self):
+        """The claim is bitwise identity; a tolerance would contradict it."""
+        source = (_ROOT / 'src' / 'core' / 'scientific_config.py').read_text()
+        import ast as ast_module
+        tree = ast_module.parse(source)
+        for node in ast_module.walk(tree):
+            if isinstance(node, ast_module.Constant) and isinstance(
+                    node.value, str) and node.value in (
+                    'target_stats_max_diff', 'features_overlap_min_pct',
+                    'correlations_max_mae', 'fold_sizes_max_diff_pct'):
+                raise AssertionError(
+                    f'line {node.lineno}: {node.value!r} states equivalence as '
+                    f'a tolerance, contradicting the bitwise claim'
+                )
