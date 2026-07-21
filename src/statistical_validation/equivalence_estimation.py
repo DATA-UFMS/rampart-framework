@@ -62,7 +62,7 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 import math
 import numpy as np
 import pandas as pd
@@ -461,18 +461,17 @@ def run(args: argparse.Namespace) -> int:
          for r in pair_data.values() if isinstance(r, dict)),
         default=0
     )
+    # Derived from the registry. The previous list was a literal naming
+    # pre-rename pairs, so the note described an analysis that was not run.
+    pairs = [f'{a}_vs_{b}' for a, b in paradigm_pairs()]
+
     out = {
         'method': 'equivalence_by_estimation',
         'seed': args.seed,
         'bootstrap': args.bootstrap,
         'n_folds': n_pairs,
-        'power_note': (
-            f'n={n_pairs} folds (maximo sem comprometer anti-leakage temporal). '
-            f'Analise 3-way pairwise: dl_vs_dw, dl_vs_pl, dw_vs_pl. '
-            f'Wilcoxon pareado com n={n_pairs} tem poder limitado (~30% para d=0.5); '
-            f'decisao principal via bootstrap CI. Resultado "inconclusive" e esperado '
-            f'e reflete precisao disponivel (Lakens et al. 2018).'
-        ) if n_pairs > 0 else 'Sem dados para analise de poder.',
+        'pairs': pairs,
+        'power_note': power_note(n_pairs, pairs),
         'predictive': predictive,
         'latency': latency,
     }
@@ -493,6 +492,26 @@ def parse_args() -> argparse.Namespace:
                    help='Perfil de δ por fase (ex.: setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10)')
     p.add_argument('--latex', action='store_true', help='Gerar também tabelas LaTeX')
     return p.parse_args()
+
+
+
+def power_note(n_pairs: int, pairs: List[str]) -> str:
+    """Prose accompanying the equivalence decisions.
+
+    Kept as a function so the pair list it names can be checked against the
+    registry. It used to be an f-string inside main() naming three pre-rename
+    pairs, which no longer exist in the artifacts the note accompanies.
+    """
+    if n_pairs <= 0:
+        return 'Sem dados para analise de poder.'
+    return (
+        f'n={n_pairs} folds (maximo sem comprometer anti-leakage temporal). '
+        f'Analise pairwise: {", ".join(pairs)}. '
+        f'Wilcoxon pareado com n={n_pairs} tem poder limitado (~30% para '
+        f'd=0.5); decisao principal via bootstrap CI. Resultado '
+        f'"inconclusive" e esperado e reflete precisao disponivel '
+        f'(Lakens et al. 2018).'
+    )
 
 
 def main() -> None:

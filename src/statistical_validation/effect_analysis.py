@@ -182,7 +182,12 @@ def _observed_power_wilcoxon(n: int, effect_size: float, alpha: float,
         Fallacy of Power Calculations for Data Analysis. The American
         Statistician, 55(1), 19-24.
     """
-    if n < 4 or abs(effect_size) < 1e-10:
+    # A non-finite effect propagates NaN into every simulated replicate, the
+    # signed-rank test raises on all of them, and the rejection count stays at
+    # zero -- so the record reports power 0.0, which asserts the test had no
+    # chance of detecting anything. What is known is that the power is
+    # undefined.
+    if n < 4 or not np.isfinite(effect_size) or abs(effect_size) < 1e-10:
         return float('nan')
     rng = np.random.default_rng(seed)
     rejections = 0
@@ -223,8 +228,6 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
         res: Dict[str, Dict[str, float]] = {}
 
         # Por fase
-        p_values = []
-        keys = []
         for p in phases:
             x, y = paired_vectors_for_phase(df, p, arch_a, arch_b)
             diff = x - y
@@ -251,8 +254,6 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
                 wilcoxon_p=w_p,
             )
             res[p] = rec
-            p_values.append(float(t_p))
-            keys.append(p)
 
         # Total (exclui collection)
         x, y = paired_vectors_total(df, exclude_phases=["collection"], arch_a=arch_a, arch_b=arch_b)
@@ -277,8 +278,6 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
                 wilcoxon_stat=w_stat,
                 wilcoxon_p=w_p,
             )
-            p_values.append(float(t_p))
-            keys.append('total_architectural')
 
         results[pair_key] = res
 

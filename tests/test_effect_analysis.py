@@ -270,3 +270,58 @@ class TestSignificanceCsvKeepsEveryColumn:
         for stale in ('mean_dl_s', 'mean_dw_s', 'speedup_dw_vs_dl',
                       'possible_cols'):
             assert stale not in source, stale
+
+
+class TestUndefinedPowerIsNotZero:
+    """Power 0.0 and undefined power are different claims.
+
+    When cohen_dz is NaN -- a phase whose paired differences are all zero, or a
+    variance that does not exist -- the simulation drew from N(NaN, 1), the
+    signed-rank test raised on every replicate, and the rejection count stayed
+    at zero. The record then said the test had no chance of detecting the
+    effect, which is a statement about the design. The truth is that nothing
+    was measured.
+    """
+
+    def test_a_nan_effect_gives_nan_power(self):
+        assert np.isnan(_real_power(10, float('nan'), alpha=0.05, n_sim=50))
+
+    def test_an_infinite_effect_gives_nan_power(self):
+        assert np.isnan(_real_power(10, float('inf'), alpha=0.05, n_sim=50))
+
+    def test_a_real_effect_still_gives_a_number(self):
+        """Otherwise returning NaN unconditionally would pass the tests above."""
+        power = _real_power(10, 0.8, alpha=0.05, n_sim=400)
+        assert np.isfinite(power) and 0.0 < power <= 1.0
+
+    def test_the_written_record_carries_nan_not_zero(self, results,
+                                                     monkeypatch, tmp_path):
+        monkeypatch.setattr(ea, 'STATS_DIR', str(tmp_path))
+        patched = {pair: {phase: {**rec, 'cohen_dz': float('nan')}
+                          for phase, rec in per_phase.items()}
+                   for pair, per_phase in results.items()}
+        for per_phase in patched.values():
+            for rec in per_phase.values():
+                rec['observed_power'] = ea._observed_power_wilcoxon(
+                    rec['n'], rec['cohen_dz'], alpha=rec['alpha_bonferroni'],
+                    n_sim=50)
+        ea.write_outputs(patched)
+        frame = pd.read_csv(tmp_path / 'effect_sizes_summary.csv')
+        assert frame['observed_power'].isna().all(), (
+            f"zeros written for an undefined effect: "
+            f"{frame['observed_power'].tolist()}"
+        )
+
+
+class TestNoDeadAccumulators:
+    """Two lists were appended to on every phase and never read."""
+
+    def test_the_accumulators_are_gone(self):
+        import ast as ast_module
+        tree = ast_module.parse(
+            (Path(_SRC) / 'statistical_validation'
+             / 'effect_analysis.py').read_text())
+        assigned = {node.id for node in ast_module.walk(tree)
+                    if isinstance(node, ast_module.Name)
+                    and isinstance(node.ctx, ast_module.Store)}
+        assert 'p_values' not in assigned

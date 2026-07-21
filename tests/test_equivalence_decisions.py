@@ -129,3 +129,67 @@ class TestDirectionTableIsComplete:
     def test_an_unknown_metric_is_not_silently_guessed(self):
         with pytest.raises(KeyError):
             _advantage('a_exceeds_b', 'throughput', 'A', 'B')
+
+
+class TestThePowerNoteNamesRealPairs:
+    """The note described an analysis that was not run.
+
+    Its pair list was a literal naming pre-rename abbreviations -- dl_vs_dw,
+    dl_vs_pl, dw_vs_pl -- none of which exist in the artifacts it accompanies.
+    A reader checking the note against the results finds three pairs that are
+    not there and three results the note does not mention.
+    """
+
+    @staticmethod
+    def _note():
+        import sys
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / 'src'
+                  / 'statistical_validation' / 'equivalence_estimation.py')
+        return source.read_text()
+
+    def test_no_pre_rename_pair_is_named(self):
+        import ast as ast_module
+        tree = ast_module.parse(self._note())
+        docstrings = {id(n.value) for n in ast_module.walk(tree)
+                      if isinstance(n, ast_module.Expr)
+                      and isinstance(n.value, ast_module.Constant)}
+        for node in ast_module.walk(tree):
+            if not (isinstance(node, ast_module.Constant)
+                    and isinstance(node.value, str)) or id(node) in docstrings:
+                continue
+            for stale in ('dl_vs_dw', 'dl_vs_pl', 'dw_vs_pl'):
+                assert stale not in node.value, (
+                    f'line {node.lineno} names {stale!r}, a pair that does not '
+                    f'exist in the artifacts this note accompanies'
+                )
+
+    def test_the_pair_list_comes_from_the_registry(self):
+        """The note takes its pairs as an argument; main derives them."""
+        source = self._note()
+        assert 'paradigm_pairs()' in source
+        assert "'power_note': power_note(n_pairs, pairs)" in source
+
+    def test_every_registry_pair_appears_in_the_rendered_note(self):
+        import sys
+        from pathlib import Path
+        src = str(Path(__file__).resolve().parents[1] / 'src')
+        if src not in sys.path:
+            sys.path.insert(0, src)
+        from core.paradigm_registry import paradigm_pairs
+        from statistical_validation.equivalence_estimation import power_note
+
+        pairs = [f'{a}_vs_{b}' for a, b in paradigm_pairs()]
+        rendered = power_note(10, pairs)
+        for pair in pairs:
+            assert pair in rendered, f'{pair} missing from the note'
+        assert 'n=10' in rendered
+
+    def test_no_pairs_no_claim(self):
+        import sys
+        from pathlib import Path
+        src = str(Path(__file__).resolve().parents[1] / 'src')
+        if src not in sys.path:
+            sys.path.insert(0, src)
+        from statistical_validation.equivalence_estimation import power_note
+        assert 'pairwise' not in power_note(0, ['a_vs_b'])
