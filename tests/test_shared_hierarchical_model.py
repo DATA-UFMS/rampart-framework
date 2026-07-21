@@ -254,3 +254,68 @@ class TestInnerCrossValidationIsDeliberate:
         X, y, entities = _panel()
         other = _panel(seed=99)
         assert self._alpha(X, y, entities) != self._alpha(*other)
+
+
+class TestDiagnosticsNameTheRunningParadigm:
+    """The shared model printed one paradigm's name in all three runs.
+
+    "Simple Hierarchical Dask" appeared in the sql_engine and dataframe_lib
+    logs too, because the line was a literal left over from when the code lived
+    in the Dask pipeline. A log that names the wrong engine is worse than no
+    log: it is the artifact someone reads to decide which run they are looking
+    at.
+    """
+
+    def test_no_paradigm_is_named_in_a_literal(self):
+        import ast as ast_module
+        source = (_ROOT / 'src' / 'core' / 'models' / 'hierarchical.py')
+        tree = ast_module.parse(source.read_text())
+        docstrings = {id(n.value) for n in ast_module.walk(tree)
+                      if isinstance(n, ast_module.Expr)
+                      and isinstance(n.value, ast_module.Constant)}
+        for node in ast_module.walk(tree):
+            if not (isinstance(node, ast_module.Constant)
+                    and isinstance(node.value, str)) or id(node) in docstrings:
+                continue
+            for stale in ('Dask', 'DuckDB', 'Polars', 'Data Lake',
+                          'Data Warehouse'):
+                assert stale not in node.value, (
+                    f'line {node.lineno} names {stale!r} in shared code that '
+                    f'all three paradigms run'
+                )
+
+    def test_the_diagnostic_uses_the_architecture_argument(self):
+        source = (_ROOT / 'src' / 'core' / 'models' / 'hierarchical.py') \
+            .read_text()
+        assert 'Simple hierarchical ({architecture})' in source
+
+
+class TestNoDeadImports:
+    """An unused import of a model class reads as a second estimator."""
+
+    MODELS = ['sql_engine', 'task_graph', 'dataframe_lib']
+
+    @pytest.mark.parametrize('paradigm', MODELS)
+    def test_the_hierarchical_model_imports_nothing_it_does_not_use(
+            self, paradigm):
+        import ast as ast_module
+        path = (_ROOT / 'src' / 'architectures_ml' / paradigm / 'models'
+                / 'hierarchical_model.py')
+        tree = ast_module.parse(path.read_text())
+        imported = {}
+        for node in ast_module.walk(tree):
+            if isinstance(node, (ast_module.Import, ast_module.ImportFrom)):
+                for alias in node.names:
+                    name = (alias.asname or alias.name).split('.')[0]
+                    imported.setdefault(name, node.lineno)
+        used = {n.id for n in ast_module.walk(tree)
+                if isinstance(n, ast_module.Name)}
+        used |= {n.value.id for n in ast_module.walk(tree)
+                 if isinstance(n, ast_module.Attribute)
+                 and isinstance(n.value, ast_module.Name)}
+        dead = sorted((line, name) for name, line in imported.items()
+                      if name not in used)
+        assert not dead, (
+            f'{paradigm}: imported and never used: '
+            f'{[f"{n} (line {l})" for l, n in dead]}'
+        )

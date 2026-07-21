@@ -738,3 +738,76 @@ class TestPreprocessingIsolation:
             f'{path.parts[-3]}: parâmetros escolhidos não reaproveitados'
         )
 
+
+
+class TestTheEmbargoDocstringMatchesTheCode:
+    """The docstring described removing observations; the code checks a gap.
+
+    López de Prado (2018) defines the embargo as dropping the training
+    observations adjacent to each split boundary. Nothing here drops anything:
+    the validator asserts that the declared gap covers the declared embargo and
+    fails the fold otherwise. On this panel the two select the same training
+    set, which is why the check suffices -- but a reader taking the docstring
+    literally would look for an exclusion that does not exist.
+    """
+
+    @staticmethod
+    def _docstring():
+        from core.validation import TemporalValidator
+        return TemporalValidator.__doc__
+
+    def test_it_does_not_claim_observations_are_excluded(self):
+        text = self._docstring()
+        assert 'são excluídas do treino' not in text, (
+            'the code excludes nothing; it verifies that the gap covers the '
+            'embargo'
+        )
+
+    def test_it_says_what_the_check_actually_does(self):
+        text = self._docstring()
+        assert 'verifica que o gap' in text or 'cobre o embargo' in text
+
+    def test_no_code_path_drops_rows_for_the_embargo(self):
+        """Reproduced: the fold that passes with embargo 0 fails with embargo 3,
+        and no row count changes anywhere -- only the verdict does."""
+        from core.validation import TemporalValidator
+
+        fold = {'train_start': 2000, 'train_end': 2007,
+                'val_start': 2010, 'val_end': 2011,
+                'test_start': 2014, 'test_end': 2015}
+        before = dict(fold)
+        valid_without, _ = TemporalValidator(
+            min_gap_years=2, embargo_years=0).validate_fold_integrity(fold)
+        valid_with, errors = TemporalValidator(
+            min_gap_years=2, embargo_years=3).validate_fold_integrity(fold)
+        assert valid_without and not valid_with
+        assert any('Embargo' in error for error in errors)
+        assert fold == before, 'the validator mutated the fold'
+
+
+class TestTheFoldCountFormulaIsDerived:
+    """The comment ended in "8... +1 = 9", which reads as an ad-hoc correction.
+
+    The count is of test-window start points, so it is the size of the closed
+    range [test_start_min, test_start_max]. A closed range whose endpoints
+    coincide holds one element, not zero -- the "+1" is the range size, not a
+    fudge.
+    """
+
+    def test_the_comment_derives_the_endpoints(self):
+        source = (Path(_SRC).parent / 'src' / 'core'
+                  / 'scientific_config.py').read_text()
+        assert 'test_start_min' in source and 'test_start_max' in source
+        assert '8... +1 = 9' not in source
+
+    def test_the_formula_in_the_comment_gives_the_generated_count(self):
+        """A comment that disagrees with the generator is worse than none."""
+        start, end = 2000, 2023
+        min_train, val, test, gap, step = 8, 2, 2, 2, 1
+        test_start_min = start + min_train + val + 2 * gap
+        test_start_max = end - test + 1
+        predicted = (test_start_max - test_start_min) // step + 1
+
+        folds = _generate_folds(start, end, min_train, val, test, gap,
+                                step=step)
+        assert predicted == len(folds) == 9

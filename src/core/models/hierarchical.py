@@ -121,7 +121,7 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
         final_alpha = ridge_cv.alpha_
         residual_model = ridge_cv
 
-        print(f"      Simple Hierarchical Dask:")
+        print(f"      Simple hierarchical ({architecture}):")
         print(f"         {features_count} features x {samples_count} samples de resíduos")
         print(f"         alpha selecionado por RidgeCV: {final_alpha:.2f}")
         print(f"         Shrinkage aplicado em {n_countries} países")

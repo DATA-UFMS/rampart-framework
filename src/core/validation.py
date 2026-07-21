@@ -203,9 +203,18 @@ class TemporalValidator:
     O protocolo combina dois mecanismos complementares:
       - **Gap temporal**: período mínimo entre splits consecutivos,
         impedindo que informação futura influencie o treino.
-      - **Embargo**: observações adjacentes ao limite de cada split
-        são excluídas do treino para prevenir leakage por
-        autocorrelação residual (López de Prado, 2018).
+      - **Embargo**: um acréscimo exigido ao gap, não uma exclusão de
+        observações. López de Prado (2018) descreve o embargo como a remoção
+        das observações de treino adjacentes ao limite de cada split; aqui o
+        validador apenas verifica que o gap declarado cobre o embargo
+        declarado, e reprova o fold quando não cobre. Nada é removido -- o
+        que remove observações é o gap, na geração dos folds.
+
+        A distinção importa porque as duas formulações diferem quando o gap
+        não é uniforme. Com gap constante de dois anos e um ponto por
+        entidade/ano, exigir gap >= embargo e excluir `embargo` observações
+        adjacentes selecionam o mesmo conjunto de treino, e é por isso que a
+        verificação basta neste painel.
 
     Nota sobre purging (López de Prado 2018):
         Purging remove observações de treino cujos labels sobrepõem

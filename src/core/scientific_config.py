@@ -68,8 +68,16 @@ SCIENTIFIC_CONFIG = {
     #
     # Estes parâmetros produzem n=9 folds walk-forward. Esse n é o
     # máximo alcançável sem violar as restrições temporais (P1-P2):
-    #   n = floor((end - start - min_train - val - test - 2*gap + 1) / step)
-    #   n = floor((2023 - 2000 - 8 - 2 - 2 - 4 + 1) / 1) = 8... +1 = 9
+    # A contagem é de pontos de início de teste, não de intervalos, então é
+    # o tamanho do range fechado [test_start_min, test_start_max]:
+    #
+    #   test_start_min = start + min_train + val + 2*gap = 2000+8+2+4 = 2014
+    #   test_start_max = end - test + 1                  = 2023-2+1  = 2022
+    #   n = floor((test_start_max - test_start_min) / step) + 1 = 9
+    #
+    # O "+1" não é ajuste ad hoc: um range fechado com extremos iguais tem um
+    # elemento, não zero. A forma anterior subtraía os dois extremos e somava
+    # um depois, o que dava o mesmo número por acidente de arranjo.
     #
     # Aumentar n exigiria reduzir gap (comprometendo P2), reduzir
     # min_train (comprometendo estabilidade do treino) ou usar folds
