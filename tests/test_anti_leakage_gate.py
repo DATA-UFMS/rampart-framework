@@ -19,6 +19,7 @@ if _SRC not in sys.path:
 _ROOT = Path(__file__).resolve().parents[1]
 
 from core.base_architecture import BaseArchitectureML
+from core.paradigm_registry import discover_paradigms
 from core.scientific_config import SCIENTIFIC_CONFIG
 
 
@@ -517,3 +518,117 @@ class TestTheTwoThresholdsAnswerDifferentQuestions:
                     'target_reproduction_tolerance': 0.05}
         with pytest.raises(AntiLeakageViolation, match='target reproduction'):
             audit_feature_set(panel, features, 'target', loosened)
+
+
+class TestTheGateHasSomethingToAttestTo:
+    """An empty fold list satisfied "no invalid folds" vacuously.
+
+    The pipeline logged "0 folds -- integridade temporal verificada" and went
+    on to the benchmark. Zero folds means the models had nothing to train on,
+    or the artifact is broken; neither is temporal integrity.
+    """
+
+    def test_an_empty_configuration_halts(self):
+        from core.validation import AntiLeakageViolation, TemporalValidator
+        with pytest.raises(AntiLeakageViolation, match='empty'):
+            TemporalValidator(min_gap_years=2).enforce_walk_forward([])
+
+    def test_a_valid_configuration_still_passes(self):
+        """Otherwise raising unconditionally would satisfy the test above."""
+        from core.validation import TemporalValidator
+        TemporalValidator(min_gap_years=2).enforce_walk_forward([{
+            'train_start': 2000, 'train_end': 2007,
+            'val_start': 2010, 'val_end': 2011,
+            'test_start': 2014, 'test_end': 2015,
+        }])
+
+    def test_the_report_no_longer_calls_zero_folds_valid(self):
+        from core.validation import TemporalValidator
+        valid, report = TemporalValidator(
+            min_gap_years=2).validate_walk_forward([])
+        assert report['total_folds'] == 0
+        # validate_walk_forward stays descriptive; enforcement is where the
+        # decision lives, and that is what the pipeline calls.
+        assert valid is True
+
+
+class TestTheParadigmsShareTheirFolds:
+    """Each paradigm's folds were validated alone, never against the others.
+
+    Splits that differ across paradigms make the comparison a comparison
+    between different problems: the bitwise claim would be falsified for that
+    reason rather than by the implementations.
+    """
+
+    @staticmethod
+    def _write(root, windows_by_paradigm, created):
+        import json
+        for paradigm, windows in windows_by_paradigm.items():
+            directory = (root / 'ml_pipeline' / 'architectures' / paradigm
+                         / 'prep')
+            directory.mkdir(parents=True, exist_ok=True)
+            folds = [{'fold_id': index,
+                      'train_start': w[0], 'train_end': w[1],
+                      'val_start': w[2], 'val_end': w[3],
+                      'test_start': w[4], 'test_end': w[5]}
+                     for index, w in enumerate(windows)]
+            (directory / f'temporal_folds_{paradigm}.json').write_text(
+                json.dumps({'creation_timestamp': created.isoformat(),
+                            'folds': folds}))
+
+    @pytest.fixture
+    def gate(self, tmp_path, monkeypatch):
+        import sys
+        from datetime import datetime, timedelta
+
+        root = Path(__file__).resolve().parents[1]
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        import pipeline
+
+        outputs = tmp_path / 'outputs'
+        monkeypatch.setattr(
+            pipeline, 'get_absolute_output_path',
+            lambda relative: str(outputs / relative.replace('outputs/', '')))
+        started = datetime.now() - timedelta(seconds=5)
+        return pipeline, outputs, started, datetime.now()
+
+    #: Two folds that satisfy the gap of two years.
+    SHARED = [(2000, 2007, 2010, 2011, 2014, 2015),
+              (2000, 2008, 2011, 2012, 2015, 2016)]
+
+    def test_identical_folds_pass(self, gate):
+        pipeline, outputs, started, created = gate
+        paradigms = sorted(discover_paradigms())
+        self._write(outputs, {p: self.SHARED for p in paradigms}, created)
+        pipeline._validate_anti_leakage_gate(str(outputs), started)
+
+    def test_a_shifted_window_halts(self, gate):
+        """Same count, same gaps, different years: counting folds misses it."""
+        pipeline, outputs, started, created = gate
+        paradigms = sorted(discover_paradigms())
+        windows = {p: self.SHARED for p in paradigms}
+        windows[paradigms[0]] = [(2000, 2007, 2010, 2011, 2014, 2015),
+                                 (2000, 2009, 2012, 2013, 2016, 2017)]
+        assert len(windows[paradigms[0]]) == len(self.SHARED)
+        self._write(outputs, windows, created)
+        with pytest.raises(ValueError, match='mesmos folds'):
+            pipeline._validate_anti_leakage_gate(str(outputs), started)
+
+    def test_a_missing_fold_halts(self, gate):
+        pipeline, outputs, started, created = gate
+        paradigms = sorted(discover_paradigms())
+        windows = {p: self.SHARED for p in paradigms}
+        windows[paradigms[-1]] = self.SHARED[:1]
+        self._write(outputs, windows, created)
+        with pytest.raises(ValueError, match='mesmos folds'):
+            pipeline._validate_anti_leakage_gate(str(outputs), started)
+
+    def test_an_empty_configuration_halts_before_the_comparison(self, gate):
+        """Three empty lists agree with each other, and agreement is not integrity."""
+        from core.validation import AntiLeakageViolation
+        pipeline, outputs, started, created = gate
+        paradigms = sorted(discover_paradigms())
+        self._write(outputs, {p: [] for p in paradigms}, created)
+        with pytest.raises(AntiLeakageViolation, match='empty'):
+            pipeline._validate_anti_leakage_gate(str(outputs), started)

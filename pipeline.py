@@ -133,6 +133,7 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
     embargo = int(SCIENTIFIC_CONFIG['embargo_years'])
     validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
 
+    per_paradigm: dict = {}
     for arch in _discover():
         folds_path = os.path.join(
             get_absolute_output_path('outputs/ml_pipeline/architectures'),
@@ -163,6 +164,23 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
         folds = folds_config.get('folds', [])
         validator.enforce_walk_forward(folds)
         _log(f"  {arch}: {len(folds)} folds — integridade temporal verificada")
+        per_paradigm[arch] = [
+            (f['train_start'], f['train_end'], f['val_start'], f['val_end'],
+             f['test_start'], f['test_end']) for f in folds
+        ]
+
+    # Cada paradigma era validado isoladamente, e nada exigia que os três
+    # tivessem os mesmos folds. Splits diferentes tornam a comparação entre
+    # paradigmas uma comparação entre problemas diferentes -- e o Δ=0 seria
+    # falsificado por essa razão, não pela implementação.
+    distinct = {arch: tuple(windows) for arch, windows in per_paradigm.items()}
+    if len(set(distinct.values())) > 1:
+        divergent = {arch: len(windows) for arch, windows in distinct.items()}
+        raise ValueError(
+            f"Os paradigmas não compartilham os mesmos folds temporais "
+            f"{divergent}. A comparação entre eles pressupõe splits idênticos; "
+            f"caso contrário mede problemas diferentes."
+        )
 
 
 def main() -> None:

@@ -368,6 +368,18 @@ class TemporalValidator:
         Raises:
             ValueError: Se qualquer fold violar integridade temporal
         """
+        # Um conjunto vazio satisfaz "nenhum fold inválido" vacuamente, e o
+        # pipeline registrava "0 folds -- integridade temporal verificada".
+        # Zero folds significa que os modelos não tiveram nada em que treinar,
+        # ou que o artefato está quebrado; em nenhum dos dois casos há
+        # integridade a atestar.
+        if not folds:
+            raise AntiLeakageViolation(
+                "Anti-leakage violation: the fold configuration is empty. "
+                "There is no temporal integrity to attest to, and the models "
+                "had nothing to train on."
+            )
+
         all_valid, report = self.validate_walk_forward(folds)
         if not all_valid:
             errors = report.get('fold_errors', {})
