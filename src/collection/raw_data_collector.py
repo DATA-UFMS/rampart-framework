@@ -67,6 +67,44 @@ from core.scientific_config import RANDOM_SEED, setup_reproducibility
 setup_reproducibility()
 
 
+#: Quantos anos consecutivos um preenchimento temporal pode carregar uma
+#: observação adiante. Um número por coluna, aplicado uma vez, para que o
+#: alcance seja o declarado e não a soma de passos encadeados.
+CARRY_LIMIT_YEARS = 1
+LOW_FREQUENCY_CARRY_LIMIT_YEARS = 3
+LOW_FREQUENCY_COLUMNS = frozenset({'unemployment_total',
+                                   'gdp_per_capita_constant_2015'})
+
+
+def _fillable_cells(observed, source, gap, limit):
+    """Which cells a temporal carry may fill.
+
+    Missing, with something to carry into them, and no further than `limit`
+    years from the entity's last observation.
+
+    The distance bound is not implied by the source. Both sources in use are
+    incidentally bounded -- a limited forward fill, and a rolling mean whose
+    window equals the limit -- so removing the bound changes nothing today.
+    It is stated here because the source has already changed once, and the
+    previous arrangement derived its reach from how many fill steps happened
+    to be chained rather than from a number anyone had written down.
+    """
+    return observed.isna() & source.notna() & (gap <= limit)
+
+
+def _years_since_observed(series):
+    """Distância, em posições, até a última observação da própria entidade.
+
+    Zero onde há observação; NaN antes da primeira. Serve para impor o limite
+    de propagação explicitamente, em vez de deixá-lo emergir de quantos passos
+    de preenchimento foram encadeados.
+    """
+    positions = pd.Series(np.arange(len(series)), index=series.index,
+                          dtype=float)
+    last_observed = positions.where(series.notna()).ffill()
+    return positions - last_observed
+
+
 class RawDataCollector:
     """
     Sistema de coleta e imputação hierárquica para dados socioeconômicos da América Latina.
@@ -736,35 +774,51 @@ class RawDataCollector:
                         financial_log_transforms[column] = {'method': 'log1p'}
             
             df_sorted = df_imputed.sort_values(['country_code', 'year']).copy()
-            lag1 = df_sorted.groupby('country_code')[column].shift(1)
-            mask_temporal = df_sorted[column].isna() & lag1.notna()
-            df_sorted.loc[mask_temporal, column] = lag1[mask_temporal]
-            temporal_count = mask_temporal.sum()
-            
-            # Forward fill limitado para indicadores de baixa frequência
-            if column in {'unemployment_total', 'gdp_per_capita_constant_2015'}:
-                ffill3 = (
-                    df_sorted
-                    .groupby('country_code', group_keys=False)[column]
-                    .apply(lambda s: s.ffill(limit=3))  # Máximo 3 períodos
-                )
-                ffill3 = ffill3.reindex(df_sorted.index)
-                mask_ffill3 = df_sorted[column].isna() & ffill3.notna()
-                df_sorted.loc[mask_ffill3, column] = ffill3[mask_ffill3]
-                temporal_count = int(temporal_count) + int(mask_ffill3.sum())
-            
-            # Média móvel histórica para unemployment (suavização de ciclos)
+
+            # Um único limite de propagação, aplicado uma vez contra a série
+            # observada.
+            #
+            # Antes eram três passos encadeados, cada um lendo o resultado do
+            # anterior: lag-1, depois ffill(limit=3) sobre a série já
+            # preenchida, depois -- para unemployment -- uma média móvel de 3
+            # anos que também promediava células imputadas. O limite declarado
+            # era 3 e o alcance medido era 7: uma única observação chegava a
+            # sete anos à frente, e os últimos três vinham de promediar
+            # imputações como se fossem observações.
+            #
+            # Continua P5-safe pelo mesmo motivo de antes: só o passado da
+            # própria entidade, nenhuma estatística ajustada fora da célula.
+            # O que muda é que o alcance passa a ser o que está escrito.
+            limit = (LOW_FREQUENCY_CARRY_LIMIT_YEARS
+                     if column in LOW_FREQUENCY_COLUMNS
+                     else CARRY_LIMIT_YEARS)
+            grouped = df_sorted.groupby('country_code', group_keys=False)
+
             if column == 'unemployment_total':
-                prev3_mean = (
-                    df_sorted
-                    .groupby('country_code', group_keys=False)[column]
-                    .apply(lambda s: s.shift(1).rolling(window=3, min_periods=1).mean())
+                # Média das até três observações anteriores, para suavizar
+                # ciclos. Sobre a série observada: promediar células já
+                # preenchidas é o que estendia o alcance.
+                # Janela derivada do limite, não um 3 solto que coincide com
+                # ele: separadas, a coincidência é que fazia o alcance parecer
+                # correto sem que nada o impusesse.
+                window = LOW_FREQUENCY_CARRY_LIMIT_YEARS
+                source = grouped[column].apply(
+                    lambda s: s.shift(1)
+                    .rolling(window=window, min_periods=1).mean()
                 )
-                prev3_mean = prev3_mean.reindex(df_sorted.index)
-                mask_prev3 = df_sorted[column].isna() & prev3_mean.notna()
-                df_sorted.loc[mask_prev3, column] = prev3_mean[mask_prev3]
-                temporal_count = int(temporal_count) + int(mask_prev3.sum())
-            
+            else:
+                source = grouped[column].ffill(limit=limit)
+            source = source.reindex(df_sorted.index)
+
+            # Distância até a última observação, dentro da entidade. É o que
+            # torna o alcance verificável em vez de emergente do encadeamento.
+            gap = grouped[column].apply(_years_since_observed)
+            gap = gap.reindex(df_sorted.index)
+
+            fillable = _fillable_cells(df_sorted[column], source, gap, limit)
+            df_sorted.loc[fillable, column] = source[fillable]
+            temporal_count = int(fillable.sum())
+
             df_imputed = df_sorted.sort_index()
             
             # Sem imputação cross-seccional nem de painel completo.
@@ -858,11 +912,30 @@ class RawDataCollector:
             'rows_before': int(before),
             'rows_after': int(len(df_imputed)),
             'rows_removed_missing_target': int(removed),
-            # Cobertura observada por coluna, para que a extensão da imputação
-            # seja auditável no artefato em vez de ficar num log que ninguém abre.
+            # Medida sobre o painel de entrada, não sobre o imputado.
+            #
+            # Este campo se chamava observed_fraction e era calculado depois da
+            # imputação, então toda célula preenchida contava como observada e
+            # a fração saía perto de 1,0 por construção. É o artefato que um
+            # revisor abre justamente para julgar a extensão da imputação --
+            # dizia o oposto do que promete o próprio nome.
             'observed_fraction': {
-                col: float(df_imputed[col].notna().mean())
+                col: float(df_wide.loc[df_imputed.index, col].notna().mean())
                 for col in df_imputed.select_dtypes(include=[np.number]).columns
+                if col in df_wide.columns
+            },
+            'imputed_fraction': {
+                col: float(
+                    (df_imputed[col].notna()
+                     & df_wide.loc[df_imputed.index, col].isna()).mean())
+                for col in df_imputed.select_dtypes(include=[np.number]).columns
+                if col in df_wide.columns
+            },
+            'carry_limit_years': {
+                col: (LOW_FREQUENCY_CARRY_LIMIT_YEARS
+                      if col in LOW_FREQUENCY_COLUMNS else CARRY_LIMIT_YEARS)
+                for col in df_imputed.select_dtypes(include=[np.number]).columns
+                if col in df_wide.columns
             },
         }
         print(f"  Target: {removed} linhas removidas sem alvo observado "
