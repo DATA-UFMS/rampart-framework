@@ -157,3 +157,100 @@ class TestTheReportIsUsable:
         decision = source[index:index + 400]
         assert "report['status'] = 'insufficient_data'" in decision
         assert 'return report' in decision
+
+
+class TestTheGateCoversWhatIsPublished:
+    """The benchmark overwrites the artifacts the gate certified.
+
+    The gate runs at the end of stage 5, and the benchmark then re-executes
+    setup, baseline and hierarchical `warmup + n` times per paradigm. Each
+    execution rewrites the prediction files. What ends up archived is the last
+    repetition's output, and nothing had looked at it: the equivalence claim
+    covered files that no longer existed.
+
+    Comparing digests across the benchmark also asserts something the paper
+    wants: the repetitions are deterministic, so the latency distribution comes
+    from runs that all produced the same predictions.
+    """
+
+    @pytest.fixture
+    def harness(self, tmp_path, monkeypatch):
+        import sys
+        root = Path(__file__).resolve().parents[1]
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        import pipeline
+
+        paradigms = sorted(discover_paradigms())
+        written = {}
+        for paradigm in paradigms:
+            for stage in ('baseline', 'hierarchical'):
+                path = tmp_path / f'{paradigm}_{stage}.parquet'
+                path.write_bytes(f'{paradigm}:{stage}'.encode())
+                written[(paradigm, stage)] = path
+
+        monkeypatch.setattr(
+            'core.prediction_store.predictions_path',
+            lambda paradigm, stage: str(written[(paradigm, stage)]))
+        monkeypatch.setattr(pipeline, '_discover', lambda: paradigms)
+        return pipeline, written
+
+    def test_untouched_artifacts_pass(self, harness):
+        pipeline, _ = harness
+        before = pipeline._prediction_digests()
+        assert len(before) == len(discover_paradigms()) * 2
+        pipeline._assert_benchmark_left_predictions_intact(before)
+
+    def test_a_rewritten_artifact_halts(self, harness):
+        """A repetition that predicts something else must not pass silently."""
+        pipeline, written = harness
+        before = pipeline._prediction_digests()
+        target = next(iter(written.values()))
+        target.write_bytes(b'a different repetition')
+        with pytest.raises(ValueError, match='diferentes das'):
+            pipeline._assert_benchmark_left_predictions_intact(before)
+
+    def test_a_removed_artifact_halts(self, harness):
+        pipeline, written = harness
+        before = pipeline._prediction_digests()
+        next(iter(written.values())).unlink()
+        with pytest.raises(ValueError, match='removeu'):
+            pipeline._assert_benchmark_left_predictions_intact(before)
+
+    def test_an_artifact_that_appears_afterwards_halts(self, harness):
+        """It would be published without ever passing the gate."""
+        pipeline, written = harness
+        target = next(iter(written.values()))
+        target.unlink()
+        before = pipeline._prediction_digests()
+        assert str(target) not in before
+        target.write_bytes(b'late arrival')
+        with pytest.raises(ValueError, match='nao viu'):
+            pipeline._assert_benchmark_left_predictions_intact(before)
+
+    def test_the_digest_is_content_based(self, harness):
+        """Mtime or size alone would miss an equal-length rewrite."""
+        pipeline, written = harness
+        target = next(iter(written.values()))
+        original = target.read_bytes()
+        before = pipeline._prediction_digests()
+        target.write_bytes(bytes(len(original)))
+        assert len(target.read_bytes()) == len(original)
+        with pytest.raises(ValueError, match='diferentes das'):
+            pipeline._assert_benchmark_left_predictions_intact(before)
+
+    def test_the_pipeline_records_before_and_checks_after(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'pipeline.py').read_text()
+        record = source.index('predictions_before = _prediction_digests()')
+        benchmark = source.index('architectural_benchmark.py")])')
+        check = source.index('_assert_benchmark_left_predictions_intact('
+                             'predictions_before)')
+        assert record < benchmark < check, (
+            'the digests must bracket the benchmark, not sit on one side'
+        )
+
+    def test_an_absent_artifact_before_the_benchmark_halts(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'pipeline.py').read_text()
+        assert 'Nenhum artefato de predicao antes do benchmark' in source

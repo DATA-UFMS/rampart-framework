@@ -183,6 +183,66 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
         )
 
 
+
+def _prediction_digests() -> dict:
+    """SHA-256 of every paradigm's prediction artifacts, keyed by path."""
+    import hashlib
+
+    from core.prediction_store import predictions_path
+
+    digests = {}
+    for paradigm in _discover():
+        for stage in ("baseline", "hierarchical"):
+            path = predictions_path(paradigm, stage)
+            if os.path.exists(path):
+                with open(path, "rb") as handle:
+                    digests[path] = hashlib.sha256(handle.read()).hexdigest()
+    return digests
+
+
+def _assert_benchmark_left_predictions_intact(before: dict) -> None:
+    """The published artifacts must be the ones the gate certified.
+
+    The equivalence gate runs before the benchmark, and the benchmark then
+    re-executes setup, baseline and hierarchical `warmup + n` times per
+    paradigm -- each execution overwriting the prediction artifacts. What ends
+    up archived is the last repetition's output, which nothing had looked at.
+    The gate attested to files that no longer existed.
+
+    Comparing digests across the benchmark closes that, and asserts something
+    the paper wants anyway: the repetitions are deterministic, so the latency
+    distribution comes from runs that all produced the same predictions.
+    """
+    after = _prediction_digests()
+
+    missing = sorted(set(before) - set(after))
+    if missing:
+        raise ValueError(
+            f"O benchmark removeu artefatos de predicao que o gate havia "
+            f"verificado: {missing}"
+        )
+
+    appeared = sorted(set(after) - set(before))
+    if appeared:
+        raise ValueError(
+            f"O benchmark criou artefatos de predicao que o gate nao viu: "
+            f"{appeared}. O que sera publicado nao foi verificado."
+        )
+
+    changed = sorted(path for path, digest in after.items()
+                     if before[path] != digest)
+    if changed:
+        raise ValueError(
+            f"As repeticoes do benchmark produziram predicoes diferentes das "
+            f"que o gate verificou: {changed}. Ou a execucao nao e "
+            f"determinista, ou os artefatos publicados nao sao os que foram "
+            f"atestados -- em qualquer dos casos a afirmacao de equivalencia "
+            f"nao cobre o que esta no pacote."
+        )
+
+    _log(f"  {len(after)} artefatos de predicao intactos apos o benchmark")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pipeline de pesquisa - benchmarking arquitetural")
     parser.add_argument(
@@ -253,10 +313,20 @@ def main() -> None:
     run([py, os.path.join(root, "src/statistical_validation/prediction_equivalence.py")])
     _log("Predicoes identicas entre os paradigmas")
 
+    # Registrado antes do benchmark, conferido depois: as repeticoes
+    # reexecutam as Etapas 3 a 5 e sobrescrevem estes mesmos arquivos.
+    predictions_before = _prediction_digests()
+    if not predictions_before:
+        raise FileNotFoundError(
+            "Nenhum artefato de predicao antes do benchmark; o gate de "
+            "equivalencia nao teria o que verificar."
+        )
+
     print("\nEtapa 6/7: Benchmark arquitetural")
     # Sem --repetitions/--warmup: o benchmark lê BENCHMARK_CONFIG, e repetir os
     # valores aqui criaria uma segunda fonte para o n do protocolo.
     run([py, os.path.join(root, "src/benchmarking/architectural_benchmark.py")])
+    _assert_benchmark_left_predictions_intact(predictions_before)
     _log("Etapa 6 concluida")
 
     print("\nEtapa 7/7: Analise estatistica e tabelas derivadas")
