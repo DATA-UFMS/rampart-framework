@@ -10,7 +10,8 @@ Saídas:
   - outputs/statistics/architectural_latency_percentiles.tex
 
 Notas:
-  - Exclui a fase 'collection' do cálculo de speedup por padrão.
+  - Compara só as fases que os três paradigmas executam; a lista vem de
+    core.paradigm_registry.COMPARABLE_PHASES.
   - Computa P50/P95/P99 por arquitetura e fase (segundos).
   - Computa speedup por fase como (mediana_DL_seg / mediana_DW_seg) → maior é melhor para DW.
   - Também reporta percentis e speedup do tempo total por execução (soma das fases não‑excluídas).
@@ -35,7 +36,8 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
-from core.paradigm_registry import discover_paradigms, paradigm_pairs
+from core.paradigm_registry import (comparable_rows, discover_paradigms,
+                                    paradigm_pairs)
 
 RESULTS_CSV = Path(get_absolute_output_path(
     "outputs/benchmarks/architectural_benchmark_results.csv"))
@@ -43,7 +45,6 @@ OUT_DIR = Path(get_absolute_output_path("outputs/statistics"))
 OUT_JSON = OUT_DIR / "architectural_latency_percentiles.json"
 OUT_TEX = OUT_DIR / "architectural_latency_percentiles.tex"
 
-EXCLUDE_PHASES = {"collection"}
 
 
 def _garantir_diretorio() -> None:
@@ -92,10 +93,10 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
     else:
         raise SystemExit("CSV de resultados sem coluna de duração (duration_ns/duration_s)")
 
-    # Filtrar fases
-    df_filt = df[~df["phase"].isin(EXCLUDE_PHASES)].copy()
-    if df_filt.empty:
-        df_filt = df.copy()
+    # O fallback anterior reinstalava justamente as linhas excluídas quando o
+    # filtro esvaziava o quadro: sobrando só a coleta, a tabela de latência
+    # saía construída sobre ela.
+    df_filt = comparable_rows(df)
 
     fases = sorted(df_filt["phase"].unique())
     arq = sorted(df_filt["architecture"].unique())

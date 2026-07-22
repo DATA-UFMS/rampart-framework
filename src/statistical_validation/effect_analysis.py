@@ -24,7 +24,7 @@ import json
 import math
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
-from core.paradigm_registry import paradigm_pairs
+from core.paradigm_registry import COMPARABLE_PHASES, paradigm_pairs
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
@@ -90,8 +90,18 @@ def paired_vectors_for_phase(df: pd.DataFrame, phase: str, arch_a: str, arch_b: 
     return merged[f"duration_s_{la}"].to_numpy(), merged[f"duration_s_{lb}"].to_numpy()
 
 
-def paired_vectors_total(df: pd.DataFrame, exclude_phases: List[str], arch_a: str, arch_b: str) -> Tuple[np.ndarray, np.ndarray]:
-    filt = ~df["phase"].isin(exclude_phases)
+def paired_vectors_total(df: pd.DataFrame, arch_a: str, arch_b: str,
+                         exclude_phases: Optional[List[str]] = None
+                         ) -> Tuple[np.ndarray, np.ndarray]:
+    """Total per run over the phases the paradigms share.
+
+    Which ones those are comes from core.paradigm_registry. Four files listed
+    the excluded phase themselves and one had already forgotten to apply it.
+    """
+    if exclude_phases is None:
+        filt = df["phase"].isin(COMPARABLE_PHASES)
+    else:
+        filt = ~df["phase"].isin(exclude_phases)
     sub = df[filt & df["architecture"].isin([arch_a, arch_b])]
     tot = (
         sub.groupby(["run_id", "architecture"])['duration_s']
@@ -218,7 +228,8 @@ def _signed_rank(diff: np.ndarray) -> Tuple[float, float]:
 
 def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
     df = load_benchmark(csv_path)
-    phases = [p for p in sorted(df['phase'].unique()) if p != 'collection']
+    phases = [p for p in sorted(df['phase'].unique())
+              if p in COMPARABLE_PHASES]
     results = {}
 
     # Por par
@@ -255,8 +266,8 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
             )
             res[p] = rec
 
-        # Total (exclui collection)
-        x, y = paired_vectors_total(df, exclude_phases=["collection"], arch_a=arch_a, arch_b=arch_b)
+        # Total sobre as fases comparáveis; a lista vem do registro.
+        x, y = paired_vectors_total(df, arch_a=arch_a, arch_b=arch_b)
         diff = x - y
         n = len(diff)
         if n >= 2:

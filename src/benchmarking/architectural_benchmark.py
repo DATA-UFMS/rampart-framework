@@ -64,7 +64,7 @@ if SRC_DIR not in sys.path:
 
 from core.config import (BENCHMARK_CONFIG, get_absolute_output_path,
                          write_environment_snapshot)
-from core.paradigm_registry import discover_paradigms
+from core.paradigm_registry import COMPARABLE_PHASES, discover_paradigms
 
 
 def _import_modules():
@@ -534,7 +534,9 @@ class BenchmarkRunner:
     #   2. Registrar seus tempos como run_id=-1 para referência
     #   3. Repetir apenas setup/baseline/hierarchical N vezes
 
-    _DOWNSTREAM_PHASES = {"processing", "setup", "baseline", "hierarchical"}
+    #: Uma definição só, em core.paradigm_registry: quatro arquivos
+    #: enumeravam a mesma política e um deles já divergia.
+    _DOWNSTREAM_PHASES = frozenset(COMPARABLE_PHASES)
 
     def run(self) -> List[PhaseResult]:
         results: List[PhaseResult] = []

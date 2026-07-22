@@ -34,7 +34,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 from core.config import get_absolute_output_path
-from core.paradigm_registry import discover_paradigms
+from core.paradigm_registry import comparable_rows, discover_paradigms
 
 RESULTS_CSV = Path(get_absolute_output_path(
     "outputs/benchmarks/architectural_benchmark_results.csv"))
@@ -90,6 +90,7 @@ def resumir(df: pd.DataFrame) -> Dict:
 
     df["throughput_rps"] = df["records"].astype(float) / df["duration_s"].astype(float)
 
+    df = comparable_rows(df)
     fases = sorted(df["phase"].unique())
     arq = sorted(df["architecture"].unique())
 

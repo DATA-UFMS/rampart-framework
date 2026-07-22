@@ -63,6 +63,50 @@ def discover_paradigms(*, force: bool = False, strict: bool = True) -> dict:
     }
 
 
+#: Phases the three paradigms each execute, and which a cross-paradigm table
+#: may therefore compare. Collection is deliberately absent: it runs once,
+#: upstream of the paradigms, and its row carries the sentinel architecture
+#: below rather than a paradigm name. A table that includes it reports the
+#: cost of fetching the data as though it were a property of one engine.
+COMPARABLE_PHASES = ("processing", "setup", "baseline", "hierarchical")
+
+#: Architecture recorded for work that is not attributable to any paradigm.
+SHARED_ARCHITECTURE = "both"
+
+
+def comparable_rows(frame):
+    """Restrict a benchmark frame to comparable phases and real paradigms.
+
+    Two things reached the published throughput table through the absence of
+    this: the collection phase, and a row labelled with the sentinel above
+    standing among the three paradigms as if it were a fourth.
+
+    An unknown architecture raises rather than being dropped. Silently
+    discarding rows is how a paradigm disappears from a table -- which is the
+    defect this function exists to prevent, in the other direction.
+    """
+    known = set(discover_paradigms()) | {SHARED_ARCHITECTURE}
+    unknown = sorted(set(frame["architecture"].unique()) - known)
+    if unknown:
+        raise ValueError(
+            f"O CSV de benchmark traz arquiteturas que o registro não conhece: "
+            f"{unknown}. Ou o registro está incompleto, ou o artefato veio de "
+            f"outra configuração."
+        )
+
+    restricted = frame[
+        frame["phase"].isin(COMPARABLE_PHASES)
+        & (frame["architecture"] != SHARED_ARCHITECTURE)
+    ].copy()
+    if restricted.empty:
+        raise ValueError(
+            f"Nenhuma linha comparável no CSV de benchmark. Fases presentes: "
+            f"{sorted(frame['phase'].unique())}; comparáveis: "
+            f"{list(COMPARABLE_PHASES)}."
+        )
+    return restricted
+
+
 def paradigm_pairs(*, force: bool = False) -> List[Tuple[str, str]]:
     """Ordered pairs of paradigms for pairwise comparison.
 

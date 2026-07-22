@@ -46,7 +46,7 @@ if _SRC_DIR not in sys.path:
 # other than the configured one, which is how the reported figure drifts from
 # the executed one. Without the configuration the run is not reproducible.
 from core.config import get_absolute_output_path
-from core.paradigm_registry import paradigm_pairs
+from core.paradigm_registry import COMPARABLE_PHASES, paradigm_pairs
 from core.scientific_config import SCIENTIFIC_CONFIG
 
 DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
@@ -132,10 +132,15 @@ def paired_vectors_total(
     arch_b: str,
     exclude_phases: Optional[List[str]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Soma durations por run_id e arquitetura nas fases especificadas (excluindo collection)."""
+    """Soma durations por run_id e arquitetura nas fases comparáveis.
+
+    Quais são elas vem de core.paradigm_registry: quatro arquivos enumeravam a
+    política, e um deles já havia esquecido de aplicá-la.
+    """
     if exclude_phases is None:
-        exclude_phases = ["collection"]
-    filt = ~df["phase"].isin(exclude_phases)
+        filt = df["phase"].isin(COMPARABLE_PHASES)
+    else:
+        filt = ~df["phase"].isin(exclude_phases)
     sub = df[filt & df["architecture"].isin([arch_a, arch_b])]
     tot = (
         sub.groupby(["run_id", "architecture"])['duration_s']
@@ -254,7 +259,8 @@ def run_tests(
 def analyze(csv_path: str, bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS) -> Dict[str, Dict[str, Dict[str, float]]]:
     """Analisa todas as comparações pairwise (DL×DW, DL×PL, DW×PL)."""
     df = load_benchmark(csv_path)
-    phases = sorted([p for p in df['phase'].unique() if p != 'collection'])
+    phases = sorted([p for p in df['phase'].unique()
+                     if p in COMPARABLE_PHASES])
     results: Dict[str, Dict[str, Dict[str, float]]] = {}
 
     # Para cada par de arquiteturas
@@ -269,8 +275,8 @@ def analyze(csv_path: str, bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS) -> Di
             if len(x) >= 2 and len(y) >= 2:
                 pair_results[p] = run_tests(x, y, label_a=la, label_b=lb, bootstrap_iters=bootstrap_iters)
 
-        # Total arquitetural (exclui collection)
-        x_tot, y_tot = paired_vectors_total(df, arch_a, arch_b, exclude_phases=["collection"])
+        # Total arquitetural sobre as fases comparáveis; a lista vem do registro.
+        x_tot, y_tot = paired_vectors_total(df, arch_a, arch_b)
         if len(x_tot) >= 2 and len(y_tot) >= 2:
             pair_results["total_architectural"] = run_tests(
                 x_tot, y_tot, label_a=la, label_b=lb, bootstrap_iters=bootstrap_iters
