@@ -113,6 +113,13 @@ class BaseArchitectureML(ABC):
         """Retorna todas as classes de paradigmas concretos registrados."""
         return dict(cls._registry)
 
+    #: Ordens de defasagem do alvo que os três paradigmas constroem. Declaradas
+    #: aqui porque a metadata dos folds precisa saber qual é o valor mais
+    #: recente que um modelo consulta no instante da predição, e porque três
+    #: implementações independentes construindo lags diferentes quebrariam o
+    #: Δ=0 sem que nada acusasse. Um teste confere as três contra esta lista.
+    TARGET_LAG_ORDERS = (2, 3)
+
     def __init__(self, architecture_name: str, output_base_path: str,
                  dataset_config=None):
         """
@@ -379,8 +386,8 @@ class BaseArchitectureML(ABC):
                 'total_test_years': int(test_len),
                 'train_val_gap': int(train_val_gap),
                 'val_test_gap': int(val_test_gap),
-                # Separação efetiva entre a última observação usada para ajustar
-                # o modelo e a primeira observação avaliada.
+                # Separação entre a última observação que entra na *estimação
+                # dos parâmetros* e a primeira observação avaliada.
                 #
                 # Registrada porque é maior que o gap declarado, e por decisão: o
                 # modelo avaliado no teste é ajustado apenas na janela de treino,
@@ -390,7 +397,15 @@ class BaseArchitectureML(ABC):
                 # mínimo declarado em P2 -- trocaria margem de segurança na
                 # garantia anti-leakage por eficiência estatística num
                 # dispositivo cuja acurácia não é o objeto de estudo.
+                #
+                # Não é o horizonte de informação. No instante da predição o
+                # modelo lê lags do alvo, e o baseline ingênuo lê o histórico
+                # até t menos o gap: para uma linha de teste em test_start, o
+                # valor mais recente consultado é de test_start - min(lags).
+                # Os dois números respondem perguntas diferentes e o campo
+                # anterior, sozinho, era lido como se cobrisse as duas.
                 'fit_to_test_gap': int(test_start - train_end - 1),
+                'information_horizon_years': int(min(self.TARGET_LAG_ORDERS)),
                 'fit_window': 'train_only',
                 'description': f'Walk-forward auto (gap={gap}y, val={val_len}y, test={test_len}y)',
                 'forecast_horizon': '1-2 anos à frente'

@@ -37,6 +37,28 @@ from core.scientific_config import SCIENTIFIC_CONFIG, setup_reproducibility
 setup_reproducibility()
 
 
+
+def _best_by_val_r2(fold_results: dict):
+    """Melhor baseline por R2 de validação, ignorando os indefinidos.
+
+    `max` compara com NaN devolvendo False, então bastava o primeiro item ter
+    R2 indefinido para ele ser eleito o melhor -- e `best_test_r2` e
+    `generalization_gap` derivavam desse. A escolha passava a depender da ordem
+    de inserção no dicionário, não do desempenho.
+    """
+    import math
+
+    scored = [(name, data['val_r2']) for name, data in fold_results.items()
+              if isinstance(data, dict) and 'val_r2' in data
+              and data['val_r2'] is not None
+              and not math.isnan(float(data['val_r2']))]
+    if not scored:
+        raise ValueError(
+            "Nenhum baseline tem R2 de validação definido neste fold; não há "
+            "melhor baseline a reportar."
+        )
+    return max(scored, key=lambda pair: pair[1])
+
 class BaselineModelAnalysisDataFrameLib:
     """
     Análise de modelos baseline para arquitetura Polars DataFrame.
@@ -477,8 +499,7 @@ class BaselineModelAnalysisDataFrameLib:
             })
 
             # Best baseline por fold
-            val_scores = [(name, data['val_r2']) for name, data in fold_results.items()]
-            best_val_baseline, best_val_r2 = max(val_scores, key=lambda x: x[1])
+            best_val_baseline, best_val_r2 = _best_by_val_r2(fold_results)
             best_test_r2 = fold_results[best_val_baseline]['test_r2']
             generalization_gap = best_val_r2 - best_test_r2
 

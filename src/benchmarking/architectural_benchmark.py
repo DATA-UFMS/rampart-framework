@@ -157,7 +157,10 @@ class BenchmarkRunner:
         output_dir: Optional[str] = None,
     ):
         self.repetitions = repetitions or int(BENCHMARK_CONFIG.get("repetitions", 10))
-        self.warmup_runs = warmup_runs or int(BENCHMARK_CONFIG.get("warmup_runs", 1))
+        # `or` trata 0 como ausente, então --warmup 0 caía no default e o
+        # benchmark rodava aquecimentos que o operador pediu para não rodar.
+        self.warmup_runs = (int(BENCHMARK_CONFIG.get("warmup_runs", 1))
+                            if warmup_runs is None else int(warmup_runs))
         self.phases = phases or [
             "collection",
             "processing",

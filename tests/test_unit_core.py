@@ -811,3 +811,143 @@ class TestTheFoldCountFormulaIsDerived:
         folds = _generate_folds(start, end, min_train, val, test, gap,
                                 step=step)
         assert predicted == len(folds) == 9
+
+
+class TestTheFoldMetadataDoesNotOverclaim:
+    """`fit_to_test_gap` measures parameter estimation, not information.
+
+    The field recorded six years between the last observation used and the
+    first evaluated, and the comment presented that as a safety margin over the
+    two years P2 requires. At prediction time a test row at 2014 carries
+    dropout_rate_lag_3 -- the target at 2011, the last validation year -- and
+    the naive baseline reads history up to the test year minus the gap. The
+    information horizon is two years, not six.
+
+    Nothing here is leakage: 2011 precedes 2014 and using past target values is
+    the task. What was wrong is the claim, in a field that reaches the
+    published fold artifacts.
+    """
+
+    @staticmethod
+    def _folds():
+        return _generate_folds(2000, 2023, 8, 2, 2, 2)
+
+    def test_both_separations_are_recorded(self):
+        for fold in self._folds():
+            assert 'fit_to_test_gap' in fold
+            assert 'information_horizon_years' in fold
+
+    def test_the_information_horizon_is_the_smallest_lag(self):
+        from core.base_architecture import BaseArchitectureML
+        expected = min(BaseArchitectureML.TARGET_LAG_ORDERS)
+        for fold in self._folds():
+            assert fold['information_horizon_years'] == expected
+
+    def test_the_horizon_is_smaller_than_the_fitting_gap(self):
+        """If they coincided, recording both would prove nothing."""
+        for fold in self._folds():
+            assert fold['information_horizon_years'] < fold['fit_to_test_gap']
+
+    def test_the_horizon_reaches_into_the_evaluation_side_of_the_gap(self):
+        """Concretely: the most recent value a test row consults."""
+        fold = self._folds()[0]
+        consulted = fold['test_start'] - fold['information_horizon_years']
+        assert consulted > fold['train_end'], (
+            'the claim that nothing after train_end is consulted is what the '
+            'old field implied'
+        )
+
+    def test_every_paradigm_builds_exactly_the_declared_lags(self):
+        """Three implementations building different lags would break Delta=0."""
+        import re
+        from pathlib import Path
+        from core.base_architecture import BaseArchitectureML
+        from core.paradigm_registry import discover_paradigms
+
+        declared = {f'lag_{order}'
+                    for order in BaseArchitectureML.TARGET_LAG_ORDERS}
+        root = Path(_SRC).parent / 'src' / 'architectures_ml'
+        for paradigm in sorted(discover_paradigms()):
+            source = (root / paradigm / 'setup.py').read_text()
+            built = set(re.findall(r'lag_(\d+)', source))
+            assert {f'lag_{order}' for order in built} == declared, (
+                f'{paradigm} builds lag orders {sorted(built)} against the '
+                f'declared {sorted(BaseArchitectureML.TARGET_LAG_ORDERS)}'
+            )
+
+
+class TestTheWarmupCountIsHonoured:
+    """`--warmup 0` fell through to the configured default.
+
+    `warmup_runs or default` treats zero as absent, so asking for no warmup ran
+    the configured number anyway -- and the operator had no signal that the
+    request was ignored.
+    """
+
+    def test_zero_is_respected(self):
+        source = (Path(_SRC).parent / 'src' / 'benchmarking'
+                  / 'architectural_benchmark.py').read_text()
+        assert 'warmup_runs or int(' not in source
+        assert 'if warmup_runs is None else int(warmup_runs)' in source
+
+    def test_none_still_takes_the_configured_default(self):
+        from core.config import BENCHMARK_CONFIG
+        for requested, expected in ((None, int(BENCHMARK_CONFIG['warmup_runs'])),
+                                    (0, 0), (3, 3)):
+            resolved = (int(BENCHMARK_CONFIG.get('warmup_runs', 1))
+                        if requested is None else int(requested))
+            assert resolved == expected
+
+
+class TestTheBestBaselineIgnoresUndefinedScores:
+    """`max` with NaN returns whatever came first.
+
+    Comparisons against NaN are False, so a first entry with an undefined
+    validation R2 was elected best, and best_test_r2 and generalization_gap
+    followed from it. The choice depended on dict insertion order rather than
+    on performance.
+    """
+
+    @staticmethod
+    def _select(scores):
+        import sys
+        from pathlib import Path
+        module_root = Path(_SRC).parent / 'src'
+        if str(module_root) not in sys.path:
+            sys.path.insert(0, str(module_root))
+        from architectures_ml.sql_engine.models.baseline_analysis import (
+            _best_by_val_r2)
+        return _best_by_val_r2({name: {'val_r2': value, 'test_r2': 0.0}
+                                for name, value in scores.items()})
+
+    def test_a_leading_nan_does_not_win(self):
+        name, value = self._select({'global_mean': float('nan'),
+                                    'linear_trend': 0.55,
+                                    'naive_with_lag': 0.31})
+        assert name == 'linear_trend' and value == 0.55
+
+    def test_a_trailing_nan_does_not_win(self):
+        name, _ = self._select({'global_mean': 0.10,
+                                'linear_trend': float('nan'),
+                                'naive_with_lag': 0.55})
+        assert name == 'naive_with_lag'
+
+    def test_all_undefined_halts(self):
+        with pytest.raises(ValueError, match='melhor baseline'):
+            self._select({'global_mean': float('nan'),
+                          'linear_trend': float('nan')})
+
+    def test_the_plain_max_would_have_failed_these(self):
+        """Pins the defect, so the tests above cannot pass vacuously."""
+        scores = [('global_mean', float('nan')), ('linear_trend', 0.55)]
+        assert max(scores, key=lambda pair: pair[1])[0] == 'global_mean'
+
+    def test_all_three_paradigms_use_the_helper(self):
+        from pathlib import Path
+        from core.paradigm_registry import discover_paradigms
+        root = Path(_SRC).parent / 'src' / 'architectures_ml'
+        for paradigm in sorted(discover_paradigms()):
+            source = (root / paradigm / 'models'
+                      / 'baseline_analysis.py').read_text()
+            assert '_best_by_val_r2(fold_results)' in source, paradigm
+            assert 'max(val_scores' not in source, paradigm
