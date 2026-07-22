@@ -724,7 +724,6 @@ class RawDataCollector:
         print("\nImputacao hierarquica: temporal -> geografica -> global")
         
         df_imputed = df_wide.copy()
-        financial_log_transforms = {}
         numeric_columns = df_imputed.select_dtypes(include=[np.number]).columns
         imputation_log = {}
 
@@ -749,30 +748,26 @@ class RawDataCollector:
             
             category = self.indicator_to_category.get(column, 'social')
             
-            if column in {'gdp_per_capita_constant_2015', 'intentional_homicides_per_100k'}:
-                print(f"      Aplicando transformacao para estabilizacao de variancia")
-                non_na_mask = df_imputed[column].notna()
-                if non_na_mask.any():
-                    values = df_imputed.loc[non_na_mask, column].copy()
-                    min_value = values.min()
-                    
-                    if min_value <= 0:
-                        # Yeo-Johnson para valores negativos/zero (Box & Cox generalizado)
-                        from scipy.stats import yeojohnson
-                        print(f"      {column}: Yeo-Johnson (min={min_value:.2f})")
-                        try:
-                            transformed, lambda_param = yeojohnson(values)
-                            df_imputed.loc[non_na_mask, column] = transformed
-                            financial_log_transforms[column] = {'method': 'yeojohnson', 'lambda': lambda_param}
-                        except Exception as e:
-                            print(f"      Erro em Yeo-Johnson: {e}, usando log1p com shift")
-                            shift = abs(min_value) + 1
-                            df_imputed.loc[non_na_mask, column] = np.log1p(values + shift)
-                            financial_log_transforms[column] = {'method': 'log1p_shifted', 'shift': shift}
-                    else:
-                        df_imputed.loc[non_na_mask, column] = np.log1p(values)
-                        financial_log_transforms[column] = {'method': 'log1p'}
-            
+            # Sem transformação estabilizadora de variância antes do carry.
+            #
+            # Ela existia para gdp_per_capita e homicides, ajustava o lambda do
+            # Yeo-Johnson sobre o painel inteiro, e era desfeita depois. Duas
+            # coisas a condenam:
+            #
+            #   * Não mudava resultado nenhum por desenho. As duas colunas são
+            #     preenchidas por carry, que seleciona um valor já presente, e
+            #     isso comuta com qualquer transformação monótona: T-1(T(v)) = v.
+            #     Nenhuma estatística era ajustada no espaço transformado.
+            #   * A ida-e-volta não é exata. Medido sobre um painel sintético:
+            #     células **observadas** voltavam alteradas em 1,5e-11 e as
+            #     imputadas diferiam em 1,1e-11 do carry direto. A imputação
+            #     alterava observação, que é o que ela nunca deve fazer, em
+            #     troca de nada.
+            #
+            # O lambda ajustado sobre o painel inteiro também seria P5 se
+            # alguma estatística fosse ajustada ali -- não era, mas passaria a
+            # ser no dia em que uma dessas colunas ganhasse um carry por média.
+
             df_sorted = df_imputed.sort_values(['country_code', 'year']).copy()
 
             # Um único limite de propagação, aplicado uma vez contra a série
@@ -841,35 +836,6 @@ class RawDataCollector:
             global_count = 0
 
             # Reverter transformações
-            if column in financial_log_transforms:
-                print(f"      Revertendo transformacao")
-                transform_info = financial_log_transforms[column]
-                non_na_mask = df_imputed[column].notna()
-                
-                if isinstance(transform_info, dict):
-                    if transform_info['method'] == 'yeojohnson':
-                        lmbda = transform_info['lambda']
-                        print(f"      Revertendo Yeo-Johnson (lambda={lmbda:.4f})")
-                        y = df_imputed.loc[non_na_mask, column].values.astype(float)
-                        x = np.zeros_like(y)
-                        for _i, _y in enumerate(y):
-                            if _y >= 0:
-                                if abs(lmbda) < 1e-12:
-                                    x[_i] = np.expm1(_y)
-                                else:
-                                    x[_i] = (_y * lmbda + 1) ** (1.0 / lmbda) - 1
-                            else:
-                                if abs(lmbda - 2) < 1e-12:
-                                    x[_i] = -np.expm1(-_y)
-                                else:
-                                    x[_i] = 1 - (-(2 - lmbda) * _y + 1) ** (1.0 / (2 - lmbda))
-                        df_imputed.loc[non_na_mask, column] = x
-                    elif transform_info['method'] == 'log1p_shifted':
-                        shift = transform_info['shift']
-                        df_imputed.loc[non_na_mask, column] = np.expm1(df_imputed.loc[non_na_mask, column]) - shift
-                    elif transform_info['method'] == 'log1p':
-                        df_imputed.loc[non_na_mask, column] = np.expm1(df_imputed.loc[non_na_mask, column])
-            
             imputation_log[column] = {
                 'temporal_count': int(temporal_count),
                 # Mantidos em zero e registrados: os tiers que os preenchiam

@@ -341,3 +341,81 @@ class TestTheDistanceBoundStandsAlone:
     def test_the_collector_uses_it(self):
         source = (_SRC / 'collection' / 'raw_data_collector.py').read_text()
         assert '_fillable_cells(df_sorted[column], source, gap, limit)' in source
+
+
+class TestImputationNeverAltersAnObservation:
+    """The invariant the variance-stabilising transform broke.
+
+    Two columns were pushed through a Yeo-Johnson before the carry and pulled
+    back after. It changed no result by design -- both are filled by a carry,
+    which selects a value already present and therefore commutes with any
+    monotone transform -- but the round trip is not exact. Measured on a
+    synthetic panel: observed cells came back altered by 1.5e-11, and imputed
+    cells differed by 1.1e-11 from the direct carry. The imputation was
+    perturbing observations in exchange for nothing.
+    """
+
+    @staticmethod
+    def _panel(column, seed=9, entities=('AAA', 'BBB', 'CCC')):
+        rng = np.random.default_rng(seed)
+        return pd.DataFrame([
+            {'country_code': entity, 'country_name': entity, 'year': year,
+             column: (rng.normal(0, 5000) if rng.random() > 0.35 else np.nan),
+             TARGET: rng.normal(70, 10)}
+            for entity in entities for year in range(2000, 2016)])
+
+    @pytest.mark.parametrize('column', [
+        'gdp_per_capita_constant_2015',      # was Yeo-Johnson (has negatives)
+        'intentional_homicides_per_100k',    # was in the same set
+        'gini_index',                        # never transformed
+    ])
+    def test_observed_cells_pass_through_bitwise(self, column):
+        import tempfile
+        raw = self._panel(column)
+        collector = _quiet(RawDataCollector)
+        collector.output_dir = tempfile.mkdtemp()
+        imputed = _quiet(collector.apply_conservative_imputation, raw.copy())
+
+        observed = raw[column].notna() & raw.index.isin(imputed.index)
+        assert observed.sum() > 0
+        assert np.array_equal(imputed.loc[observed, column].to_numpy(),
+                              raw.loc[observed, column].to_numpy()), (
+            f'{column}: the imputation changed values it did not impute; '
+            f'max |delta| = '
+            f'{np.nanmax(np.abs(imputed.loc[observed, column].to_numpy() - raw.loc[observed, column].to_numpy())):.3e}'
+        )
+
+    def test_the_panel_carries_negatives(self):
+        """Yeo-Johnson was reached only for columns with a non-positive value."""
+        raw = self._panel('gdp_per_capita_constant_2015')
+        assert (raw['gdp_per_capita_constant_2015'] <= 0).any(), (
+            'without a non-positive value the old code took the log1p branch '
+            'and this test would not exercise the one that was inexact'
+        )
+
+    def test_no_transform_survives_in_the_collector(self):
+        source = (_SRC / 'collection' / 'raw_data_collector.py').read_text()
+        for stale in ('yeojohnson', 'financial_log_transforms',
+                      'log1p_shifted'):
+            assert stale not in source, stale
+
+    def test_the_carried_value_is_one_that_was_observed(self):
+        """What makes the carry commute with a monotone transform.
+
+        Also the reason removing the transform cannot have changed the method:
+        a carry selects, it does not compute.
+        """
+        import tempfile
+        column = 'gdp_per_capita_constant_2015'
+        raw = self._panel(column)
+        collector = _quiet(RawDataCollector)
+        collector.output_dir = tempfile.mkdtemp()
+        imputed = _quiet(collector.apply_conservative_imputation, raw.copy())
+
+        filled = imputed[column].notna() & raw.loc[imputed.index, column].isna()
+        assert filled.sum() > 0
+        observed_values = set(raw[column].dropna().to_numpy().tolist())
+        for value in imputed.loc[filled, column]:
+            assert value in observed_values, (
+                f'{value} was carried but never observed'
+            )
