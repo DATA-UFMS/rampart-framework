@@ -90,6 +90,90 @@ def linear_reconstruction_r2(
     return float(1.0 - (residual ** 2).sum() / total)
 
 
+
+def canonical_fold(X, y, entities, years, *, paradigm: str):
+    """Check the fold each paradigm materialised, and index it positionally.
+
+    Every paradigm applies the same policy -- drop rows with no target, order by
+    entity then year -- in its own idiom: an ORDER BY in the SQL view, a Polars
+    sort, a pandas sort after compute. Three implementations of one policy are
+    three chances to disagree, and a disagreement here is not a small one: the
+    models would be fitted on the same rows in different orders, which
+    falsifies the bitwise claim for a reason that has nothing to do with the
+    paradigms.
+
+    The policy stays inside each engine, because performing it is part of what
+    the benchmark measures. What moves here is the verification.
+
+    Three things are checked, each of which has a distinct failure behind it:
+
+      * lengths agree, and no target is missing. A filter applied in one
+        paradigm and not another changes n, and n reaches the reported degrees
+        of freedom.
+      * (entity, year) pairs are unique. A join that multiplies rows produces
+        exactly this, and nothing downstream would notice: the fit succeeds and
+        the latency simply grows.
+      * the order is non-decreasing by (entity, year) under Python comparison.
+        The engines order under their own rules -- a database collation, a Rust
+        string comparison -- and only agreement between them makes the
+        comparison meaningful.
+
+    The returned objects carry a positional index. Downstream alignment is
+    positional, and a label index that survives this far is a hazard rather
+    than information.
+    """
+    frames = {'X': X, 'y': y, 'entities': entities, 'years': years}
+    lengths = {name: len(value) for name, value in frames.items()}
+    if len(set(lengths.values())) != 1:
+        raise ValueError(
+            f"{paradigm}: the materialised fold has inconsistent lengths "
+            f"{lengths}."
+        )
+
+    if len(X) == 0:
+        raise ValueError(
+            f"{paradigm}: the materialised fold is empty. There is nothing to "
+            f"fit, and an empty fold reaches the reported n as a zero."
+        )
+
+    target = pd.Series(y).reset_index(drop=True)
+    if bool(target.isna().any()):
+        missing = int(target.isna().sum())
+        raise ValueError(
+            f"{paradigm}: {missing} of {len(target)} rows carry no target. "
+            f"Rows without a target are dropped upstream in every paradigm; "
+            f"their presence here means one of them stopped doing it."
+        )
+
+    entity_values = pd.Series(entities).reset_index(drop=True).to_numpy()
+    year_values = pd.Series(years).reset_index(drop=True).to_numpy()
+
+    duplicated = pd.MultiIndex.from_arrays(
+        [entity_values, year_values]).duplicated()
+    if duplicated.any():
+        raise ValueError(
+            f"{paradigm}: {int(duplicated.sum())} duplicated (entity, year) "
+            f"pairs in the materialised fold. One row per entity and year is "
+            f"the panel's shape; duplicates come from a join that multiplied "
+            f"rows, and nothing downstream would notice."
+        )
+
+    order = np.lexsort((year_values, entity_values))
+    if not np.array_equal(order, np.arange(len(order))):
+        first = int(np.flatnonzero(order != np.arange(len(order)))[0])
+        raise ValueError(
+            f"{paradigm}: the materialised fold is not ordered by (entity, "
+            f"year); the first row out of place is at position {first} "
+            f"({entity_values[first]!r}, {year_values[first]!r}). The "
+            f"paradigms must present the same rows in the same order, or the "
+            f"models are fitted on different matrices."
+        )
+
+    return (pd.DataFrame(X).reset_index(drop=True),
+            target,
+            pd.Series(entities).reset_index(drop=True))
+
+
 def audit_feature_set(
     data: Any, features: List[str], target_column: str, config: Dict
 ) -> Dict:

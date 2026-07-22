@@ -311,9 +311,13 @@ class TestEveryParadigmUsesTheSharedImplementation:
         warnings.filterwarnings('ignore')
         rng = np.random.default_rng(3)
         n = 16
+        # Ordenado por (entidade, ano), que é a forma canônica de um fold: em
+        # produção o sql_engine a recebe do ORDER BY da view, e os outros dois
+        # a produzem eles mesmos. Entregar linhas fora de ordem faria
+        # canonical_fold reprovar antes de o teste chegar à lacuna.
         frame = pd.DataFrame({
-            'country_code': ['AAA', 'BBB'] * (n // 2),
-            'year': np.repeat(np.arange(2000, 2000 + n // 2), 2),
+            'country_code': np.repeat(['AAA', 'BBB'], n // 2),
+            'year': np.tile(np.arange(2000, 2000 + n // 2), 2),
             'gini': rng.normal(40, 5, n),
             'internet': rng.normal(50, 8, n),
         })

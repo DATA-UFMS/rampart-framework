@@ -30,7 +30,11 @@ _actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '
 if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
 
-from core.validation import audit_feature_set
+from core.validation import audit_feature_set, canonical_fold
+
+#: Name this module's paradigm answers to, used wherever an artifact or a
+#: diagnostic has to say which of the three produced it.
+PARADIGM = 'sql_engine'
 from core.models.hierarchical import (
     simple_hierarchical_model as shared_simple_hierarchical_model,
     write_prediction_artifact as shared_write_prediction_artifact)
@@ -219,10 +223,9 @@ class HierarchicalModelSQLFirst:
         country_code, year -- o mesmo recorte e a mesma ordem que os outros
         paradigmas produzem em Python.
         """
-        X = data[available_features]
-        y = data[self.target_col]
-        countries = data['country_code']
-        return X, y, countries
+        return canonical_fold(data[available_features], data[self.target_col],
+                              data['country_code'], data['year'],
+                              paradigm=PARADIGM)
     
     def simple_hierarchical_model(self, X_train: pd.DataFrame, y_train: pd.Series,
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -235,7 +238,7 @@ class HierarchicalModelSQLFirst:
         """
         return shared_simple_hierarchical_model(
             X_train, y_train, X_test, y_test, countries_train, countries_test,
-            residual_shrinkage=residual_shrinkage, architecture='sql_engine')
+            residual_shrinkage=residual_shrinkage, architecture=PARADIGM)
     
     def random_forest_hierarchical(self, X_train: pd.DataFrame, y_train: pd.Series, 
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -451,7 +454,7 @@ class HierarchicalModelSQLFirst:
     
     def _write_prediction_artifact(self, all_results: Dict) -> None:
         """Delega à implementação compartilhada."""
-        shared_write_prediction_artifact(all_results, architecture='sql_engine')
+        shared_write_prediction_artifact(all_results, architecture=PARADIGM)
 
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa via ML Data Warehouse Consumer."""

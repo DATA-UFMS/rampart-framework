@@ -37,7 +37,11 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
 project_root = os.path.abspath(project_root)
 if project_root not in sys.path:
     sys.path.append(project_root)
-from core.validation import audit_feature_set
+from core.validation import audit_feature_set, canonical_fold
+
+#: Name this module's paradigm answers to, used wherever an artifact or a
+#: diagnostic has to say which of the three produced it.
+PARADIGM = 'dataframe_lib'
 from core.models.hierarchical import (
     simple_hierarchical_model as shared_simple_hierarchical_model,
     write_prediction_artifact as shared_write_prediction_artifact)
@@ -160,8 +164,10 @@ class HierarchicalModelDataFrameLib:
         X_df = X_lazy.collect().to_pandas()
         y_series = data_filtered.select(pl.col(self.target_col)).collect().to_pandas().iloc[:, 0]
         countries_series = data_filtered.select(pl.col('country_code')).collect().to_pandas().iloc[:, 0]
+        years_series = data_filtered.select(pl.col('year')).collect().to_pandas().iloc[:, 0]
 
-        return X_df, y_series, countries_series
+        return canonical_fold(X_df, y_series, countries_series, years_series,
+                              paradigm=PARADIGM)
 
     def simple_hierarchical_model(self, X_train: pd.DataFrame, y_train: pd.Series,
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -174,7 +180,7 @@ class HierarchicalModelDataFrameLib:
         """
         return shared_simple_hierarchical_model(
             X_train, y_train, X_test, y_test, countries_train, countries_test,
-            residual_shrinkage=residual_shrinkage, architecture='dataframe_lib')
+            residual_shrinkage=residual_shrinkage, architecture=PARADIGM)
 
     def random_forest_hierarchical(self, X_train: pd.DataFrame, y_train: pd.Series,
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -392,7 +398,7 @@ class HierarchicalModelDataFrameLib:
 
     def _write_prediction_artifact(self, all_results: Dict) -> None:
         """Delega à implementação compartilhada."""
-        shared_write_prediction_artifact(all_results, architecture='dataframe_lib')
+        shared_write_prediction_artifact(all_results, architecture=PARADIGM)
 
     def run_hierarchical_analysis(self):
         """

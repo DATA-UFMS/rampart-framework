@@ -38,7 +38,11 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
 project_root = os.path.abspath(project_root)
 if project_root not in sys.path:
     sys.path.append(project_root)
-from core.validation import audit_feature_set
+from core.validation import audit_feature_set, canonical_fold
+
+#: Name this module's paradigm answers to, used wherever an artifact or a
+#: diagnostic has to say which of the three produced it.
+PARADIGM = 'task_graph'
 from core.models.hierarchical import (
     simple_hierarchical_model as shared_simple_hierarchical_model,
     write_prediction_artifact as shared_write_prediction_artifact)
@@ -152,11 +156,22 @@ class HierarchicalModelTaskGraph:
         }
         computed_final = dask.compute(final_data)[0]
 
-        X_out, y_out, c_out, yr_out = computed_final['X'], computed_final['y'], computed_final['countries'], computed_final['year']
+        X_out, y_out, c_out, yr_out = (
+            computed_final['X'], computed_final['y'],
+            computed_final['countries'], computed_final['year'])
         valid_mask = y_out.notna()
-        X_out, y_out, c_out, yr_out = X_out[valid_mask], y_out[valid_mask], c_out[valid_mask], yr_out[valid_mask]
-        sort_idx = pd.DataFrame({'country_code': c_out, 'year': yr_out}).sort_values(['country_code', 'year']).index
-        return X_out.loc[sort_idx].reset_index(drop=True), y_out.loc[sort_idx].reset_index(drop=True), c_out.loc[sort_idx].reset_index(drop=True)
+        X_out, y_out, c_out, yr_out = (X_out[valid_mask], y_out[valid_mask],
+                                       c_out[valid_mask], yr_out[valid_mask])
+
+        # Positional, not label-based. Each Dask partition carries its own
+        # index, so after compute the labels repeat across partitions, and
+        # .loc[sort_idx] selects every row matching each label: six rows in,
+        # twelve out. The fit would succeed on a silently doubled fold.
+        order = np.lexsort((yr_out.to_numpy(), c_out.to_numpy()))
+        X_out, y_out, c_out, yr_out = (X_out.iloc[order], y_out.iloc[order],
+                                       c_out.iloc[order], yr_out.iloc[order])
+        return canonical_fold(X_out, y_out, c_out, yr_out,
+                              paradigm=PARADIGM)
     
     def simple_hierarchical_model(self, X_train: pd.DataFrame, y_train: pd.Series,
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -169,7 +184,7 @@ class HierarchicalModelTaskGraph:
         """
         return shared_simple_hierarchical_model(
             X_train, y_train, X_test, y_test, countries_train, countries_test,
-            residual_shrinkage=residual_shrinkage, architecture='task_graph')
+            residual_shrinkage=residual_shrinkage, architecture=PARADIGM)
     
     def random_forest_hierarchical(self, X_train: pd.DataFrame, y_train: pd.Series, 
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -382,7 +397,7 @@ class HierarchicalModelTaskGraph:
     
     def _write_prediction_artifact(self, all_results: Dict) -> None:
         """Delega à implementação compartilhada."""
-        shared_write_prediction_artifact(all_results, architecture='task_graph')
+        shared_write_prediction_artifact(all_results, architecture=PARADIGM)
 
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa para arquitetura Data Lake."""
