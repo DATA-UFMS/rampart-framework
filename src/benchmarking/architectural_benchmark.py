@@ -188,9 +188,12 @@ class BenchmarkRunner:
             architecture: str,
             step_name: str,
             interval_s: float = 0.2,
+            *,
+            is_warmup: bool = False,
         ):
             self.log_path = log_path
             self.run_id = run_id
+            self.is_warmup = is_warmup
             self.phase = phase
             self.architecture = architecture
             self.step_name = step_name
@@ -300,6 +303,11 @@ class BenchmarkRunner:
 
             rec = {
                 "run_id": int(self.run_id),
+                # Recorded so the table can drop them. The latency CSV already
+                # excluded warmups; the resource log did not, and warmups are
+                # exactly the runs with cold caches and unpaged memory -- the
+                # atypical resource profile the repetitions exist to avoid.
+                "is_warmup": bool(self.is_warmup),
                 "phase": self.phase,
                 "architecture": self.architecture,
                 "step": self.step_name,
@@ -534,7 +542,8 @@ class BenchmarkRunner:
             try:
                 # Monitorar recursos durante a execução da fase
                 mon = self._ResourceMonitor(
-                    self.resource_log_path, run_id, phase, arch, step_name
+                    self.resource_log_path, run_id, phase, arch, step_name,
+                    is_warmup=run_id < self.warmup_runs,
                 )
                 with mon:
                     duration_ns, records = step_fn()
@@ -599,6 +608,12 @@ class BenchmarkRunner:
                 for pn in paradigm_names
             ],
         }
+
+        # Modo de append, e nada truncava: uma segunda execução do pipeline
+        # empilhava sobre a primeira, e a tabela de recursos passava a
+        # promediar execuções de versões diferentes do código.
+        with open(self.resource_log_path, "w"):
+            pass
 
         total_runs = self.warmup_runs + self.repetitions
         for run_id in range(total_runs):

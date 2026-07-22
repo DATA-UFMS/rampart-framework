@@ -74,7 +74,8 @@ def _load_jsonl(path: Path) -> pd.DataFrame:
                 'mem_sys_max': obj.get('mem_sys_percent', {}).get('max'),
                 'io_read_mb': obj.get('io_read_mb', 0),
                 'io_write_mb': obj.get('io_write_mb', 0),
-                'n': obj.get('cpu_proc', {}).get('n', 0)
+                'n': obj.get('cpu_proc', {}).get('n', 0),
+                'is_warmup': obj.get('is_warmup'),
             }
             rows.append(flat_obj)
         except Exception as e:
@@ -83,7 +84,19 @@ def _load_jsonl(path: Path) -> pd.DataFrame:
     
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(rows)
+
+    frame = pd.DataFrame(rows)
+    # Um registro sem o campo vem de antes da distinção, e não há como saber de
+    # que lado ele cai. Preenchê-lo com False o trataria como medição.
+    unmarked = int(frame['is_warmup'].isna().sum())
+    if unmarked:
+        raise ValueError(
+            f"{unmarked} de {len(frame)} registros de recurso não dizem se são "
+            f"warmup ({path}). São de uma execução anterior à distinção; o log "
+            f"é truncado no início de cada benchmark, então isto significa que "
+            f"o arquivo não veio desta execução."
+        )
+    return frame[~frame['is_warmup'].astype(bool)].drop(columns=['is_warmup'])
 
 
 def _escape_latex(text: str) -> str:
