@@ -31,6 +31,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -115,16 +116,35 @@ def _stage_rows(data: Dict, paradigms: List[str]) -> List[Dict]:
             continue
 
         stage_tests = significance[significance['phase'] == stage]
-        # Piso do Wilcoxon bilateral com n pares: 2/2^n. Com n=10 vale 0,00195,
-        # e um estágio que o alcança não tem precisão para mais dígitos.
-        n_pairs = (int(stage_tests['n'].min())
-                   if 'n' in stage_tests.columns and not stage_tests.empty
-                   else 0)
+        # Piso do signed-rank bilateral: 2/2^n. O n é o das diferenças
+        # não-nulas, não o dos pares -- o teste descarta os empates, e o piso
+        # calculado sobre os pares subestima o menor p alcançável. Com três
+        # empates em dez ele erra por um fator de oito.
+        if not stage_tests.empty:
+            if 'n_nonzero_diffs' not in stage_tests.columns:
+                raise ValueError(
+                    f"Estágio '{stage}': o resumo de significância não traz "
+                    f"n_nonzero_diffs. É um artefato anterior a esta coluna, e "
+                    f"o piso derivado do número de pares subestima o menor p "
+                    f"alcançável. Regere o resumo."
+                )
+            n_pairs = int(stage_tests['n_nonzero_diffs'].min())
+        else:
+            n_pairs = 0
+
         p_column = ('wilcoxon_p' if 'wilcoxon_p' in stage_tests.columns
                     else 't_p')
-        # O maior p entre os pares limita a afirmação do estágio.
-        worst_p = (float(stage_tests[p_column].max())
+        # O maior p entre os pares limita a afirmação do estágio: ela é "os
+        # paradigmas diferem aqui", e isso exige que *todos* os pares difiram.
+        #
+        # skipna=False de propósito. Um par cujo teste não pôde ser computado
+        # -- diferenças todas nulas, n abaixo do mínimo -- sumia do máximo, e o
+        # estágio saía mais significativo do que a família sustenta. Sem o
+        # teste daquele par a afirmação do estágio não está estabelecida.
+        worst_p = (float(stage_tests[p_column].max(skipna=False))
                    if not stage_tests.empty else float('nan'))
+        untested = (int(stage_tests[p_column].isna().sum())
+                    if not stage_tests.empty else 0)
 
         # Piso e limiar são independentes: o piso vem das repetições, o limiar
         # vem do tamanho da família, que cresce com o número de paradigmas. Com
@@ -156,9 +176,13 @@ def _stage_rows(data: Dict, paradigms: List[str]) -> List[Dict]:
             # Uma única formulação: p bruto contra alpha/m. Reportar também o p
             # multiplicado convidaria a compará-lo com 0,05 por hábito, e as duas
             # leituras misturadas é como uma célula passa a dizer duas coisas.
+            'pairs_untested': untested,
             'p_bonferroni_equivalent': min(1.0, worst_p * family_size)
                                        if family_size else worst_p,
-            'significant': worst_p < threshold,
+            # NaN < x é False, então um estágio com par não testado já saía
+            # não-significativo -- mas por acidente da comparação, e depois de
+            # o máximo ter escondido o par. Explícito agora.
+            'significant': bool(np.isfinite(worst_p) and worst_p < threshold),
         })
     return rows
 

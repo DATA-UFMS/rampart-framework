@@ -21,6 +21,7 @@ import math
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -65,8 +66,10 @@ def tables(tmp_path, monkeypatch):
             root / 'benchmarks' / 'architectural_benchmark_results.csv',
             index=False)
         pd.DataFrame([
+            # n_nonzero_diffs, não n: o signed-rank descarta empates e é esse
+            # n que fixa o piso. Iguais aqui, sem empate no painel sintético.
             {'pair': f'{a}_vs_{b}', 'phase': stage, 'n': 10,
-             'wilcoxon_p': 0.00195}
+             'n_nonzero_diffs': 10, 'wilcoxon_p': 0.00195}
             for stage in STAGES
             for a, b in [(paradigms[0], paradigms[1]),
                          (paradigms[0], paradigms[2]),
@@ -368,3 +371,134 @@ class TestTheReadmeMatchesTheBudgetCheck:
         from pathlib import Path
         readme = (Path(__file__).resolve().parents[1] / 'README.md').read_text()
         assert 'oito' in readme or 'no mínimo' in readme
+
+
+class TestTheFloorUsesTheTestsOwnN:
+    """The signed-rank drops tied pairs, so its n is not the number of pairs.
+
+    The floor was computed from the pair count. With three ties in ten, the
+    effective n is seven and the smallest attainable p is 2/2^7 = 0.0156 --
+    eight times the 0.00195 the table reported, and above the corrected
+    threshold of 0.0033. The resolution guard read the same wrong n, so it did
+    not fire either.
+    """
+
+    @staticmethod
+    def _with_ties(path, nonzero):
+        frame = pd.read_csv(path)
+        frame['n_nonzero_diffs'] = nonzero
+        frame.to_csv(path, index=False)
+
+    def test_the_floor_follows_the_nonzero_count(self, tables, tmp_path):
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        # 9, não menos: abaixo disso o piso passa do limiar corrigido e o
+        # guard de resolução interrompe antes de a linha ser montada.
+        self._with_ties(path, 9)
+        row = module.build(['worldbank'])['datasets']['worldbank']['stages'][0]
+        assert row['wilcoxon_floor'] == pytest.approx(2 / 2 ** 9)
+        assert row['n_observations'] == 9
+
+    def test_ties_raise_the_floor(self, tables, tmp_path):
+        """The direction matters: dropping pairs makes the floor coarser."""
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        self._with_ties(path, 10)
+        loose = module.build(['worldbank'])['datasets']['worldbank']['stages'][0]
+        self._with_ties(path, 9)
+        tight = module.build(['worldbank'])['datasets']['worldbank']['stages'][0]
+        assert tight['wilcoxon_floor'] == pytest.approx(
+            2 * loose['wilcoxon_floor'])
+
+    def test_enough_ties_trip_the_resolution_guard(self, tables, tmp_path):
+        """The guard read the pair count and stayed silent."""
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        threshold = 0.05 / len(pd.read_csv(path))
+        nonzero = 6
+        assert 2 / 2 ** nonzero > threshold, (
+            'this many ties still resolves, so the test proves nothing'
+        )
+        self._with_ties(path, nonzero)
+        with pytest.raises(ValueError, match='piso do Wilcoxon'):
+            module.build(['worldbank'])
+
+    def test_an_artifact_without_the_column_halts(self, tables, tmp_path):
+        """Falling back to the pair count is what understated the floor."""
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        frame = pd.read_csv(path).drop(columns=['n_nonzero_diffs'])
+        frame.to_csv(path, index=False)
+        with pytest.raises(ValueError, match='n_nonzero_diffs'):
+            module.build(['worldbank'])
+
+    def test_the_analysis_records_the_column(self):
+        """So the guard above is not merely unsatisfiable."""
+        import sys
+        root = Path(__file__).resolve().parents[1]
+        if str(root / 'src') not in sys.path:
+            sys.path.insert(0, str(root / 'src'))
+        source = (root / 'src' / 'statistical_validation'
+                  / 'significance_tests.py').read_text()
+        assert 'n_nonzero_diffs=n_nonzero' in source
+        assert 'np.count_nonzero' in source
+
+
+class TestAnUntestedPairIsNotHidden:
+    """`.max()` skips NaN, so a pair whose test could not run vanished.
+
+    The stage's claim is that the paradigms differ there, and that requires
+    every pair to differ. Dropping the pair without a test reported the stage
+    against a smaller family than the one it claims.
+    """
+
+    @staticmethod
+    def _blank_one_pair(path):
+        frame = pd.read_csv(path)
+        mask = (frame['phase'] == 'baseline')
+        first = frame[mask].index[0]
+        frame.loc[first, 'wilcoxon_p'] = float('nan')
+        frame.to_csv(path, index=False)
+        return frame.loc[first, 'pair']
+
+    def test_the_stage_is_not_significant(self, tables, tmp_path):
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        self._blank_one_pair(path)
+        row = next(r for r in module.build(['worldbank'])['datasets']
+                   ['worldbank']['stages'] if r['stage'] == 'baseline')
+        assert not row['significant']
+        assert row['pairs_untested'] == 1
+
+    def test_the_other_stages_are_unaffected(self, tables, tmp_path):
+        """Otherwise the check could be failing everything indiscriminately."""
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        self._blank_one_pair(path)
+        rows = module.build(['worldbank'])['datasets']['worldbank']['stages']
+        others = [r for r in rows if r['stage'] != 'baseline']
+        assert others
+        assert all(r['pairs_untested'] == 0 for r in others)
+        assert any(r['significant'] for r in others)
+
+    def test_the_untested_count_is_reported(self, tables):
+        module, *_ = tables
+        for row in module.build(['worldbank'])['datasets']['worldbank']['stages']:
+            assert row['pairs_untested'] == 0
+
+    def test_the_worst_p_does_not_silently_drop_it(self, tables, tmp_path):
+        module, *_ = tables
+        path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+        self._blank_one_pair(path)
+        row = next(r for r in module.build(['worldbank'])['datasets']
+                   ['worldbank']['stages'] if r['stage'] == 'baseline')
+        assert not np.isfinite(row['worst_pair_p']), (
+            'a finite worst p here means the untested pair was skipped'
+        )

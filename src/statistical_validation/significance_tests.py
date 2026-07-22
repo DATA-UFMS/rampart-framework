@@ -221,9 +221,16 @@ def run_tests(
     speedup_key = f"speedup_{label_b}_vs_{label_a}"
     speedup_ci_key = f"speedup_{label_b}_vs_{label_a}_ci95"
 
+    # O signed-rank descarta diferenças exatamente nulas, então o n do teste
+    # não é o número de pares. É esse n que determina o menor p alcançável
+    # (2/2^n bilateral), e o piso reportado saía calculado sobre os pares:
+    # com três empates em dez, o piso real é oito vezes maior.
+    n_nonzero = int(np.count_nonzero(np.asarray(diff, dtype=float)))
+
     res.update(
         dict(
             n=len(diff),
+            n_nonzero_diffs=n_nonzero,
             **{f"mean_{label_a}_s": mean_x},
             **{f"mean_{label_b}_s": mean_y},
             mean_diff_s=float(np.mean(diff)),
