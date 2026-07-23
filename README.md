@@ -98,7 +98,7 @@ Os mesmos dados do Banco Mundial (evasão escolar, 32 países, 2000–2023) são
 
 A comparação estatística usa SESOI (menor efeito de interesse prático) com IC 95% por bootstrap, complementada por Wilcoxon pareado e Hodges–Lehmann. O objetivo é testar se a escolha de paradigma de processamento introduz viés nos resultados — a contribuição é o protocolo, não o resultado preditivo.
 
-Avaliado em dois datasets (World Bank: 32 países, 768 obs; INEP: 5.564 municípios, 94K obs), o framework confirma equivalência preditiva bitwise nos três paradigmas e revela um crossover dependente de escala: engines in-process dominam dados pequenos (~9,6× end-to-end em WB), enquanto Dask vence as fases de ML em dados grandes (~2,0–2,2× em INEP via caching de `persist()` entre folds).
+Avaliado em dois datasets (World Bank: 32 países × 24 anos, painel completo de 768 célula-ano; INEP: 5.564 municípios, 94K), o framework confirma equivalência preditiva bitwise nos três paradigmas e revela um crossover dependente de escala: engines in-process dominam dados pequenos (~9,6× end-to-end em WB), enquanto Dask vence as fases de ML em dados grandes (~2,0–2,2× em INEP via caching de `persist()` entre folds). O painel completo não é o n analisado: linhas sem alvo observado são removidas, e a contagem que sobra fica em `target_coverage.json`, junto das frações observada e imputada por coluna.
 
 ## Anti-leakage (P1–P5)
 
@@ -143,7 +143,7 @@ src/
 │   └── dataframe_lib/
 ├── benchmarking/               # Instrumentação e métricas de latência
 └── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 84 testes (unitários, discovery, anti-leakage)
+tests/                          # 1106 testes (unitários, discovery, anti-leakage)
 pipeline.py                     # Orquestra o pipeline completo
 ```
 
@@ -208,7 +208,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 - Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
 - Snapshot de ambiente: packages, hardware, git commit
 - `requirements-lock.txt` com versões exatas
-- 79 testes automatizados (`pytest tests/`)
+- 1106 testes automatizados (`pytest tests/`)
 
 Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

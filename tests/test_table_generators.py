@@ -229,3 +229,75 @@ class TestScorecardFailsLoudOnNoMatch:
         source = _source('statistical_validation.make_scorecard')
         assert 'parse_significance_tex' not in source
         assert 'significance_summary.tex' not in source
+
+
+class TestTheOperationalPanelIsWellFormed:
+    """It was built inside main(), so no test reached the table.
+
+    A bare % from _fmt_pct opened a LaTeX comment: everything after it on the
+    row vanished, including the remaining columns and the \\\\ that ends the
+    line. The table still rendered, with fewer columns than its own
+    specification declares.
+    """
+
+    @staticmethod
+    def _table():
+        module = importlib.import_module(
+            'benchmarking.derive_operational_panel')
+        importlib.reload(module)
+        latency = {
+            'per_phase': {
+                phase: {'architectures': {paradigm: {'p50': 1.0 + index}
+                                          for index, paradigm
+                                          in enumerate(PARADIGMS)}}
+                for phase in ('processing', 'setup')},
+            'total': {'architectures': {paradigm: {'p50': 9.0}
+                                        for paradigm in PARADIGMS}},
+        }
+        resources = {phase: {paradigm: {'cpu_proc_mean': 83.4,
+                                        'rss_mb_mean': 512.0}
+                             for paradigm in PARADIGMS}
+                     for phase in ('processing', 'setup')}
+        return module.para_latex(latency, resources, PARADIGMS)
+
+    def test_no_unescaped_percent(self):
+        for line in self._table().splitlines():
+            if line.strip().startswith('%'):
+                continue
+            assert not re.search(r'(?<!\\)%', line), line
+
+    def test_the_percentages_are_actually_present(self):
+        """Otherwise emitting no percent at all would pass the test above."""
+        assert r'\%' in self._table()
+
+    def test_no_unescaped_underscore(self):
+        for line in self._table().splitlines():
+            if line.strip().startswith('%'):
+                continue
+            assert not re.search(r'(?<!\\)_', line), line
+
+    def test_column_counts_agree(self):
+        table = self._table()
+        spec = re.search(r'\\begin\{tabular\}\{([lrc|]+)\}', table)
+        assert spec
+        columns = len([c for c in spec.group(1) if c in 'lrc'])
+        body = [line for line in table.splitlines()
+                if '&' in line and not line.strip().startswith('%')]
+        assert body
+        widths = {line.count('&') + 1 for line in body}
+        assert widths == {columns}, (
+            f'spec declares {columns} columns, rows have {sorted(widths)}'
+        )
+
+    def test_every_row_terminates(self):
+        """The lost \\\\ was the second casualty of the comment."""
+        for line in self._table().splitlines():
+            if '&' in line and not line.strip().startswith('%'):
+                assert line.rstrip().endswith('\\\\'), line
+
+    def test_every_paradigm_has_a_row_per_phase(self):
+        table = self._table()
+        for paradigm in PARADIGMS:
+            escaped = paradigm.replace('_', r'\_')
+            # two phases plus the total block
+            assert table.count(escaped) == 3, paradigm

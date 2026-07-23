@@ -44,9 +44,15 @@ def _fmt_s(x):
 
 
 def _fmt_pct(x):
+    """Percent, escaped for LaTeX.
+
+    A bare % opens a comment: everything after it on the row disappeared,
+    including the remaining columns and the \\ that ends the line. The table
+    still rendered, with fewer columns than its own specification declares.
+    """
     if x is None or not np.isfinite(x):
         return "—"
-    return f"{float(x):.1f}%"
+    return f"{float(x):.1f}\\%"
 
 
 def _fmt_mb(x):
@@ -55,23 +61,22 @@ def _fmt_mb(x):
     return f"{float(x):.1f}"
 
 
-def main() -> None:
-    """Painel operacional: latência e recursos, uma linha por (fase, paradigma).
+def _escape(text) -> str:
+    """Underscore and percent both need escaping; both reached the file raw."""
+    return str(text).replace('_', r'\_').replace('%', r'\%')
+
+
+def para_latex(lat: dict, res: dict, paradigms) -> str:
+    """Painel operacional: uma linha por (fase, paradigma).
 
     O layout anterior tinha colunas fixas para dois paradigmas e lia a chave
     speedup_dw_vs_dl_p50, que o gerador de percentis nunca escreveu no bloco
     per_phase -- a coluna de speedup saía em travessão em todas as linhas, e o
     terceiro paradigma não aparecia. Transposto, as linhas vêm do registro.
+
+    Extraído de main para poder ser exercitado: era dentro dela que o
+    percentual sem escape entrava na linha, e nenhum teste alcançava a tabela.
     """
-    paradigms = sorted(discover_paradigms())
-
-    lat, res = {}, {}
-    if LAT_JSON.exists():
-        lat = json.loads(LAT_JSON.read_text())
-    if RES_JSON.exists():
-        payload = json.loads(RES_JSON.read_text())
-        res = payload.get("per_phase", payload.get("por_fase", {}))
-
     per_phase = lat.get("per_phase", {})
     phases = sorted(per_phase)
 
@@ -88,7 +93,7 @@ def main() -> None:
             stats = arquiteturas.get(paradigm, {})
             usage = recursos.get(paradigm, {}) if recursos else {}
             lines.append(
-                f"{rotulo} & {paradigm.replace('_', chr(92) + '_')}"
+                f"{_escape(rotulo)} & {_escape(paradigm)}"
                 f" & {_fmt_s(stats.get('p50'))}"
                 f" & {_fmt_pct(usage.get('cpu_proc_mean'))}"
                 f" & {_fmt_mb(usage.get('rss_mb_mean'))} \\\\")
@@ -101,9 +106,23 @@ def main() -> None:
 
     _bloco("Total", lat.get("total", {}).get("architectures", {}), {})
     lines += ["\\hline", "\\end{tabular}"]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    paradigms = sorted(discover_paradigms())
+
+    lat, res = {}, {}
+    if LAT_JSON.exists():
+        lat = json.loads(LAT_JSON.read_text())
+    if RES_JSON.exists():
+        payload = json.loads(RES_JSON.read_text())
+        res = payload.get("per_phase", payload.get("por_fase", {}))
+
+    lines = [para_latex(lat, res, paradigms)]
 
     OUT_TEX.parent.mkdir(parents=True, exist_ok=True)
-    OUT_TEX.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    OUT_TEX.write_text(lines[0] + "\n", encoding="utf-8")
     print(json.dumps({"status": "ok", "tex": str(OUT_TEX),
                       "paradigms": paradigms}, ensure_ascii=False))
 
