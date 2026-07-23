@@ -338,9 +338,10 @@ class TestTheDistanceBoundStandsAlone:
         selected = _fillable_cells(observed, observed.bfill(), gap, limit=3)
         assert not selected.iloc[0] and not selected.iloc[1]
 
-    def test_the_collector_uses_it(self):
+    def test_the_shared_carry_uses_it(self):
         source = (_SRC / 'collection' / 'raw_data_collector.py').read_text()
-        assert '_fillable_cells(df_sorted[column], source, gap, limit)' in source
+        assert '_fillable_cells(frame[column], source, gap, limit)' in source
+        assert 'carry_forward(df_sorted, column)' in source
 
 
 class TestImputationNeverAltersAnObservation:
@@ -497,3 +498,82 @@ class TestTheQualityMetricsCountWhatWasFilled:
         expected = float(imputed.loc[surviving, 'gini_index'][filled].mean())
         assert indicators['gini_index']['imputed_mean'] == pytest.approx(
             expected)
+
+
+class TestTheSensitivityAnalysisMeasuresTheRealMethod:
+    """It reimplemented the carry, and measured columns nothing imputes.
+
+    Two divergences from the pipeline it claims to characterise: its column
+    list was a literal that included the target source -- whose missing rows
+    are removed, never filled -- and its "temporal only" arm was a bare lag-1,
+    so for the low-frequency columns it measured a method reaching a third as
+    far as the one actually applied.
+    """
+
+    @staticmethod
+    def _panel():
+        rng = np.random.default_rng(4)
+        return pd.DataFrame([
+            {'country_code': entity, 'country_name': entity,
+             'country_stratum': 's1', 'year': year,
+             'gini_index': rng.normal(40, 5) if rng.random() > 0.55 else np.nan,
+             'gdp_per_capita_constant_2015': (rng.normal(9000, 2000)
+                                              if rng.random() > 0.6 else np.nan),
+             TARGET: rng.normal(70, 10) if rng.random() > 0.2 else np.nan}
+            for entity in [f'C{index:02d}' for index in range(8)]
+            for year in range(2000, 2016)])
+
+    @pytest.fixture(scope='class')
+    def sensitivity(self):
+        import tempfile
+        collector = _quiet(RawDataCollector)
+        collector.output_dir = tempfile.mkdtemp()
+        return _quiet(collector.compare_candidate_imputation_methods,
+                      self._panel())['indicator_sensitivity']
+
+    def test_the_target_source_is_not_measured(self, sensitivity):
+        assert TARGET not in sensitivity, (
+            'rows missing the target are removed, so there is no imputation '
+            'of it whose quality could be reported'
+        )
+
+    def test_the_columns_that_are_imputed_are_measured(self, sensitivity):
+        assert {'gini_index', 'gdp_per_capita_constant_2015'} <= set(
+            sensitivity)
+
+    def test_year_is_not_treated_as_an_indicator(self, sensitivity):
+        assert 'year' not in sensitivity
+
+    def test_the_temporal_arm_matches_production(self, sensitivity):
+        """The arm the pipeline applies must be the arm it measures."""
+        from collection.raw_data_collector import carry_forward
+        panel = self._panel().sort_values(['country_code', 'year']).copy()
+        for column in ('gini_index', 'gdp_per_capita_constant_2015'):
+            filled, _ = carry_forward(panel.copy(), column)
+            assert sensitivity[column]['temporal_only']['mean'] == \
+                pytest.approx(float(filled[column].mean())), column
+
+    def test_a_lag_one_arm_would_differ_for_low_frequency(self):
+        """Pins the divergence, so the test above is not vacuous."""
+        from collection.raw_data_collector import carry_forward
+        panel = self._panel().sort_values(['country_code', 'year']).copy()
+        column = 'gdp_per_capita_constant_2015'
+        production, _ = carry_forward(panel.copy(), column)
+
+        lagged = panel.copy()
+        lag1 = lagged.groupby('country_code')[column].shift(1)
+        mask = lagged[column].isna() & lag1.notna()
+        lagged.loc[mask, column] = lag1[mask]
+
+        assert int(production[column].notna().sum()) > \
+            int(lagged[column].notna().sum()), (
+            'the two arms fill the same number of cells here, so the old '
+            'implementation was not measurably different'
+        )
+
+    def test_production_and_the_analysis_share_one_implementation(self):
+        source = (_SRC / 'collection' / 'raw_data_collector.py').read_text()
+        assert source.count('carry_forward(') >= 3, (
+            'definition plus both call sites'
+        )
+        assert 'groupby(\'country_code\')[col].shift(1)' not in source

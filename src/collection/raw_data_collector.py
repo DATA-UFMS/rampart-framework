@@ -105,6 +105,41 @@ def _years_since_observed(series):
     return positions - last_observed
 
 
+def carry_forward(frame, column, entity_column='country_code'):
+    """Fill `column` from each entity's own past, within its declared limit.
+
+    Returns the frame and how many cells were filled. Shared with the
+    sensitivity analysis, which reimplemented it as a bare lag-1 and so
+    measured a method the pipeline does not apply -- for the low-frequency
+    columns, one that reaches a third as far.
+    """
+    limit = (LOW_FREQUENCY_CARRY_LIMIT_YEARS if column in LOW_FREQUENCY_COLUMNS
+             else CARRY_LIMIT_YEARS)
+    grouped = frame.groupby(entity_column, group_keys=False)
+
+    if column == 'unemployment_total':
+        # Mean of up to `window` previous observations, to smooth cycles, over
+        # the observed series: averaging already-filled cells is what used to
+        # extend the reach. The window derives from the limit rather than
+        # being a bare 3 that happens to equal it.
+        window = LOW_FREQUENCY_CARRY_LIMIT_YEARS
+        source = grouped[column].apply(
+            lambda s: s.shift(1).rolling(window=window, min_periods=1).mean())
+    else:
+        source = grouped[column].ffill(limit=limit)
+    source = source.reindex(frame.index)
+
+    # Distance to the entity's last observation. This is what makes the reach
+    # checkable instead of emergent from how many fill steps were chained.
+    gap = grouped[column].apply(_years_since_observed).reindex(frame.index)
+
+    fillable = _fillable_cells(frame[column], source, gap, limit)
+    frame = frame.copy()
+    frame.loc[fillable, column] = source[fillable]
+    return frame, int(fillable.sum())
+
+
+
 class RawDataCollector:
     """
     Sistema de coleta e imputação hierárquica para dados socioeconômicos da América Latina.
@@ -798,35 +833,7 @@ class RawDataCollector:
             # Continua P5-safe pelo mesmo motivo de antes: só o passado da
             # própria entidade, nenhuma estatística ajustada fora da célula.
             # O que muda é que o alcance passa a ser o que está escrito.
-            limit = (LOW_FREQUENCY_CARRY_LIMIT_YEARS
-                     if column in LOW_FREQUENCY_COLUMNS
-                     else CARRY_LIMIT_YEARS)
-            grouped = df_sorted.groupby('country_code', group_keys=False)
-
-            if column == 'unemployment_total':
-                # Média das até três observações anteriores, para suavizar
-                # ciclos. Sobre a série observada: promediar células já
-                # preenchidas é o que estendia o alcance.
-                # Janela derivada do limite, não um 3 solto que coincide com
-                # ele: separadas, a coincidência é que fazia o alcance parecer
-                # correto sem que nada o impusesse.
-                window = LOW_FREQUENCY_CARRY_LIMIT_YEARS
-                source = grouped[column].apply(
-                    lambda s: s.shift(1)
-                    .rolling(window=window, min_periods=1).mean()
-                )
-            else:
-                source = grouped[column].ffill(limit=limit)
-            source = source.reindex(df_sorted.index)
-
-            # Distância até a última observação, dentro da entidade. É o que
-            # torna o alcance verificável em vez de emergente do encadeamento.
-            gap = grouped[column].apply(_years_since_observed)
-            gap = gap.reindex(df_sorted.index)
-
-            fillable = _fillable_cells(df_sorted[column], source, gap, limit)
-            df_sorted.loc[fillable, column] = source[fillable]
-            temporal_count = int(fillable.sum())
+            df_sorted, temporal_count = carry_forward(df_sorted, column)
 
             df_imputed = df_sorted.sort_index()
             
@@ -1075,10 +1082,16 @@ class RawDataCollector:
         print("\nComparacao de metodos candidatos de imputacao")
         print("  Aplicado: apenas forward fill por entidade")
         
-        numeric_columns = [col for col in df_wide.columns if col in [
-            'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
-            'gdp_per_capita_constant_2015', 'poverty_headcount_national', 'gini_index'
-        ]]
+        # Columns the pipeline actually imputes. The previous list was a
+        # literal and included the target source column, whose missing rows are
+        # *removed* and never filled: the analysis reported the quality of an
+        # imputation that does not happen.
+        target_source = getattr(self, 'target_source_column',
+                                'lower_secondary_completion_rate')
+        numeric_columns = [
+            col for col in df_wide.select_dtypes(include=[np.number]).columns
+            if col not in {target_source, 'year'}
+        ]
         
         sensitivity_results = {}
         
@@ -1091,12 +1104,12 @@ class RawDataCollector:
             if len(original_values) < 10:
                 continue
             
-            # Método 1: Apenas temporal
-            df_temp1 = df_wide.copy()
-            df_sorted = df_temp1.sort_values(['country_code', 'year'])
-            lag1 = df_sorted.groupby('country_code')[col].shift(1)
-            temporal_mask = df_sorted[col].isna() & lag1.notna()
-            df_sorted.loc[temporal_mask, col] = lag1[temporal_mask]
+            # Method 1: temporal only, through the same implementation the
+            # pipeline uses. It was a lag-1 rewritten here, so for the
+            # low-frequency columns it measured a method reaching a third as
+            # far as the one actually applied.
+            df_sorted = df_wide.sort_values(['country_code', 'year']).copy()
+            df_sorted, _ = carry_forward(df_sorted, col)
             temporal_mean = df_sorted[col].mean()
             temporal_std = df_sorted[col].std()
             
