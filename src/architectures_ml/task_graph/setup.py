@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from core.base_architecture import BaseArchitectureML
 from core.config import get_absolute_output_path
 from core.scientific_config import SCIENTIFIC_CONFIG
-from core.validation import TemporalValidator, DataIntegrityValidator
+from core.validation import (DataIntegrityValidator, TemporalValidator,
+                             assert_lag_columns)
 from core.logging_config import get_logger, log_ml_pipeline
 
 
@@ -411,9 +412,13 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                               on=['country_code', 'year'], how='left')
             ddf_with_target = merged
             print("  dropout_rate_lag_2 e dropout_rate_lag_3 criados (join country/year-k)")
-        except Exception as e:
-            print(f"  [WARN] Falha ao criar dropout_rate_lag_2: {e}")
-        
+        except Exception as exc:
+            raise ValueError(
+                f"task_graph: falha ao criar as defasagens do alvo: {exc}"
+            ) from exc
+
+        assert_lag_columns(ddf_with_target.columns, 'task_graph',
+                           self.TARGET_LAG_ORDERS)
         return ddf_with_target
     
     def _compute_target_statistics(self, ddf: dd.DataFrame) -> Dict[str, float]:

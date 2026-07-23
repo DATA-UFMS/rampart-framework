@@ -174,6 +174,32 @@ def canonical_fold(X, y, entities, years, *, paradigm: str):
             pd.Series(entities).reset_index(drop=True))
 
 
+
+def assert_lag_columns(present, paradigm: str, lag_orders) -> None:
+    """The autoregressive columns exist, in every paradigm.
+
+    Two of the three built them inside a try/except that printed a warning and
+    returned the frame without them -- one of those catching bare Exception.
+    A paradigm missing its lags trains on a different feature set from the
+    other two, so the bitwise claim fails for a reason that has nothing to do
+    with the paradigms, and the only trace is a line of stdout in a run that
+    takes hours.
+
+    Lags are not optional. Where the entity's past target was never observed
+    the join yields NULL, which is the honest value and is handled downstream;
+    a missing *column* is a different thing entirely.
+    """
+    expected = {f'dropout_rate_lag_{order}' for order in lag_orders}
+    missing = sorted(expected - set(present))
+    if missing:
+        raise ValueError(
+            f"{paradigm}: as colunas de defasagem do alvo não foram criadas "
+            f"{missing}. Sem elas este paradigma treina sobre um conjunto de "
+            f"features diferente dos outros dois, e a comparação deixa de ser "
+            f"entre paradigmas."
+        )
+
+
 def audit_feature_set(
     data: Any, features: List[str], target_column: str, config: Dict
 ) -> Dict:
@@ -701,17 +727,34 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
             f"observou."
         )
 
+    # Counted per split, because how much of each window is fabricated is what
+    # a reader needs and the report carried only the fitted values. The extent
+    # of fold-level imputation appeared in no artifact at all.
+    split_names = ['train'] + [f'apply_{index}'
+                               for index in range(len(apply_to))]
     filled = []
-    for frame in (train, *apply_to):
+    filled_cells = {}
+    for name, frame in zip(split_names, (train, *apply_to)):
         out = frame.copy()
+        per_column = {}
         for column, value in fitted.items():
-            if column in out.columns:
-                out[column] = out[column].fillna(value)
+            if column not in out.columns:
+                continue
+            missing = int(out[column].isna().sum())
+            if missing:
+                per_column[column] = missing
+            out[column] = out[column].fillna(value)
+        filled_cells[name] = {
+            'rows': int(len(out)),
+            'by_column': per_column,
+            'total': int(sum(per_column.values())),
+        }
         filled.append(out)
 
     report = {
         'strategy': strategy,
         'fitted_on_rows': int(len(train)),
+        'filled_cells': filled_cells,
         'values': fitted,
         # Mantido, sempre vazio: a condição levanta acima. A chave permanece
         # para que um artefato antigo e um novo sejam comparáveis.

@@ -347,3 +347,96 @@ class TestEveryParadigmUsesTheSharedImplementation:
             f'impute_from_training_window um no-op e devolve as três '
             f'implementações que a centralização removeu'
         )
+
+
+class TestTheFoldLevelImputationIsRecorded:
+    """The reports were produced on every fold and thrown away.
+
+    How much of each training and evaluation window is fabricated appeared in
+    no artifact. Only the collection-stage imputation did, and that is the part
+    bounded by the carry limit; the fold-scoped fill is the unbounded one --
+    every cell the carry did not reach receives the training-window median.
+    """
+
+    @staticmethod
+    def _reports(folds=3):
+        import numpy as np
+        import pandas as pd
+        from core.validation import impute_from_training_window
+
+        collected = []
+        for fold_id in range(folds):
+            train = pd.DataFrame({'a': [1.0, 2.0, np.nan],
+                                  'b': [1.0, np.nan, 3.0]})
+            test = pd.DataFrame({'a': [np.nan, np.nan], 'b': [1.0, 2.0]})
+            _, report = impute_from_training_window(train, test)
+            collected.append((fold_id, report))
+        return collected
+
+    def test_the_report_counts_cells_per_split(self):
+        _, report = self._reports(folds=1)[0]
+        counts = report['filled_cells']
+        assert counts['train']['by_column'] == {'a': 1, 'b': 1}
+        assert counts['apply_0']['by_column'] == {'a': 2}
+        assert counts['train']['rows'] == 3
+
+    def test_a_split_with_no_gaps_reports_zero(self):
+        """Otherwise the count could be reporting the column list."""
+        import numpy as np
+        import pandas as pd
+        from core.validation import impute_from_training_window
+
+        train = pd.DataFrame({'a': [1.0, np.nan]})
+        clean = pd.DataFrame({'a': [3.0, 4.0]})
+        _, report = impute_from_training_window(train, clean)
+        assert report['filled_cells']['apply_0']['total'] == 0
+
+    def test_it_is_written_next_to_the_fold_artifacts(self, tmp_path,
+                                                      monkeypatch):
+        import json
+        import core.config as config
+        from core.models.hierarchical import write_imputation_report
+
+        monkeypatch.setattr(config, 'get_absolute_output_path',
+                            lambda relative: str(tmp_path / relative))
+        path = write_imputation_report(self._reports(),
+                                       architecture='sql_engine')
+        payload = json.loads(Path(path).read_text())
+        assert payload['architecture'] == 'sql_engine'
+        assert set(payload['folds']) == {'0', '1', '2'}
+
+    def test_the_totals_are_summed_across_folds(self, tmp_path, monkeypatch):
+        import json
+        import core.config as config
+        from core.models.hierarchical import write_imputation_report
+
+        monkeypatch.setattr(config, 'get_absolute_output_path',
+                            lambda relative: str(tmp_path / relative))
+        path = write_imputation_report(self._reports(folds=3),
+                                       architecture='task_graph')
+        totals = json.loads(Path(path).read_text())['across_folds']
+        assert totals['train']['rows'] == 9
+        assert totals['train']['total'] == 6
+        assert totals['train']['fraction'] == pytest.approx(6 / 9)
+
+    @pytest.mark.parametrize('paradigm', ['sql_engine', 'task_graph',
+                                          'dataframe_lib'])
+    def test_every_paradigm_accumulates_and_writes(self, paradigm):
+        source = (_SRC / 'architectures_ml' / paradigm / 'models'
+                  / 'hierarchical_model.py').read_text()
+        assert 'self._imputation_reports = []' in source
+        assert 'self._imputation_reports.append((fold_id, imputation_report))' \
+            in source
+        assert 'shared_write_imputation_report(' in source
+
+    @pytest.mark.parametrize('paradigm', ['sql_engine', 'task_graph',
+                                          'dataframe_lib'])
+    def test_the_report_is_not_discarded(self, paradigm):
+        """It was captured into a name nothing read."""
+        import ast as ast_module
+        source = (_SRC / 'architectures_ml' / paradigm / 'models'
+                  / 'hierarchical_model.py').read_text()
+        tree = ast_module.parse(source)
+        read = {node.attr for node in ast_module.walk(tree)
+                if isinstance(node, ast_module.Attribute)}
+        assert '_imputation_reports' in read

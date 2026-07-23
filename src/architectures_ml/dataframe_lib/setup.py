@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from core.base_architecture import BaseArchitectureML
 from core.config import get_absolute_output_path
-from core.validation import TemporalValidator, DataIntegrityValidator
+from core.validation import (DataIntegrityValidator, TemporalValidator,
+                             assert_lag_columns)
 from core.logging_config import get_logger, log_ml_pipeline
 
 
@@ -376,11 +377,16 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
             )
 
             print("  dropout_rate_lag_2 e dropout_rate_lag_3 criados (join temporal country/year-k)")
-        except (pl.exceptions.ColumnNotFoundError, pl.exceptions.ComputeError, KeyError) as e:
-            print(f"  [WARN] Falha ao criar dropout_rate_lag_2: {e}")
+        except (pl.exceptions.ColumnNotFoundError, pl.exceptions.ComputeError,
+                KeyError) as exc:
+            raise ValueError(
+                f"dataframe_lib: falha ao criar as defasagens do alvo: {exc}"
+            ) from exc
 
         print("  Target criado via Polars expressions")
 
+        assert_lag_columns(df_with_target.collect_schema().names(),
+                           'dataframe_lib', self.TARGET_LAG_ORDERS)
         return df_with_target
 
     def _compute_target_statistics(self, df: pl.DataFrame) -> Dict[str, float]:

@@ -301,3 +301,65 @@ class TestEveryParadigmIsVerified:
                   / 'hierarchical_model.py').read_text()
         assert f"PARADIGM = '{paradigm}'" in source
         assert 'paradigm=PARADIGM' in source
+
+
+class TestTheLagColumnsAreNotOptional:
+    """Two paradigms built them inside a try/except that only warned.
+
+    A paradigm returning the frame without its lag columns trains on a
+    different feature set from the other two, so the bitwise claim fails for a
+    reason that has nothing to do with the paradigms -- and the only trace was
+    a line of stdout in a run that takes hours. One of the two caught bare
+    Exception.
+
+    Where the entity's past target was never observed the join yields NULL,
+    which is the honest value and is handled downstream. A missing *column* is
+    a different thing.
+    """
+
+    def test_the_check_names_the_missing_columns(self):
+        from core.base_architecture import BaseArchitectureML
+        from core.validation import assert_lag_columns
+
+        with pytest.raises(ValueError, match='dropout_rate_lag_3'):
+            assert_lag_columns(['country_code', 'year',
+                                'dropout_rate_lag_2'], 'task_graph',
+                               BaseArchitectureML.TARGET_LAG_ORDERS)
+
+    def test_a_complete_set_passes(self):
+        from core.base_architecture import BaseArchitectureML
+        from core.validation import assert_lag_columns
+
+        columns = ['country_code', 'year'] + [
+            f'dropout_rate_lag_{order}'
+            for order in BaseArchitectureML.TARGET_LAG_ORDERS]
+        assert_lag_columns(columns, 'sql_engine',
+                           BaseArchitectureML.TARGET_LAG_ORDERS)
+
+    def test_it_names_the_paradigm(self):
+        from core.base_architecture import BaseArchitectureML
+        from core.validation import assert_lag_columns
+        with pytest.raises(ValueError, match='dataframe_lib'):
+            assert_lag_columns([], 'dataframe_lib',
+                               BaseArchitectureML.TARGET_LAG_ORDERS)
+
+    @pytest.mark.parametrize('paradigm', ['task_graph', 'dataframe_lib'])
+    def test_no_paradigm_swallows_a_lag_failure(self, paradigm):
+        source = (_SRC / 'architectures_ml' / paradigm / 'setup.py').read_text()
+        assert '[WARN] Falha ao criar dropout_rate_lag_2' not in source, (
+            f'{paradigm} still continues past a failed lag join'
+        )
+        assert 'falha ao criar as defasagens do alvo' in source
+
+    @pytest.mark.parametrize('paradigm', ['task_graph', 'dataframe_lib'])
+    def test_each_paradigm_checks_afterwards(self, paradigm):
+        """The raise covers a thrown error; the check covers a silent absence."""
+        source = (_SRC / 'architectures_ml' / paradigm / 'setup.py').read_text()
+        assert f"assert_lag_columns(" in source
+
+    def test_the_sql_view_selects_them(self):
+        """The third paradigm builds them in SQL, where absence is an error."""
+        source = (_SRC / 'architectures_ml' / 'sql_engine' / 'setup.py').read_text()
+        from core.base_architecture import BaseArchitectureML
+        for order in BaseArchitectureML.TARGET_LAG_ORDERS:
+            assert f'dropout_rate_lag_{order}' in source

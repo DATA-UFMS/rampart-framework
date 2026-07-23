@@ -192,8 +192,10 @@ class TestWhatWasNotExtracted:
         tree = ast.parse(SHARED.read_text())
         names = {n.name for n in ast.walk(tree)
                  if isinstance(n, ast.FunctionDef)}
-        assert names == {'simple_hierarchical_model', 'write_prediction_artifact',
-                         'write_baseline_predictions'}, names
+        assert names == {'simple_hierarchical_model',
+                         'write_prediction_artifact',
+                         'write_baseline_predictions',
+                         'write_imputation_report'}, names
 
 
 class TestInnerCrossValidationIsDeliberate:

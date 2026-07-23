@@ -180,6 +180,46 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
         }
     }
 
+
+def write_imputation_report(reports, *, architecture: str) -> str:
+    """Persist the fold-level imputation reports next to the fold artifacts.
+
+    The reports were produced on every fold and discarded. How much of each
+    training and evaluation window is fabricated appeared in no artifact --
+    only the collection-stage imputation did, and that is the part bounded by
+    the carry limit. The fold-scoped fill is the unbounded one: every cell the
+    carry did not reach gets the training-window median.
+    """
+    import json
+    import os
+
+    from core.config import get_absolute_output_path
+
+    directory = get_absolute_output_path(
+        f'ml_pipeline/architectures/{architecture}/prep')
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory,
+                        f'fold_imputation_{architecture}.json')
+
+    per_fold = {str(fold_id): report for fold_id, report in reports}
+    totals = {}
+    for _, report in reports:
+        for split, entry in report.get('filled_cells', {}).items():
+            bucket = totals.setdefault(split, {'rows': 0, 'total': 0})
+            bucket['rows'] += entry['rows']
+            bucket['total'] += entry['total']
+    for bucket in totals.values():
+        bucket['fraction'] = (bucket['total'] / bucket['rows']
+                              if bucket['rows'] else 0.0)
+
+    with open(path, 'w') as handle:
+        json.dump({'architecture': architecture,
+                   'folds': per_fold,
+                   'across_folds': totals}, handle, indent=2)
+    print(f"   Imputacao por fold -> {path}")
+    return path
+
+
 def write_prediction_artifact(all_results: Dict, *, architecture: str) -> None:
     """Persist the test prediction vectors of every fold and model.
 
