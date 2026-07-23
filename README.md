@@ -143,7 +143,7 @@ src/
 │   └── dataframe_lib/
 ├── benchmarking/               # Instrumentação e métricas de latência
 └── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 1106 testes (unitários, discovery, anti-leakage)
+tests/                          # 1112 testes (unitários, discovery, anti-leakage)
 pipeline.py                     # Orquestra o pipeline completo
 ```
 
@@ -169,14 +169,40 @@ class MeuParadigmaML(BaseArchitectureML):
     PARADIGM_META = {
         'name': 'meu_paradigma',
         'label': 'Meu Paradigma',
-        'setup_script': 'src/architectures_ml/meu_paradigma/setup.py',
-        # ... módulos de processamento, baseline e hierárquico
+        'baseline_class': ...,
+        'baseline_module': ...,
+        'baseline_results_json': ...,
+        'baseline_script': ...,
+        'hierarchical_class': ...,
+        'hierarchical_module': ...,
+        'hierarchical_script': ...,
+        'master_artifact': ...,
+        'processor_class': ...,
+        'processor_module': ...,
+        'processor_run_method': ...,
+        'processor_script': ...,
+        'setup_script': ...
     }
-    # Implementar métodos abstratos: setup_environment, load_data,
-    # validate_data, create_target_implementation, save_folds,
-    # compute_feature_correlations, apply_collinearity_filter,
-    # get_numeric_features, prepare_features, entre outros.
+
+    # Métodos abstratos a implementar (11):
+    #   _compute_target_statistics
+    #   _validate_temporal_folds
+    #   apply_collinearity_filter
+    #   compute_feature_correlations
+    #   create_target_implementation
+    #   discover_numeric_columns
+    #   load_data
+    #   prepare_features
+    #   save_folds
+    #   setup_environment
+    #   validate_data
 ```
+
+`get_numeric_features` **não** entra nessa lista, e sobrescrevê-lo faz a
+suíte falhar por desenho: o pool de candidatas tem de ser idêntico entre
+paradigmas, senão a comparação parte de espaços de busca diferentes. Quem
+decide quais colunas são numéricas naquele engine é `discover_numeric_columns`;
+a política de exclusão fica na classe base, uma vez só.
 
 ### Novo dataset
 
@@ -208,7 +234,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 - Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
 - Snapshot de ambiente: packages, hardware, git commit
 - `requirements-lock.txt` com versões exatas
-- 1106 testes automatizados (`pytest tests/`)
+- 1112 testes automatizados (`pytest tests/`)
 
 Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

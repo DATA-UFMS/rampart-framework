@@ -101,3 +101,69 @@ class TestTheCoreBudgetClaim:
                    + SCIENTIFIC_CONFIG['blas_threads'] - 1)
         for count in re.findall(r'(\d+)\s*vCPU', README):
             assert int(count) >= minimum
+
+
+class TestTheExtensionExample:
+    """Following it produced a paradigm that cannot load, and must not.
+
+    It listed `get_numeric_features` among the methods to implement. That one
+    is not abstract, and a test forbids overriding it: the candidate pool has
+    to be identical across paradigms, or the comparison starts from different
+    search spaces. The method a new engine does implement is
+    `discover_numeric_columns`.
+
+    The metadata block showed three keys of the fifteen discovery requires, so
+    a paradigm written from the example would not be found at all.
+    """
+
+    @staticmethod
+    def _example():
+        block = README[README.index('# src/architectures_ml/meu_paradigma'):]
+        return block[:block.index('```')]
+
+    def test_every_abstract_method_is_listed(self):
+        from core.base_architecture import BaseArchitectureML
+        example = self._example()
+        for name in sorted(BaseArchitectureML.__abstractmethods__):
+            assert name in example, (
+                f'{name} is abstract and the example does not mention it'
+            )
+
+    def test_the_stated_count_matches(self):
+        from core.base_architecture import BaseArchitectureML
+        match = re.search(r'Métodos abstratos a implementar \((\d+)\)',
+                          self._example())
+        assert match
+        assert int(match.group(1)) == len(
+            BaseArchitectureML.__abstractmethods__)
+
+    def test_no_non_abstract_method_is_listed_as_required(self):
+        from core.base_architecture import BaseArchitectureML
+        example = self._example()
+        listed = set(re.findall(r'^    #   (\w+)$', example, re.M))
+        assert listed == set(BaseArchitectureML.__abstractmethods__), (
+            f'the example asks for methods that are not abstract: '
+            f'{sorted(listed - set(BaseArchitectureML.__abstractmethods__))}'
+        )
+
+    def test_the_pool_policy_method_is_not_offered(self):
+        """The specific one that broke the suite for whoever followed it."""
+        example = self._example()
+        assert '#   get_numeric_features' not in example
+        assert 'get_numeric_features' in README, (
+            'the README should say why it is absent, not merely omit it'
+        )
+
+    def test_every_metadata_key_appears(self):
+        from core.paradigm_registry import discover_paradigms
+        example = self._example()
+        reference = next(iter(discover_paradigms().values()))
+        for key in sorted(reference):
+            assert f"'{key}'" in example, (
+                f'{key} is in every paradigm\'s metadata and the example omits '
+                f'it; a paradigm written from this would not be discovered'
+            )
+
+    def test_the_example_names_the_replacement(self):
+        assert 'discover_numeric_columns' in self._example() or \
+            'discover_numeric_columns' in README
