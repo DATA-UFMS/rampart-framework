@@ -605,9 +605,20 @@ class RawDataCollector:
             if col not in df_imputed.columns:
                 continue
                 
-            original_na_mask = df_original[col].isna()
-            imputed_values = df_imputed.loc[original_na_mask, col]
-            original_values = df_original[col].dropna()
+            # Só as linhas que sobreviveram ao filtro de alvo, e explicitamente.
+            # A máscara vinha do quadro maior e o pandas alinhava em silêncio,
+            # então a métrica já era restrita sem dizer que era.
+            surviving = df_original.index.intersection(df_imputed.index)
+            was_missing = df_original.loc[surviving, col].isna()
+
+            # As efetivamente preenchidas, não as originalmente ausentes.
+            # values_imputed contava a máscara inteira, incluindo as células
+            # que a imputação deliberadamente não alcança -- e a imputação é
+            # limitada por construção, então a contagem publicada superava a
+            # real por um fator que cresce com o tamanho das lacunas.
+            was_filled = was_missing & df_imputed.loc[surviving, col].notna()
+            imputed_values = df_imputed.loc[surviving, col][was_filled]
+            original_values = df_original.loc[surviving, col].dropna()
             
             if len(imputed_values) == 0 or len(original_values) == 0:
                 continue
@@ -647,7 +658,10 @@ class RawDataCollector:
                 'mean_bias_percent': float(mean_bias),
                 'variance_preservation_percent': float(variance_preservation),
                 'values_imputed': int(len(imputed_values)),
-                'values_original': int(len(original_values))
+                'values_still_missing': int((was_missing & ~was_filled).sum()),
+                'values_original': int(len(original_values)),
+                'rows_dropped_before_metrics': int(
+                    len(df_original) - len(surviving))
             }
             
             metrics_by_indicator[col] = indicator_metrics

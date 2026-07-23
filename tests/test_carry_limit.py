@@ -419,3 +419,81 @@ class TestImputationNeverAltersAnObservation:
             assert value in observed_values, (
                 f'{value} was carried but never observed'
             )
+
+
+class TestTheQualityMetricsCountWhatWasFilled:
+    """`values_imputed` counted originally-missing cells, not filled ones.
+
+    The imputation is bounded by construction, so a large share of the missing
+    cells are deliberately left for the fold-scoped layer. Counting the mask
+    reported every one of them as imputed: on a synthetic panel the published
+    figure was 2.1x the real one for gini_index.
+
+    The mask also came from the pre-filter frame while the values came from the
+    post-filter one, and pandas aligned the two silently -- so the metric was
+    already restricted to surviving rows without saying so.
+    """
+
+    @pytest.fixture(scope='class')
+    def measured(self):
+        import tempfile
+        rng = np.random.default_rng(4)
+        rows = [{'country_code': entity, 'country_name': entity, 'year': year,
+                 'gini_index': rng.normal(40, 5) if rng.random() > 0.55
+                 else np.nan,
+                 'unemployment_total': rng.normal(8, 2) if rng.random() > 0.6
+                 else np.nan,
+                 TARGET: rng.normal(70, 10) if rng.random() > 0.2 else np.nan}
+                for entity in [f'C{index:02d}' for index in range(8)]
+                for year in range(2000, 2016)]
+        raw = pd.DataFrame(rows)
+        collector = _quiet(RawDataCollector)
+        collector.output_dir = tempfile.mkdtemp()
+        imputed = _quiet(collector.apply_conservative_imputation, raw.copy())
+        metrics = _quiet(collector.calculate_imputation_quality_metrics,
+                         raw, imputed)
+        return metrics['indicators'], raw, imputed
+
+    @pytest.mark.parametrize('column', ['gini_index', 'unemployment_total'])
+    def test_the_count_matches_the_cells_actually_filled(self, measured,
+                                                         column):
+        indicators, raw, imputed = measured
+        surviving = raw.index.intersection(imputed.index)
+        expected = int((raw.loc[surviving, column].isna()
+                        & imputed.loc[surviving, column].notna()).sum())
+        assert indicators[column]['values_imputed'] == expected
+
+    @pytest.mark.parametrize('column', ['gini_index', 'unemployment_total'])
+    def test_the_cells_left_missing_are_reported(self, measured, column):
+        indicators, raw, imputed = measured
+        surviving = raw.index.intersection(imputed.index)
+        expected = int((raw.loc[surviving, column].isna()
+                        & imputed.loc[surviving, column].isna()).sum())
+        assert indicators[column]['values_still_missing'] == expected
+
+    def test_the_old_count_would_have_been_larger(self, measured):
+        """Pins the overcount, so the tests above cannot pass vacuously."""
+        indicators, _, _ = measured
+        entry = indicators['gini_index']
+        old = entry['values_imputed'] + entry['values_still_missing']
+        assert old > entry['values_imputed'] * 1.5, (
+            f'the panel leaves too few cells unfilled to demonstrate the '
+            f'overcount: {entry}'
+        )
+
+    def test_the_dropped_rows_are_reported(self, measured):
+        """The restriction was happening silently through index alignment."""
+        indicators, raw, imputed = measured
+        dropped = len(raw) - len(imputed)
+        assert dropped > 0
+        for entry in indicators.values():
+            assert entry['rows_dropped_before_metrics'] == dropped
+
+    def test_the_bias_is_measured_over_filled_cells_only(self, measured):
+        indicators, raw, imputed = measured
+        surviving = raw.index.intersection(imputed.index)
+        filled = (raw.loc[surviving, 'gini_index'].isna()
+                  & imputed.loc[surviving, 'gini_index'].notna())
+        expected = float(imputed.loc[surviving, 'gini_index'][filled].mean())
+        assert indicators['gini_index']['imputed_mean'] == pytest.approx(
+            expected)
