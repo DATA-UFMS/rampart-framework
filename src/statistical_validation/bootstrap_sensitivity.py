@@ -124,6 +124,10 @@ def _write_outputs(rows: List[Dict[str, object]], json_path: str, latex_path: st
             index=False,
             float_format=lambda x: f"{x:.3f}",
             longtable=True,
+            # Não é o default: pandas 2.x escreve o sublinhado cru, e as
+            # chaves de par o trazem (sql_engine_vs_task_graph). O arquivo
+            # gerado não compilava.
+            escape=True,
         )
         with open(latex_path, "w") as fh:
             fh.write(latex_table)

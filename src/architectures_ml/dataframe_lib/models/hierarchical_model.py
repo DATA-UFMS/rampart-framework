@@ -278,8 +278,14 @@ class HierarchicalModelDataFrameLib:
             used_path = os.path.join(self.results_path, f"used_features_fold_{fold_id}.json")
             with open(used_path, 'w') as f:
                 json.dump(used, f, indent=2)
-        except (OSError, IOError, TypeError):
-            pass
+        except (OSError, IOError, TypeError) as exc:
+            # Era engolido. Este artefato registra as features que o modelo de
+            # fato usou -- e a auditoria P3 compara contra ele. Perdê-lo em
+            # silêncio remove a evidência sem remover a afirmação.
+            raise RuntimeError(
+                f'Falha ao registrar as features usadas no fold '
+                f'{fold_id}: {exc}'
+            ) from exc
 
         # Exclusão de gap years
         train_lazy = self.df_lazy.filter(

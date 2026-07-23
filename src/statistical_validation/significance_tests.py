@@ -368,8 +368,14 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
             tex_file = os.path.join(RESULTS_DIR, f"significance_summary_{pair_key}.tex")
             with open(tex_file, "w") as ftx:
                 ftx.write(latex)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Era engolido: a tabela por par simplesmente não aparecia, e a etapa
+        # seguia com exit 0. Um artefato publicado que falta é indistinguível
+        # de um que nunca foi pedido.
+        raise RuntimeError(
+            f"Falha ao escrever as tabelas de significância em "
+            f"{RESULTS_DIR}: {exc}"
+        ) from exc
 
 
 def parse_args() -> argparse.Namespace:

@@ -318,12 +318,22 @@ def _parse_latency_profile(s: Optional[str], default_total: float) -> Dict[str, 
     profile = {'setup': 0.15, 'processing': 0.10, 'baseline': 0.10, 'hierarchical': 0.05, 'total': default_total}
     if not s:
         return profile
-    try:
-        for part in s.split(','):
-            k, v = part.split(':')
-            profile[k.strip().lower()] = float(v.strip())
-    except Exception:
-        pass
+    # Um item malformado era descartado em silêncio, e a execução seguia com
+    # um SESOI diferente do que o operador pediu -- o que muda os vereditos de
+    # equivalência sem deixar rastro.
+    for part in s.split(','):
+        if not part.strip():
+            continue
+        try:
+            key, value = part.split(':')
+            profile[key.strip().lower()] = float(value.strip())
+        except ValueError as exc:
+            raise ValueError(
+                f"Perfil SESOI malformado em {part.strip()!r}: esperado "
+                f"'metrica:valor' separado por vírgulas. Ignorar o item faria "
+                f"a execução decidir equivalência com um limiar que ninguém "
+                f"pediu."
+            ) from exc
     return profile
 
 
@@ -414,7 +424,10 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
                 d = r.get('delta', float('nan'))
                 dec = r.get('decision', '')
                 adv = r.get('advantage') or '--'
-                lines.append(f"{pair_key} & {m} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & {dec} & {adv} \\\\")
+                lines.append(
+                    f"{_tex(pair_key)} & {_tex(m)} & {n} & {est:.3f} & "
+                    f"[{ci[0]:.3f},{ci[1]:.3f}] & {d:.3f} & "
+                    f"{_tex(dec)} & {_tex(adv)} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',
@@ -425,7 +438,7 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             '\\caption{Equivalência prática por estimativa — latência (log‑ratio, 3-way pairwise)}',
             '\\begin{tabular}{llrrrrll}',
             '\\toprule',
-            'Fase & Par & n & Estim. (LR) & IC95\\% & $\\delta$(%) & Decisão & Vantagem \\\\ ',
+            'Fase & Par & n & Estim. (LR) & IC95\\% & $\\delta$(\\%) & Decisão & Vantagem \\\\ ',
             '\\midrule',
         ]
         lat = obj.get('latency', {})
@@ -441,7 +454,10 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
                 d_pct = r.get('delta_pct', float('nan')) * 100.0
                 dec = r.get('decision', '')
                 adv = r.get('advantage') or '--'
-                lines.append(f"{phase} & {pair_key} & {n} & {est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & {d_pct:.1f} & {dec} & {adv} \\\\")
+                lines.append(
+                    f"{_tex(phase)} & {_tex(pair_key)} & {n} & "
+                    f"{est:.3f} & [{ci[0]:.3f},{ci[1]:.3f}] & "
+                    f"{d_pct:.1f} & {_tex(dec)} & {_tex(adv)} \\\\")
         lines += [
             '\\bottomrule',
             '\\end{tabular}',
@@ -492,6 +508,21 @@ def parse_args() -> argparse.Namespace:
                    help='Perfil de δ por fase (ex.: setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10)')
     p.add_argument('--latex', action='store_true', help='Gerar também tabelas LaTeX')
     return p.parse_args()
+
+
+
+def _tex(text) -> str:
+    """Escape a text cell for LaTeX.
+
+    Every text column in these two tables carries underscores: the pair key
+    (dataframe_lib_vs_sql_engine), the phase (total_architectural), the
+    decision (a_exceeds_b, insufficient_data) and the advantage, which is a
+    paradigm name. None was escaped, so neither file compiled -- and the error
+    surfaces to whoever assembles the paper, not to whoever ran the pipeline.
+    """
+    return (str(text).replace('\\', r'\textbackslash{}')
+            .replace('_', r'\_').replace('%', r'\%')
+            .replace('&', r'\&').replace('#', r'\#'))
 
 
 
