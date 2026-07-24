@@ -156,11 +156,23 @@ class BenchmarkRunner:
         phases: Optional[List[str]] = None,
         output_dir: Optional[str] = None,
     ):
-        self.repetitions = repetitions or int(BENCHMARK_CONFIG.get("repetitions", 10))
+        # `or` trata 0 como ausente, o mesmo defeito já corrigido em warmup.
+        # Aqui zero não é um pedido válido -- não há o que medir -- então em
+        # vez de cair no default em silêncio, recusa.
+        self.repetitions = (int(BENCHMARK_CONFIG.get("repetitions", 10))
+                            if repetitions is None else int(repetitions))
+        if self.repetitions < 1:
+            raise ValueError(
+                f"--repetitions={repetitions}: sem repetições não há medição. "
+                f"Omita o parâmetro para usar o valor de BENCHMARK_CONFIG."
+            )
         # `or` trata 0 como ausente, então --warmup 0 caía no default e o
         # benchmark rodava aquecimentos que o operador pediu para não rodar.
         self.warmup_runs = (int(BENCHMARK_CONFIG.get("warmup_runs", 1))
                             if warmup_runs is None else int(warmup_runs))
+        if self.warmup_runs < 0:
+            raise ValueError(f"--warmup={warmup_runs}: não existe aquecimento "
+                             f"negativo.")
         self.phases = phases or [
             "collection",
             "processing",

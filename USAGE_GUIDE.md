@@ -91,9 +91,11 @@ Adicione módulos em `src/benchmarking/` ou `src/statistical_validation/` seguin
 
 ## FAQ
 
-**Quanto tempo demora?** Horas para o World Bank e mais de um dia para o INEP Censo Escolar em
-uma VM de 4 vCPUs. O custo é dominado pela etapa de benchmark, que reexecuta setup, baseline e
-hierárquico dos três paradigmas `warmup + n` vezes (12 por padrão). O cache de coleta e
+**Quanto tempo demora?** Cerca de uma hora e meia para o World Bank e mais de um dia para o
+INEP Censo Escolar na máquina de referência. Essa máquina precisa comportar o orçamento de
+núcleos: `pipeline.py` recusa executar abaixo de 8. O custo é dominado pela etapa de
+benchmark, que reexecuta setup, baseline e hierárquico dos três paradigmas `warmup + n` vezes
+(12 por padrão). O cache de coleta e
 processamento reduz apenas as etapas a montante. Para explorar, use `--repetitions` menor —
 ciente de que isso não reproduz a tabela de latência.
 

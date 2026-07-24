@@ -257,3 +257,55 @@ print("BUDGET dask", dask.config.get("num_workers", -1))
                 f'nesta máquina o teste não distingue os dois'
             )
         assert available != BUDGET
+
+
+class TestTheProtocolFlagsAreHonoured:
+    """`or` treats zero as absent, so an explicit zero fell to the default.
+
+    Fixed for --warmup; --repetitions carried the same expression. There the
+    request is not merely ignored: zero repetitions means nothing is measured,
+    and silently running ten instead hides that the operator asked for
+    something the protocol cannot deliver.
+    """
+
+    @staticmethod
+    def _runner(**kwargs):
+        from benchmarking.architectural_benchmark import BenchmarkRunner
+        instance = BenchmarkRunner.__new__(BenchmarkRunner)
+        from core.config import BENCHMARK_CONFIG
+        repetitions = kwargs.get('repetitions')
+        warmup = kwargs.get('warmup_runs')
+        instance.repetitions = (int(BENCHMARK_CONFIG['repetitions'])
+                                if repetitions is None else int(repetitions))
+        instance.warmup_runs = (int(BENCHMARK_CONFIG['warmup_runs'])
+                                if warmup is None else int(warmup))
+        return instance
+
+    def test_zero_warmup_is_honoured(self):
+        source = (_SRC / 'benchmarking'
+                  / 'architectural_benchmark.py').read_text()
+        assert 'warmup_runs or int(' not in source
+        assert 'repetitions or int(' not in source
+
+    def test_zero_repetitions_is_refused_rather_than_replaced(self):
+        from benchmarking.architectural_benchmark import BenchmarkRunner
+        with pytest.raises(ValueError, match='sem repetições'):
+            BenchmarkRunner(repetitions=0)
+
+    def test_a_negative_warmup_is_refused(self):
+        from benchmarking.architectural_benchmark import BenchmarkRunner
+        with pytest.raises(ValueError, match='aquecimento'):
+            BenchmarkRunner(warmup_runs=-1)
+
+    def test_the_configured_values_are_used_when_omitted(self):
+        from core.config import BENCHMARK_CONFIG
+        instance = self._runner()
+        assert instance.repetitions == BENCHMARK_CONFIG['repetitions']
+        assert instance.warmup_runs == BENCHMARK_CONFIG['warmup_runs']
+
+    def test_an_explicit_value_wins_over_the_configuration(self):
+        from core.config import BENCHMARK_CONFIG
+        instance = self._runner(repetitions=3, warmup_runs=0)
+        assert instance.repetitions == 3
+        assert instance.warmup_runs == 0
+        assert instance.repetitions != BENCHMARK_CONFIG['repetitions']

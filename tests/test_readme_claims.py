@@ -26,6 +26,12 @@ if str(_SRC) not in sys.path:
 
 README = (_ROOT / 'README.md').read_text()
 
+#: Both user-facing documents make the same claims about the machine and
+#: the protocol. The vCPU figure was corrected in one and left stale in
+#: the other, because the check only looked at the first.
+DOCUMENTS = {name: (_ROOT / name).read_text()
+             for name in ('README.md', 'USAGE_GUIDE.md')}
+
 
 @pytest.fixture(scope='module')
 def collected():
@@ -94,13 +100,55 @@ class TestThePanelSize:
 
 
 class TestTheCoreBudgetClaim:
+    """Both documents, not only the first: the fix landed in one of them."""
 
-    def test_no_machine_below_the_budget_is_documented(self):
+    @pytest.mark.parametrize('name', sorted(DOCUMENTS))
+    def test_no_machine_below_the_budget_is_documented(self, name):
         from core.scientific_config import SCIENTIFIC_CONFIG
         minimum = (SCIENTIFIC_CONFIG['engine_threads']
                    + SCIENTIFIC_CONFIG['blas_threads'] - 1)
-        for count in re.findall(r'(\d+)\s*vCPU', README):
-            assert int(count) >= minimum
+        for count in re.findall(r'(\d+)\s*vCPU', DOCUMENTS[name]):
+            assert int(count) >= minimum, (
+                f'{name} documents a {count}-vCPU machine while pipeline.py '
+                f'requires {minimum} and refuses to start below it'
+            )
+
+    @pytest.mark.parametrize('name', sorted(DOCUMENTS))
+    def test_the_minimum_is_stated(self, name):
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        minimum = (SCIENTIFIC_CONFIG['engine_threads']
+                   + SCIENTIFIC_CONFIG['blas_threads'] - 1)
+        assert str(minimum) in DOCUMENTS[name], (
+            f'{name} does not state the core budget the pipeline enforces'
+        )
+
+
+class TestTheProtocolNumbers:
+    """The repetition count is the protocol's n; a stale example misleads."""
+
+    @pytest.mark.parametrize('name', sorted(DOCUMENTS))
+    def test_the_stated_total_matches_the_configuration(self, name):
+        from core.config import BENCHMARK_CONFIG
+        total = (BENCHMARK_CONFIG['repetitions']
+                 + BENCHMARK_CONFIG['warmup_runs'])
+        for stated in re.findall(r'`warmup \+ n` vezes \((\d+) por padrão\)',
+                                 DOCUMENTS[name]):
+            assert int(stated) == total, (
+                f'{name} says {stated} passes, the configuration gives {total}'
+            )
+
+    @pytest.mark.parametrize('name', sorted(DOCUMENTS))
+    def test_the_documented_flags_match_the_defaults(self, name):
+        """An example that contradicts the default is a second source for n."""
+        from core.config import BENCHMARK_CONFIG
+        pairs = re.findall(r'--repetitions (\d+) --warmup (\d+)',
+                           DOCUMENTS[name])
+        canonical = (str(BENCHMARK_CONFIG['repetitions']),
+                     str(BENCHMARK_CONFIG['warmup_runs']))
+        assert any(pair == canonical for pair in pairs) or not pairs, (
+            f'{name} shows {pairs} and none reproduces the configured '
+            f'{canonical}'
+        )
 
 
 class TestTheExtensionExample:
