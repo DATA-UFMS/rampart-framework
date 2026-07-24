@@ -29,6 +29,8 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT / 'src'))
 
+from core.config import get_absolute_output_path
+
 from core.validation import TemporalValidator
 from core.scientific_config import SCIENTIFIC_CONFIG
 
@@ -281,7 +283,10 @@ def run_s4_empirical_comparison():
         }
     }
 
-    out_path = _PROJECT_ROOT / 'outputs'
+    # Pela mesma resolução que todo o resto: escrever em <raiz>/outputs faz
+    # uma execução do World Bank e uma do INEP sobrescreverem uma à outra, e
+    # deixa o relatório fora da árvore que o pacote de reprodução recolhe.
+    out_path = Path(get_absolute_output_path('validation'))
     out_path.mkdir(parents=True, exist_ok=True)
     results_file = out_path / 'leakage_injection_results.json'
     with open(results_file, 'w') as f:
@@ -341,7 +346,7 @@ def main():
         s4_results = run_s4_empirical_comparison()
         results['s4_empirical'] = s4_results
 
-    out_path = _PROJECT_ROOT / 'outputs'
+    out_path = Path(get_absolute_output_path('validation'))
     out_path.mkdir(parents=True, exist_ok=True)
     report_file = out_path / 'leakage_injection_report.json'
     with open(report_file, 'w') as f:
