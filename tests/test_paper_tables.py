@@ -502,3 +502,71 @@ class TestAnUntestedPairIsNotHidden:
         assert not np.isfinite(row['worst_pair_p']), (
             'a finite worst p here means the untested pair was skipped'
         )
+
+
+class TestTheArtifactsComeFromTheSameRun:
+    """The table read two files and never checked they agree.
+
+    mean() and std() skip missing values, so a paradigm measured fewer times
+    produces a cell that looks like the others: a mean over a smaller n,
+    printed beside means over a larger one, with nothing in the table saying
+    so. And the significance summary carries its own n, which is where a stale
+    artifact shows up.
+    """
+
+    @staticmethod
+    def _benchmark(tmp_path):
+        return (tmp_path / 'outputs' / 'worldbank' / 'benchmarks'
+                / 'architectural_benchmark_results.csv')
+
+    @staticmethod
+    def _significance(tmp_path):
+        return (tmp_path / 'outputs' / 'worldbank' / 'statistics'
+                / 'significance_summary.csv')
+
+    def test_a_balanced_run_passes(self, tables):
+        module, *_ = tables
+        rows = module.build(['worldbank'])['datasets']['worldbank']['stages']
+        counts = {row['repetitions'] for row in rows}
+        assert len(counts) == 1
+
+    def test_an_unbalanced_stage_halts(self, tables, tmp_path):
+        module, *_ = tables
+        path = self._benchmark(tmp_path)
+        frame = pd.read_csv(path)
+        paradigms = sorted(discover_paradigms())
+        drop = frame[(frame['phase'] == 'baseline')
+                     & (frame['architecture'] == paradigms[0])].index[:1]
+        frame.drop(index=drop).to_csv(path, index=False)
+        with pytest.raises(ValueError, match='números diferentes de'):
+            module.build(['worldbank'])
+
+    def test_a_missing_duration_counts_as_a_missing_repetition(self, tables,
+                                                               tmp_path):
+        """NaN is skipped by mean(); it must not be skipped by the count."""
+        module, *_ = tables
+        path = self._benchmark(tmp_path)
+        frame = pd.read_csv(path)
+        paradigms = sorted(discover_paradigms())
+        target = frame[(frame['phase'] == 'baseline')
+                       & (frame['architecture'] == paradigms[0])].index[0]
+        frame.loc[target, 'duration_s'] = float('nan')
+        frame.to_csv(path, index=False)
+        with pytest.raises(ValueError, match='números diferentes de'):
+            module.build(['worldbank'])
+
+    def test_artifacts_from_different_runs_halt(self, tables, tmp_path):
+        module, *_ = tables
+        path = self._significance(tmp_path)
+        frame = pd.read_csv(path)
+        frame['n'] = frame['n'] + 1
+        frame.to_csv(path, index=False)
+        with pytest.raises(ValueError, match='mesma execução'):
+            module.build(['worldbank'])
+
+    def test_the_repetition_count_reaches_the_row(self, tables, tmp_path):
+        module, *_ = tables
+        frame = pd.read_csv(self._benchmark(tmp_path))
+        expected = int(frame['run_id'].nunique())
+        for row in module.build(['worldbank'])['datasets']['worldbank']['stages']:
+            assert row['repetitions'] == expected

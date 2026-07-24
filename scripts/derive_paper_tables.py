@@ -107,13 +107,26 @@ def _stage_rows(data: Dict, paradigms: List[str]) -> List[Dict]:
         if subset.empty:
             continue
         cells = {}
+        repetitions = {}
         for paradigm in paradigms:
             values = subset[subset['architecture'] == paradigm]['duration_s']
             if values.empty:
                 continue
+            # Contado, não assumido. mean() e std() pulam ausentes, então um
+            # paradigma com menos repetições produz uma célula que parece igual
+            # às outras -- média sobre n menor, apresentada ao lado de médias
+            # sobre n maior, sem que nada na tabela diga.
+            repetitions[paradigm] = int(values.notna().sum())
             cells[paradigm] = (float(values.mean()), float(values.std(ddof=1)))
         if not cells:
             continue
+
+        if len(set(repetitions.values())) > 1:
+            raise ValueError(
+                f"Estágio '{stage}': os paradigmas têm números diferentes de "
+                f"repetição {repetitions}. As médias não são comparáveis, e a "
+                f"tabela as apresentaria lado a lado como se fossem."
+            )
 
         stage_tests = significance[significance['phase'] == stage]
         # Piso do signed-rank bilateral: 2/2^n. O n é o das diferenças
@@ -131,6 +144,20 @@ def _stage_rows(data: Dict, paradigms: List[str]) -> List[Dict]:
             n_pairs = int(stage_tests['n_nonzero_diffs'].min())
         else:
             n_pairs = 0
+
+        # Os dois artefatos têm de vir da mesma execução. O n do resumo de
+        # significância é o número de pares; se ele discordar das repetições
+        # no CSV, um dos dois ficou para trás.
+        if not stage_tests.empty and 'n' in stage_tests.columns:
+            declared = set(int(value) for value in stage_tests['n'].unique())
+            measured = set(repetitions.values())
+            if declared != measured:
+                raise ValueError(
+                    f"Estágio '{stage}': o resumo de significância declara "
+                    f"n={sorted(declared)} e o CSV de benchmark tem "
+                    f"{sorted(measured)} repetições por paradigma. Os dois "
+                    f"artefatos não vêm da mesma execução."
+                )
 
         p_column = ('wilcoxon_p' if 'wilcoxon_p' in stage_tests.columns
                     else 't_p')
@@ -177,6 +204,7 @@ def _stage_rows(data: Dict, paradigms: List[str]) -> List[Dict]:
             # multiplicado convidaria a compará-lo com 0,05 por hábito, e as duas
             # leituras misturadas é como uma célula passa a dizer duas coisas.
             'pairs_untested': untested,
+            'repetitions': int(next(iter(repetitions.values()))),
             'p_bonferroni_equivalent': min(1.0, worst_p * family_size)
                                        if family_size else worst_p,
             # NaN < x é False, então um estágio com par não testado já saía
