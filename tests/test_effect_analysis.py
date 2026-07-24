@@ -211,8 +211,21 @@ class TestSignificanceCsvKeepsEveryColumn:
     branca reintroduzida ao lado dela deixaria a ordenação intacta e correta.
     """
 
+    @pytest.fixture(scope='class')
+    def written(self, tmp_path_factory):
+        """Uma vez por classe: analyze() roda o bootstrap de produção.
+
+        Chamado por teste, custava cerca de nove segundos cada e respondia
+        quatro perguntas sobre o mesmo arquivo.
+        """
+        patch = pytest.MonkeyPatch()
+        try:
+            yield self._write(tmp_path_factory.mktemp('sig'), patch)
+        finally:
+            patch.undo()
+
     @staticmethod
-    def _written(tmp_path, monkeypatch):
+    def _write(tmp_path, monkeypatch):
         from core.paradigm_registry import discover_paradigms
         from statistical_validation import significance_tests as module
 
@@ -233,23 +246,23 @@ class TestSignificanceCsvKeepsEveryColumn:
                     for metrics in pair.values() for key in metrics}
         return produced, set(written.columns) - {'pair', 'phase'}
 
-    def test_paradigm_named_columns_reach_the_file(self, tmp_path, monkeypatch):
-        produced, written = self._written(tmp_path, monkeypatch)
+    def test_paradigm_named_columns_reach_the_file(self, written):
+        produced, written = written
         named = {k for k in produced if 'mean_' in k or 'speedup' in k}
         assert named, 'a análise não produziu colunas nomeadas por paradigma'
         assert named <= written, (
             f'descartadas do CSV: {sorted(named - written)}'
         )
 
-    def test_nothing_produced_is_dropped(self, tmp_path, monkeypatch):
-        produced, written = self._written(tmp_path, monkeypatch)
+    def test_nothing_produced_is_dropped(self, written):
+        produced, written = written
         assert produced <= written, (
             f'a análise produziu e o CSV perdeu: {sorted(produced - written)}'
         )
 
-    def test_the_speedups_carry_their_intervals(self, tmp_path, monkeypatch):
+    def test_the_speedups_carry_their_intervals(self, written):
         """Um speedup sem IC não sustenta a tabela de latência do paper."""
-        _, written = self._written(tmp_path, monkeypatch)
+        _, written = written
         speedups = {c for c in written
                     if c.startswith('speedup_') and not c.endswith(
                         ('_ci95_lo', '_ci95_hi'))}
@@ -258,9 +271,9 @@ class TestSignificanceCsvKeepsEveryColumn:
             assert f'{name}_ci95_lo' in written, name
             assert f'{name}_ci95_hi' in written, name
 
-    def test_the_order_is_deterministic(self, tmp_path, monkeypatch):
+    def test_the_order_is_deterministic(self, written):
         from statistical_validation import significance_tests as module
-        _, written = self._written(tmp_path, monkeypatch)
+        _, written = written
         assert sorted(written, key=module.column_rank) == \
             sorted(written, key=module.column_rank)
 

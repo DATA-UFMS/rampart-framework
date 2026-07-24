@@ -215,3 +215,93 @@ class TestTheExtensionExample:
     def test_the_example_names_the_replacement(self):
         assert 'discover_numeric_columns' in self._example() or \
             'discover_numeric_columns' in README
+
+
+class TestNoResultIsTranscribed:
+    """Speedup factors stated in prose come from a run nobody can point at.
+
+    The README asserted ~9.6x end-to-end and ~2.0-2.2x on the large panel.
+    Nothing in the repository produces those numbers: the statistics directory
+    they would come from does not exist here, and the run that produced them
+    predates the corrections to the bootstrap, the multiple-comparison
+    procedure and the latency labels.
+
+    A derived table carries its own provenance -- commit, timestamp, core
+    budget -- in its caption. A number retyped into prose carries none, and
+    survives the run that invalidates it.
+    """
+
+    #: Where a reader is sent instead.
+    ARTIFACTS = ('architectural_latency_percentiles.json',
+                 'derive_paper_tables.py')
+
+    @pytest.mark.parametrize('name', sorted(DOCUMENTS))
+    def test_no_speedup_factor_is_stated_in_prose(self, name):
+        prose = '\n'.join(line for line in DOCUMENTS[name].splitlines()
+                          if not line.strip().startswith(('|', '```', '#')))
+        factors = re.findall(r'~?\d+[,.]\d+\s*×', prose)
+        assert not factors, (
+            f'{name} states {factors}; those come from a run whose artifacts '
+            f'are not in the repository, and the derived table is where a '
+            f'factor carries its provenance'
+        )
+
+    def test_the_reader_is_sent_to_the_artifact(self):
+        for name in self.ARTIFACTS:
+            assert name in README, name
+
+    def test_the_qualitative_finding_survives(self):
+        """Removing the numbers must not remove the claim."""
+        assert 'crossover' in README
+        assert 'in-process' in README
+
+    def test_the_provenance_requirement_is_stated(self):
+        assert 'orçamento de núcleos' in README and 'commit' in README
+
+
+class TestTheArtifactTable:
+    """Every path the guide lists must be one the pipeline writes.
+
+    And the reverse matters more: the guide listed six artifacts and omitted
+    the ones that make the imputation auditable, so the evidence existed and
+    was not discoverable. A reviewer reads this table to know what to open.
+    """
+
+    GUIDE = (_ROOT / 'USAGE_GUIDE.md').read_text()
+
+    #: Written by the pipeline and worth opening. Absence from the guide is
+    #: the defect: the artifact exists, and nobody is told.
+    EXPECTED = (
+        'temporal_folds_', 'target_statistics.json',
+        'equivalence_estimation.json', 'architectural_benchmark_results.csv',
+        'architectural_benchmark_resource_log.jsonl',
+        'architectural_scorecard.tex', 'predictions_',
+        'target_coverage.json', 'fold_imputation_', 'used_features_fold_',
+        'scientific_config_snapshot.json',
+    )
+
+    @staticmethod
+    def _sources():
+        paths = list((_ROOT / 'src').rglob('*.py')) + [_ROOT / 'pipeline.py']
+        return '\n'.join(path.read_text() for path in paths)
+
+    @pytest.mark.parametrize('stem', EXPECTED)
+    def test_the_guide_lists_it(self, stem):
+        assert stem in self.GUIDE, (
+            f'{stem} is written by the pipeline and the guide does not '
+            f'mention it'
+        )
+
+    @pytest.mark.parametrize('stem', EXPECTED)
+    def test_the_pipeline_writes_it(self, stem):
+        assert stem in self._sources(), (
+            f'the guide sends the reader to {stem}, which nothing produces'
+        )
+
+    def test_the_three_imputation_artifacts_are_distinguished(self):
+        """Each answers a different question; one is not a summary of another."""
+        for stem in ('target_coverage.json', 'fold_imputation_'):
+            assert stem in self.GUIDE
+        assert 'sem limite de alcance' in self.GUIDE, (
+            'the guide should say which of the two is unbounded'
+        )

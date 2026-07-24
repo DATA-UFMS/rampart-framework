@@ -65,6 +65,13 @@ Artefatos gerados em `outputs/`:
 | Latência | `benchmarks/architectural_benchmark_results.csv` | Tempo por fase e repetição |
 | Recursos | `benchmarks/architectural_benchmark_resource_log.jsonl` | CPU/RAM/IO por amostra |
 | Scorecard | `statistics/architectural_scorecard.tex` | Painel consolidado |
+| Predições | `ml_pipeline/architectures/<arch>/predictions/predictions_<estagio>_<arch>.parquet` | Vetores sobre os quais a equivalência bitwise é afirmada |
+| Cobertura do alvo | `collection/raw_data/target_coverage.json` | Fração observada e imputada por coluna, e o limite de propagação declarado |
+| Imputação por fold | `ml_pipeline/architectures/<arch>/prep/fold_imputation_<arch>.json` | Células preenchidas pela mediana da janela de treino, por split e por fold |
+| Features usadas | `ml_pipeline/architectures/<arch>/models/used_features_fold_<k>.json` | Conjunto contra o qual a auditoria P3 compara |
+| Procedência | `scientific_config_snapshot.json` | Commit, instante, orçamento de núcleos e a configuração inteira |
+
+As três primeiras linhas sobre imputação respondem perguntas diferentes e nenhuma substitui as outras: quanto do painel de entrada era observado, quanto o carry temporal alcançou, e quanto a mediana da janela de treino preencheu depois — essa última é a parte sem limite de alcance.
 
 ## Customização
 
