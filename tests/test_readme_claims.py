@@ -305,3 +305,77 @@ class TestTheArtifactTable:
         assert 'sem limite de alcance' in self.GUIDE, (
             'the guide should say which of the two is unbounded'
         )
+
+
+class TestTheProtocolTable:
+    """The highest-stakes prose in the repository: what the gates enforce.
+
+    Each row names the mechanism, so the claim can be checked instead of
+    trusted. P5 said "contract plus unit tests" while the code had come to
+    raise as well -- understating is safer than overstating, but neither is
+    checkable while the row names nothing.
+    """
+
+    #: (protocol, symbol that must exist and must raise)
+    ROWS = [
+        ('P1', 'enforce_walk_forward'),
+        ('P2', 'enforce_walk_forward'),
+        ('P3', 'audit_feature_set'),
+        ('P4', '_first_fold_train_end'),
+        ('P5', 'impute_from_training_window'),
+    ]
+
+    @pytest.mark.parametrize('protocol,symbol', ROWS)
+    def test_the_row_names_its_mechanism(self, protocol, symbol):
+        row = next((line for line in README.splitlines()
+                    if line.startswith(f'| {protocol} ')), None)
+        assert row, f'{protocol} is not in the table'
+        assert symbol in row, f'{protocol} names no mechanism: {row}'
+
+    @staticmethod
+    def _resolve(symbol):
+        """Module-level function, or a method of one of the two gate classes."""
+        from core import validation
+        from core.base_architecture import BaseArchitectureML
+        for holder in (validation, validation.TemporalValidator,
+                       BaseArchitectureML):
+            found = getattr(holder, symbol, None)
+            if found is not None:
+                return found
+        return None
+
+    @pytest.mark.parametrize('protocol,symbol', ROWS)
+    def test_the_mechanism_exists(self, protocol, symbol):
+        assert self._resolve(symbol) is not None, (
+            f'{protocol} points at {symbol}, which does not exist'
+        )
+
+    @pytest.mark.parametrize('protocol,symbol', [r for r in ROWS
+                                                 if r[0] != 'P4'])
+    def test_the_mechanism_can_raise(self, protocol, symbol):
+        """A row promising runtime enforcement must point at code that raises.
+
+        Caught one of these: the P2 row named validate_fold_integrity, which
+        returns a verdict and a list of errors. The raise lives one level up,
+        in enforce_walk_forward -- so the row pointed at the part that decides
+        rather than the part that stops the run.
+        """
+        import ast as ast_module
+        import inspect
+        import textwrap
+        source = textwrap.dedent(inspect.getsource(self._resolve(symbol)))
+        tree = ast_module.parse(source)
+        assert any(isinstance(node, ast_module.Raise)
+                   for node in ast_module.walk(tree)), (
+            f'{protocol} points at {symbol}, which returns rather than raising'
+        )
+
+    def test_every_protocol_appears(self):
+        for protocol, _ in self.ROWS:
+            assert f'| {protocol} ' in README
+
+    def test_the_newly_enforced_cases_are_stated(self):
+        """Each was a case that passed silently until it was found."""
+        for phrase in ('vazio', 'diferem entre paradigmas',
+                       'nenhuma observação'):
+            assert phrase in README, phrase

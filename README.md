@@ -104,13 +104,17 @@ Avaliado em dois datasets (World Bank: 32 países × 24 anos, painel completo de
 
 O pipeline aplica 5 verificações automáticas em todos os paradigmas:
 
-| Protocolo | Verificação | Enforcement |
-|-----------|------------|-------------|
-| P1 | Ordenação temporal dos splits | `ValueError` em runtime |
-| P2 | Gap mínimo de 2 anos entre splits | `ValueError` em runtime |
-| P3 | Separação de features + detecção de proxy | `ValueError` em runtime |
-| P4 | Feature selection restrita ao treino | `ValueError` em runtime |
-| P5 | Scaling/imputação ajustados só no treino | Contrato + testes unitários |
+| Protocolo | Verificação | Enforcement | Onde |
+|-----------|------------|-------------|------|
+| P1 | Ordenação temporal dos splits | `AntiLeakageViolation` em runtime | `TemporalValidator.enforce_walk_forward` |
+| P2 | Gap mínimo de 2 anos entre splits | `AntiLeakageViolation` em runtime | `TemporalValidator.enforce_walk_forward` |
+| P3 | Separação de features, proxy e reconstrução conjunta | `AntiLeakageViolation` em runtime | `audit_feature_set`, `run_feature_selection` |
+| P4 | Feature selection restrita à janela de treino do primeiro fold | `AntiLeakageViolation` em runtime | `BaseArchitectureML._first_fold_train_end` |
+| P5 | Scaling e imputação ajustados só no treino | `ValueError` em runtime + contrato | `impute_from_training_window`, `canonical_fold` |
+
+Um conjunto de folds vazio, folds que diferem entre paradigmas, e uma coluna sem
+nenhuma observação na janela de treino também interrompem — cada um foi, em
+algum momento, um caso que passava em silêncio.
 
 A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre splits, garantindo que nenhuma informação futura contamine o modelo. Produz 9 folds em WB (janela train=8yr, val=2yr, test=2yr sobre 24 anos) e 8 folds em INEP (janela train=5yr, val=1yr, test=1yr sobre 18 anos). Referência: Kapoor & Narayanan (2023).
 
@@ -143,7 +147,7 @@ src/
 │   └── dataframe_lib/
 ├── benchmarking/               # Instrumentação e métricas de latência
 └── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 1176 testes (unitários, discovery, anti-leakage)
+tests/                          # 1229 testes (unitários, discovery, anti-leakage)
 pipeline.py                     # Orquestra o pipeline completo
 ```
 
@@ -234,7 +238,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 - Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
 - Snapshot de ambiente: packages, hardware, git commit
 - `requirements-lock.txt` com versões exatas
-- 1176 testes automatizados (`pytest tests/`)
+- 1229 testes automatizados (`pytest tests/`)
 
 Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 
