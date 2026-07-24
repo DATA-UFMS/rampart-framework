@@ -518,39 +518,90 @@ class BaseArchitectureML(ABC):
         """
         pass
     
-    def select_features_by_correlation(self, 
-                                      correlations: Dict[str, float],
-                                      min_corr: float = 0.15,
-                                      max_corr: float = 0.8) -> List[str]:
-        """
-        Seleciona features por correlação moderada com target.
-        
-        Args:
-            correlations: Dicionário de correlações
-            min_corr: Correlação mínima (evita irrelevância)
-            max_corr: Correlação máxima (evita vazamento)
-            
-        Returns:
-            Lista de features selecionadas
-        """
-        selected = sorted([
-            feat for feat, corr in correlations.items()
-            if min_corr <= corr <= max_corr
-        ])
+    def select_features_with_bounds(
+            self, correlations: Dict[str, float]) -> Tuple[List[str], Dict]:
+        """Candidatas cuja associação marginal com o alvo é relevante e não
+        suspeita, com os limites que decidiram.
 
-        print(f"   Features com correlação moderada ({min_corr}-{max_corr}): "
-              f"{len(selected)}")
+        Piso e teto respondem perguntas diferentes, e a versão anterior os
+        relaxava juntos.
 
-        # Relaxar critério se muito poucas features
-        if len(selected) < 5:
-            selected = sorted([
-                feat for feat, corr in correlations.items()
-                if corr >= min_corr * 0.67
-            ])
-            print(f"   Critério relaxado: {len(selected)} features")
-        
-        return selected
-    
+        O **piso** é relevância: abaixo dele a feature contribui ruído. É
+        escolha de modelagem, e afrouxá-la quando o pool é magro é legítimo.
+
+        O **teto** é validade: acima dele a feature é suspeita de ser o alvo
+        com outro nome (Kapoor & Narayanan, 2023). Afrouxá-lo não compra um
+        modelo melhor, compra um modelo contaminado. A relaxação anterior
+        trocava a banda por um piso solto, então o ramo que as execuções reais
+        tomam -- o pool é pequeno -- admitia uma feature com |r| = 0,99. O que
+        a barrava era a auditoria de proxy, a jusante, e depender dela é
+        depender da segunda linha porque a primeira foi removida.
+
+        A comparação é em **valor absoluto**. A anterior era com sinal, então
+        toda feature negativamente associada era descartada -- e neste domínio
+        são os fatores protetivos (PIB per capita, taxa de conclusão,
+        matrícula) contra evasão. Nem RidgeCV nem RandomForest se importam com
+        a direção de uma associação marginal: o coeficiente a absorve, e a
+        árvore não a enxerga. Descartá-las jogava fora sinal genuíno e
+        enviesava o conjunto para um único sinal de associação.
+
+        Não alcançar o mínimo de features não interrompe: o mínimo é um piso
+        pragmático, e prosseguir com quatro features que passam nos dois
+        critérios é defensável. Chegar a zero interrompe, porque aí não há
+        modelo.
+        """
+        config = self.config
+        ceiling = float(config['proxy_correlation_threshold'])
+        floor = float(config['feature_selection_min_abs_correlation'])
+        relaxed = float(config['feature_selection_relaxed_min_abs_correlation'])
+        minimum = int(config['feature_selection_min_features'])
+
+        def within(lower: float) -> List[str]:
+            return sorted(
+                feature for feature, correlation in correlations.items()
+                if lower <= abs(float(correlation)) <= ceiling
+            )
+
+        selected = within(floor)
+        effective_floor = floor
+        print(f"   Features com |r| em [{floor}, {ceiling}]: {len(selected)}")
+
+        if len(selected) < minimum and relaxed < floor:
+            widened = within(relaxed)
+            # Só o piso desce, então o conjunto relaxado contém o estrito por
+            # construção -- nenhuma feature que o teto barrou pode voltar.
+            if len(widened) > len(selected):
+                selected, effective_floor = widened, relaxed
+                print(f"   Piso reduzido a {relaxed}: {len(selected)} features")
+
+        if not selected:
+            raise ValueError(
+                f"Nenhuma candidata com |r| em [{relaxed}, {ceiling}] contra o "
+                f"alvo na janela de treino. Abaixo do piso a associação é "
+                f"convencionalmente desprezível; acima do teto a feature é "
+                f"suspeita de ser o alvo com outro nome. Sem features não há "
+                f"modelo, e prosseguir produziria um artefato vazio."
+            )
+
+        bounds = {
+            'abs_correlation_floor': effective_floor,
+            'abs_correlation_ceiling': ceiling,
+            'floor_was_relaxed': effective_floor != floor,
+            'min_features_target': minimum,
+            'features_selected': len(selected),
+            'below_min_features': len(selected) < minimum,
+        }
+        if bounds['below_min_features']:
+            print(f"   [AVISO] {len(selected)} features, abaixo do alvo de "
+                  f"{minimum}. Registrado; o teto não é afrouxado para "
+                  f"alcançá-lo.")
+        return selected, bounds
+
+    def select_features_by_correlation(
+            self, correlations: Dict[str, float]) -> List[str]:
+        """Só a lista. Ver select_features_with_bounds para o critério."""
+        return self.select_features_with_bounds(correlations)[0]
+
     @abstractmethod
     def apply_collinearity_filter(self, data: Any, features: List[str],
                                   threshold: float = 0.8) -> List[str]:
@@ -649,7 +700,8 @@ class BaseArchitectureML(ABC):
 
         # Correlação com target (usando apenas dados de treino)
         correlations = self.compute_feature_correlations(data_train_only, feature_cols)
-        selected_by_corr = self.select_features_by_correlation(correlations)
+        selected_by_corr, selection_bounds = \
+            self.select_features_with_bounds(correlations)
 
         # Filtragem de colinearidade pairwise (usando dados de treino)
         final_features = self.apply_collinearity_filter(
@@ -715,6 +767,10 @@ class BaseArchitectureML(ABC):
             'total_features_analyzed': len(feature_cols),
             'features_selected': len(final_features),
             'selection_method': 'correlation_pairwise_filter',
+            # Os limites que decidiram, não só o resultado deles. Um leitor
+            # que veja quatro features precisa saber se o piso foi reduzido
+            # para chegar lá, e que o teto não foi.
+            'selection_bounds': selection_bounds,
             'temporal_scope': f'train_only (≤{train_end})',
             'proxy_threshold': PROXY_THRESHOLD,
             'selected_features': final_features,

@@ -74,7 +74,14 @@ def _probe(name, schema=SCHEMA):
         def _compute_target_statistics(self, data): pass
         def _validate_temporal_folds(self, data, folds): pass
         def save_folds(self, data, folds): pass
-        def compute_feature_correlations(self, data, features): return {}
+        def compute_feature_correlations(self, data, features):
+            # Correlação real: um probe que devolve {} não seleciona nada, e
+            # a seleção agora recusa um conjunto vazio -- que é o que tornava
+            # este probe vácuo, e era a crítica que ele recebeu.
+            frame = self._materialise_pandas(
+                data, list(features) + [self.target_column])
+            return {feature: float(frame[feature].corr(frame[self.target_column]))
+                    for feature in features}
         def apply_collinearity_filter(self, data, features, threshold=0.8):
             return features
         def prepare_features(self, data, features): return data
@@ -247,16 +254,51 @@ class TestSelectionByCorrelation:
     """
 
     @staticmethod
-    def _select(correlations, **kwargs):
+    def _select(correlations, config=None):
         import contextlib
         import io
         architecture = _probe('sql_engine')('sql_engine', '/tmp')
+        if config:
+            architecture.config = {**architecture.config, **config}
         with contextlib.redirect_stdout(io.StringIO()):
-            return architecture.select_features_by_correlation(correlations,
-                                                               **kwargs)
+            return architecture.select_features_by_correlation(correlations)
 
     #: Six candidates, so the relaxation branch stays out of the way.
     BAND = {'a': 0.20, 'b': 0.35, 'c': 0.50, 'd': 0.65, 'e': 0.75, 'f': 0.79}
+
+    def test_the_ceiling_follows_the_proxy_parameter(self):
+        """Uma pergunta, um número.
+
+        Teto da seleção e limiar de proxy respondem a mesma coisa -- que |r|
+        faz suspeitar que a feature é o alvo com outro nome -- sobre janelas
+        diferentes. Eram dois valores iguais por coincidência, e fixar 0,8 no
+        código passava despercebido justamente por isso.
+        """
+        correlations = {**self.BAND, 'borderline': 0.70}
+        assert 'borderline' in self._select(correlations)
+        assert 'borderline' not in self._select(
+            correlations, config={'proxy_correlation_threshold': 0.60})
+
+    def test_the_floor_follows_its_parameter(self):
+        correlations = {**self.BAND, 'weak': 0.17}
+        assert 'weak' in self._select(correlations)
+        assert 'weak' not in self._select(
+            correlations,
+            config={'feature_selection_min_abs_correlation': 0.20,
+                    'feature_selection_relaxed_min_abs_correlation': 0.20})
+
+    def test_the_relaxed_floor_follows_its_parameter(self):
+        correlations = {'a': 0.20, 'weak': 0.12}
+        assert 'weak' in self._select(correlations)
+        assert 'weak' not in self._select(
+            correlations,
+            config={'feature_selection_relaxed_min_abs_correlation': 0.15})
+
+    def test_the_target_count_follows_its_parameter(self):
+        """Com o alvo em 1, o piso estrito basta e a relaxação não dispara."""
+        correlations = {'a': 0.20, 'weak': 0.12}
+        assert self._select(
+            correlations, config={'feature_selection_min_features': 1}) == ['a']
 
     def test_a_feature_below_the_floor_is_dropped(self):
         selected = self._select({**self.BAND, 'weak': 0.05})
@@ -286,15 +328,26 @@ class TestSelectionByCorrelation:
                                  'above': 0.80 + 1e-9})
         assert 'below' not in selected and 'above' not in selected
 
-    def test_negative_correlations_are_not_selected(self):
-        """The rule compares the signed value, not its magnitude.
+    def test_negative_associations_are_selected(self):
+        """O sinal não entra: nem RidgeCV nem RandomForest o enxergam.
 
-        Worth pinning: it is why the proxy audit downstream needs an absolute
-        value, and why a feature negative in the training window never reaches
-        the model at all.
+        A comparação era com sinal, então toda feature negativamente associada
+        era descartada -- e neste domínio são os fatores protetivos (PIB per
+        capita, taxa de conclusão, matrícula) contra evasão. O conjunto saía
+        enviesado para um único sinal de associação, sem que nada justificasse.
         """
-        selected = self._select({**self.BAND, 'inverse': -0.90})
-        assert 'inverse' not in selected
+        selected = self._select({**self.BAND, 'protective': -0.55})
+        assert 'protective' in selected
+
+    def test_a_negative_proxy_is_still_refused(self):
+        """O teto passa a valer nos dois sentidos, que é o que |r| significa."""
+        selected = self._select({**self.BAND, 'mirror': -0.99})
+        assert 'mirror' not in selected
+
+    def test_the_two_signs_are_treated_alike(self):
+        positive = self._select({**self.BAND, 'x': 0.55})
+        negative = self._select({**self.BAND, 'x': -0.55})
+        assert positive == negative
 
     def test_the_relaxation_fires_below_five(self):
         selected = self._select({'a': 0.20, 'b': 0.12})
@@ -302,15 +355,28 @@ class TestSelectionByCorrelation:
             'the relaxed floor is 0.15 * 0.67 = 0.1005, so 0.12 qualifies'
         )
 
-    def test_the_relaxation_drops_the_ceiling(self):
-        """Documented here because it is a real hole, not an oversight.
+    def test_the_relaxation_never_drops_the_ceiling(self):
+        """O buraco que existia: o teto some junto com o piso.
 
-        With fewer than five survivors the upper bound disappears and a feature
-        correlating 0.99 with the target is selected. What keeps it out of the
-        model is the proxy audit that runs afterwards over the full panel.
+        Abaixo do mínimo a regra antiga trocava a banda por um piso solto, e
+        uma feature com |r| = 0,99 entrava. Como o pool real é pequeno, esse
+        era o ramo que as execuções tomavam. O que a barrava era a auditoria
+        de proxy, a jusante -- depender dela é depender da segunda linha
+        porque a primeira foi removida.
         """
         selected = self._select({'a': 0.20, 'proxy': 0.99})
-        assert 'proxy' in selected
+        assert 'proxy' not in selected
+        assert selected == ['a']
+
+    def test_the_relaxation_lowers_only_the_floor(self):
+        """E o conjunto relaxado contém o estrito, por construção."""
+        correlations = {'strict': 0.20, 'weak': 0.12, 'proxy': 0.99}
+        assert self._select(correlations) == ['strict', 'weak']
+
+    def test_below_the_target_count_it_proceeds_and_says_so(self):
+        """Não alcançar o mínimo é registrado, não corrigido afrouxando o teto."""
+        selected = self._select({'a': 0.20, 'proxy': 0.95, 'other': 0.99})
+        assert selected == ['a']
 
     def test_the_proxy_audit_covers_what_the_relaxation_admits(self):
         """So the hole above is closed downstream rather than left open."""
@@ -333,5 +399,96 @@ class TestSelectionByCorrelation:
                 audit_feature_set(panel, ['proxy'], 'target',
                                   SCIENTIFIC_CONFIG)
 
-    def test_an_empty_input_selects_nothing(self):
-        assert self._select({}) == []
+    def test_an_empty_input_is_refused(self):
+        """Sem features não há modelo; prosseguir produziria artefato vazio."""
+        with pytest.raises(ValueError, match='Nenhuma candidata'):
+            self._select({})
+
+    def test_everything_above_the_ceiling_is_refused(self):
+        with pytest.raises(ValueError, match='Nenhuma candidata'):
+            self._select({'a': 0.99, 'b': -0.97})
+
+
+class TestTheSelectionArtifactRecordsItsBounds:
+    """Four features could mean four passed, or the floor was lowered to get
+    there. The artifact said only the number."""
+
+    @staticmethod
+    def _stats(tmp_path, correlations, config=None):
+        import contextlib
+        import io
+        import numpy as np
+        import pandas as pd
+
+        rng = np.random.default_rng(3)
+        years = list(range(2000, 2016))
+        panel = pd.DataFrame({
+            'year': years,
+            'country_code': ['BRA'] * len(years),
+            'dropout_rate_sql_engine': rng.normal(size=len(years)),
+        })
+        for name in correlations:
+            panel[name] = rng.normal(size=len(years))
+
+        class Probe(_probe('sql_engine')):
+            def get_numeric_features(self, data):
+                return sorted(correlations)
+
+            def compute_feature_correlations(self, data, features):
+                return {feature: correlations[feature] for feature in features}
+
+        architecture = Probe('sql_engine', str(tmp_path))
+        if config:
+            architecture.config = {**architecture.config, **config}
+        with contextlib.redirect_stdout(io.StringIO()):
+            return architecture.run_feature_selection(panel)
+
+    def test_the_bounds_are_recorded(self, tmp_path):
+        stats = self._stats(tmp_path, {'a': 0.2, 'b': 0.3, 'c': 0.4,
+                                       'd': 0.5, 'e': 0.6})
+        bounds = stats['selection_bounds']
+        assert bounds['abs_correlation_floor'] == 0.15
+        assert bounds['abs_correlation_ceiling'] == 0.80
+        assert bounds['floor_was_relaxed'] is False
+        assert bounds['below_min_features'] is False
+
+    def test_a_lowered_floor_is_visible(self, tmp_path):
+        stats = self._stats(tmp_path, {'a': 0.2, 'weak': 0.12})
+        bounds = stats['selection_bounds']
+        assert bounds['floor_was_relaxed'] is True
+        assert bounds['abs_correlation_floor'] == 0.10
+
+    def test_falling_short_of_the_target_is_visible(self, tmp_path):
+        stats = self._stats(tmp_path, {'a': 0.2, 'b': 0.3})
+        assert stats['selection_bounds']['below_min_features'] is True
+        assert stats['selection_bounds']['features_selected'] == 2
+
+    def test_the_ceiling_is_never_lowered_to_reach_the_target(self, tmp_path):
+        """One feature, target of five, and a proxy sitting right there.
+
+        The old rule would have widened to a bare floor and taken it. Here the
+        set stays at one and the shortfall is recorded instead.
+        """
+        stats = self._stats(tmp_path, {'a': 0.2, 'proxy': 0.99})
+        bounds = stats['selection_bounds']
+        assert bounds['abs_correlation_ceiling'] == 0.80
+        assert bounds['below_min_features'] is True
+        assert 'proxy' not in stats['selected_features']
+
+    def test_a_relaxation_that_finds_nothing_is_not_recorded_as_one(self,
+                                                                    tmp_path):
+        """The field says what produced the reported set, not what was tried.
+
+        Lowering the floor and finding the same features means the set is the
+        strict one, and recording it as relaxed would send a reader looking
+        for a leniency that did not happen.
+        """
+        stats = self._stats(tmp_path, {'a': 0.2, 'proxy': 0.99})
+        bounds = stats['selection_bounds']
+        assert bounds['floor_was_relaxed'] is False
+        assert bounds['abs_correlation_floor'] == 0.15
+
+    def test_a_relaxation_that_finds_something_is_recorded(self, tmp_path):
+        """Otherwise the field above could be constant."""
+        stats = self._stats(tmp_path, {'a': 0.2, 'weak': 0.12})
+        assert stats['selection_bounds']['floor_was_relaxed'] is True

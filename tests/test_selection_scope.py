@@ -313,14 +313,38 @@ class TestTheLeakageGatesFire:
         architecture.config = {**architecture.config, **(config or {})}
         return architecture.run_feature_selection(panel)
 
-    def test_a_proxy_over_the_full_panel_halts(self, tmp_path):
-        """|corr| acima do teto significa que a feature é o alvo com outro nome."""
+    def test_a_proxy_visible_in_the_window_never_reaches_the_audit(
+            self, tmp_path):
+        """Defesa em profundidade, e a primeira linha é o teto da seleção.
+
+        |r| acima do teto na janela de treino faz a feature ser recusada antes
+        de qualquer auditoria. Antes ela era *selecionada* -- a comparação era
+        com sinal e a relaxação derrubava o teto -- e só a auditoria de proxy,
+        a jusante, a barrava.
+        """
         def build(panel):
             panel['proxy'] = 0.98 * panel[TARGET] + 0.02 * panel['honest']
             return ['honest', 'proxy']
 
-        with pytest.raises(AntiLeakageViolation, match='P3 proxy detection'):
-            self._run(tmp_path, build)
+        stats = self._run(tmp_path, build)
+        assert 'proxy' not in stats['selected_features']
+        assert 'honest' in stats['selected_features']
+
+    def test_the_audit_remains_the_second_line(self, tmp_path):
+        """O teto vale sobre a janela; a auditoria, sobre o painel inteiro.
+
+        As lags entram no conjunto depois da seleção e nunca passam pelo teto,
+        então a auditoria continua sendo a única coisa entre elas e o modelo.
+        """
+        import numpy as np
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from core.validation import AntiLeakageViolation, audit_feature_set
+
+        panel = _panel()
+        panel['dropout_rate_lag_0'] = panel[TARGET]
+        with pytest.raises(AntiLeakageViolation, match='target reproduction'):
+            audit_feature_set(panel, ['honest', 'dropout_rate_lag_0'],
+                              TARGET, SCIENTIFIC_CONFIG)
 
     def test_a_proxy_only_outside_the_window_halts(self, tmp_path):
         """Auditar dentro da janela de P4 foi o que deixou uma passar.
@@ -349,34 +373,33 @@ class TestTheLeakageGatesFire:
             self._run(tmp_path, build)
 
     def test_a_negative_proxy_halts(self, tmp_path):
-        """A seleção só admite correlação positiva; ela é medida na janela.
+        """Moderada e positiva na janela, forte e negativa fora dela.
 
-        Uma feature moderadamente positiva na janela e fortemente negativa
-        depois dela é escolhida e só então auditada. Sem o valor absoluto no
-        gate, ela passa.
+        A seleção a admite -- |r| na janela está dentro da banda -- e só então
+        a auditoria a vê. Sem o valor absoluto no gate, ela passa.
 
-        O teto é baixado para 0.50 nesta configuração porque a correlação sobre
-        o painel inteiro satura perto de -0.66: as linhas da janela têm relação
-        positiva com o alvo e puxam o coeficiente conjunto, por mais forte que
-        seja o acoplamento tardio. O gate lê este parâmetro da config, então
-        baixá-lo exercita o mesmo caminho.
+        O teto é baixado para 0,50 nesta configuração porque a correlação
+        sobre o painel inteiro satura perto de -0,66: as linhas da janela têm
+        relação positiva com o alvo e puxam o coeficiente conjunto. O mesmo
+        parâmetro governa o teto da seleção, então a janela precisa ficar
+        abaixo dele -- o que este painel garante e o teste confere.
         """
         def build(panel):
             rng = np.random.default_rng(5)
             late = (panel['year'] > TRAIN_END).to_numpy()
             panel['proxy'] = np.where(
                 late, -5.0 * panel[TARGET],
-                0.35 * panel[TARGET] + 0.9 * rng.normal(size=len(panel)))
-            # Só a proxy no pool: com o teto em 0.50, `honest` (corr 0.6) o
-            # dispararia sozinha e a exceção não seria atribuível.
+                0.20 * panel[TARGET] + 1.0 * rng.normal(size=len(panel)))
             return ['proxy']
 
         threshold = 0.50
         panel = _panel()
         build(panel)
         window = panel[panel['year'] <= TRAIN_END]
-        assert window['proxy'].corr(window[TARGET]) >= 0.15, (
-            'não seria escolhida, então o gate nunca a veria'
+        in_window = window['proxy'].corr(window[TARGET])
+        assert 0.15 <= abs(in_window) <= threshold, (
+            f'|r| = {abs(in_window):.3f} na janela: fora da banda a seleção a '
+            f'recusa e o teste não alcança a auditoria'
         )
         full = panel['proxy'].corr(panel[TARGET])
         assert full < -threshold, (

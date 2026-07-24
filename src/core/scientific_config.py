@@ -43,8 +43,33 @@ SCIENTIFIC_CONFIG = {
     # filter. It used to be declared here while the three filters kept their
     # own default, so changing this value did nothing.
     'collinearity_threshold': 0.8,
-    # Limiar para detecção de proxy features (Kapoor & Narayanan, 2023)
-    # Alinhado com max_corr da seleção de features (defense-in-depth)
+
+    # Piso de associação marginal para uma candidata entrar na seleção,
+    # em valor absoluto. O sinal não entra: nem RidgeCV nem RandomForest se
+    # importam com a direção de uma associação marginal, e neste domínio a
+    # maioria dos fatores protetivos (PIB, conclusão, matrícula) associa
+    # negativamente com evasão. A comparação com sinal descartava todos eles.
+    #
+    # 0,15 fica acima do limite convencional de associação desprezível
+    # (Cohen, 1988: 0,10 pequeno, 0,30 médio, 0,50 grande) e abaixo do médio.
+    'feature_selection_min_abs_correlation': 0.15,
+
+    # Piso alternativo, usado só quando o estrito não reúne o mínimo de
+    # features abaixo. É exatamente a fronteira de Cohen para "pequeno": abaixo
+    # disso a associação é convencionalmente desprezível, e admitir a feature
+    # seria trocar ruído por contagem. Substitui um multiplicador de 0,67 que
+    # não tinha derivação nenhuma.
+    'feature_selection_relaxed_min_abs_correlation': 0.10,
+
+    # Quantas features tornam o modelo não-degenerado. É um piso pragmático,
+    # não um resultado estatístico, e está escrito como tal: não alcançá-lo não
+    # interrompe a execução -- o que interrompe é chegar a zero.
+    'feature_selection_min_features': 5,
+    # |r| a partir do qual uma feature é suspeita de ser o alvo com outro nome
+    # (Kapoor & Narayanan, 2023). Uma pergunta, um número: a seleção o usa como
+    # teto sobre a janela de treino e a auditoria o aplica sobre o painel
+    # inteiro. Eram dois valores iguais por coincidência, e o comentário dizia
+    # que estavam alinhados sem que nada exigisse.
     'proxy_correlation_threshold': 0.80,
     # Ceiling on how much of the target the selected features may jointly
     # explain. Catches additive identities that pairwise correlation misses.
