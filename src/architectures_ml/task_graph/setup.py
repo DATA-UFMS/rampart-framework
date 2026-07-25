@@ -147,10 +147,16 @@ class TaskGraphArchitectureML(BaseArchitectureML):
 
         # Dask não possui config nativa de seed global.
         # A reprodutibilidade é garantida pela seed do numpy.
-        random_seed = self.config['random_seed']
-        np.random.seed(random_seed)
-
-        print(f"  Seed {random_seed} configurado (NumPy)")
+        # Sem semear o RNG global aqui. BaseArchitectureML.__init__ chama
+        # setup_reproducibility, que já o faz para os três -- isto era uma
+        # repetição presente em dois paradigmas e ausente no terceiro, numa
+        # comparação que assume que eles diferem apenas em como movem dados.
+        #
+        # E é indiferente ao resultado: nada consome o RNG global do numpy.
+        # Todo estimador recebe random_state explícito e todo sorteio usa um
+        # default_rng local. É por isso que a ordem embaralhada em que o
+        # benchmark executa os paradigmas não altera nada -- um invariante que
+        # agora tem teste, em vez de valer por acaso.
     
     def load_data(self) -> dd.DataFrame:
         """

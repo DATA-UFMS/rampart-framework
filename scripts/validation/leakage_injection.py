@@ -142,38 +142,48 @@ def run_s4_empirical_comparison():
     from sklearn.model_selection import KFold
     from sklearn.metrics import r2_score, mean_absolute_error
 
-    np.random.seed(SCIENTIFIC_CONFIG.get('random_seed', 42))
+    # Sem semear o gerador global: o painel vem de um default_rng local,
+    # logo abaixo. Semear aqui sugeriria uma dependência que não existe.
 
     print(f"\n--- Cenario S4: Experimento empirico - leakage vs clean ---")
 
     n_countries = 32
+    # Gerador local, semeado da configuração científica.
+    #
+    # O painel era sorteado do gerador global do numpy, cujo estado depende de
+    # quanto foi sorteado antes no processo. Este relatório é a evidência de
+    # que os gates anti-leakage disparam sob violação injetada -- um artefato
+    # cuja reprodutibilidade é o ponto inteiro dele, e que dependia da ordem
+    # em que os módulos foram importados.
+    rng = np.random.default_rng(SCIENTIFIC_CONFIG['random_seed'])
+
     years = list(range(2000, 2024))
     n_years = len(years)
 
     rows = []
     for c in range(n_countries):
-        base_level = np.random.uniform(15, 55)
+        base_level = rng.uniform(15, 55)
         # Regime shifts: tendência muda a cada ~8 anos
         trends = [
-            np.random.uniform(-2.0, -0.5),   # 2000-2007: melhora
-            np.random.uniform(-0.5, 1.5),     # 2008-2015: estagnação/piora
-            np.random.uniform(-3.0, -1.0),    # 2016-2023: melhora forte
+            rng.uniform(-2.0, -0.5),   # 2000-2007: melhora
+            rng.uniform(-0.5, 1.5),     # 2008-2015: estagnação/piora
+            rng.uniform(-3.0, -1.0),    # 2016-2023: melhora forte
         ]
         for y_idx, y in enumerate(years):
             regime = min(y_idx // 8, 2)
             trend = trends[regime]
 
             # Features observáveis (ruidosas, correlação parcial)
-            enrollment = 70 + trend * (y_idx % 8) + np.random.normal(0, 8)
-            expenditure = 3.5 + np.random.normal(0, 1.2)
-            completion = 100 - base_level + trend * y_idx + np.random.normal(0, 6)
+            enrollment = 70 + trend * (y_idx % 8) + rng.normal(0, 8)
+            expenditure = 3.5 + rng.normal(0, 1.2)
+            completion = 100 - base_level + trend * y_idx + rng.normal(0, 6)
 
             # Target: dropout com regime shifts + ruído substancial
-            dropout = base_level + trend * y_idx + np.random.normal(0, 5)
+            dropout = base_level + trend * y_idx + rng.normal(0, 5)
             dropout = max(0, min(100, dropout))
 
             # target + ruído pequeno (proxy quase perfeito)
-            future_leak = dropout + np.random.normal(0, 0.3)
+            future_leak = dropout + rng.normal(0, 0.3)
 
             rows.append({
                 'country': c, 'year': y,
