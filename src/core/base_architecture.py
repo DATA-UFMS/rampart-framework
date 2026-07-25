@@ -556,10 +556,20 @@ class BaseArchitectureML(ABC):
         relaxed = float(config['feature_selection_relaxed_min_abs_correlation'])
         minimum = int(config['feature_selection_min_features'])
 
+        # Correlação indefinida é uma feature constante na janela de treino:
+        # sem variação não há associação a medir. Ela é descartada -- o que é
+        # certo -- mas era descartada em silêncio, e quem contasse as
+        # candidatas contra as selecionadas encontraria um sumiço sem
+        # explicação.
+        undefined = sorted(feature for feature, correlation
+                           in correlations.items()
+                           if not np.isfinite(float(correlation)))
+
         def within(lower: float) -> List[str]:
             return sorted(
                 feature for feature, correlation in correlations.items()
-                if lower <= abs(float(correlation)) <= ceiling
+                if np.isfinite(float(correlation))
+                and lower <= abs(float(correlation)) <= ceiling
             )
 
         selected = within(floor)
@@ -577,7 +587,9 @@ class BaseArchitectureML(ABC):
         if not selected:
             raise ValueError(
                 f"Nenhuma candidata com |r| em [{relaxed}, {ceiling}] contra o "
-                f"alvo na janela de treino. Abaixo do piso a associação é "
+                f"alvo na janela de treino"
+                + (f" ({len(undefined)} com correlação indefinida: "
+                   f"{undefined})" if undefined else "") + f". Abaixo do piso a associação é "
                 f"convencionalmente desprezível; acima do teto a feature é "
                 f"suspeita de ser o alvo com outro nome. Sem features não há "
                 f"modelo, e prosseguir produziria um artefato vazio."
@@ -590,6 +602,7 @@ class BaseArchitectureML(ABC):
             'min_features_target': minimum,
             'features_selected': len(selected),
             'below_min_features': len(selected) < minimum,
+            'undefined_correlation': undefined,
         }
         if bounds['below_min_features']:
             print(f"   [AVISO] {len(selected)} features, abaixo do alvo de "
