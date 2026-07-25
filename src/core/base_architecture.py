@@ -489,6 +489,21 @@ class BaseArchitectureML(ABC):
 
         return linear_reconstruction_r2(data, features, self.target_column)
 
+    def release_resources(self) -> None:
+        """Libera o que este paradigma mantém aberto entre execuções.
+
+        O benchmark reexecuta cada fase `warmup + n` vezes no mesmo processo.
+        Um recurso que sobrevive à repetição é medido pela seguinte: o
+        sql_engine deixava uma conexão DuckDB aberta por repetição, doze ao
+        fim, cada uma com seu buffer pool -- então as repetições tardias dele
+        mediam sob condições que as dos outros dois nunca enfrentaram.
+
+        Default vazio e por escrito: o Polars não mantém nada, e as coleções
+        que o Dask persiste são locais e caem com o escopo. O contrato existe
+        para que a liberação seja simétrica entre paradigmas, e não para que
+        cada um invente a sua.
+        """
+
     def get_excluded_features(self) -> List[str]:
         """
         Retorna lista de features a excluir (vazamento/metadados).

@@ -957,6 +957,7 @@ def main():
     print("Pipeline ML Dask")
     print("=" * 80)
 
+    setup = None
     try:
         setup = TaskGraphArchitectureML()
         results = setup.run_setup_with_monitoring()
@@ -983,6 +984,13 @@ def main():
         print(f"\n[ERROR] Pipeline Dask falhou: {e}")
         print("  Verificar se dados foram processados pelo task_graph/processor.py")
         return {'status': 'failed', 'error': str(e)}
+
+    finally:
+        # Simétrico entre paradigmas: o benchmark reexecuta cada fase
+        # doze vezes no mesmo processo, e um recurso que sobrevive à
+        # repetição é medido pela seguinte.
+        if setup is not None:
+            setup.release_resources()
     
 
 

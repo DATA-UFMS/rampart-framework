@@ -74,6 +74,13 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         print(f"  DuckDB: {self.db_path}")
         print("  Zero file I/O, processamento SQL nativo sem cache")
     
+    def release_resources(self) -> None:
+        """Fecha a conexão DuckDB. Ver BaseArchitectureML.release_resources."""
+        manager = getattr(self, 'conn_manager', None)
+        if manager is not None:
+            manager.close_connection()
+            self.conn_manager = None
+
     def setup_environment(self) -> None:
         """Abre a base DuckDB produzida na fase de coleta e inicializa o gerenciador.
 
@@ -977,6 +984,7 @@ def main():
     print("Pipeline ML DuckDB")
     print("=" * 80)
 
+    setup = None
     try:
         setup = SqlEngineArchitectureML()
         results = setup.run_setup()
@@ -1011,6 +1019,12 @@ def main():
         print("  Verifique se DuckDB foi processado corretamente")
         print("  Execute sql_engine/processor.py antes deste script")
         return {'status': 'failed', 'error': str(e)}
+
+    finally:
+        # Também no caminho de falha: uma execução que morreu no meio deixava
+        # a conexão aberta do mesmo jeito.
+        if setup is not None:
+            setup.release_resources()
     
 
 

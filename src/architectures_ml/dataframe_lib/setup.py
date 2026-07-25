@@ -838,6 +838,7 @@ def main():
     print("Pipeline ML Polars")
     print("=" * 80)
 
+    setup = None
     try:
         setup = DataFrameLibArchitectureML()
         results = setup.run_setup()
@@ -863,6 +864,13 @@ def main():
             'error': str(e),
             'setup_timestamp': datetime.now().isoformat()
         }
+
+    finally:
+        # Simétrico entre paradigmas: o benchmark reexecuta cada fase
+        # doze vezes no mesmo processo, e um recurso que sobrevive à
+        # repetição é medido pela seguinte.
+        if setup is not None:
+            setup.release_resources()
 
 
 if __name__ == '__main__':
