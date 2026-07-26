@@ -116,6 +116,28 @@ Um conjunto de folds vazio, folds que diferem entre paradigmas, e uma coluna sem
 nenhuma observação na janela de treino também interrompem — cada um foi, em
 algum momento, um caso que passava em silêncio.
 
+**O que P1–P5 não cobrem, e por quê.** A taxonomia de Kapoor & Narayanan tem
+oito tipos. Cinco são impostos aqui; dois exigem argumento do autor e não
+código — L3.2 (a mesma entidade em treino e teste, legítimo para previsão em
+painel mas é uma afirmação científica) e L3.3 (linhas sem alvo observado são
+removidas, e ausência de alvo não é aleatória). O terceiro, L2, é rastreado e
+não quitado: K&N não subdividem essa categoria porque o julgamento exige
+conhecimento de domínio.
+
+`scripts/derive_model_info_sheet.py` emite a model info sheet com as respostas
+deriváveis lidas dos artefatos e as três acima marcadas como exigindo
+argumento. Isso responde à limitação que os próprios autores declaram sobre o
+instrumento: *as afirmações de uma info sheet não podem ser verificadas na
+ausência de reprodutibilidade computacional*. A contribuição não é estender a
+taxonomia — é derivar as respostas em vez de afirmá-las, e garantir que cada
+verificação dê o mesmo veredito nos três paradigmas, o que uma taxonomia
+escrita para uma implementação não precisa exigir.
+
+A comparação contra a baseline ingênua entra pelo mesmo motivo: é o método do
+estudo de caso deles, e é o que mede se a tarefa é trivial — o risco que L2
+deixa aberto quando uma feature está legitimamente disponível mas torna a
+predição fácil.
+
 A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre splits. Produz 9 folds em WB (janela train=8yr, val=2yr, test=2yr sobre 24 anos) e 8 folds em INEP (janela train=5yr, val=1yr, test=1yr sobre 18 anos).
 
 A ordenação temporal (P1) é a categoria L3.1 de Kapoor & Narayanan (2023). O **gap** não é: a taxonomia deles não menciona gaps em lugar nenhum. Ele mitiga L3.2 — dependência entre treino e teste, aqui autocorrelação temporal — pela via da validação cruzada em blocos com buffer (Roberts et al., 2017, que é a referência que os próprios K&N citam em L3.2), com a variante de embargo de López de Prado (2018).
@@ -149,7 +171,7 @@ src/
 │   └── dataframe_lib/
 ├── benchmarking/               # Instrumentação e métricas de latência
 └── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 1415 testes (unitários, discovery, anti-leakage)
+tests/                          # 1440 testes (unitários, discovery, anti-leakage)
 pipeline.py                     # Orquestra o pipeline completo
 ```
 
@@ -240,7 +262,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 - Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
 - Snapshot de ambiente: packages, hardware, git commit
 - `requirements-lock.txt` com versões exatas
-- 1415 testes automatizados (`pytest tests/`)
+- 1440 testes automatizados (`pytest tests/`)
 
 Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

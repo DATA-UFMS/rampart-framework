@@ -37,7 +37,8 @@ class TestTheResolverIsUsed:
     #: derive_paper_tables crosses both panels -- comparing scales is the whole
     #: point of its table -- so it cannot use it, and appends the dataset
     #: itself. That is the only reason to build the path by hand.
-    CROSS_DATASET = {'derive_paper_tables.py'}
+    CROSS_DATASET = {'derive_paper_tables.py',
+                     'derive_model_info_sheet.py'}
 
     @pytest.mark.parametrize('path', WRITERS, ids=lambda p: p.name)
     def test_no_writer_builds_an_output_path_by_hand(self, path):
@@ -58,25 +59,25 @@ class TestTheResolverIsUsed:
                     f"datasets overwrite each other"
                 )
 
+    @pytest.mark.parametrize('name', sorted(CROSS_DATASET))
+    def test_each_exempt_writer_earns_it(self, name):
+        """The exemption is for reading every dataset, and nothing else.
+
+        A script that resolves through DATASET_NAME gets one dataset. These two
+        compare across panels, so they append the segment themselves. If one
+        stops iterating over datasets, its exemption expires.
+        """
+        source = (_ROOT / 'scripts' / name).read_text()
+        assert 'for dataset in datasets' in source, (
+            f'{name} no longer crosses datasets, so it should use the resolver'
+        )
+        assert "'outputs' / dataset" in source, (
+            f'{name} is exempt from the resolver and does not segregate by hand'
+        )
+
     def test_the_exemption_stays_small(self):
         """An exemption list is how the rule gets hollowed out."""
-        assert len(self.CROSS_DATASET) == 1
-
-    def test_the_exempt_writer_still_segregates(self):
-        """By hand, but it must still do it."""
-        import ast as ast_module
-        source = (_ROOT / 'scripts' / 'derive_paper_tables.py').read_text()
-        tree = ast_module.parse(source)
-        function = next(node for node in ast_module.walk(tree)
-                        if isinstance(node, ast_module.FunctionDef)
-                        and node.name == '_dataset_root')
-        body = ast_module.get_source_segment(source, function)
-        assert "'outputs' / dataset" in body, body
-
-    def test_the_exempt_writer_reads_more_than_one(self):
-        """If it stopped crossing datasets, the exemption would expire."""
-        source = (_ROOT / 'scripts' / 'derive_paper_tables.py').read_text()
-        assert 'for dataset in datasets' in source
+        assert len(self.CROSS_DATASET) <= 2
 
     def test_the_injection_script_uses_it(self):
         source = (_ROOT / 'scripts' / 'validation'
