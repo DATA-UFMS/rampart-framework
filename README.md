@@ -116,7 +116,9 @@ Um conjunto de folds vazio, folds que diferem entre paradigmas, e uma coluna sem
 nenhuma observação na janela de treino também interrompem — cada um foi, em
 algum momento, um caso que passava em silêncio.
 
-A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre splits, garantindo que nenhuma informação futura contamine o modelo. Produz 9 folds em WB (janela train=8yr, val=2yr, test=2yr sobre 24 anos) e 8 folds em INEP (janela train=5yr, val=1yr, test=1yr sobre 18 anos). Referência: Kapoor & Narayanan (2023).
+A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre splits. Produz 9 folds em WB (janela train=8yr, val=2yr, test=2yr sobre 24 anos) e 8 folds em INEP (janela train=5yr, val=1yr, test=1yr sobre 18 anos).
+
+A ordenação temporal (P1) é a categoria L3.1 de Kapoor & Narayanan (2023). O **gap** não é: a taxonomia deles não menciona gaps em lugar nenhum. Ele mitiga L3.2 — dependência entre treino e teste, aqui autocorrelação temporal — pela via da validação cruzada em blocos com buffer (Roberts et al., 2017, que é a referência que os próprios K&N citam em L3.2), com a variante de embargo de López de Prado (2018).
 
 ## Estrutura
 

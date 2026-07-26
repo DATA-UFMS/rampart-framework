@@ -24,6 +24,25 @@ HPO: grid search no conjunto de validação; modelo final retreinado
 no treino completo. Previne leakage por otimização no teste (Kapoor & Narayanan, 2023).
 
 Enforcement: violações de P1/P2 geram ValueError via enforce_walk_forward().
+
+Mapeamento à taxonomia de Kapoor & Narayanan (2023), oito tipos:
+    L1.2 pré-processamento sobre treino+teste ....... P5
+    L1.3 seleção de features sobre treino+teste ..... P4
+    L1.4 duplicatas no conjunto de dados ............ canonical_fold
+    L2   feature ilegítima .......................... P3 (rastreio, não quitação)
+    L3.1 vazamento temporal ......................... P1
+    L3.2 dependência entre treino e teste ........... P2 mitiga em parte
+
+O gap de P2 não vem de K&N: a taxonomia deles não menciona gaps. Ele segue a
+literatura de validação cruzada em blocos com buffer (Roberts et al., 2017),
+que é a referência que os próprios K&N citam ao tratar de L3.2, com a variante
+de embargo de López de Prado (2018).
+
+L2 fica como rastreio e não como quitação: K&N deliberadamente não subdividem
+essa categoria porque "o julgamento de se o uso de uma dada feature é legítimo
+exige conhecimento de domínio". Um limiar de correlação detecta o subconjunto
+detectável -- o proxy fortemente associado -- e não alcança uma feature que é
+ilegítima por ser consequência do desfecho em vez de causa dele.
 Violações de P3/P4 geram ValueError em run_feature_selection().
 P5 é enforced por contrato (docstring + testes unitários).
 """
@@ -112,7 +131,10 @@ def canonical_fold(X, y, entities, years, *, paradigm: str):
         of freedom.
       * (entity, year) pairs are unique. A join that multiplies rows produces
         exactly this, and nothing downstream would notice: the fit succeeds and
-        the latency simply grows.
+        the latency simply grows. This is L1.4 in Kapoor & Narayanan (2023) --
+        duplicates in the dataset -- whose info sheet asks whether duplicates
+        exist and how they are handled. Here the answer is derived rather than
+        asserted: the run halts if any survive.
       * the order is non-decreasing by (entity, year) under Python comparison.
         The engines order under their own rules -- a database collation, a Rust
         string comparison -- and only agreement between them makes the
