@@ -43,6 +43,27 @@ essa categoria porque "o julgamento de se o uso de uma dada feature é legítimo
 exige conhecimento de domínio". Um limiar de correlação detecta o subconjunto
 detectável -- o proxy fortemente associado -- e não alcança uma feature que é
 ilegítima por ser consequência do desfecho em vez de causa dele.
+
+Dois tipos NÃO são cobertos por P1-P5, e isso é declarado aqui em vez de ficar
+implícito na ausência:
+
+    L3.2 dependência entre treino e teste. O mesmo país está em treino e em
+         teste; o split é temporal, não por entidade. K&N dizem que isso é
+         vazamento "a menos que a afirmação científica seja sobre uma
+         distribuição com a mesma estrutura de dependência". Para previsão em
+         painel a estrutura bate -- é o mesmo país, anos à frente -- mas o
+         argumento é do autor e não do código. Note a assimetria deliberada:
+         a CV interna agrupa por país (GroupKFold) porque ali o vazamento de
+         entidade infla a seleção de hiperparâmetro; o split externo não
+         agrupa porque agrupar mudaria a afirmação de previsão para outra.
+
+    L3.3 viés de amostragem no teste. Coberto pela metade: a cobertura
+         geográfica mínima por fold trata o viés espacial, que é o exemplo dos
+         próprios K&N. A outra metade é criada por este pipeline -- linhas sem
+         alvo observado são removidas, e ausência de alvo não é aleatória. A
+         info sheet deles pergunta exatamente isso (Q18-19: "descreva como as
+         linhas incluídas na análise foram selecionadas"). A evidência está em
+         target_coverage.json; o argumento é do autor.
 Violações de P3/P4 geram ValueError em run_feature_selection().
 P5 é enforced por contrato (docstring + testes unitários).
 """
