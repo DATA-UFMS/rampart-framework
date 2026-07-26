@@ -410,20 +410,21 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             'missing_count': int(stats_result.get('missing_count', 0)),
             
             # Momentos centrais
-            'mean': float(stats_result.get('mean_val', 0) or 0),
-            'std': float(stats_result.get('std_val', 0) or 0),
-            'variance': float((stats_result.get('std_val', 0) or 0) ** 2),
+            'mean': self.reported_statistic(stats_result.get('mean_val')),
+            'std': self.reported_statistic(stats_result.get('std_val')),
+            'variance': self.reported_statistic(
+                (stats_result.get('std_val') or float('nan')) ** 2),
             
             # Range e extremos
-            'min': float(stats_result.get('min_val', 0) or 0),
-            'max': float(stats_result.get('max_val', 0) or 0),
-            'range': float(stats_result.get('range_val', 0) or 0),
+            'min': self.reported_statistic(stats_result.get('min_val')),
+            'max': self.reported_statistic(stats_result.get('max_val')),
+            'range': self.reported_statistic(stats_result.get('range_val')),
             
             # Quartis e medidas de posição
-            'q1': float(stats_result.get('q1', 0) or 0),
-            'median': float(stats_result.get('median', 0) or 0),
-            'q3': float(stats_result.get('q3', 0) or 0),
-            'iqr': float(stats_result.get('iqr_val', 0) or 0),
+            'q1': self.reported_statistic(stats_result.get('q1')),
+            'median': self.reported_statistic(stats_result.get('median')),
+            'q3': self.reported_statistic(stats_result.get('q3')),
+            'iqr': self.reported_statistic(stats_result.get('iqr_val')),
         }
         
         # Métricas derivadas para análise ML
@@ -526,7 +527,10 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                 obs_count = int(row['obs_count'])
                 country_count = int(row['country_count'])
                 valid_targets = int(row['valid_targets'] or 0)
-                target_mean = float(row['target_mean'] or 0)
+                # Nulo é split sem alvo observado, não média zero: o
+                # valor vai para o artefato do fold e seria lido como
+                # medição.
+                target_mean = self.reported_statistic(row['target_mean'])
                 
                 # Armazenar no fold para uso posterior
                 fold[f'{split_type}_count'] = obs_count

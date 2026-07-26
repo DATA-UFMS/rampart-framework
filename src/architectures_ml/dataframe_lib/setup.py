@@ -428,10 +428,10 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
 
         # Conversão para float64 para consistência
         return {
-            'mean': float(mean_val) if mean_val is not None else 0.0,
-            'std': float(std_val) if std_val is not None else 0.0,
-            'min': float(min_val) if min_val is not None else 0.0,
-            'max': float(max_val) if max_val is not None else 0.0,
+            'mean': self.reported_statistic(mean_val),
+            'std': self.reported_statistic(std_val),
+            'min': self.reported_statistic(min_val),
+            'max': self.reported_statistic(max_val),
             'missing_count': int(missing_count) if missing_count is not None else 0,
             'valid_count': int(valid_count) if valid_count is not None else 0
         }

@@ -10,6 +10,7 @@ Preserva a lógica de cada arquitetura.
 from abc import ABC, abstractmethod
 import os
 import json
+import math
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 import numpy as np
@@ -503,6 +504,26 @@ class BaseArchitectureML(ABC):
         para que a liberação seja simétrica entre paradigmas, e não para que
         cada um invente a sua.
         """
+
+    @staticmethod
+    def reported_statistic(value) -> Optional[float]:
+        """Uma estatística indefinida sai como nula, não como zero.
+
+        Com uma única observação o desvio não existe; com a coluna toda
+        ausente, a média também não. DuckDB devolve NULL, o Polars devolve
+        None, o pandas devolve NaN -- e dois dos três paradigmas convertiam
+        isso em 0,0, que é uma afirmação sobre os dados: "não há variação".
+        O terceiro escrevia NaN, que nem sequer é JSON válido em parser
+        estrito. Os três discordavam sobre a mesma entrada degenerada, num
+        artefato publicado.
+        """
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
 
     def get_excluded_features(self) -> List[str]:
         """

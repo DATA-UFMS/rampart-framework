@@ -460,7 +460,8 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         computed = dask.compute(stats_batch)[0]
         
         # Conversão para float64 para consistência
-        return {k: float(v) for k, v in computed.items()}
+        return {key: self.reported_statistic(value)
+                for key, value in computed.items()}
     
     def _validate_temporal_folds(self, ddf: dd.DataFrame, folds: List[Dict]) -> None:
         """Validação temporal  com TemporalValidator."""
