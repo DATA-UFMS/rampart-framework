@@ -57,8 +57,12 @@ def _audit(created: datetime) -> str:
         'architecture': 'x',
         'creation_timestamp': created.isoformat(),
         'run_id': RUN_ID,
-        'features_audited': ['gdp_per_capita', 'dropout_rate_lag_2'],
-        'joint_reconstruction_r2': 0.31,
+        'folds': {'0': {'features_audited': ['gdp_per_capita',
+                                             'dropout_rate_lag_2'],
+                        'joint_reconstruction_r2': 0.31}},
+        'checks_across_folds': {'proxy_ceiling': 'not_applicable',
+                                'joint_reconstruction': 'ran',
+                                'target_reproduction': 'ran'},
     })
 
 
@@ -142,9 +146,41 @@ class TestTheReceiptGate:
         self._write(outputs, created, payloads={
             (PARADIGMS[0], 'feature_audit'): {
                 'creation_timestamp': created.isoformat(),
-                'features_audited': []}})
+                'run_id': RUN_ID, 'folds': {}}})
         with pytest.raises(AntiLeakageViolation, match='P3'):
             pipeline._validate_protocol_receipts(run_id)
+
+    def test_a_check_that_could_not_run_halts(self, gate):
+        """Presence is not conformance, and this is where they came apart.
+
+        linear_reconstruction_r2 returns None when listwise deletion leaves
+        fewer complete rows than predictors, and the audit moved on. The
+        resulting report is indistinguishable from one where the check passed --
+        which is precisely the assertion the receipt exists to make verifiable.
+        """
+        pipeline, outputs, run_id, created = gate
+        self._write(outputs, created, payloads={
+            (PARADIGMS[-1], 'feature_audit'): {
+                'creation_timestamp': created.isoformat(),
+                'run_id': RUN_ID,
+                'folds': {'0': {'features_audited': ['a']}},
+                'checks_across_folds': {
+                    'joint_reconstruction': 'indeterminate'}}})
+        with pytest.raises(AntiLeakageViolation, match='did not run'):
+            pipeline._validate_protocol_receipts(run_id)
+
+    def test_a_not_applicable_check_does_not_halt(self, gate):
+        """An empty eligible domain is a state, not a failure to evaluate."""
+        pipeline, outputs, run_id, created = gate
+        self._write(outputs, created, payloads={
+            (PARADIGMS[0], 'feature_audit'): {
+                'creation_timestamp': created.isoformat(),
+                'run_id': RUN_ID,
+                'folds': {'0': {'features_audited': ['a']}},
+                'checks_across_folds': {
+                    'proxy_ceiling': 'not_applicable',
+                    'joint_reconstruction': 'ran'}}})
+        pipeline._validate_protocol_receipts(run_id)
 
     def test_an_unstamped_receipt_halts(self, gate):
         pipeline, outputs, run_id, created = gate
@@ -181,7 +217,8 @@ class TestTheReceiptGate:
             (PARADIGMS[0], 'feature_audit'): {
                 'creation_timestamp': (created - timedelta(hours=4)).isoformat(),
                 'run_id': run_id,
-                'features_audited': ['gdp_per_capita']}})
+                'folds': {'0': {'features_audited': ['gdp_per_capita']}},
+                'checks_across_folds': {'joint_reconstruction': 'ran'}}})
         pipeline._validate_protocol_receipts(run_id)
 
     def test_every_paradigm_is_checked(self, gate):
@@ -237,23 +274,41 @@ class TestTheWritersStampTheirReceipts:
     def test_the_feature_audit_is_stamped(self, prep):
         from core.models.hierarchical import write_feature_audit
 
-        path = write_feature_audit({'features_audited': ['gdp_per_capita']},
-                                   architecture='sql_engine')
+        path = write_feature_audit(
+            [(0, {'features_audited': ['gdp_per_capita'],
+                  'checks': {'joint_reconstruction': 'ran'}})],
+            architecture='sql_engine')
         payload = json.loads(Path(path).read_text())
         assert datetime.fromisoformat(payload['creation_timestamp'])
         assert payload['run_id'] == RUN_ID, 'the run nonce did not reach disk'
-        assert payload['features_audited']
+        assert payload['folds']['0']['features_audited']
 
-    def test_the_stamp_does_not_displace_the_report(self, prep):
-        """The report is splatted in, so a key collision would be silent."""
+    def test_the_per_fold_reports_survive_intact(self, prep):
+        """Each fold's report is stored whole, not merged into the envelope."""
         from core.models.hierarchical import write_feature_audit
 
-        report = {'features_audited': ['a'], 'joint_reconstruction_r2': 0.4,
-                  'design_rank': 3}
-        path = write_feature_audit(report, architecture='task_graph')
+        reports = [(fold, {'features_audited': ['a'],
+                           'joint_reconstruction_r2': 0.4 + fold,
+                           'design_rank': 3,
+                           'checks': {'joint_reconstruction': 'ran'}})
+                   for fold in (0, 1)]
+        path = write_feature_audit(reports, architecture='task_graph')
         payload = json.loads(Path(path).read_text())
-        for key, value in report.items():
-            assert payload[key] == value
+        for fold, report in reports:
+            for key, value in report.items():
+                assert payload['folds'][str(fold)][key] == value
+
+    def test_one_indeterminate_fold_makes_the_check_indeterminate(self, prep):
+        """A check that could not be computed must not summarise as passed."""
+        from core.models.hierarchical import write_feature_audit
+
+        path = write_feature_audit(
+            [(0, {'checks': {'joint_reconstruction': 'ran'}}),
+             (1, {'checks': {'joint_reconstruction': 'indeterminate'}})],
+            architecture='task_graph')
+        payload = json.loads(Path(path).read_text())
+        assert payload['checks_across_folds']['joint_reconstruction'] == (
+            'indeterminate')
 
 
 class TestTheGateRunsWhereTheReceiptsExist:

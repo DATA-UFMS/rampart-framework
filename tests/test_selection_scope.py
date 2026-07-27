@@ -31,6 +31,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import audit_panel
+
 _SRC = str(Path(__file__).resolve().parents[1] / 'src')
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
@@ -343,8 +345,7 @@ class TestTheLeakageGatesFire:
         panel = _panel()
         panel['dropout_rate_lag_0'] = panel[TARGET]
         with pytest.raises(AntiLeakageViolation, match='target reproduction'):
-            audit_feature_set(panel, ['honest', 'dropout_rate_lag_0'],
-                              TARGET, SCIENTIFIC_CONFIG)
+            audit_panel(panel, ['honest', 'dropout_rate_lag_0'], TARGET)
 
     def test_a_proxy_only_outside_the_window_halts(self, tmp_path):
         """Auditar dentro da janela de P4 foi o que deixou uma passar.

@@ -35,6 +35,14 @@ from core.validation import audit_feature_set, canonical_fold
 #: Name this module's paradigm answers to, used wherever an artifact or a
 #: diagnostic has to say which of the three produced it.
 PARADIGM = 'sql_engine'
+from core.base_architecture import BaseArchitectureML
+#: Names of the target's autoregressive columns, derived from the single place
+#: that declares them. Named rather than matched by substring: the exemption
+#: used to key off `_lag_`, which would silently excuse any feature whose name
+#: happened to contain it.
+_TARGET_LAGS = [f'{BaseArchitectureML.TARGET_STEM}_lag_{order}'
+                for order in BaseArchitectureML.TARGET_LAG_ORDERS]
+
 from core.models.hierarchical import (
     simple_hierarchical_model as shared_simple_hierarchical_model,
     write_feature_audit as shared_write_feature_audit,
@@ -81,7 +89,8 @@ class HierarchicalModelSQLFirst:
         #: artifact: the reports were produced and discarded.
         self._imputation_reports = []
         #: Relatório da auditoria P3 do conjunto final, escrito ao fim.
-        self.feature_audit = None
+        self._feature_audits = []
+        self._cleared_by_selection = []
 
         print("   Pattern: ML Consumer com views")
         
@@ -194,6 +203,9 @@ class HierarchicalModelSQLFirst:
             with open(selection_path, 'r') as f:
                 selection_data = json.load(f)
             available_features = selection_data['selected_features']
+            # What the P3 re-audit may skip: selection already applied the
+            # proxy ceiling to these, over the full panel, and aborts there.
+            self._cleared_by_selection = list(available_features)
             print(f"   {len(available_features)} features do feature selection")
             print(f"   Método: {selection_data.get('selection_method', 'N/A')}")
         else:
@@ -207,10 +219,6 @@ class HierarchicalModelSQLFirst:
         all_columns = list(train_clean.columns)
         available_features = [feat for feat in available_features if feat in all_columns]
 
-        # The lags above bypassed run_feature_selection, so the set the models
-        # train on is audited here.
-        self.feature_audit = audit_feature_set(
-            train_clean, available_features, self.target_col, SCIENTIFIC_CONFIG)
 
         return available_features
     
@@ -367,6 +375,20 @@ class HierarchicalModelSQLFirst:
         X_test, y_test, countries_test = self._prepare_data(test_data, available_features)
         
         _fold_load_s = time.perf_counter() - _load_t0
+
+        # P3 re-audit, on the matrix this fold's model is about to fit. Placed
+        # between the two timers on purpose: it is verification overhead, not
+        # work the paradigm does, and charging it to either segment would put an
+        # audit cost inside a published latency. Only sql_engine used to pay it,
+        # and only inside fold_load_s.
+        self._feature_audits.append((fold_id, audit_feature_set(
+            X_train, y_train,
+            autoregressive=_TARGET_LAGS,
+            unaudited_by_selection=[
+                column for column in X_train.columns
+                if column not in self._cleared_by_selection
+                and column not in _TARGET_LAGS],
+            config=SCIENTIFIC_CONFIG)))
         _fit_t0 = time.perf_counter()
 
         # P5: imputação e scaler ajustados exclusivamente no treino
@@ -473,9 +495,8 @@ class HierarchicalModelSQLFirst:
         shared_write_prediction_artifact(all_results, architecture=PARADIGM)
         shared_write_imputation_report(
             self._imputation_reports, architecture=PARADIGM)
-        if self.feature_audit is not None:
-            shared_write_feature_audit(
-                self.feature_audit, architecture=PARADIGM)
+        shared_write_feature_audit(
+            self._feature_audits, architecture=PARADIGM)
 
     def run_hierarchical_analysis(self):
         """Executar análise hierárquica completa via ML Data Warehouse Consumer."""

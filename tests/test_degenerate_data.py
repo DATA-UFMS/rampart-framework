@@ -28,6 +28,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import audit_panel
+
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / 'src'
 if str(_SRC) not in sys.path:
@@ -108,8 +110,7 @@ class TestTheThresholdIsReadConsistently:
             1 - margin ** 2) * (noise / noise.std())
         panel = pd.DataFrame({'target': target, 'edge': edge})
         assert abs(panel['edge'].corr(panel['target'])) < self.THRESHOLD
-        report = audit_feature_set(panel, ['edge'], 'target',
-                                   SCIENTIFIC_CONFIG)
+        report = audit_panel(panel, ['edge'], 'target')
         assert report['features_audited'] == ['edge']
 
     def test_just_above_the_ceiling_is_refused_and_flagged(self):
@@ -124,7 +125,7 @@ class TestTheThresholdIsReadConsistently:
         panel = pd.DataFrame({'target': target,
                               'over': 0.99 * target + 0.01 * rng.normal(size=200)})
         with pytest.raises(AntiLeakageViolation):
-            audit_feature_set(panel, ['over'], 'target', SCIENTIFIC_CONFIG)
+            audit_panel(panel, ['over'], 'target')
 
 
 class TestConstantColumns:

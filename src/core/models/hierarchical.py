@@ -224,8 +224,8 @@ def write_imputation_report(reports, *, architecture: str) -> str:
 
 
 
-def write_feature_audit(report, *, architecture: str) -> str:
-    """Persist the P3 audit of the set the models actually train on.
+def write_feature_audit(reports, *, architecture: str) -> str:
+    """Persist the P3 audit of the matrix each fold's model trains on.
 
     The audit ran and raised when it had to, but its report was assigned to an
     attribute nothing read. What it holds is the evidence behind the L2 screen:
@@ -233,6 +233,14 @@ def write_feature_audit(report, *, architecture: str) -> str:
     autoregressive exemptions were granted, how much of the target the set
     reconstructs, and whether the design matrix has the rank its feature count
     implies. A screen whose findings are discarded is a claim without a record.
+
+    Per fold, and shaped like the imputation report beside it, because the two
+    are the same kind of thing: the receipts of the protocols that need the
+    materialised fold and therefore cannot live in the base class.
+
+    `checks_across_folds` is what the gate reads. A check that came out
+    indeterminate in any fold -- too few complete rows for the reconstruction to
+    be determined, say -- must not be summarised as one that passed.
     """
     import json
     import os
@@ -244,11 +252,24 @@ def write_feature_audit(report, *, architecture: str) -> str:
         f'ml_pipeline/architectures/{architecture}/prep')
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, f'feature_audit_{architecture}.json')
+
+    per_fold = {str(fold_id): report for fold_id, report in reports}
+    across = {}
+    for _, report in reports:
+        for check, outcome in report.get('checks', {}).items():
+            seen = across.setdefault(check, set())
+            seen.add(outcome)
+    # Worst outcome wins: one indeterminate fold makes the check indeterminate.
+    summary = {check: ('indeterminate' if 'indeterminate' in outcomes
+                       else ('ran' if 'ran' in outcomes else 'not_applicable'))
+               for check, outcomes in across.items()}
+
     with open(path, 'w') as handle:
         json.dump({'architecture': architecture,
                    'creation_timestamp': datetime.now().isoformat(),
                    'run_id': os.environ.get('RAMPART_RUN_ID'),
-                   **report}, handle, indent=2)
+                   'folds': per_fold,
+                   'checks_across_folds': summary}, handle, indent=2)
     print(f"   Auditoria de features -> {path}")
     return path
 

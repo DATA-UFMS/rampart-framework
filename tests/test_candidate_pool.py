@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import audit_panel
+
 _SRC = str(Path(__file__).resolve().parents[1] / 'src')
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
@@ -423,8 +425,7 @@ class TestSelectionByCorrelation:
             SCIENTIFIC_CONFIG['proxy_correlation_threshold']
         with contextlib.redirect_stdout(io.StringIO()):
             with pytest.raises(AntiLeakageViolation, match='proxy detection'):
-                audit_feature_set(panel, ['proxy'], 'target',
-                                  SCIENTIFIC_CONFIG)
+                audit_panel(panel, ['proxy'], 'target')
 
     def test_an_empty_input_is_refused(self):
         """Sem features não há modelo; prosseguir produziria artefato vazio."""

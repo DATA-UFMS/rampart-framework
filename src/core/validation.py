@@ -70,7 +70,7 @@ P5 é enforced por contrato (docstring + testes unitários).
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from datetime import datetime
 
 
@@ -278,106 +278,181 @@ def redundant_features(data, features, target_column, tolerance):
     return redundant
 
 
-def audit_feature_set(
-    data: Any, features: List[str], target_column: str, config: Dict
-) -> Dict:
-    """Apply the P3 checks to the feature set a model actually trains on.
+#: Outcome of one check inside the audit. `RAN` and `NOT_APPLICABLE` are both
+#: acceptable; `INDETERMINATE` is not, and used to be silent. A check whose
+#: statistic could not be computed -- too few complete rows after listwise
+#: deletion, an empty feature subset -- returned None and the audit moved on,
+#: leaving a report indistinguishable from one where the check had passed.
+RAN = 'ran'
+NOT_APPLICABLE = 'not_applicable'
+INDETERMINATE = 'indeterminate'
 
-    Feature selection audits what it produced. Features appended afterwards --
+
+def audit_feature_set(
+    X_train: pd.DataFrame, y_train: Any, *,
+    autoregressive: Sequence[str],
+    unaudited_by_selection: Sequence[str],
+    config: Dict,
+) -> Dict:
+    """Apply the P3 checks to the matrix the model is about to fit.
+
+    Feature selection audits what it produced. Columns appended afterwards --
     autoregressive lags of the target, added by the models -- never passed
     through it, so the set the models consume was never the set the gate saw.
 
-    Autoregressive features are exempt from the pairwise proxy check: predicting
-    a series from its own past is the task rather than a leak, and a lag
-    correlates with the target by construction. The exemption is recorded with
-    the measured correlation.
+    The arguments are the fitted design matrix and its target, not a panel and a
+    list of names, and that is the point. Taking a frame plus column names left
+    the *scope* to the caller, and the three paradigms chose differently: two
+    audited the whole panel at setup, one audited each fold's training window.
+    Same threshold, three frames, so the same check could abort exactly one
+    paradigm in a study whose claim is that the three are equivalent -- the
+    failure `canonical_fold` exists to prevent, reappearing inside a gate. With
+    the matrix itself there is one thing the audit can mean.
 
-    The joint reconstruction check asks two separate questions, because one
-    threshold cannot answer both:
+    Auditing before scaling is deliberate and harmless: Pearson correlation and
+    R2 are invariant under the affine transform a standard scaler applies.
 
-      * Do the *non-autoregressive* features jointly determine the target?
-        That is the leakage question -- an additive identity that pairwise
-        correlation cannot see, such as rates that sum to a constant. Judged at
-        `identity_r2_threshold`.
+    Three checks, and they are not interchangeable:
 
-      * Does the *whole set*, lags included, reproduce the target exactly?
-        A genuine lag never does: y_t is not an exact linear function of
-        y_{t-2} and y_{t-3}. An R2 at machine precision means a column labelled
-        as lagged is not lagged -- an off-by-one join, or a lag of zero. Judged
-        against `target_reproduction_tolerance`, which is not a modelling
-        choice but a numerical one.
+      * Do any columns that selection never saw behave as proxies? Only those
+        columns are eligible: selection already applied this ceiling to what it
+        chose, over the full panel, and aborts there. Re-measuring the same
+        columns on a narrower frame cannot detect a proxy selection missed -- it
+        can only disagree with itself through sampling noise. Judged at
+        `proxy_correlation_threshold`.
 
-    Applying the 0.95 ceiling to the whole set conflated the two. On an annual
-    panel pooled across entities, a lag carries the entity's level and the
-    pooled R2 is high by construction, so the check would abort a valid run for
-    exhibiting the autocorrelation the task exists to exploit -- and it had
-    never been evaluated on real data, only on fixtures.
+      * Do the *non-autoregressive* columns jointly determine the target? That
+        is the leakage question -- an additive identity that pairwise
+        correlation cannot see, such as rates that sum to a constant. Selection
+        asks this too, but only of the first fold's window, so later windows are
+        genuinely uncovered. Judged at `identity_r2_threshold`.
 
-    Correlations are computed here rather than through each paradigm's own
-    implementation, so the gate behaves identically whichever paradigm invokes
-    it.
+      * Does the *whole set*, lags included, reproduce the target exactly? A
+        genuine lag never does: y_t is not an exact linear function of y_{t-2}
+        and y_{t-3}. An R2 at machine precision means a column labelled as
+        lagged is carrying the contemporaneous value -- an off-by-one join, or a
+        lag of zero. Judged against `target_reproduction_tolerance`, which is
+        not a modelling choice but a numerical one. Selection never sees the
+        lags, so this is the one check here that is nobody else's.
+
+    Applying the 0.95 ceiling to the whole set conflated the last two. On an
+    annual panel pooled across entities, a lag carries the entity's level and
+    the pooled R2 is high by construction, so the check would abort a valid run
+    for exhibiting the autocorrelation the task exists to exploit.
+
+    Autoregressive columns are named rather than inferred. The exemption used to
+    key off the substring `_lag_`, which would have silently excused any feature
+    whose name happened to contain it, in a module meant to outlive the study it
+    was written for.
     """
-    marker = str(config.get('autoregressive_feature_marker', '_lag_'))
+    # One accepted frame type, refused loudly rather than handled. The audit
+    # previously took whatever each paradigm held -- a Polars frame, a Dask
+    # collection, a pandas panel -- and the invariance of its verdict across
+    # those was something a test had to assert. It is now structural: every
+    # paradigm materialises the fold through canonical_fold before fitting, so
+    # the matrix reaching here is pandas or the caller has skipped that step.
+    if not isinstance(X_train, pd.DataFrame):
+        raise TypeError(
+            f"audit_feature_set expects the materialised design matrix, and "
+            f"received {type(X_train).__name__}. Every paradigm passes the "
+            f"fold through canonical_fold before fitting; a frame of another "
+            f"type here means the audit is not seeing what the model fits."
+        )
+
     proxy_threshold = float(config.get('proxy_correlation_threshold', 0.80))
     identity_threshold = float(config.get('identity_r2_threshold', 0.95))
     reproduction_tolerance = float(
         config.get('target_reproduction_tolerance', 1e-9))
 
-    features = list(features)
-    frame = materialise_pandas(data, features + [target_column])
+    features = list(X_train.columns)
+    autoregressive = [f for f in autoregressive if f in features]
+    eligible = [f for f in unaudited_by_selection
+                if f in features and f not in autoregressive]
+    exogenous = [f for f in features if f not in autoregressive]
+
+    #: A name the design matrix cannot already carry.
+    target = '__rampart_target__'
+    if target in features:
+        raise ValueError(f"the design matrix carries the reserved name {target}")
+    frame = X_train.copy()
+    frame[target] = np.asarray(y_train, dtype=float)
+
+    status: Dict[str, str] = {}
+
     correlations = {}
     for feature in features:
-        pair = frame[[feature, target_column]].dropna()
+        pair = frame[[feature, target]].dropna()
         if len(pair) < 3 or pair[feature].nunique() < 2:
             continue
         correlations[feature] = float(abs(pair.corr().iloc[0, 1]))
 
-    autoregressive = [f for f in features if marker in f]
-    proxies = {
-        feature: value for feature, value in correlations.items()
-        if marker not in feature and value > proxy_threshold
-    }
-    if proxies:
-        raise AntiLeakageViolation(
-            f"Anti-leakage violation (P3 proxy detection) in the final feature "
-            f"set: |correlation| > {proxy_threshold} with target "
-            f"(Kapoor & Narayanan, 2023): {proxies}"
-        )
+    if not eligible:
+        # The expected state: everything the model loads either came through
+        # selection or is a declared lag. Recorded rather than skipped, so the
+        # report says the domain was empty instead of saying nothing.
+        status['proxy_ceiling'] = NOT_APPLICABLE
+    elif any(f not in correlations for f in eligible):
+        status['proxy_ceiling'] = INDETERMINATE
+    else:
+        status['proxy_ceiling'] = RAN
+        proxies = {f: correlations[f] for f in eligible
+                   if correlations[f] > proxy_threshold}
+        if proxies:
+            raise AntiLeakageViolation(
+                f"Anti-leakage violation (P3 proxy detection): columns that "
+                f"feature selection never audited show |correlation| > "
+                f"{proxy_threshold} with the target "
+                f"(Kapoor & Narayanan, 2023): {proxies}"
+            )
 
-    exogenous = [f for f in features if marker not in f]
-    identity_r2 = linear_reconstruction_r2(data, exogenous, target_column)
-    if identity_r2 is not None and identity_r2 > identity_threshold:
+    identity_r2 = linear_reconstruction_r2(frame, exogenous, target)
+    if not exogenous:
+        # Never benign: a model training on the target's own past alone.
         raise AntiLeakageViolation(
-            f"Anti-leakage violation (P3 joint reconstruction) in the final "
-            f"feature set: the non-autoregressive features explain the target "
-            f"with R2 = {identity_r2:.4f} > {identity_threshold}, indicating "
-            f"the target is an algebraic function of them: {sorted(exogenous)}"
+            f"Anti-leakage violation (P3 joint reconstruction): the design "
+            f"matrix carries no non-autoregressive column, so the model would "
+            f"train on the target's own past alone and the check has nothing "
+            f"to evaluate. Columns present: {sorted(features)}"
         )
+    if identity_r2 is None:
+        status['joint_reconstruction'] = INDETERMINATE
+    else:
+        status['joint_reconstruction'] = RAN
+        if identity_r2 > identity_threshold:
+            raise AntiLeakageViolation(
+                f"Anti-leakage violation (P3 joint reconstruction): the "
+                f"non-autoregressive features explain the target with R2 = "
+                f"{identity_r2:.4f} > {identity_threshold}, indicating the "
+                f"target is an algebraic function of them: {sorted(exogenous)}"
+            )
 
-    reproduction_r2 = linear_reconstruction_r2(data, features, target_column)
-    if (reproduction_r2 is not None
-            and reproduction_r2 > 1.0 - reproduction_tolerance):
-        raise AntiLeakageViolation(
-            f"Anti-leakage violation (P3 target reproduction) in the final "
-            f"feature set: R2 = {reproduction_r2:.12f} reproduces the target "
-            f"to numerical precision. No genuine lag does this; a column "
-            f"labelled as lagged is carrying the contemporaneous value: "
-            f"{sorted(features)}"
-        )
+    reproduction_r2 = linear_reconstruction_r2(frame, features, target)
+    if reproduction_r2 is None:
+        status['target_reproduction'] = INDETERMINATE
+    else:
+        status['target_reproduction'] = RAN
+        if reproduction_r2 > 1.0 - reproduction_tolerance:
+            raise AntiLeakageViolation(
+                f"Anti-leakage violation (P3 target reproduction): R2 = "
+                f"{reproduction_r2:.12f} reproduces the target to numerical "
+                f"precision. No genuine lag does this; a column labelled as "
+                f"lagged is carrying the contemporaneous value: "
+                f"{sorted(features)}"
+            )
 
-    # Posto da matriz de desenho. Reportado, nunca interrompe: dependência
-    # exata entre features não infla desempenho, e abortar aqui mataria uma
-    # execução válida por uma propriedade que a regularização absorve.
+    # Design matrix rank. Reported, never halts: an exact dependency between
+    # features does not inflate performance, and aborting here would kill a
+    # valid run over a property regularisation absorbs.
     #
-    # Duas medidas, porque respondem coisas diferentes. O posto diz quantas
-    # direções independentes existem de fato; a lista de redundantes diz quais
-    # colunas as outras determinam, para nomear as culpadas. Elas não se
-    # deduzem uma da outra: três taxas que somam cem têm uma dependência --
-    # posto três contando o intercepto, déficit um -- e ainda assim cada uma
-    # das três é individualmente determinada pelas outras duas.
-    redundant = redundant_features(data, features, target_column,
+    # Two measures, because they answer different things. The rank says how many
+    # independent directions there actually are; the redundant list says which
+    # columns the others determine, to name the culprits. Neither follows from
+    # the other: three rates summing to a hundred have one dependency -- rank
+    # three counting the intercept, deficiency one -- and yet each of the three
+    # is individually determined by the other two.
+    redundant = redundant_features(frame, features, target,
                                    reproduction_tolerance)
-    design = materialise_pandas(data, list(features)).dropna()
+    design = X_train.dropna()
     if len(design) > len(features):
         with_intercept = np.column_stack(
             [design.to_numpy(dtype=float), np.ones(len(design))])
@@ -389,6 +464,11 @@ def audit_feature_set(
 
     return {
         'features_audited': sorted(features),
+        'audited_rows': int(len(X_train)),
+        # Which checks actually executed. The gate reads this: a report where a
+        # check came out indeterminate is not a report that the check passed.
+        'checks': status,
+        'unaudited_by_selection': sorted(eligible),
         'redundant_features': redundant,
         'design_rank': design_rank,
         'rank_deficiency': deficiency,
@@ -402,6 +482,11 @@ def audit_feature_set(
         'autoregressive_exemptions': {
             f: correlations[f] for f in autoregressive if f in correlations
         },
+        # Reported so the receipt carries the strongest non-autoregressive
+        # association even when the ceiling had no eligible column to judge.
+        'max_nonautoregressive_correlation': (
+            max((correlations[f] for f in exogenous if f in correlations),
+                default=None)),
     }
 
 

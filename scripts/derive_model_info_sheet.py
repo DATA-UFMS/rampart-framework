@@ -237,11 +237,8 @@ def _l2_feature_legitimacy(root: Path, paradigms: List[str]) -> Dict:
     # audit ever ran and holds none of its measurements.
     selection, selection_note = _agreed(root, paradigms, 'feature_selection',
                                         ('target_correlations',))
-    audit, audit_note = _agreed(
-        root, paradigms, 'feature_audit',
-        ('features_audited', 'proxy_correlation_threshold',
-         'identity_r2_threshold', 'joint_reconstruction_r2',
-         'full_set_reconstruction_r2', 'autoregressive_exemptions'))
+    audit, audit_note = _agreed(root, paradigms, 'feature_audit',
+                                ('folds', 'checks_across_folds'))
 
     def _measured(value) -> str:
         return 'não medido' if value is None else f'{value:.4f}'
@@ -257,22 +254,34 @@ def _l2_feature_legitimacy(root: Path, paradigms: List[str]) -> Dict:
             f"{listing}.{selection_note or ''}")
         sources.append('feature_selection_<paradigma>.json')
 
-    if audit:
-        exemptions = audit.get('autoregressive_exemptions') or {}
+    per_fold = list((audit or {}).get('folds', {}).values())
+    if per_fold:
+        # Auditado por fold, sobre a matriz que cada modelo ajusta. A resposta
+        # cita o pior caso: um limiar respeitado em média e cruzado num fold foi
+        # cruzado.
+        first = per_fold[0]
+        exemptions = first.get('autoregressive_exemptions') or {}
         granted = ('; '.join(f"{name} {value:+.3f}"
                              for name, value in sorted(exemptions.items()))
                    if exemptions else 'nenhuma')
+        worst_identity = max(
+            (f['joint_reconstruction_r2'] for f in per_fold
+             if f.get('joint_reconstruction_r2') is not None), default=None)
+        worst_marginal = max(
+            (f['max_nonautoregressive_correlation'] for f in per_fold
+             if f.get('max_nonautoregressive_correlation') is not None),
+            default=None)
         parts.append(
-            f"Sobre o conjunto que os modelos de fato treinam -- "
-            f"{len(audit.get('features_audited') or [])} features, defasagens "
-            f"incluídas, que a seleção não chegou a ver -- nenhuma feature não "
-            f"autorregressiva passou do teto de proxy "
-            f"|r|={audit.get('proxy_correlation_threshold')}, e as não "
-            f"autorregressivas reconstroem o alvo com R2="
-            f"{_measured(audit.get('joint_reconstruction_r2'))} contra um "
-            f"limiar de identidade de {audit.get('identity_r2_threshold')}. "
-            f"Exemções autorregressivas concedidas, com a correlação medida: "
-            f"{granted}.{audit_note or ''}")
+            f"Sobre a matriz que cada modelo de fato ajusta, em cada um dos "
+            f"{len(per_fold)} folds -- {len(first.get('features_audited') or [])} "
+            f"features, defasagens incluídas, que a seleção não chegou a ver. "
+            f"Maior associação marginal não autorregressiva em qualquer fold: "
+            f"{_measured(worst_marginal)}, contra teto de proxy "
+            f"|r|={first.get('proxy_correlation_threshold')}. As não "
+            f"autorregressivas reconstroem o alvo com R2 de no máximo "
+            f"{_measured(worst_identity)} contra limiar de identidade de "
+            f"{first.get('identity_r2_threshold')}. Exemções autorregressivas "
+            f"concedidas, com a correlação medida: {granted}.{audit_note or ''}")
         sources.append('feature_audit_<paradigma>.json')
     else:
         parts.append(
@@ -281,7 +290,7 @@ def _l2_feature_legitimacy(root: Path, paradigms: List[str]) -> Dict:
             f"features.{audit_note or ''}")
 
     answers['L2.screen'] = _answer(
-        DERIVED if (selection and audit) else PENDING,
+        DERIVED if (selection and per_fold) else PENDING,
         ' '.join(parts),
         ', '.join(sources) or 'feature_audit_<paradigma>.json')
 

@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import audit_panel
+
 _SRC = str(Path(__file__).resolve().parents[1] / 'src')
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
@@ -231,9 +233,7 @@ class TestFinalFeatureSetAudit:
         from core.validation import audit_feature_set
 
         panel = self._panel()
-        report = audit_feature_set(
-            panel, ['gini', 'internet', 'dropout_rate_lag_2'],
-            'target', SCIENTIFIC_CONFIG)
+        report = audit_panel(panel, ['gini', 'internet', 'dropout_rate_lag_2'], 'target')
 
         exemptions = report['autoregressive_exemptions']
         assert 'dropout_rate_lag_2' in exemptions
@@ -248,8 +248,7 @@ class TestFinalFeatureSetAudit:
         panel = self._panel()
         panel['sneaky'] = panel['target'] * 0.97
         with pytest.raises(AntiLeakageViolation, match='proxy detection'):
-            audit_feature_set(panel, ['gini', 'sneaky'], 'target',
-                              SCIENTIFIC_CONFIG)
+            audit_panel(panel, ['gini', 'sneaky'], 'target')
 
     def test_a_lag_that_is_not_lagged_aborts(self):
         """A column labelled as lagged carrying the contemporaneous value.
@@ -264,8 +263,7 @@ class TestFinalFeatureSetAudit:
         panel = self._panel()
         panel['dropout_rate_lag_0'] = panel['target']
         with pytest.raises(AntiLeakageViolation, match='target reproduction'):
-            audit_feature_set(panel, ['gini', 'dropout_rate_lag_0'], 'target',
-                              SCIENTIFIC_CONFIG)
+            audit_panel(panel, ['gini', 'dropout_rate_lag_0'], 'target')
 
     def test_a_strongly_autocorrelated_lag_does_not_abort(self):
         """The false abort this split prevents.
@@ -303,8 +301,7 @@ class TestFinalFeatureSetAudit:
             f'nothing'
         )
 
-        report = audit_feature_set(panel, features, 'target',
-                                   SCIENTIFIC_CONFIG)
+        report = audit_panel(panel, features, 'target')
         assert report['full_set_reconstruction_r2'] == pytest.approx(whole_set)
         assert report['joint_reconstruction_r2'] < \
             SCIENTIFIC_CONFIG['identity_r2_threshold']
@@ -329,9 +326,8 @@ class TestFinalFeatureSetAudit:
         panel['half_b'] = 0.5 * target - noise
         with pytest.raises(AntiLeakageViolation,
                            match='joint reconstruction'):
-            audit_feature_set(panel, ['half_a', 'half_b',
-                                      'dropout_rate_lag_2'],
-                              'target', SCIENTIFIC_CONFIG)
+            audit_panel(panel, ['half_a', 'half_b',
+                                      'dropout_rate_lag_2'], 'target')
 
     def test_lags_cannot_mask_an_exogenous_identity(self):
         """The identity is judged without the lags, so adding lags cannot help."""
@@ -352,8 +348,7 @@ class TestFinalFeatureSetAudit:
                       ['dropout_rate_lag_2', 'dropout_rate_lag_3']):
             with pytest.raises(AntiLeakageViolation,
                                match='joint reconstruction'):
-                audit_feature_set(panel, ['half_a', 'half_b'] + extra,
-                                  'target', SCIENTIFIC_CONFIG)
+                audit_panel(panel, ['half_a', 'half_b'] + extra, 'target')
 
     @pytest.mark.parametrize('kind', ['pandas', 'polars', 'polars_lazy', 'dask'])
     def test_verdict_is_identical_across_frame_types(self, kind):
@@ -363,24 +358,32 @@ class TestFinalFeatureSetAudit:
 
         panel = self._panel()
         features = ['gini', 'internet', 'dropout_rate_lag_2']
-        expected = audit_feature_set(panel, features, 'target',
-                                     SCIENTIFIC_CONFIG)
 
         if kind == 'pandas':
-            data = panel
-        elif kind == 'polars':
+            # The one accepted form: the materialised design matrix.
+            report = audit_panel(panel, features, 'target')
+            assert report['checks']['joint_reconstruction'] == 'ran'
+            return
+
+        if kind == 'polars':
             pl = pytest.importorskip('polars')
-            data = pl.from_pandas(panel)
+            data = pl.from_pandas(panel[features])
         elif kind == 'polars_lazy':
             pl = pytest.importorskip('polars')
-            data = pl.from_pandas(panel).lazy()
+            data = pl.from_pandas(panel[features]).lazy()
         else:
             dd = pytest.importorskip('dask.dataframe')
-            data = dd.from_pandas(panel, npartitions=3)
+            data = dd.from_pandas(panel[features], npartitions=3)
 
-        report = audit_feature_set(data, features, 'target', SCIENTIFIC_CONFIG)
-        assert report['joint_reconstruction_r2'] == pytest.approx(
-            expected['joint_reconstruction_r2'], abs=1e-12)
+        # Invariance across frame types used to be a property the audit had to
+        # exhibit, and a test had to assert. It is now structural: the audit
+        # takes the matrix the model fits, every paradigm materialises the fold
+        # through canonical_fold to get it, and anything else is refused rather
+        # than handled -- so there is no frame-type axis left to vary.
+        with pytest.raises(TypeError, match='materialised design matrix'):
+            audit_feature_set(data, panel['target'], autoregressive=[],
+                              unaudited_by_selection=[],
+                              config=SCIENTIFIC_CONFIG)
 
 
 class TestOneImplementationOfEachCheck:
@@ -512,12 +515,12 @@ class TestTheTwoThresholdsAnswerDifferentQuestions:
         panel = pd.DataFrame(rows)
         features = ['gini', 'dropout_rate_lag_2', 'dropout_rate_lag_3']
 
-        audit_feature_set(panel, features, 'target', SCIENTIFIC_CONFIG)
+        audit_panel(panel, features, 'target')
 
         loosened = {**SCIENTIFIC_CONFIG,
                     'target_reproduction_tolerance': 0.05}
         with pytest.raises(AntiLeakageViolation, match='target reproduction'):
-            audit_feature_set(panel, features, 'target', loosened)
+            audit_panel(panel, features, 'target', config=loosened)
 
 
 class TestTheGateHasSomethingToAttestTo:
@@ -751,4 +754,114 @@ class TestEveryParadigmCallsTheFinalAudit:
         """Calling and discarding leaves no record in the artifacts."""
         source = (_ROOT / 'src' / 'architectures_ml' / paradigm / 'models'
                   / 'hierarchical_model.py').read_text()
-        assert 'self.feature_audit = audit_feature_set(' in source
+        assert 'self._feature_audits.append((fold_id, audit_feature_set(' in source
+
+
+class TestTheAuditsDomainAndItsSilences:
+    """The three decisions the redesign turns on, and none was pinned.
+
+    Caught by mutation: reverting each left the suite green.
+    """
+
+    @staticmethod
+    def _panel(rows=400, seed=7):
+        import numpy as np
+        import pandas as pd
+        rng = np.random.default_rng(seed)
+        frame = pd.DataFrame({
+            'gini': rng.normal(size=rows),
+            'internet': rng.normal(size=rows),
+            'dropout_rate_lag_2': rng.normal(size=rows),
+        })
+        frame['target'] = 0.3 * frame['gini'] + rng.normal(size=rows)
+        return frame
+
+    def test_the_ceiling_spares_what_selection_already_audited(self):
+        """Selection applies this ceiling over the full panel and aborts there.
+
+        Re-measuring the same columns on a fold's training window cannot detect
+        a proxy selection missed -- the panel is the larger sample -- so it can
+        only disagree with itself through sampling noise, and the disagreement
+        would abort one paradigm and not the other two.
+        """
+        from core.validation import AntiLeakageViolation
+
+        import numpy as np
+
+        panel = self._panel()
+        # Calibrated to trip the pairwise ceiling and nothing else: |r| = 0.87
+        # against a ceiling of 0.80, while the set reconstructs the target with
+        # R2 = 0.77 against an identity threshold of 0.95. A proxy that is an
+        # exact function of the target would fail the identity check first and
+        # the test would pass for the wrong reason.
+        panel['sneaky'] = panel['target'] + 0.62 * np.random.default_rng(
+            11).normal(size=len(panel))
+
+        # Cleared by selection: outside the audit's domain, so it stands.
+        report = audit_panel(panel, ['gini', 'sneaky', 'dropout_rate_lag_2'],
+                             'target', unaudited=[])
+        assert report['checks']['proxy_ceiling'] == 'not_applicable'
+        assert report['joint_reconstruction_r2'] < 0.95, (
+            'the fixture trips the identity check, not the ceiling')
+        assert report['max_nonautoregressive_correlation'] > 0.80, (
+            'the correlation is reported even when nothing was eligible')
+
+        # The same column, never audited by selection: inside the domain.
+        with pytest.raises(AntiLeakageViolation, match='never audited'):
+            audit_panel(panel, ['gini', 'sneaky', 'dropout_rate_lag_2'],
+                        'target', unaudited=['sneaky'])
+
+    def test_the_ceiling_judges_only_its_domain_not_everything_present(self):
+        """The discriminating case: a non-empty domain with the proxy outside it.
+
+        With nothing eligible the ceiling short-circuits, so a test built that
+        way never reaches the comparison and cannot see whether it judges the
+        right columns. Here one benign column is eligible and the proxy is not:
+        judging the whole exogenous set would abort a run that is sound.
+        """
+        import numpy as np
+
+        panel = self._panel()
+        panel['sneaky'] = panel['target'] + 0.62 * np.random.default_rng(
+            11).normal(size=len(panel))
+        panel['fresh'] = np.random.default_rng(12).normal(size=len(panel))
+
+        report = audit_panel(
+            panel, ['gini', 'sneaky', 'fresh', 'dropout_rate_lag_2'],
+            'target', unaudited=['fresh'])
+        assert report['checks']['proxy_ceiling'] == 'ran', (
+            'the domain was empty, so the comparison never happened')
+        assert report['unaudited_by_selection'] == ['fresh']
+
+    def test_a_matrix_of_lags_alone_halts(self):
+        """Two paradigms reached this state by reading a key that was absent.
+
+        With no exogenous column the reconstruction check has nothing to
+        evaluate, returns None, and the audit used to move on -- leaving a model
+        trained on the target's own past and a receipt that looked complete.
+        """
+        from core.validation import AntiLeakageViolation
+
+        panel = self._panel()
+        with pytest.raises(AntiLeakageViolation,
+                           match="target's own past alone"):
+            audit_panel(panel, ['dropout_rate_lag_2'], 'target')
+
+    def test_a_check_that_cannot_be_computed_says_so(self):
+        """Listwise deletion can leave fewer complete rows than predictors.
+
+        `linear_reconstruction_r2` returns None there, and the report used to
+        read exactly like one where the check had passed. The gate reads this
+        field, so the distinction has to survive to disk.
+        """
+        import numpy as np
+
+        panel = self._panel(rows=6)
+        # Every row incomplete in at least one predictor: nothing to fit on.
+        panel.loc[panel.index[:4], 'gini'] = np.nan
+        panel.loc[panel.index[4:], 'internet'] = np.nan
+
+        report = audit_panel(panel, ['gini', 'internet', 'dropout_rate_lag_2'],
+                             'target')
+        assert report['checks']['joint_reconstruction'] == 'indeterminate'
+        assert report['joint_reconstruction_r2'] is None

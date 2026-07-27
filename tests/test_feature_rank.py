@@ -25,6 +25,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import audit_panel
+
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / 'src'
 if str(_SRC) not in sys.path:
@@ -109,15 +111,12 @@ class TestRedundantFeatures:
 class TestTheAuditReportsRank:
 
     def test_the_rendimento_shape_is_rank_deficient(self):
-        report = audit_feature_set(
-            _rendimento_panel(), ['aprov_ef', 'reprov_ef', 'abandono_ef'],
-            'target', SCIENTIFIC_CONFIG)
+        report = audit_panel(_rendimento_panel(), ['aprov_ef', 'reprov_ef', 'abandono_ef'], 'target')
         assert report['design_rank'] == 3
         assert report['rank_deficiency'] == 1
 
     def test_independent_features_are_full_rank(self):
-        report = audit_feature_set(_independent_panel(), ['a', 'b', 'c'],
-                                   'target', SCIENTIFIC_CONFIG)
+        report = audit_panel(_independent_panel(), ['a', 'b', 'c'], 'target')
         assert report['design_rank'] == 4
         assert report['rank_deficiency'] == 0
 
@@ -128,9 +127,7 @@ class TestTheAuditReportsRank:
         three counting the intercept -- while all three are individually
         redundant. Subtracting would report zero.
         """
-        report = audit_feature_set(
-            _rendimento_panel(), ['aprov_ef', 'reprov_ef', 'abandono_ef'],
-            'target', SCIENTIFIC_CONFIG)
+        report = audit_panel(_rendimento_panel(), ['aprov_ef', 'reprov_ef', 'abandono_ef'], 'target')
         naive = len(report['features_audited']) - len(
             report['redundant_features'])
         assert naive == 0
@@ -138,15 +135,12 @@ class TestTheAuditReportsRank:
 
     def test_it_reports_rather_than_halting(self):
         """Rank deficiency is not leakage; aborting would kill a valid run."""
-        report = audit_feature_set(
-            _rendimento_panel(), ['aprov_ef', 'reprov_ef', 'abandono_ef'],
-            'target', SCIENTIFIC_CONFIG)
+        report = audit_panel(_rendimento_panel(), ['aprov_ef', 'reprov_ef', 'abandono_ef'], 'target')
         assert report['rank_deficiency'] == 1
 
     def test_too_few_rows_yields_no_verdict(self):
         panel = _independent_panel(n=2)
-        report = audit_feature_set(panel, ['a', 'b', 'c'], 'target',
-                                   SCIENTIFIC_CONFIG)
+        report = audit_panel(panel, ['a', 'b', 'c'], 'target')
         assert report['design_rank'] is None
 
 
@@ -158,7 +152,8 @@ class TestTheAuditIsPersisted:
         source = (_SRC / 'architectures_ml' / paradigm / 'models'
                   / 'hierarchical_model.py').read_text()
         assert 'shared_write_feature_audit(' in source, paradigm
-        assert 'self.feature_audit = None' in source, paradigm
+        assert 'self._feature_audits = []' in source, paradigm
+        assert 'self._feature_audits.append(' in source, paradigm
 
     def test_the_writer_lands_beside_the_fold_artifacts(self, tmp_path,
                                                         monkeypatch):
@@ -169,11 +164,12 @@ class TestTheAuditIsPersisted:
 
         monkeypatch.setattr(config, 'get_absolute_output_path',
                             lambda relative: str(tmp_path / relative))
-        report = audit_feature_set(_rendimento_panel(),
-                                   ['aprov_ef', 'reprov_ef', 'abandono_ef'],
-                                   'target', SCIENTIFIC_CONFIG)
-        path = write_feature_audit(report, architecture='sql_engine')
+        report = audit_panel(_rendimento_panel(),
+                             ['aprov_ef', 'reprov_ef', 'abandono_ef'], 'target')
+        path = write_feature_audit([(0, report)], architecture='sql_engine')
         payload = json.loads(Path(path).read_text())
         assert payload['architecture'] == 'sql_engine'
-        assert payload['rank_deficiency'] == 1
-        assert 'redundant_features' in payload
+        # Per fold, shaped like the imputation receipt beside it.
+        assert payload['folds']['0']['rank_deficiency'] == 1
+        assert 'redundant_features' in payload['folds']['0']
+        assert payload['checks_across_folds']['joint_reconstruction'] == 'ran'

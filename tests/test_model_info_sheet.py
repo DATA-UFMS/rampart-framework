@@ -61,14 +61,23 @@ def _write_artifacts(root, dataset='worldbank'):
         # and identity verdicts -- the selection artifact above holds neither.
         (prep / f'feature_audit_{paradigm}.json').write_text(json.dumps({
             'creation_timestamp': '2026-07-27T10:30:00',
-            'features_audited': ['gini_index', 'gdp_per_capita',
-                                 'dropout_rate_lag_2', 'dropout_rate_lag_3'],
-            'proxy_correlation_threshold': 0.8,
-            'identity_r2_threshold': 0.95,
-            'joint_reconstruction_r2': 0.37,
-            'full_set_reconstruction_r2': 0.71,
-            'autoregressive_exemptions': {'dropout_rate_lag_2': 0.86,
-                                          'dropout_rate_lag_3': 0.79}}))
+            'folds': {str(fold): {
+                'features_audited': ['gini_index', 'gdp_per_capita',
+                                     'dropout_rate_lag_2',
+                                     'dropout_rate_lag_3'],
+                'proxy_correlation_threshold': 0.8,
+                'identity_r2_threshold': 0.95,
+                'joint_reconstruction_r2': 0.35 + 0.02 * fold,
+                'full_set_reconstruction_r2': 0.71,
+                'max_nonautoregressive_correlation': 0.51,
+                'autoregressive_exemptions': {'dropout_rate_lag_2': 0.86,
+                                              'dropout_rate_lag_3': 0.79},
+                'checks': {'proxy_ceiling': 'not_applicable',
+                           'joint_reconstruction': 'ran',
+                           'target_reproduction': 'ran'}} for fold in (0, 1)},
+            'checks_across_folds': {'proxy_ceiling': 'not_applicable',
+                                    'joint_reconstruction': 'ran',
+                                    'target_reproduction': 'ran'}}))
     (base / 'collection' / 'raw_data').mkdir(parents=True, exist_ok=True)
     (base / 'collection' / 'raw_data' / 'target_coverage.json').write_text(
         json.dumps({'rows_before': 768, 'rows_after': 500,

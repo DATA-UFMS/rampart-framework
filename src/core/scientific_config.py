@@ -79,12 +79,16 @@ SCIENTIFIC_CONFIG = {
     # genuine lag never does that, so anything above 1 - this value means a
     # column labelled as lagged carries the contemporaneous value.
     'target_reproduction_tolerance': 1e-9,
-    # Autoregressive features: lagged values of the target itself. Exempt from
-    # the pairwise proxy check, since predicting a series from its own past is
-    # the task rather than a leak, and a lag correlates with the target by
-    # construction. The exemption is recorded with the measured correlation, and
-    # does not extend to the joint reconstruction check.
-    'autoregressive_feature_marker': '_lag_',
+    # Autoregressive features -- lagged values of the target itself -- are
+    # exempt from the pairwise proxy check, since predicting a series from its
+    # own past is the task rather than a leak, and a lag correlates with the
+    # target by construction. The exemption is recorded with the measured
+    # correlation and does not extend to the joint reconstruction check.
+    #
+    # No marker is configured for them: they are passed to the audit by name,
+    # derived from BaseArchitectureML.TARGET_STEM and TARGET_LAG_ORDERS. A
+    # substring rule here would have silently excused any feature whose name
+    # happened to contain it.
 
     # Validação Temporal
     'temporal_gap_years': 2,

@@ -238,7 +238,7 @@ def _validate_setup_provenance(run_id: str) -> None:
 #: unconditionally and would happily record that nothing was imputed.
 _PROTOCOL_RECEIPTS = (
     ('fold_imputation', 'P5', 'folds'),
-    ('feature_audit', 'P3', 'features_audited'),
+    ('feature_audit', 'P3', 'folds'),
 )
 
 
@@ -304,6 +304,21 @@ def _validate_protocol_receipts(run_id: str) -> None:
                     f"{arch}: the {protocol} receipt exists but its "
                     f"'{evidence_field}' field is empty, which is the record of "
                     f"the protocol reaching no fold at all: {path}"
+                )
+
+            # Presence is not conformance. A check whose statistic could not be
+            # computed -- too few complete rows after listwise deletion, an
+            # empty feature subset -- used to return None and leave a report
+            # that reads exactly like one where the check had passed.
+            unresolved = sorted(
+                check for check, outcome
+                in (receipt.get('checks_across_folds') or {}).items()
+                if outcome == 'indeterminate')
+            if unresolved:
+                raise AntiLeakageViolation(
+                    f"{arch}: the {protocol} receipt records checks that could "
+                    f"not be evaluated in at least one fold: {unresolved}. A "
+                    f"check that did not run is not a check that passed: {path}"
                 )
 
         _log(f"  {arch}: P3 and P5 receipts present and from this run")
