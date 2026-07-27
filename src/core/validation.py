@@ -463,7 +463,11 @@ def audit_feature_set(
         deficiency = None
 
     return {
+        # Sorted, so two paradigms auditing the same set produce comparable
+        # reports; the order the model actually saw is kept beside it.
         'features_audited': sorted(features),
+        'feature_order': features,
+        'target_column': getattr(y_train, 'name', None),
         'audited_rows': int(len(X_train)),
         # Which checks actually executed. The gate reads this: a report where a
         # check came out indeterminate is not a report that the check passed.

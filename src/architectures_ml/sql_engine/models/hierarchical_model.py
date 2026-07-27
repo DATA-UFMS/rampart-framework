@@ -349,27 +349,7 @@ class HierarchicalModelSQLFirst:
         
         available_features = self._prepare_features(train_data)
 
-        try:
-            used = {
-                'architecture': 'sql_engine',
-                'fold_id': int(fold_id),
-                'target': self.target_col,
-                'total_features': len(available_features),
-                'features': list(available_features),
-            }
-            used_path = os.path.join(self.results_path, f"used_features_fold_{fold_id}.json")
-            with open(used_path, 'w') as f:
-                json.dump(used, f, indent=2)
-        except Exception as exc:
-            # Era engolido. Este artefato registra as features que o
-            # modelo de fato usou -- e a auditoria P3 compara contra
-            # ele. Perde-lo em silencio remove a evidencia sem remover
-            # a afirmacao.
-            raise RuntimeError(
-                f'Falha ao registrar as features usadas no fold '
-                f'{fold_id}: {exc}'
-            ) from exc
-        
+
         X_train, y_train, countries_train = self._prepare_data(train_data, available_features)
         X_val, y_val, countries_val = self._prepare_data(val_data, available_features)
         X_test, y_test, countries_test = self._prepare_data(test_data, available_features)

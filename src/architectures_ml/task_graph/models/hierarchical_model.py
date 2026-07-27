@@ -282,28 +282,6 @@ class HierarchicalModelTaskGraph:
         fold_id = fold_info['fold_id']
         print(f"\nAnalisando Fold {fold_id} Dask (NORMAL)...")
 
-        # Registrar features usadas para auditoria
-        try:
-            used = {
-                'architecture': 'task_graph',
-                'fold_id': int(fold_id),
-                'target': self.target_col,
-                'total_features': len(self.available_features),
-                'features': list(self.available_features),
-            }
-            used_path = os.path.join(self.results_path, f"used_features_fold_{fold_id}.json")
-            with open(used_path, 'w') as f:
-                json.dump(used, f, indent=2)
-        except Exception as exc:
-            # Era engolido. Este artefato registra as features que o
-            # modelo de fato usou -- e a auditoria P3 compara contra
-            # ele. Perde-lo em silencio remove a evidencia sem remover
-            # a afirmacao.
-            raise RuntimeError(
-                f'Falha ao registrar as features usadas no fold '
-                f'{fold_id}: {exc}'
-            ) from exc
-
         train_ddf = self.ddf[
             (self.ddf['year'] >= fold_info['train_start']) &
             (self.ddf['year'] <= fold_info['train_end'])

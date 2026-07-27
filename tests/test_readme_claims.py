@@ -276,7 +276,7 @@ class TestTheArtifactTable:
         'equivalence_estimation.json', 'architectural_benchmark_results.csv',
         'architectural_benchmark_resource_log.jsonl',
         'architectural_scorecard.tex', 'predictions_',
-        'target_coverage.json', 'fold_imputation_', 'used_features_fold_',
+        'target_coverage.json', 'fold_imputation_', 'feature_audit_',
         'scientific_config_snapshot.json',
     )
 

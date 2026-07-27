@@ -173,3 +173,44 @@ class TestTheAuditIsPersisted:
         assert payload['folds']['0']['rank_deficiency'] == 1
         assert 'redundant_features' in payload['folds']['0']
         assert payload['checks_across_folds']['joint_reconstruction'] == 'ran'
+
+
+class TestTheReceiptReplacedTheWriteOnlyArtifact:
+    """used_features_fold_<k>.json recorded the set the model used, and nothing
+    read it. Two places -- a source comment and the usage guide -- said the P3
+    audit compared against it, which was never true: a grep for its name found
+    the three writers and no reader.
+
+    The audit receipt now records the same thing per fold, has a consumer (the
+    receipt gate and the info sheet), and is checked for provenance. These pin
+    that the replacement is complete, so the removal did not quietly drop
+    evidence.
+    """
+
+    @pytest.mark.parametrize('paradigm', sorted(discover_paradigms()))
+    def test_the_writer_is_gone(self, paradigm):
+        source = (_SRC / 'architectures_ml' / paradigm / 'models'
+                  / 'hierarchical_model.py').read_text()
+        assert 'used_features_fold_' not in source, (
+            f'{paradigm} writes an artifact nothing reads again')
+
+    def test_nothing_claims_the_audit_compares_against_it(self):
+        """The claim outlived the mechanism it described, in two files."""
+        for path in (_SRC.parent / 'USAGE_GUIDE.md',):
+            assert 'used_features_fold_' not in path.read_text(), path
+
+    def test_the_receipt_carries_what_it_replaced(self):
+        """Order and target name were only in the removed artifact."""
+        import pandas as pd
+
+        panel = _independent_panel()
+        report = audit_panel(panel, ['c', 'a', 'b'], 'target')
+        assert report['feature_order'] == ['c', 'a', 'b'], (
+            'the order the model saw is lost; features_audited is sorted')
+        assert report['features_audited'] == ['a', 'b', 'c'], (
+            'the comparable form is what the paradigms are matched on')
+
+    def test_the_target_name_reaches_the_receipt(self):
+        panel = _independent_panel()
+        report = audit_panel(panel, ['a', 'b', 'c'], 'target')
+        assert report['target_column'] == 'target'

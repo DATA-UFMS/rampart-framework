@@ -68,7 +68,7 @@ Artefatos gerados em `outputs/`:
 | Predições | `ml_pipeline/architectures/<arch>/predictions/predictions_<estagio>_<arch>.parquet` | Vetores sobre os quais a equivalência bitwise é afirmada |
 | Cobertura do alvo | `collection/raw_data/target_coverage.json` | Fração observada e imputada por coluna, e o limite de propagação declarado |
 | Imputação por fold | `ml_pipeline/architectures/<arch>/prep/fold_imputation_<arch>.json` | Células preenchidas pela mediana da janela de treino, por split e por fold |
-| Features usadas | `ml_pipeline/architectures/<arch>/models/used_features_fold_<k>.json` | Conjunto contra o qual a auditoria P3 compara |
+| Auditoria de features | `ml_pipeline/architectures/<arch>/prep/feature_audit_<arch>.json` | Reauditoria P3 da matriz que cada modelo ajusta, por fold, com o resultado de cada checagem |
 | Procedência | `scientific_config_snapshot.json` | Commit, instante, orçamento de núcleos e a configuração inteira |
 
 As três primeiras linhas sobre imputação respondem perguntas diferentes e nenhuma substitui as outras: quanto do painel de entrada era observado, quanto o carry temporal alcançou, e quanto a mediana da janela de treino preencheu depois — essa última é a parte sem limite de alcance.
