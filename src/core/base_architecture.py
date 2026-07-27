@@ -114,6 +114,17 @@ class BaseArchitectureML(ABC):
         """Retorna todas as classes de paradigmas concretos registrados."""
         return dict(cls._registry)
 
+    #: Fragmentos que denunciam uma coluna de metadado da coleta em vez de um
+    #: indicador do fenômeno. Metadado como preditor transforma o processo de
+    #: amostragem em feature: uma pontuação de completude, por exemplo,
+    #: correlaciona com capacidade estatística, que correlaciona com o alvo --
+    #: o modelo aprenderia a prever a partir de quão bem os dados foram
+    #: coletados. Isto detecta, não filtra: a exclusão continua sendo da
+    #: configuração, e o que muda é que esquecê-la deixa de passar calado.
+    METADATA_NAME_FRAGMENTS = ('timestamp', 'batch_id', 'completeness',
+                               'synthetic', 'data_source', 'partition',
+                               'processing_method', '_flag', 'etl_', 'ingest')
+
     #: Ordens de defasagem do alvo que os três paradigmas constroem. Declaradas
     #: aqui porque a metadata dos folds precisa saber qual é o valor mais
     #: recente que um modelo consulta no instante da predição, e porque três
@@ -912,6 +923,17 @@ class BaseArchitectureML(ABC):
             col for col in self.discover_numeric_columns(data)
             if col not in excluded and not col.startswith(derived_prefix)
         )
+
+        metadata = [column for column in candidates
+                    if any(fragment in column.lower()
+                           for fragment in self.METADATA_NAME_FRAGMENTS)]
+        if metadata:
+            raise ValueError(
+                f"{self.architecture_name}: colunas de metadado da coleta "
+                f"sobreviveram ao pool de candidatas: {sorted(metadata)}. "
+                f"Usá-las como preditor transforma o processo de amostragem "
+                f"em feature. Acrescente-as a excluded_columns do dataset."
+            )
 
         if len(candidates) < 5:
             print(f"  [WARN] Poucas candidatas ({len(candidates)}) podem "

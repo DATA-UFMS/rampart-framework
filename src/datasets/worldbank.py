@@ -36,6 +36,12 @@ class WorldBankDatasetConfig:
     min_valid_count = 500
 
     # Features
+    # O catálogo coletado, não o pool de candidatas. excluded_columns o
+    # estreita: duas das declaradas aqui saem por decisão L2 -- a coluna-fonte
+    # do alvo, e a taxa de matrícula, que é mecanicamente ligada à evasão
+    # (evasão reduz matrícula, então prever uma pela outra é medir o mesmo
+    # fenômeno duas vezes). O pool efetivo é a diferença, e sai no artefato de
+    # seleção como total_features_analyzed.
     feature_columns = list(ALL_INDICATORS.values())
     excluded_columns = [
         "country_code", "country_name", "year", "country_stratum",

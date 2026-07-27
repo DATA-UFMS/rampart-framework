@@ -102,15 +102,42 @@ class TestPoolPolicy:
         Uses a config that does not list the source column, so passing depends
         on the policy and not on the configuration being complete.
         """
+        class WithoutMetadata(_Config):
+            excluded_columns = _Config.excluded_columns + [
+                'data_completeness_score']
+
         arch = _probe('sql_engine')('sql_engine', str(tmp_path),
-                                    dataset_config=_Config())
+                                    dataset_config=WithoutMetadata())
         pool = arch.get_numeric_features(None)
         assert arch.source_column not in pool
-        # data_completeness_score survives: excluding dataset metadata is the
-        # configuration's job, and this config is deliberately incomplete. Every
-        # target-derived column is gone regardless.
-        assert pool == ['data_completeness_score', 'gini_index',
-                        'internet_users_percent']
+        assert pool == ['gini_index', 'internet_users_percent']
+
+    def test_surviving_metadata_halts(self, tmp_path):
+        """It used to survive, and excluding it was left to the configuration.
+
+        A completeness score correlates with statistical capacity, which
+        correlates with the target: as a predictor it teaches the model to
+        forecast from how well the data were collected. The exclusion is still
+        the configuration's, and what changed is that forgetting it no longer
+        passes quietly.
+        """
+        arch = _probe('sql_engine')('sql_engine', str(tmp_path),
+                                    dataset_config=_Config())
+        with pytest.raises(ValueError, match='metadado da coleta'):
+            arch.get_numeric_features(None)
+
+    def test_the_real_configurations_are_complete(self, tmp_path):
+        """The detector must not be firing on the datasets that ship."""
+        from datasets.inep_censo import InepCensoDatasetConfig
+        from datasets.worldbank import WorldBankDatasetConfig
+
+        for config in (WorldBankDatasetConfig(), InepCensoDatasetConfig()):
+            pool = sorted(set(config.feature_columns)
+                          - set(config.excluded_columns))
+            offenders = [column for column in pool
+                         if any(fragment in column.lower() for fragment in
+                                BaseArchitectureML.METADATA_NAME_FRAGMENTS)]
+            assert not offenders, offenders
 
     def test_other_paradigms_targets_are_never_candidates(self, tmp_path):
         """A paradigm must not train on another paradigm's copy of the target."""
