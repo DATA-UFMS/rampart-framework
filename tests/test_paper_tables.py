@@ -375,7 +375,7 @@ class TestTheReadmeMatchesTheBudgetCheck:
     def test_the_minimum_is_stated(self):
         from pathlib import Path
         readme = (Path(__file__).resolve().parents[1] / 'README.md').read_text()
-        assert 'oito' in readme or 'no mínimo' in readme
+        assert 'eight' in readme or 'at minimum' in readme
 
 
 class TestTheFloorUsesTheTestsOwnN:

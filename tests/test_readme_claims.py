@@ -49,7 +49,7 @@ class TestTheTestCount:
 
     def test_every_stated_count_matches(self, collected):
         stated = [int(value) for value in
-                  re.findall(r'(\d[\d.]*)\s+testes', README)]
+                  re.findall(r'(\d[\d,]*)\s+(?:automated\s+)?tests', README)]
         assert stated, 'the README no longer states a test count'
         for value in stated:
             assert value == collected, (
@@ -59,12 +59,12 @@ class TestTheTestCount:
     def test_the_counts_agree_with_each_other(self):
         """They disagreed: 79 in one section, 84 in another."""
         stated = {int(value) for value in
-                  re.findall(r'(\d[\d.]*)\s+testes', README)}
+                  re.findall(r'(\d[\d,]*)\s+(?:automated\s+)?tests', README)}
         assert len(stated) == 1, f'README states several counts: {stated}'
 
     def test_it_is_stated_more_than_once(self, collected):
         """Both places must be kept honest, not only the first."""
-        assert len(re.findall(r'(\d[\d.]*)\s+testes', README)) >= 2
+        assert len(re.findall(r'(\d[\d,]*)\s+(?:automated\s+)?tests', README)) >= 2
 
 
 class TestThePanelSize:
@@ -77,7 +77,7 @@ class TestThePanelSize:
 
     def test_the_grid_arithmetic_holds(self):
         """Whatever it is called, the number must be the product it claims."""
-        match = re.search(r'(\d+) países × (\d+) anos, painel completo de '
+        match = re.search(r'(\d+) countries × (\d+) years, complete panel of '
                           r'(\d+)', README)
         assert match, 'the panel claim is no longer stated in a checkable form'
         countries, years, total = (int(value) for value in match.groups())
@@ -85,14 +85,14 @@ class TestThePanelSize:
 
     def test_the_country_count_matches_the_configuration(self):
         from core.config import LATIN_AMERICA_COUNTRIES
-        match = re.search(r'(\d+) países ×', README)
+        match = re.search(r'(\d+) countries ×', README)
         assert int(match.group(1)) == len(LATIN_AMERICA_COUNTRIES)
 
     def test_the_year_span_matches_the_configuration(self):
         from core.scientific_config import SCIENTIFIC_CONFIG
         start = SCIENTIFIC_CONFIG['temporal_range_start']
         end = SCIENTIFIC_CONFIG['temporal_range_end']
-        match = re.search(r'× (\d+) anos', README)
+        match = re.search(r'× (\d+) years', README)
         assert int(match.group(1)) == end - start + 1
 
     def test_the_reader_is_pointed_at_the_artifact(self):
@@ -166,7 +166,7 @@ class TestTheExtensionExample:
 
     @staticmethod
     def _example():
-        block = README[README.index('# src/architectures_ml/meu_paradigma'):]
+        block = README[README.index('# src/architectures_ml/my_paradigm'):]
         return block[:block.index('```')]
 
     def test_every_abstract_method_is_listed(self):
@@ -179,7 +179,7 @@ class TestTheExtensionExample:
 
     def test_the_stated_count_matches(self):
         from core.base_architecture import BaseArchitectureML
-        match = re.search(r'Métodos abstratos a implementar \((\d+)\)',
+        match = re.search(r'Abstract methods to implement \((\d+)\)',
                           self._example())
         assert match
         assert int(match.group(1)) == len(
@@ -256,7 +256,7 @@ class TestNoResultIsTranscribed:
         assert 'in-process' in README
 
     def test_the_provenance_requirement_is_stated(self):
-        assert 'orçamento de núcleos' in README and 'commit' in README
+        assert 'core budget' in README and 'commit' in README
 
 
 class TestTheArtifactTable:
@@ -302,7 +302,7 @@ class TestTheArtifactTable:
         """Each answers a different question; one is not a summary of another."""
         for stem in ('target_coverage.json', 'fold_imputation_'):
             assert stem in self.GUIDE
-        assert 'sem limite de alcance' in self.GUIDE, (
+        assert 'no limit on its reach' in self.GUIDE, (
             'the guide should say which of the two is unbounded'
         )
 
@@ -376,6 +376,6 @@ class TestTheProtocolTable:
 
     def test_the_newly_enforced_cases_are_stated(self):
         """Each was a case that passed silently until it was found."""
-        for phrase in ('vazio', 'diferem entre paradigmas',
-                       'nenhuma observação'):
+        for phrase in ('An empty fold set', 'differ across paradigms',
+                       'a column with no'):
             assert phrase in README, phrase
