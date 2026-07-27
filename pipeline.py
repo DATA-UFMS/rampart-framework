@@ -21,6 +21,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timezone
+from uuid import uuid4
 
 # Supports running from a checkout, without installing the package.
 _SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
@@ -195,7 +196,7 @@ _PROTOCOL_RECEIPTS = (
 )
 
 
-def _validate_protocol_receipts(started_at: datetime) -> None:
+def _validate_protocol_receipts(run_id: str) -> None:
     """Every paradigm left evidence that it ran P5 and P3's post-lag re-audit.
 
     P1, P2 and P4 are enforced by the base class: they live inside concrete
@@ -214,6 +215,15 @@ def _validate_protocol_receipts(started_at: datetime) -> None:
 
     A fourth paradigm that omits either call now halts the pipeline instead of
     silently reporting results under a protocol it never followed.
+
+    Belonging to this run is established by a nonce and not by comparing
+    timestamps. The temporal gate can compare clocks because it runs minutes
+    after the run starts; this one runs hours later, on the INEP panel, and
+    over that window a backward step of the wall clock -- an NTP correction
+    after a suspend is the ordinary cause -- would make a fresh receipt look
+    stale and abort the run. The nonce is also strictly the stronger test: a
+    leftover receipt carrying a *newer* timestamp would pass a clock comparison
+    and fails this one.
     """
     prep_root = get_absolute_output_path('outputs/ml_pipeline/architectures')
 
@@ -222,7 +232,7 @@ def _validate_protocol_receipts(started_at: datetime) -> None:
             path = os.path.join(prep_root, arch, 'prep', f'{stem}_{arch}.json')
             if not os.path.exists(path):
                 raise AntiLeakageViolation(
-                    f"{arch}: {protocol} deixou nenhum recibo em {path}. O "
+                    f"{arch}: {protocol} não deixou recibo em {path}. O "
                     f"protocolo roda no código do paradigma, e sua ausência "
                     f"aqui é indistinguível de não ter rodado."
                 )
@@ -230,19 +240,17 @@ def _validate_protocol_receipts(started_at: datetime) -> None:
             with open(path, 'r') as handle:
                 receipt = json.load(handle)
 
-            created = receipt.get('creation_timestamp')
-            if created is None:
+            stamped = receipt.get('run_id')
+            if stamped is None:
                 raise AntiLeakageViolation(
-                    f"{arch}: o recibo de {protocol} não traz "
-                    f"creation_timestamp, então não se pode mostrar que "
-                    f"pertence a esta corrida: {path}"
+                    f"{arch}: o recibo de {protocol} não traz run_id, então "
+                    f"não se pode mostrar que pertence a esta corrida: {path}"
                 )
-            if datetime.fromisoformat(created) < started_at:
+            if stamped != run_id:
                 raise AntiLeakageViolation(
-                    f"{arch}: o recibo de {protocol} é anterior a esta corrida "
-                    f"(criado {created}, corrida iniciada "
-                    f"{started_at.isoformat()}). Um recibo de outra execução "
-                    f"atestaria um protocolo que esta não seguiu."
+                    f"{arch}: o recibo de {protocol} é de outra corrida "
+                    f"(recibo {stamped}, corrida {run_id}). Um recibo alheio "
+                    f"atestaria um protocolo que esta execução não seguiu."
                 )
 
             if not receipt.get(evidence_field):
@@ -324,6 +332,11 @@ def main() -> None:
     args = parser.parse_args()
     dataset_name = args.dataset
     os.environ['DATASET_NAME'] = dataset_name  # propaga via run() para subprocessos
+    # Identifica esta execução para o gate de recibos. Vai no ambiente e não
+    # num argumento porque quem escreve os recibos são os modelos, três
+    # subprocessos abaixo daqui.
+    run_id = uuid4().hex
+    os.environ['RAMPART_RUN_ID'] = run_id
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
     started_at = datetime.now()
@@ -380,8 +393,12 @@ def main() -> None:
     # pelos modelos, na etapa acima. Conferi-los antes seria conferir arquivos
     # que ainda nao existem.
     print("\nGate de recibos dos protocolos")
-    _validate_protocol_receipts(started_at)
-    _log("P3 e P5 comprovados em todos os paradigmas")
+    _validate_protocol_receipts(run_id)
+    # Nomeia o que o recibo cobre. O scaler de cada paradigma é ajustado no
+    # treino logo após a imputação, mas não emite relatório, então nenhum
+    # recibo o atesta -- e dizer "P5 comprovado" cobriria os dois.
+    _log("Reauditoria de P3 e imputação de P5 comprovadas em todos os "
+         "paradigmas (o ajuste do scaler não deixa recibo)")
 
     # Precedes the benchmark: a latency comparison between paradigms is only
     # meaningful once they are established to predict the same values for the

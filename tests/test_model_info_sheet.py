@@ -231,8 +231,14 @@ class TestTheSheetSpeaksForEveryParadigm:
         path.write_text(json.dumps(payload))
 
         answers = sheet.build(['worldbank'])['datasets']['worldbank']
-        assert answers['L1']['L1.1']['kind'] == sheet.PENDING
-        assert 'divergem' in answers['L1']['L1.1']['text']
+        answer = answers['L1']['L1.1']
+        assert answer['kind'] == sheet.PENDING
+        assert 'não produziram os mesmos valores' in answer['text']
+        assert PARADIGMS[-1] in answer['text'], 'the note does not say who'
+        # Divergence has two causes and only one contradicts the equivalence
+        # claim. The note must not pick one: a difference of measurement scope
+        # would read as an accusation against the paper's central result.
+        assert 'bitwise' not in answer['text'].lower()
 
     def test_divergence_is_named_rather_than_averaged(self, tmp_path,
                                                       monkeypatch):

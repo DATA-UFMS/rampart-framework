@@ -110,7 +110,7 @@ O pipeline aplica 5 verificações automáticas em todos os paradigmas:
 | P2 | Gap mínimo de 2 anos entre splits | `AntiLeakageViolation` em runtime | `TemporalValidator.enforce_walk_forward` |
 | P3 | Separação de features, proxy e reconstrução conjunta | `AntiLeakageViolation` em runtime; a reauditoria pós-defasagem, por recibo | `run_feature_selection`, `audit_feature_set` |
 | P4 | Feature selection restrita à janela de treino do primeiro fold | `AntiLeakageViolation` em runtime | `BaseArchitectureML._first_fold_train_end` |
-| P5 | Scaling e imputação ajustados só no treino | `AntiLeakageViolation` por recibo, ao fim da etapa hierárquica | `impute_from_training_window`, `canonical_fold` |
+| P5 | Scaling e imputação ajustados só no treino | imputação: `AntiLeakageViolation` por recibo, ao fim da etapa hierárquica; scaling: por construção, sem recibo | `impute_from_training_window`, `canonical_fold` |
 
 P1, P2 e P4 são impostos pela classe base: vivem dentro de métodos concretos que
 o esqueleto de setup chama, então um paradigma não alcança os modelos sem passar
@@ -121,9 +121,16 @@ que o autor tinha lembrado de chamá-los.
 
 O gate de recibos fecha isso do outro lado: cada chamada deixa um artefato, e
 `_validate_protocol_receipts` interrompe a execução quando o recibo falta, está
-vazio, ou é anterior à corrida que deveria tê-lo produzido. Um paradigma novo
-que omita qualquer das duas chamadas para o pipeline em vez de reportar
-resultados sob um protocolo que não seguiu.
+vazio, ou traz o identificador de outra corrida. Um paradigma novo que omita
+qualquer das duas chamadas interrompe o pipeline em vez de reportar resultados
+sob um protocolo que não seguiu.
+
+O vínculo com a corrida é um nonce em `RAMPART_RUN_ID`, e não uma comparação de
+relógio. O gate temporal pode comparar horários porque roda minutos após o
+início; este roda horas depois, e nessa janela um ajuste de NTP para trás faria
+um recibo novo parecer velho e abortaria a execução. O nonce também é o teste
+mais forte: um recibo alheio com carimbo *mais recente* passaria na comparação
+de relógio e não passa nesta.
 
 Um conjunto de folds vazio, folds que diferem entre paradigmas, e uma coluna sem
 nenhuma observação na janela de treino também interrompem — cada um foi, em
@@ -184,7 +191,7 @@ src/
 │   └── dataframe_lib/
 ├── benchmarking/               # Instrumentação e métricas de latência
 └── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 1516 testes (unitários, discovery, anti-leakage)
+tests/                          # 1519 testes (unitários, discovery, anti-leakage)
 pipeline.py                     # Orquestra o pipeline completo
 ```
 
@@ -204,7 +211,7 @@ outputs/
 
 Crie uma subclasse de `BaseArchitectureML` com `PARADIGM_META` definido. A descoberta é automática via `__init_subclass__`: nenhum módulo de orquestração, análise ou estatística precisa ser editado — todos derivam do registro.
 
-P1, P2 e P4 são herdados da classe base. P5 e a reauditoria de P3 não são: rodam sobre o fold materializado, que é o que o paradigma implementa, então cabe ao modelo do paradigma chamá-los. Esquecer não passa em silêncio — o gate de recibos exige a evidência de ambos ao fim da etapa hierárquica e interrompe sem ela.
+P1, P2 e P4 são herdados da classe base. A imputação de P5 e a reauditoria de P3 não são: rodam sobre o fold materializado, que é o que o paradigma implementa, então cabe ao modelo do paradigma chamá-las. Esquecer não passa em silêncio — o gate de recibos exige a evidência de ambas ao fim da etapa hierárquica e interrompe sem ela.
 
 ```python
 # src/architectures_ml/meu_paradigma/setup.py
@@ -277,7 +284,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 - Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
 - Snapshot de ambiente: packages, hardware, git commit
 - `requirements-lock.txt` com versões exatas
-- 1516 testes automatizados (`pytest tests/`)
+- 1519 testes automatizados (`pytest tests/`)
 
 Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

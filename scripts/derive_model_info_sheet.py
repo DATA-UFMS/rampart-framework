@@ -118,11 +118,17 @@ def _agreed(root: Path, paradigms: List[str], stem: str,
     prints = {paradigm: _fingerprint({f: payload.get(f) for f in fields})
               for paradigm, payload in found.items()}
     if len(set(prints.values())) > 1:
+        # Sem atribuir causa. Divergência aqui tem duas origens muito
+        # diferentes -- os paradigmas mediram a mesma coisa e discordaram, ou
+        # mediram sobre recortes diferentes -- e só a primeira contradiz a
+        # equivalência. Afirmar a primeira transformaria uma diferença de
+        # escopo numa acusação contra o resultado central.
         return None, (
-            f"Os paradigmas divergem nos valores de {stem} "
-            f"({', '.join(sorted(found))}), então nenhum deles descreve o "
-            f"estudo. Com predições bitwise-idênticas isto não deveria "
-            f"ocorrer."
+            f"Os paradigmas não produziram os mesmos valores em {stem} "
+            f"({', '.join(sorted(found))}), então nenhum deles é citado aqui. "
+            f"Ou mediram a mesma quantidade e discordaram, ou a mediram sobre "
+            f"recortes diferentes; a resposta fica pendente até que se saiba "
+            f"qual."
         )
 
     missing = [p for p in paradigms if p not in found]
@@ -172,7 +178,9 @@ def _l1_clean_separation(root: Path, paradigms: List[str]) -> Dict:
             DERIVED,
             f"Escala e imputação são ajustadas na janela de treino de cada "
             f"fold e aplicadas a validação e teste. Fração de células "
-            f"preenchidas pela mediana da janela de treino: {parts}.{note or ''}",
+            f"preenchidas pela mediana da janela de treino: {parts}. O "
+            f"artefato cobre a imputação; o ajuste do scaler ocorre logo "
+            f"depois, no mesmo frame, e não emite relatório.{note or ''}",
             'fold_imputation_<paradigma>.json')
     else:
         answers['L1.2'] = _answer(
