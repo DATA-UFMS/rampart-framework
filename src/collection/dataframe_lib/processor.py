@@ -33,7 +33,7 @@ from typing import Dict
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from core.config import get_absolute_output_path
+from core.config import get_absolute_output_path, raw_data_subdir
 from core.indicators import ALL_INDICATORS
 
 
@@ -63,7 +63,7 @@ class DataFrameLibProcessor:
         print("Architecture: Polars, schema-on-read")
 
         self.dataset_name = dataset_name
-        raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
+        raw_subdir = raw_data_subdir(dataset_name)
         self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/dataframe_lib')
         self.processed_dir = f"{self.output_dir}/processed"

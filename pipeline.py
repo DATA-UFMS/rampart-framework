@@ -117,6 +117,13 @@ def _snapshot_scientific_config(root: str) -> None:
     print(f"\nScientific snapshot recorded at {path}")
 
 
+def _dataset(name):
+    """The registered config for a dataset name."""
+    import datasets  # noqa: F401 -- the import is what registers them
+    from core.dataset_config import get_dataset
+    return get_dataset(name)
+
+
 def _registered_datasets():
     """Names the dataset registry knows, for the command line to offer."""
     import datasets  # noqa: F401 -- the import is what registers them
@@ -413,14 +420,15 @@ def main() -> None:
     print("\nStage 0: Reproducibility snapshot")
     _log(f"Snapshot saved at {get_absolute_output_path('outputs')}")
 
-    if dataset_name == 'worldbank':
-        print("\nStage 1/7: Collection")
-        _log("Source: World Bank")
-        run([py, os.path.join(root, "src/collection/raw_data_collector.py")])
-    else:
-        print("\nStage 1/7: Collection")
-        _log("Source: INEP Censo Escolar")
-        run([py, os.path.join(root, "src/collection/inep_collector.py")])
+    # Which collector runs comes from the dataset's own config, not from an
+    # if/else whose else arm was the INEP collector -- so an unregistered name
+    # used to reach for Brazilian school data instead of being refused.
+    dataset = _dataset(dataset_name)
+    collector = os.path.join(
+        root, 'src', *dataset.collector_module.split('.')) + '.py'
+    print("\nStage 1/7: Collection")
+    _log(f"Source: {dataset.label}")
+    run([py, collector])
     _log("Stage 1 completed")
 
     n_paradigms = len(paradigms)

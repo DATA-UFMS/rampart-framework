@@ -365,8 +365,13 @@ class BenchmarkRunner:
     # --------------------------- measured phases ---------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
         dataset_name = os.environ.get("DATASET_NAME", "worldbank")
-        raw_subdir = "collection/inep_raw" if dataset_name == "inep_censo" else "collection/raw_data"
+        raw_subdir = raw_data_subdir(dataset_name)
         t0 = time.perf_counter_ns()
+        # The two collectors have genuinely different shapes -- one is a class
+        # with run(), the other a function taking an output directory -- so the
+        # call itself is still dispatched by name here. Unlike the four
+        # directory branches this replaces, it fails loudly on an unknown
+        # dataset: raw_data_subdir asks the registry first.
         if dataset_name == "inep_censo":
             from collection.inep_collector import collect_inep_data
             collect_inep_data(
@@ -533,19 +538,18 @@ class BenchmarkRunner:
         return records
 
     # --------------------------- execution ---------------------------------
-    # "Upstream" phases (collection + processing) are shared infrastructure
-    # that produces the same deterministic data on every run. Repeating them
-    # N times only wastes time on HTTP calls and I/O without adding
-    # statistical information.
+    # Collection is the one phase that is not repeated. It reads an external
+    # API, produces the same data on every call, and repeating it would buy
+    # HTTP latency instead of statistical information. It runs once, ahead of
+    # the repetitions, and is recorded under run_id=-1 for reference.
     #
-    # "Downstream" phases (setup → baseline → hierarchical) contain the
-    # architectural logic that differentiates DW and DL and are the benchmark's
-    # real target.
+    # Everything else is a phase where the paradigms differ, so everything else
+    # is measured N times: processing, setup, baseline, hierarchical. Four
+    # phases across three paradigms over warmup + n passes.
     #
-    # Strategy:
-    #   1. Run collection + processing ONCE (using cache when possible)
-    #   2. Record their times as run_id=-1 for reference
-    #   3. Repeat only setup/baseline/hierarchical N times
+    # This comment used to name three of them and call processing "upstream",
+    # two lines above a constant with four -- the enumeration the constant
+    # below exists to prevent, in prose.
 
     #: A single definition, in core.paradigm_registry: four files
     #: enumerated the same policy and one of them had already diverged.

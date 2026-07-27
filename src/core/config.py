@@ -122,6 +122,19 @@ def get_absolute_output_path(relative_path: str) -> str:
         parts = parts[1:]
     return os.path.join(get_outputs_root(), *parts)
 
+def raw_data_subdir(dataset_name: str) -> str:
+    """Where a dataset's collector drops its raw output.
+
+    Read from the dataset's own config instead of decided by an if/else on its
+    name. The branch this replaces appeared in four files, each with an `else`
+    arm pointing at the World Bank directory, so a third dataset would not have
+    been rejected -- it would have silently read the first dataset's panel.
+    """
+    import datasets  # noqa: F401 -- the import is what registers them
+    from core.dataset_config import get_dataset
+    return get_dataset(dataset_name).raw_data_subdir
+
+
 def get_execution_metadata() -> Dict:
     """Returns metadata of the current run"""
     import platform

@@ -324,11 +324,13 @@ class TestTheInternalSchemaIsNeutral:
     @pytest.mark.parametrize('name', RETIRED)
     def test_the_dataset_specific_name_is_gone(self, name):
         import subprocess
-        # This file is excluded: a test that forbids a name has to spell it,
-        # both in the list above and in the docstring that says why.
+        # Code and schema only. Prose may name a retired column -- this test
+        # does, in the list above and in the docstring saying why, and the
+        # README does, explaining what the rename was for. What must not come
+        # back is a program reading or writing the name.
         found = subprocess.run(
-            ['git', 'grep', '-l', '-w', name, '--', '.',
-             f':!{Path(__file__).relative_to(_ROOT)}'],
+            ['git', 'grep', '-l', '-w', name, '--',
+             '*.py', '*.sql', ':!tests/test_dataset_config.py'],
             cwd=_ROOT, capture_output=True, text=True).stdout.split()
         assert not found, f'{name} came back in: {found}'
 

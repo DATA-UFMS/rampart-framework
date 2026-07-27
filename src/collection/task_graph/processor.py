@@ -67,7 +67,7 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*invalid va
 warnings.filterwarnings('ignore', category=FutureWarning, message='.*DataFrameGroupBy.apply operated on the grouping columns.*')
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from core.config import get_absolute_output_path
+from core.config import get_absolute_output_path, raw_data_subdir
 from core.scientific_config import SCIENTIFIC_CONFIG
 from core.indicators import ALL_INDICATORS
 
@@ -100,7 +100,7 @@ class TaskGraphProcessor:
 
         self.dataset_name = dataset_name
         self.run_timestamp = datetime.now().isoformat()
-        raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
+        raw_subdir = raw_data_subdir(dataset_name)
         self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/task_graph')
         self.processed_dir = f"{self.output_dir}/processed"

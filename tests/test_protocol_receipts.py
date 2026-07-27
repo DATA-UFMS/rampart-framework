@@ -347,7 +347,7 @@ class TestTheGateRunsWhereTheReceiptsExist:
         for a receipt the orchestrator never let it stamp.
         """
         assert (self._at("os.environ['RAMPART_RUN_ID'] = run_id")
-                < self._at('run([py, os.path.join(root, "src/collection'))
+                < self._at('run([py, collector])'))
 
     def test_the_gate_is_given_the_exported_nonce(self):
         """Not a fresh uuid4, which would never match any receipt."""

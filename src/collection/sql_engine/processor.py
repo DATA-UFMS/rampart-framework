@@ -53,7 +53,7 @@ from datetime import datetime
 from typing import Dict
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from core.config import get_absolute_output_path
+from core.config import get_absolute_output_path, raw_data_subdir
 try:
     from .connection_manager import DuckDBConnectionManager, SQLProcessingError
 except ImportError:
@@ -84,7 +84,7 @@ class SqlEngineProcessor:
         print("Schema-on-write with DuckDB OLAP, native SQL")
 
         self.dataset_name = dataset_name
-        raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
+        raw_subdir = raw_data_subdir(dataset_name)
         self.complete_data_path = get_absolute_output_path(f'{raw_subdir}/complete_data.parquet')
         self.output_dir = get_absolute_output_path('collection/sql_engine')
         self.db_path = f"{self.output_dir}/{dataset_name}_data.duckdb"

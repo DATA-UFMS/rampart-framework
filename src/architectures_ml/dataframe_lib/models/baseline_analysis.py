@@ -473,7 +473,7 @@ class BaselineModelAnalysisDataFrameLib:
             val_r2_cross = r2_score(y_val, val_pred_cross)
             test_r2_cross = r2_score(y_test, test_pred_cross)
 
-            fold_results['cross_country'] = {
+            fold_results['cross_entity'] = {
                 'val_r2': float(val_r2_cross),
                 'test_r2': float(test_r2_cross),
                 'val_rmse': float(np.sqrt(mean_squared_error(y_val, val_pred_cross))),
@@ -482,7 +482,7 @@ class BaselineModelAnalysisDataFrameLib:
                 'test_mase': (float(np.mean(np.abs(y_test - test_pred_cross))) / mase_scale) if (mase_scale and mase_scale > 0) else None,
                 'mase_scale_train': mase_scale,
                 'min_lag_years': MIN_LAG,
-                'method': 'cross_country_average_excluding_target'
+                'method': 'cross_entity_average_excluding_target'
             }
 
             # Aggregate metrics for Naive (includes WAPE/MASE)
@@ -522,7 +522,7 @@ class BaselineModelAnalysisDataFrameLib:
                 fold=fold_id, model='naive_with_lag', y_true=y_test,
                 y_pred=test_pred_naive, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
-                fold=fold_id, model='cross_country', y_true=y_test,
+                fold=fold_id, model='cross_entity', y_true=y_test,
                 y_pred=test_pred_cross, entities=test_clean['entity_id'])
 
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
@@ -548,7 +548,7 @@ class BaselineModelAnalysisDataFrameLib:
         """
         print("\nPolars predictability analysis")
 
-        baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
+        baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_entity']
         all_test_scores = {}
         all_val_scores = {}
         generalization_gaps = {}

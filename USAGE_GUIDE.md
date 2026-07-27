@@ -23,7 +23,11 @@ pip install -r requirements.txt
 python pipeline.py
 ```
 
-Runs: collection, processing (3 paradigms), anti-leakage gate, models, benchmark and statistical validation.
+Runs, in order: reproducibility snapshot, collection, processing (3 paradigms),
+ML setup (3 paradigms), the setup provenance and anti-leakage gates, baselines
+(3 paradigms), hierarchical models (3 paradigms), the protocol receipts and
+prediction equivalence gates, the architectural benchmark, and the statistical
+analysis with its derived tables.
 
 **Individual components:**
 
@@ -101,9 +105,10 @@ Add modules under `src/benchmarking/` or `src/statistical_validation/` following
 **How long does it take?** About an hour and a half for the World Bank and more than a day for
 the INEP Censo Escolar on the reference machine. That machine has to accommodate the core
 budget: `pipeline.py` refuses to run below 8. The cost is dominated by the benchmark step,
-which re-runs setup, baseline and hierarchical of the three paradigms `warmup + n` times
-(12 by default). The collection and processing cache
-only reduces the upstream steps. To explore, use a smaller `--repetitions` —
+which re-runs processing, setup, baseline and hierarchical of the three paradigms
+`warmup + n` times (12 by default, so 144 measured phase executions). Collection is
+the one phase it does not repeat, so the collection cache shortens that single pass
+and nothing else. To explore, use a smaller `--repetitions` —
 aware that this does not reproduce the latency table.
 
 **Do I need an API key?** No. The World Bank API is open.
