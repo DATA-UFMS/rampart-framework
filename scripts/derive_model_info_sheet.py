@@ -118,11 +118,11 @@ def _agreed(root: Path, paradigms: List[str], stem: str,
     prints = {paradigm: _fingerprint({f: payload.get(f) for f in fields})
               for paradigm, payload in found.items()}
     if len(set(prints.values())) > 1:
-        # Sem atribuir causa. Divergência aqui tem duas origens muito
-        # diferentes -- os paradigmas mediram a mesma coisa e discordaram, ou
-        # mediram sobre recortes diferentes -- e só a primeira contradiz a
-        # equivalência. Afirmar a primeira transformaria uma diferença de
-        # escopo numa acusação contra o resultado central.
+        # Without attributing a cause. Divergence here has two very different
+        # origins -- the paradigms measured the same quantity and disagreed, or
+        # they measured over different slices -- and only the first contradicts
+        # the equivalence claim. Asserting the first would turn a difference of
+        # scope into an accusation against the central result.
         return None, (
             f"Os paradigmas não produziram os mesmos valores em {stem} "
             f"({', '.join(sorted(found))}), então nenhum deles é citado aqui. "

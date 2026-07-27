@@ -121,7 +121,11 @@ class HierarchicalModelTaskGraph:
             try:
                 with open(selection_path, 'r') as f:
                     selection_data = json.load(f)
-                selected = selection_data.get('selected_features', [])
+                # Indexed, not .get with a default: the empty list let this
+                # paradigm train on the target's lags alone, and the audit
+                # downstream passed for want of any exogenous feature to fail
+                # on.
+                selected = selection_data['selected_features']
                 # Incluir lag do target se existir
                 if 'dropout_rate_lag_2' in self.ddf.columns and 'dropout_rate_lag_2' not in selected:
                     selected.append('dropout_rate_lag_2')

@@ -838,7 +838,13 @@ class BaseArchitectureML(ABC):
                 feat: float(correlations.get(feat, 0))
                 for feat in final_features
             },
-            'selection_timestamp': datetime.now().isoformat()
+            'selection_timestamp': datetime.now().isoformat(),
+            # This is the artifact that decides what the model trains on, and
+            # was the one file in the setup path no gate checked. A file from
+            # another run would feed the models a different feature set, and the
+            # three would agree with each other by reading the same stale file
+            # -- so not even the equivalence gate would notice.
+            'run_id': os.environ.get('RAMPART_RUN_ID'),
         }
         
         selection_path = f"{self.prep_dir}/feature_selection_{self.architecture_name}.json"
@@ -1027,6 +1033,7 @@ class BaseArchitectureML(ABC):
         folds_config = {
             'architecture': self.architecture_name,
             'creation_timestamp': datetime.now().isoformat(),
+            'run_id': os.environ.get('RAMPART_RUN_ID'),
             'total_observations': int(total_observations),
             'total_entities': int(total_entities),
             'year_range': [int(year_range[0]), int(year_range[1])],

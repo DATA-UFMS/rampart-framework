@@ -28,7 +28,8 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_ROOT / 'src'))
+_SRC = _ROOT / 'src'
+sys.path.insert(0, str(_SRC))
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
@@ -165,7 +166,7 @@ class TestTheReceiptGate:
                 'creation_timestamp': (created + timedelta(hours=3)).isoformat(),
                 'run_id': 'ffffffffffffffffffffffffffffffff',
                 'features_audited': ['gdp_per_capita']}})
-        with pytest.raises(AntiLeakageViolation, match='de outra corrida'):
+        with pytest.raises(AntiLeakageViolation, match='belongs to another run'):
             pipeline._validate_protocol_receipts(run_id)
 
     def test_a_backward_clock_step_does_not_abort(self, gate):
@@ -306,3 +307,169 @@ class TestTheGateRunsWhereTheReceiptsExist:
         assert 'AntiLeakageViolation' in body
         assert body.count('raise ') >= 4
         assert 'warn' not in body.lower()
+
+
+class TestSetupProvenance:
+    """The setup artifacts belong to this run, checked minutes in rather than hours.
+
+    feature_selection_<p>.json was the one file in the setup path no gate looked
+    at, and it is the file the models read their feature list from. A copy left
+    behind by an earlier execution would train all three paradigms on a set this
+    run never selected -- and because all three read the same stale file they
+    would agree with each other, so the prediction equivalence gate would pass
+    too. Nothing downstream distinguishes that from a correct run.
+    """
+
+    @pytest.fixture
+    def gate(self, tmp_path, monkeypatch):
+        import pipeline
+
+        outputs = tmp_path / 'outputs'
+        monkeypatch.setattr(
+            pipeline, 'get_absolute_output_path',
+            lambda relative: str(outputs / relative.replace('outputs/', '')))
+        return pipeline, outputs, RUN_ID
+
+    @staticmethod
+    def _write(outputs, *, skip=(), stamps=None):
+        stamps = stamps or {}
+        for paradigm in PARADIGMS:
+            prep = (outputs / 'ml_pipeline' / 'architectures' / paradigm
+                    / 'prep')
+            prep.mkdir(parents=True, exist_ok=True)
+            for stem in ('feature_selection', 'temporal_folds'):
+                path = prep / f'{stem}_{paradigm}.json'
+                if path.exists():
+                    path.unlink()
+                if (paradigm, stem) in skip:
+                    continue
+                body = {'architecture': paradigm}
+                if (paradigm, stem) in stamps:
+                    stamp = stamps[(paradigm, stem)]
+                    if stamp is not None:
+                        body['run_id'] = stamp
+                else:
+                    body['run_id'] = RUN_ID
+                path.write_text(json.dumps(body))
+
+    def test_artifacts_from_this_run_pass(self, gate):
+        pipeline, outputs, run_id = gate
+        self._write(outputs)
+        pipeline._validate_setup_provenance(run_id)
+
+    def test_a_stale_selection_halts(self, gate):
+        """The case no gate covered, and the one with the worst failure mode."""
+        pipeline, outputs, run_id = gate
+        self._write(outputs, stamps={
+            (PARADIGMS[0], 'feature_selection'): 'ffffffffffffffffffffffffffff'})
+        with pytest.raises(ValueError, match='belongs to another run'):
+            pipeline._validate_setup_provenance(run_id)
+
+    def test_a_stale_fold_configuration_halts(self, gate):
+        pipeline, outputs, run_id = gate
+        self._write(outputs, stamps={
+            (PARADIGMS[-1], 'temporal_folds'): 'ffffffffffffffffffffffffffff'})
+        with pytest.raises(ValueError, match='belongs to another run'):
+            pipeline._validate_setup_provenance(run_id)
+
+    def test_an_unstamped_artifact_halts(self, gate):
+        pipeline, outputs, run_id = gate
+        self._write(outputs,
+                    stamps={(PARADIGMS[0], 'feature_selection'): None})
+        with pytest.raises(ValueError, match='no run_id'):
+            pipeline._validate_setup_provenance(run_id)
+
+    def test_a_missing_artifact_halts(self, gate):
+        pipeline, outputs, run_id = gate
+        self._write(outputs, skip={(PARADIGMS[0], 'feature_selection')})
+        with pytest.raises(FileNotFoundError, match='feature_selection'):
+            pipeline._validate_setup_provenance(run_id)
+
+    def test_every_paradigm_and_artifact_is_covered(self, gate):
+        pipeline, outputs, run_id = gate
+        for paradigm in PARADIGMS:
+            for stem in ('feature_selection', 'temporal_folds'):
+                self._write(outputs, skip={(paradigm, stem)})
+                with pytest.raises(FileNotFoundError) as caught:
+                    pipeline._validate_setup_provenance(run_id)
+                assert paradigm in str(caught.value)
+                assert stem in str(caught.value)
+
+
+class TestSetupStampsItsArtifacts:
+    """The writers read the nonce from the environment, as the model ones do.
+
+    pipeline.main exports RAMPART_RUN_ID before the first run(), and run()
+    copies os.environ into the subprocess, so setup inherits it -- no separate
+    nonce is needed on that side.
+    """
+
+    STAMP = "'run_id': os.environ.get('RAMPART_RUN_ID')"
+
+    @staticmethod
+    def _literal(opening: str, closing: str) -> str:
+        """The dict literal between two markers, so a comment cannot shift it."""
+        source = (_SRC / 'core' / 'base_architecture.py').read_text()
+        start = source.index(opening)
+        return source[start:source.index(closing, start)]
+
+    def test_the_selection_writer_stamps(self):
+        assert self.STAMP in self._literal("'selection_timestamp'",
+                                           'selection_path =')
+
+    def test_the_fold_writer_stamps(self):
+        assert self.STAMP in self._literal('folds_config = {', 'folds_path =')
+
+    def test_the_gate_runs_before_the_temporal_one(self):
+        """Provenance first: whose the folds are, then whether they are sound."""
+        source = (_ROOT / 'pipeline.py').read_text()
+        assert (source.index('_validate_setup_provenance(run_id)')
+                < source.index('_validate_anti_leakage_gate(root, started_at)'))
+
+
+class TestTheFeatureListIsNotOptional:
+    """A missing key must raise, not degrade to training on the lags alone.
+
+    Two paradigms read the selection with `.get('selected_features', [])`. With
+    the key absent they fell back to the empty list, appended the two target
+    lags, and trained on those two columns. The audit then passed for want of
+    any exogenous feature to fail on -- `linear_reconstruction_r2` returns None
+    on an empty set, so both identity checks skipped -- and the receipt gate
+    accepted the run, because `features_audited` was not empty.
+
+    So a run that trained on nothing but the target's own past satisfied every
+    gate meant to prove it had not. Pinned at the source because the model
+    classes need a live engine to instantiate.
+    """
+
+    import ast as _ast
+
+    @pytest.mark.parametrize('paradigm', PARADIGMS)
+    def test_it_is_read_by_indexing(self, paradigm):
+        import ast
+
+        source = (_SRC / 'architectures_ml' / paradigm / 'models'
+                  / 'hierarchical_model.py').read_text()
+        tree = ast.parse(source)
+
+        subscripts, defaulted = 0, []
+        for node in ast.walk(tree):
+            # selection_data['selected_features']
+            if (isinstance(node, ast.Subscript)
+                    and isinstance(node.slice, ast.Constant)
+                    and node.slice.value == 'selected_features'):
+                subscripts += 1
+            # selection_data.get('selected_features', <anything>)
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == 'get'
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == 'selected_features'):
+                defaulted.append(len(node.args) > 1 or bool(node.keywords))
+
+        assert subscripts >= 1, (
+            f'{paradigm} no longer reads selected_features by indexing')
+        assert not any(defaulted), (
+            f'{paradigm} reads selected_features with a default; an absent key '
+            f'would train it on the target lags alone')

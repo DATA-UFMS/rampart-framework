@@ -185,6 +185,52 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
 
 
 
+#: Artifacts setup produces and the models consume. Both decide what the model
+#: trains on, and neither was checked for which run it came from.
+_SETUP_ARTIFACTS = ('feature_selection', 'temporal_folds')
+
+
+def _validate_setup_provenance(run_id: str) -> None:
+    """The setup artifacts belong to this run rather than to an earlier one.
+
+    The temporal gate below checks the *content* of the folds; this checks whose
+    they are. The distinction matters for feature_selection, which no gate was
+    looking at: it is where the models read their feature list, so a file left
+    behind by another execution would train all three on a set this run never
+    selected -- and the three would agree with each other, being sat on the same
+    stale file, so not even the prediction equivalence gate would notice.
+
+    Runs right after setup rather than alongside the protocol receipts: finding
+    this out costs minutes here and hours there.
+    """
+    prep_root = get_absolute_output_path('outputs/ml_pipeline/architectures')
+
+    for arch in _discover():
+        for stem in _SETUP_ARTIFACTS:
+            path = os.path.join(prep_root, arch, 'prep', f'{stem}_{arch}.json')
+            if not os.path.exists(path):
+                raise FileNotFoundError(
+                    f"{arch}: setup left no {stem}_{arch}.json at {path}"
+                )
+
+            with open(path, 'r') as handle:
+                stamped = json.load(handle).get('run_id')
+
+            if stamped is None:
+                raise ValueError(
+                    f"{arch}: {stem}_{arch}.json carries no run_id, so it "
+                    f"cannot be shown to belong to this run: {path}"
+                )
+            if stamped != run_id:
+                raise ValueError(
+                    f"{arch}: {stem}_{arch}.json belongs to another run "
+                    f"(file {stamped}, run {run_id}). This is the file the "
+                    f"models read their feature set from."
+                )
+
+        _log(f"  {arch}: setup artifacts belong to this run")
+
+
 #: Receipts each paradigm must leave to show it ran the two protocols the base
 #: class cannot impose on it. Each entry names the artifact stem, the protocol,
 #: and the field whose emptiness means the protocol did not actually run --
@@ -232,9 +278,9 @@ def _validate_protocol_receipts(run_id: str) -> None:
             path = os.path.join(prep_root, arch, 'prep', f'{stem}_{arch}.json')
             if not os.path.exists(path):
                 raise AntiLeakageViolation(
-                    f"{arch}: {protocol} não deixou recibo em {path}. O "
-                    f"protocolo roda no código do paradigma, e sua ausência "
-                    f"aqui é indistinguível de não ter rodado."
+                    f"{arch}: {protocol} left no receipt at {path}. The "
+                    f"protocol runs inside the paradigm's own code, and its "
+                    f"absence here is indistinguishable from never running."
                 )
 
             with open(path, 'r') as handle:
@@ -243,24 +289,24 @@ def _validate_protocol_receipts(run_id: str) -> None:
             stamped = receipt.get('run_id')
             if stamped is None:
                 raise AntiLeakageViolation(
-                    f"{arch}: o recibo de {protocol} não traz run_id, então "
-                    f"não se pode mostrar que pertence a esta corrida: {path}"
+                    f"{arch}: the {protocol} receipt carries no run_id, so "
+                    f"it cannot be shown to belong to this run: {path}"
                 )
             if stamped != run_id:
                 raise AntiLeakageViolation(
-                    f"{arch}: o recibo de {protocol} é de outra corrida "
-                    f"(recibo {stamped}, corrida {run_id}). Um recibo alheio "
-                    f"atestaria um protocolo que esta execução não seguiu."
+                    f"{arch}: the {protocol} receipt belongs to another run "
+                    f"(receipt {stamped}, run {run_id}). Someone else's receipt "
+                    f"would attest to a protocol this execution never followed."
                 )
 
             if not receipt.get(evidence_field):
                 raise AntiLeakageViolation(
-                    f"{arch}: o recibo de {protocol} existe mas seu campo "
-                    f"'{evidence_field}' está vazio, o que é o registro de que "
-                    f"o protocolo não foi aplicado a nenhum fold: {path}"
+                    f"{arch}: the {protocol} receipt exists but its "
+                    f"'{evidence_field}' field is empty, which is the record of "
+                    f"the protocol reaching no fold at all: {path}"
                 )
 
-        _log(f"  {arch}: recibos de P3 e P5 presentes e desta corrida")
+        _log(f"  {arch}: P3 and P5 receipts present and from this run")
 
 
 def _prediction_digests() -> dict:
@@ -332,9 +378,9 @@ def main() -> None:
     args = parser.parse_args()
     dataset_name = args.dataset
     os.environ['DATASET_NAME'] = dataset_name  # propaga via run() para subprocessos
-    # Identifica esta execução para o gate de recibos. Vai no ambiente e não
-    # num argumento porque quem escreve os recibos são os modelos, três
-    # subprocessos abaixo daqui.
+    # Identifies this execution for the receipt gates. It travels in the
+    # environment rather than as an argument because the receipts are written by
+    # the models, three subprocesses below here.
     run_id = uuid4().hex
     os.environ['RAMPART_RUN_ID'] = run_id
     root = os.path.abspath(os.path.dirname(__file__))
@@ -375,6 +421,10 @@ def main() -> None:
         run([py, os.path.join(root, info["setup_script"])])
     _log(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
 
+    print("\nGate de proveniencia do setup")
+    _validate_setup_provenance(run_id)
+    _log("feature_selection and temporal_folds belong to this run")
+
     print("\nGate anti-leakage")
     _validate_anti_leakage_gate(root, started_at)
     _log("Todos os folds passaram na validacao temporal")
@@ -389,16 +439,16 @@ def main() -> None:
         run([py, os.path.join(root, info["hierarchical_script"])])
     _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
 
-    # Aqui e nao junto do gate anti-leakage: os recibos de P3 e P5 sao escritos
-    # pelos modelos, na etapa acima. Conferi-los antes seria conferir arquivos
-    # que ainda nao existem.
+    # Here and not alongside the anti-leakage gate: the P3 and P5 receipts are
+    # written by the models, in the stage above. Checking them earlier would be
+    # checking files that do not exist yet.
     print("\nGate de recibos dos protocolos")
     _validate_protocol_receipts(run_id)
-    # Nomeia o que o recibo cobre. O scaler de cada paradigma é ajustado no
-    # treino logo após a imputação, mas não emite relatório, então nenhum
-    # recibo o atesta -- e dizer "P5 comprovado" cobriria os dois.
-    _log("Reauditoria de P3 e imputação de P5 comprovadas em todos os "
-         "paradigmas (o ajuste do scaler não deixa recibo)")
+    # Names what the receipt covers. Each paradigm's scaler is fitted on the
+    # training window right after imputation, but emits no report, so no receipt
+    # attests to it -- and saying "P5 verified" would cover both.
+    _log("P3 re-audit and P5 imputation evidenced in every paradigm "
+         "(the scaler fit leaves no receipt)")
 
     # Precedes the benchmark: a latency comparison between paradigms is only
     # meaningful once they are established to predict the same values for the
