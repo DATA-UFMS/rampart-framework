@@ -4,7 +4,7 @@ Framework for reproducible benchmarking of data architectures with automatic tem
 
 ## Quickstart
 
-Requirements: Python 3.10+, 8 GB RAM, internet access, no API key. The World
+Requirements: Python 3.12, 8 GB RAM, internet access, no API key. The World
 Bank dataset is collected from `api.worldbank.org`; the INEP one downloads the
 yearly rate files from `download.inep.gov.br`.
 
@@ -229,7 +229,7 @@ scripts/
 ├── derive_paper_tables.py      # Paper tables, spanning both datasets
 ├── derive_model_info_sheet.py  # Kapoor & Narayanan model info sheet
 └── validation/                 # Leakage-injection negative control
-tests/                          # 1561 tests (unit, discovery, anti-leakage)
+tests/                          # 1568 tests (unit, discovery, anti-leakage)
 pipeline.py                     # Orchestrates the full pipeline
 ```
 
@@ -354,7 +354,20 @@ Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON �
 - Seeds centralized in `scientific_config.py`, `n_jobs=1`
 - Environment snapshot: packages, hardware, git commit
 - `requirements-lock.txt` with exact versions
-- 1561 automated tests (`pytest tests/`)
+- 1568 automated tests (`pytest tests/`)
+
+**What the guarantee covers, and what it does not.** Bitwise equivalence is a
+property of the code: given one interpreter, the three paradigms produce
+identical predictions, and the pipeline halts when they do not. The absolute
+values are a property of the whole environment, interpreter included. Running
+the same lockfile on Python 3.10 rather than 3.12 yields a different prediction
+digest while the three paradigms still agree with each other — the arithmetic
+changed underneath all of them equally. That is why the package declares one
+version and the container pins the image by digest: the comparison between
+paradigms travels, the numbers themselves do not. This is the same class of
+result Glatard et al. (2015) report for neuroimaging pipelines across operating
+systems, where a difference in one libm function moved Dice scores from 0.59 to
+above 0.9.
 
 For operational details, see [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

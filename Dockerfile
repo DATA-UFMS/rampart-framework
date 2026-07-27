@@ -6,8 +6,9 @@
 # arquivo existe para eliminar. Atualizar o digest é uma decisão, não um efeito
 # colateral de reconstruir.
 #
-# Python 3.12 porque é a versão em que os resultados foram produzidos; o pacote
-# declara compatibilidade a partir de 3.10, e o CI cobre as duas pontas.
+# Python 3.12 because it is the version the results were produced on, and the
+# only one the package declares. An earlier interpreter runs the code and
+# returns different predictions -- see the reproducibility note in the README.
 # Digest resolvido do registry em 2026-07-26 para python:3.12-slim.
 FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 

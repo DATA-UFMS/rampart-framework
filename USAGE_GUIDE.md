@@ -4,7 +4,7 @@ Instructions to run, verify and adapt the framework. Complements the [README](RE
 
 ## Environment Setup
 
-Requirements: Python 3.10+, 8 GB RAM, 10 GB disk, internet access.
+Requirements: Python 3.12, 8 GB RAM, 10 GB disk, internet access.
 
 ```bash
 git clone https://github.com/DATA-UFMS/rampart-framework.git
