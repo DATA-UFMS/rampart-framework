@@ -44,6 +44,7 @@ from core.validation import audit_feature_set, canonical_fold
 PARADIGM = 'dataframe_lib'
 from core.models.hierarchical import (
     simple_hierarchical_model as shared_simple_hierarchical_model,
+    write_feature_audit as shared_write_feature_audit,
     write_imputation_report as shared_write_imputation_report,
     write_prediction_artifact as shared_write_prediction_artifact)
 from core.validation import impute_from_training_window
@@ -69,6 +70,8 @@ class HierarchicalModelDataFrameLib:
         #: The extent of the fold-scoped imputation appeared in no
         #: artifact: the reports were produced and discarded.
         self._imputation_reports = []
+        #: Relatório da auditoria P3 do conjunto final, escrito ao fim.
+        self.feature_audit = None
 
         self.target_col = 'dropout_rate_dataframe_lib'
 
@@ -413,6 +416,9 @@ class HierarchicalModelDataFrameLib:
         shared_write_prediction_artifact(all_results, architecture=PARADIGM)
         shared_write_imputation_report(
             self._imputation_reports, architecture=PARADIGM)
+        if self.feature_audit is not None:
+            shared_write_feature_audit(
+                self.feature_audit, architecture=PARADIGM)
 
     def run_hierarchical_analysis(self):
         """

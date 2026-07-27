@@ -195,7 +195,8 @@ class TestWhatWasNotExtracted:
         assert names == {'simple_hierarchical_model',
                          'write_prediction_artifact',
                          'write_baseline_predictions',
-                         'write_imputation_report'}, names
+                         'write_imputation_report',
+                         'write_feature_audit'}, names
 
 
 class TestInnerCrossValidationIsDeliberate:

@@ -243,6 +243,35 @@ def assert_lag_columns(present, paradigm: str, lag_orders) -> None:
         )
 
 
+def redundant_features(data, features, target_column, tolerance):
+    """Features that the others determine exactly.
+
+    The same question the joint-reconstruction check asks about the target,
+    asked about each feature: can the rest reproduce it to numerical
+    precision? If so the design matrix is rank deficient and the feature count
+    overstates the information in it.
+
+    This is not leakage. Ridge absorbs it through regularisation and a forest
+    never notices, so the predictions stand. What does not stand is the
+    reported dimensionality, and any reading of a coefficient.
+
+    The shape is not hypothetical here: INEP's rendimento rates are approval,
+    failure and abandonment per level, and the three sum to a hundred by
+    construction. Pairwise collinearity filtering does not have to catch it --
+    with comparable variances each pair correlates around -0.5, under the
+    ceiling, and all three survive while any two determine the third.
+    """
+    redundant = {}
+    for feature in features:
+        others = [other for other in features if other != feature]
+        if not others:
+            continue
+        explained = linear_reconstruction_r2(data, others, feature)
+        if explained is not None and explained > 1.0 - tolerance:
+            redundant[feature] = float(explained)
+    return redundant
+
+
 def audit_feature_set(
     data: Any, features: List[str], target_column: str, config: Dict
 ) -> Dict:
@@ -330,8 +359,33 @@ def audit_feature_set(
             f"{sorted(features)}"
         )
 
+    # Posto da matriz de desenho. Reportado, nunca interrompe: dependência
+    # exata entre features não infla desempenho, e abortar aqui mataria uma
+    # execução válida por uma propriedade que a regularização absorve.
+    #
+    # Duas medidas, porque respondem coisas diferentes. O posto diz quantas
+    # direções independentes existem de fato; a lista de redundantes diz quais
+    # colunas as outras determinam, para nomear as culpadas. Elas não se
+    # deduzem uma da outra: três taxas que somam cem têm uma dependência --
+    # posto três contando o intercepto, déficit um -- e ainda assim cada uma
+    # das três é individualmente determinada pelas outras duas.
+    redundant = redundant_features(data, features, target_column,
+                                   reproduction_tolerance)
+    design = materialise_pandas(data, list(features)).dropna()
+    if len(design) > len(features):
+        with_intercept = np.column_stack(
+            [design.to_numpy(dtype=float), np.ones(len(design))])
+        design_rank = int(np.linalg.matrix_rank(with_intercept))
+        deficiency = (len(features) + 1) - design_rank
+    else:
+        design_rank = None
+        deficiency = None
+
     return {
         'features_audited': sorted(features),
+        'redundant_features': redundant,
+        'design_rank': design_rank,
+        'rank_deficiency': deficiency,
         'proxy_correlation_threshold': proxy_threshold,
         'identity_r2_threshold': identity_threshold,
         # Over the non-autoregressive features: the leakage question.

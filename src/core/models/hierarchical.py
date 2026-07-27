@@ -220,6 +220,32 @@ def write_imputation_report(reports, *, architecture: str) -> str:
     return path
 
 
+
+def write_feature_audit(report, *, architecture: str) -> str:
+    """Persist the P3 audit of the set the models actually train on.
+
+    The audit ran and raised when it had to, but its report was assigned to an
+    attribute nothing read. What it holds is the evidence behind the L2 screen:
+    the measured association of every feature with the target, which
+    autoregressive exemptions were granted, how much of the target the set
+    reconstructs, and whether the design matrix has the rank its feature count
+    implies. A screen whose findings are discarded is a claim without a record.
+    """
+    import json
+    import os
+
+    from core.config import get_absolute_output_path
+
+    directory = get_absolute_output_path(
+        f'ml_pipeline/architectures/{architecture}/prep')
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, f'feature_audit_{architecture}.json')
+    with open(path, 'w') as handle:
+        json.dump({'architecture': architecture, **report}, handle, indent=2)
+    print(f"   Auditoria de features -> {path}")
+    return path
+
+
 def write_prediction_artifact(all_results: Dict, *, architecture: str) -> None:
     """Persist the test prediction vectors of every fold and model.
 
