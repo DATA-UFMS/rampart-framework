@@ -132,7 +132,42 @@ class TestBehaviourIsPreserved:
     # removed. Anchoring one value is enough: agreement between paradigms is
     # asserted separately, so the two together rule out drifting in step.
     ANCHOR_SHRINKAGE = 0.6
-    ANCHOR_DIGEST_PREFIX = 'b37dce5e9e2b0be9e69c'
+
+    #: The anchored prediction vector, captured on the reference machine.
+    #: Twelve significant digits: the machine-to-machine variation this
+    #: test exists to tolerate lives far below that, and a change in
+    #: behaviour lives far above it.
+    ANCHOR_VALUES = (
+        0.284427774414, 0.151939393543, -0.390101308994,
+        -0.258143549023, -0.646382345967, -0.100596202308,
+        -0.149884588174, -0.179016876685, -0.469049317026,
+        0.115530791198, -0.975724198504, -0.109168477788,
+        -0.590592675518, 0.443159808044, -0.146140810064,
+        -0.0498414110694, -0.0134746793179, -0.238552634851,
+        0.131810301402, 0.115720081852, 0.271259984334, 0.38915942002,
+        -0.734687463408, -0.303359112532, -0.041166631428,
+        -0.100063161145, -0.698882150468, 0.918769894948,
+        -0.925338345758, -0.677436994365, -0.143896570995,
+        0.0957432315001, 0.322534585077, -0.00483703436976,
+        -0.365919710629, -0.149703683552, -0.0380064617983,
+        -0.0957350156063, -0.452914485268, 0.37146420961,
+        -0.267454854849, -0.799026333327, -0.00393636088951,
+        0.205182022427, -0.118080754089, -0.0410847365973,
+        -0.864541589889, -0.337058963345, 0.140310722882,
+        -0.205192312336, -0.360323306044, 0.0848595767971,
+        -0.480838682632, -0.640902182022, -0.098421918893,
+        0.143657660055, -0.0173393972502, -0.231868502597,
+        -0.854882834494, -0.0452307811504, 0.118268918212,
+        -0.321399163935, -0.256632563461, 0.18859806971,
+        -0.282493965815, -0.329572405046, -0.107898069867,
+        0.0185120353224, -0.52076672396, 0.387601761989,
+        -0.637343334446, 0.363129657813, -0.388019911539,
+        0.819618924666, -0.705077487587, 0.456937962413, -0.65513734735,
+        -0.152656910233, 0.183866801035, -0.275960119977, 0.38581967544,
+        0.159616205888, -0.617144513598, 0.0994844003182, 0.39013933411,
+        -0.153637941994, 0.00783125566054, -0.072363096613,
+        -0.177836501104, -0.172120277387,
+    )
 
     @pytest.mark.parametrize('shrinkage', [0.6, 0.8, 1.0])
     def test_the_three_paradigms_agree_bitwise(self, shrinkage):
@@ -141,12 +176,41 @@ class TestBehaviourIsPreserved:
                    for paradigm in PARADIGMS}
         assert len(set(digests.values())) == 1, digests
 
-    def test_the_captured_digest_still_holds(self):
-        """One anchored value, so agreement cannot drift together."""
-        digest = _digest(_run('task_graph', self.ANCHOR_SHRINKAGE))
-        assert digest.startswith(self.ANCHOR_DIGEST_PREFIX), (
-            f'predictions changed: {digest[:20]} != {self.ANCHOR_DIGEST_PREFIX}'
-        )
+    #: How far the anchored predictions may move before the difference stops
+    #: being arithmetic and starts being a change in behaviour. Two orders of
+    #: magnitude below the SESOI on R2 (0.01), so a drift this size cannot
+    #: reach any published decision.
+    ANCHOR_TOLERANCE = 1e-4
+
+    def test_the_captured_values_still_hold(self):
+        """One anchored vector, so agreement between paradigms cannot drift together.
+
+        Compared within a tolerance rather than by digest, and the reason is a
+        measurement rather than caution. The digest form failed on CI and passed
+        on re-run of the same commit, same interpreter: GitHub allocates runners
+        with different instruction sets, and a different reduction order in BLAS
+        moves the last bits. The absolute values are a property of the machine.
+
+        What is *not* machine-dependent, and is the claim the paper makes, is
+        that the three paradigms agree with each other -- that test passed on
+        every runner, including the ones where this one failed. Keeping a
+        bitwise anchor here would have gone on reporting hardware allocation as
+        a regression in the model.
+        """
+        import numpy as np
+
+        values = np.asarray(
+            _run('task_graph', self.ANCHOR_SHRINKAGE)['predictions'],
+            dtype=float)
+        anchored = np.asarray(self.ANCHOR_VALUES, dtype=float)
+        assert values.shape == anchored.shape, (
+            f'the anchored vector changed shape: {values.shape} != '
+            f'{anchored.shape}')
+        worst = float(np.max(np.abs(values - anchored)))
+        assert worst <= self.ANCHOR_TOLERANCE, (
+            f'predictions moved by {worst:.2e}, beyond the {self.ANCHOR_TOLERANCE:.0e} '
+            f'attributable to floating-point reduction order; this is a change '
+            f'in behaviour, not in hardware')
 
     @pytest.mark.parametrize('shrinkage', [0.6, 0.8, 1.0])
     def test_metrics_agree_across_paradigms(self, shrinkage):

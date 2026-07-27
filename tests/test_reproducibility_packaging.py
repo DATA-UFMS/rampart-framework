@@ -461,4 +461,4 @@ class TestOneDeclaredInterpreter:
     def test_the_limit_of_the_guarantee_is_written_down(self):
         """A reader must not take bitwise equivalence for portable numbers."""
         text = (_ROOT / 'README.md').read_text()
-        assert 'the numbers themselves do not' in text
+        assert 'the digits themselves do not' in text

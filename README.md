@@ -357,14 +357,15 @@ Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON �
 - 1568 automated tests (`pytest tests/`)
 
 **What the guarantee covers, and what it does not.** Bitwise equivalence is a
-property of the code: given one interpreter, the three paradigms produce
-identical predictions, and the pipeline halts when they do not. The absolute
-values are a property of the whole environment, interpreter included. Running
-the same lockfile on Python 3.10 rather than 3.12 yields a different prediction
-digest while the three paradigms still agree with each other — the arithmetic
-changed underneath all of them equally. That is why the package declares one
-version and the container pins the image by digest: the comparison between
-paradigms travels, the numbers themselves do not. This is the same class of
+property of the code: on one machine, the three paradigms produce identical
+predictions, and the pipeline halts when they do not. The absolute values are a
+property of the machine. Running the same commit and the same lockfile on two
+CI runners yields prediction vectors that differ in their last bits, while the
+three paradigms still agree with each other on each of them — the reduction
+order in the numerical libraries changed underneath all three equally. That is
+why the container pins its image by digest and the anchored regression test
+compares within a tolerance rather than by hash: the comparison between
+paradigms travels, the digits themselves do not. This is the same class of
 result Glatard et al. (2015) report for neuroimaging pipelines across operating
 systems, where a difference in one libm function moved Dice scores from 0.59 to
 above 0.9.
