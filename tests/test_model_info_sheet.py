@@ -56,6 +56,19 @@ def _write_artifacts(root, dataset='worldbank'):
                                  'floor_was_relaxed': False},
             'target_correlations': {'gini_index': 0.42,
                                     'gdp_per_capita': -0.51}}))
+        # The re-audit of the set the models train on, lags included. Written
+        # by the models rather than by setup, and it is what carries the proxy
+        # and identity verdicts -- the selection artifact above holds neither.
+        (prep / f'feature_audit_{paradigm}.json').write_text(json.dumps({
+            'creation_timestamp': '2026-07-27T10:30:00',
+            'features_audited': ['gini_index', 'gdp_per_capita',
+                                 'dropout_rate_lag_2', 'dropout_rate_lag_3'],
+            'proxy_correlation_threshold': 0.8,
+            'identity_r2_threshold': 0.95,
+            'joint_reconstruction_r2': 0.37,
+            'full_set_reconstruction_r2': 0.71,
+            'autoregressive_exemptions': {'dropout_rate_lag_2': 0.86,
+                                          'dropout_rate_lag_3': 0.79}}))
     (base / 'collection' / 'raw_data').mkdir(parents=True, exist_ok=True)
     (base / 'collection' / 'raw_data' / 'target_coverage.json').write_text(
         json.dumps({'rows_before': 768, 'rows_after': 500,
@@ -184,3 +197,148 @@ class TestTheRendering:
         entry = report['datasets']['worldbank']['reproducibility']
         assert entry['kind'] == sheet.DERIVED
         assert 'abc1234def' in entry['text']
+
+
+class TestTheSheetSpeaksForEveryParadigm:
+    """It quoted whichever paradigm happened to have the file, and said so.
+
+    The loop took the first artifact it found and stopped. With three
+    paradigms claimed to run the same protocol over the same data that reads
+    as harmless -- until one of them diverges, or one leaves no artifact at
+    all, and the sheet describes a single paradigm while presenting itself as
+    the study. That is the unverifiable assertion the derived answers exist to
+    replace, reintroduced by the derivation itself.
+    """
+
+    def _root(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(sheet, '_ROOT', tmp_path)
+        monkeypatch.setattr(sheet, '_dataset_root',
+                            lambda dataset: tmp_path / 'outputs' / dataset)
+        return tmp_path / 'outputs' / 'worldbank'
+
+    @staticmethod
+    def _prep(base, paradigm):
+        return base / 'ml_pipeline' / 'architectures' / paradigm / 'prep'
+
+    def test_divergent_paradigms_do_not_yield_a_derived_answer(
+            self, tmp_path, monkeypatch):
+        base = self._root(tmp_path, monkeypatch)
+        _write_artifacts(tmp_path)
+        path = (self._prep(base, PARADIGMS[-1])
+                / f'temporal_folds_{PARADIGMS[-1]}.json')
+        payload = json.loads(path.read_text())
+        payload['folds'][0]['test_end'] = 2099
+        path.write_text(json.dumps(payload))
+
+        answers = sheet.build(['worldbank'])['datasets']['worldbank']
+        assert answers['L1']['L1.1']['kind'] == sheet.PENDING
+        assert 'divergem' in answers['L1']['L1.1']['text']
+
+    def test_divergence_is_named_rather_than_averaged(self, tmp_path,
+                                                      monkeypatch):
+        base = self._root(tmp_path, monkeypatch)
+        _write_artifacts(tmp_path)
+        path = (self._prep(base, PARADIGMS[0])
+                / f'fold_imputation_{PARADIGMS[0]}.json')
+        payload = json.loads(path.read_text())
+        payload['across_folds']['train']['fraction'] = 0.99
+        path.write_text(json.dumps(payload))
+
+        answers = sheet.build(['worldbank'])['datasets']['worldbank']
+        assert answers['L1']['L1.2']['kind'] == sheet.PENDING
+        assert '99' not in answers['L1']['L1.2']['text'], (
+            'a divergent value reached the sheet as though it were the study')
+
+    def test_a_paradigm_without_the_artifact_is_disclosed(self, tmp_path,
+                                                          monkeypatch):
+        """Agreement among two of three is agreement, but the reader is told."""
+        base = self._root(tmp_path, monkeypatch)
+        _write_artifacts(tmp_path)
+        missing = PARADIGMS[-1]
+        (self._prep(base, missing)
+         / f'temporal_folds_{missing}.json').unlink()
+
+        answers = sheet.build(['worldbank'])['datasets']['worldbank']
+        assert answers['L1']['L1.1']['kind'] == sheet.DERIVED
+        assert missing in answers['L1']['L1.1']['text']
+
+    def test_float_noise_is_not_reported_as_divergence(self, tmp_path,
+                                                       monkeypatch):
+        """Three engines, one protocol: the last bits are summation order."""
+        base = self._root(tmp_path, monkeypatch)
+        _write_artifacts(tmp_path)
+        path = (self._prep(base, PARADIGMS[0])
+                / f'fold_imputation_{PARADIGMS[0]}.json')
+        payload = json.loads(path.read_text())
+        payload['across_folds']['train']['fraction'] = 0.12 + 1e-15
+        path.write_text(json.dumps(payload))
+
+        answers = sheet.build(['worldbank'])['datasets']['worldbank']
+        assert answers['L1']['L1.2']['kind'] == sheet.DERIVED
+
+
+class TestTheProxyVerdictComesFromTheAudit:
+    """L2 asserted P3's result from an artifact that does not hold it.
+
+    The sentence "none passed the proxy ceiling, and the set does not
+    reconstruct the target above the identity threshold" was emitted whenever
+    feature_selection_<paradigm>.json existed. That file is written during
+    setup, unconditionally, and contains neither measurement: the ceiling and
+    the identity R2 are computed later, by the re-audit, over the set the
+    models actually train on -- lags included, which selection never saw.
+
+    So the sheet stated the outcome of a check from a file that would look
+    exactly the same had the check never run. On the instrument whose whole
+    purpose is that its claims are verifiable, that was the worst place for it.
+    """
+
+    def test_the_verdict_is_absent_without_the_audit(self, tmp_path,
+                                                     monkeypatch):
+        monkeypatch.setattr(sheet, '_ROOT', tmp_path)
+        monkeypatch.setattr(sheet, '_dataset_root',
+                            lambda dataset: tmp_path / 'outputs' / dataset)
+        _write_artifacts(tmp_path)
+        base = tmp_path / 'outputs' / 'worldbank'
+        for paradigm in PARADIGMS:
+            (base / 'ml_pipeline' / 'architectures' / paradigm / 'prep'
+             / f'feature_audit_{paradigm}.json').unlink()
+
+        answer = sheet.build(['worldbank'])['datasets']['worldbank']['L2']['L2.screen']
+        assert answer['kind'] == sheet.PENDING
+        # Naming the ceiling as pending is fine; clearing it is the defect.
+        assert 'passou do teto' not in answer['text'], (
+            'the sheet still states the verdict the audit was to establish')
+
+    def test_the_measured_thresholds_reach_the_sheet(self, filled):
+        answer = filled['L2']['L2.screen']
+        assert answer['kind'] == sheet.DERIVED
+        assert '0.8' in answer['text'], 'the proxy ceiling is not quoted'
+        assert '0.95' in answer['text'], 'the identity threshold is not quoted'
+        assert '0.37' in answer['text'], 'the measured R2 is not quoted'
+
+    def test_the_autoregressive_exemptions_are_disclosed(self, filled):
+        """An exemption granted without its correlation is an exemption hidden."""
+        text = filled['L2']['L2.screen']['text']
+        assert 'dropout_rate_lag_2' in text
+        assert '+0.860' in text
+
+    def test_the_answer_names_both_artifacts(self, filled):
+        source = filled['L2']['L2.screen']['source']
+        assert 'feature_audit' in source
+        assert 'feature_selection' in source
+
+    def test_the_marginal_screen_survives_without_the_audit(self, tmp_path,
+                                                            monkeypatch):
+        """Losing the verdict must not cost the evidence that does exist."""
+        monkeypatch.setattr(sheet, '_ROOT', tmp_path)
+        monkeypatch.setattr(sheet, '_dataset_root',
+                            lambda dataset: tmp_path / 'outputs' / dataset)
+        _write_artifacts(tmp_path)
+        base = tmp_path / 'outputs' / 'worldbank'
+        for paradigm in PARADIGMS:
+            (base / 'ml_pipeline' / 'architectures' / paradigm / 'prep'
+             / f'feature_audit_{paradigm}.json').unlink()
+
+        text = sheet.build(['worldbank'])['datasets']['worldbank'][
+            'L2']['L2.screen']['text']
+        assert 'gini_index' in text

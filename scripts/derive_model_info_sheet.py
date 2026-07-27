@@ -42,7 +42,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / 'src'))
@@ -67,6 +67,72 @@ def _read_json(path: Path) -> Optional[Dict]:
         return None
 
 
+def _fingerprint(value):
+    """A comparable form of a value, with float noise below the 12th digit gone.
+
+    The paradigms compute these on three different engines. Agreement to twelve
+    significant digits is agreement about the protocol; the bits below that are
+    about summation order, and treating them as disagreement would report a
+    divergence that does not exist.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return f'{value:.12g}'
+    if isinstance(value, dict):
+        return tuple(sorted((key, _fingerprint(item))
+                            for key, item in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_fingerprint(item) for item in value)
+    return value
+
+
+def _agreed(root: Path, paradigms: List[str], stem: str,
+            fields: Tuple[str, ...]) -> Tuple[Optional[Dict], Optional[str]]:
+    """Read an artifact from every paradigm; quote it only if they agree.
+
+    Taking the first paradigm that happened to have the file described one
+    paradigm and presented it as the study. The three are claimed to run the
+    same protocol over the same data, so the sheet may speak for all of them --
+    but only once that has been checked, and nothing was checking. A sheet that
+    silently describes a single paradigm is the same unverifiable assertion the
+    derived answers exist to replace.
+
+    Only the fields an answer actually quotes are compared. Comparing whole
+    payloads would flag differences in values no reader ever sees.
+
+    Returns the agreed payload and a note to carry into the answer. Divergence
+    returns no payload: an answer the paradigms contradict is worse than an
+    absent one.
+    """
+    found = {}
+    for paradigm in paradigms:
+        payload = _read_json(root / 'ml_pipeline' / 'architectures' / paradigm
+                             / 'prep' / f'{stem}_{paradigm}.json')
+        if payload:
+            found[paradigm] = payload
+
+    if not found:
+        return None, None
+
+    prints = {paradigm: _fingerprint({f: payload.get(f) for f in fields})
+              for paradigm, payload in found.items()}
+    if len(set(prints.values())) > 1:
+        return None, (
+            f"Os paradigmas divergem nos valores de {stem} "
+            f"({', '.join(sorted(found))}), então nenhum deles descreve o "
+            f"estudo. Com predições bitwise-idênticas isto não deveria "
+            f"ocorrer."
+        )
+
+    missing = [p for p in paradigms if p not in found]
+    note = None
+    if missing:
+        note = (f" Derivado de {', '.join(sorted(found))}; "
+                f"{', '.join(missing)} não deixou este artefato.")
+    return found[sorted(found)[0]], note
+
+
 def _dataset_root(dataset: str) -> Path:
     return _ROOT / 'outputs' / dataset
 
@@ -75,13 +141,8 @@ def _l1_clean_separation(root: Path, paradigms: List[str]) -> Dict:
     """L1: the test set does not interact with training data at any step."""
     answers = {}
 
-    folds = None
-    for paradigm in paradigms:
-        payload = _read_json(root / 'ml_pipeline' / 'architectures' / paradigm
-                             / 'prep' / f'temporal_folds_{paradigm}.json')
-        if payload:
-            folds = payload.get('folds')
-            break
+    payload, note = _agreed(root, paradigms, 'temporal_folds', ('folds',))
+    folds = payload.get('folds') if payload else None
 
     if folds:
         first, last = folds[0], folds[-1]
@@ -91,20 +152,16 @@ def _l1_clean_separation(root: Path, paradigms: List[str]) -> Dict:
             f"{first['test_start']}-{first['test_end']} treinando em "
             f"{first['train_start']}-{first['train_end']}; o último avalia "
             f"{last['test_start']}-{last['test_end']}. Nenhum fold reutiliza "
-            f"a janela de teste para treinar.",
+            f"a janela de teste para treinar.{note or ''}",
             'temporal_folds_<paradigma>.json')
     else:
         answers['L1.1'] = _answer(
-            PENDING, "Contagem e janelas dos folds virão do artefato de folds.",
+            PENDING,
+            note or "Contagem e janelas dos folds virão do artefato de folds.",
             'temporal_folds_<paradigma>.json')
 
-    imputation = None
-    for paradigm in paradigms:
-        imputation = _read_json(root / 'ml_pipeline' / 'architectures'
-                                / paradigm / 'prep'
-                                / f'fold_imputation_{paradigm}.json')
-        if imputation:
-            break
+    imputation, note = _agreed(root, paradigms, 'fold_imputation',
+                               ('across_folds',))
 
     if imputation:
         totals = imputation.get('across_folds', {})
@@ -115,22 +172,20 @@ def _l1_clean_separation(root: Path, paradigms: List[str]) -> Dict:
             DERIVED,
             f"Escala e imputação são ajustadas na janela de treino de cada "
             f"fold e aplicadas a validação e teste. Fração de células "
-            f"preenchidas pela mediana da janela de treino: {parts}.",
+            f"preenchidas pela mediana da janela de treino: {parts}.{note or ''}",
             'fold_imputation_<paradigma>.json')
     else:
         answers['L1.2'] = _answer(
             PENDING,
-            "A estatística é ajustada só no treino (impute_from_training_"
-            "window); a fração preenchida por split virá do artefato.",
+            note or ("A estatística é ajustada só no treino (impute_from_"
+                     "training_window); a fração preenchida por split virá do "
+                     "artefato."),
             'fold_imputation_<paradigma>.json')
 
-    selection = None
-    for paradigm in paradigms:
-        selection = _read_json(root / 'ml_pipeline' / 'architectures'
-                               / paradigm / 'prep'
-                               / f'feature_selection_{paradigm}.json')
-        if selection:
-            break
+    selection, note = _agreed(
+        root, paradigms, 'feature_selection',
+        ('selection_bounds', 'temporal_scope', 'features_selected',
+         'total_features_analyzed', 'target_correlations'))
 
     if selection:
         bounds = selection.get('selection_bounds', {})
@@ -144,13 +199,13 @@ def _l1_clean_separation(root: Path, paradigms: List[str]) -> Dict:
             f"{selection.get('features_selected')} features selecionadas de "
             f"{selection.get('total_features_analyzed')} candidatas. A janela "
             f"do primeiro fold é a mais curta, então a restrição é "
-            f"conservadora para todos os folds posteriores.",
+            f"conservadora para todos os folds posteriores.{note or ''}",
             'feature_selection_<paradigma>.json')
     else:
         answers['L1.3'] = _answer(
             PENDING,
-            "A seleção usa a janela de treino do primeiro fold; os limites e a "
-            "contagem virão do artefato.",
+            note or ("A seleção usa a janela de treino do primeiro fold; os "
+                     "limites e a contagem virão do artefato."),
             'feature_selection_<paradigma>.json')
 
     answers['L1.4'] = _answer(
@@ -166,30 +221,61 @@ def _l2_feature_legitimacy(root: Path, paradigms: List[str]) -> Dict:
     """L2: each feature is legitimate. Screen derived; judgment is not."""
     answers = {}
 
-    selection = None
-    for paradigm in paradigms:
-        selection = _read_json(root / 'ml_pipeline' / 'architectures'
-                               / paradigm / 'prep'
-                               / f'feature_selection_{paradigm}.json')
-        if selection:
-            break
+    # Two artifacts, because the answer makes two claims and they are measured
+    # at different moments. The marginal screen is what selection did, on the
+    # candidate pool. The verdict is about the set the models actually train
+    # on -- lags included, which selection never saw. The verdict used to be
+    # asserted from the selection file, which is written whether or not the
+    # audit ever ran and holds none of its measurements.
+    selection, selection_note = _agreed(root, paradigms, 'feature_selection',
+                                        ('target_correlations',))
+    audit, audit_note = _agreed(
+        root, paradigms, 'feature_audit',
+        ('features_audited', 'proxy_correlation_threshold',
+         'identity_r2_threshold', 'joint_reconstruction_r2',
+         'full_set_reconstruction_r2', 'autoregressive_exemptions'))
 
+    def _measured(value) -> str:
+        return 'não medido' if value is None else f'{value:.4f}'
+
+    parts, sources = [], []
     if selection:
         correlations = selection.get('target_correlations', {})
         ranked = sorted(correlations.items(), key=lambda kv: -abs(kv[1]))
         listing = '; '.join(f"{name} {value:+.3f}" for name, value in ranked)
-        answers['L2.screen'] = _answer(
-            DERIVED,
+        parts.append(
             f"Rastreio automático, sobre a janela de treino do primeiro fold. "
             f"Associação marginal de cada feature selecionada com o alvo: "
-            f"{listing}. Nenhuma passou do teto de proxy, e o conjunto não "
-            f"reconstrói o alvo acima do limiar de identidade.",
-            'feature_selection_<paradigma>.json')
+            f"{listing}.{selection_note or ''}")
+        sources.append('feature_selection_<paradigma>.json')
+
+    if audit:
+        exemptions = audit.get('autoregressive_exemptions') or {}
+        granted = ('; '.join(f"{name} {value:+.3f}"
+                             for name, value in sorted(exemptions.items()))
+                   if exemptions else 'nenhuma')
+        parts.append(
+            f"Sobre o conjunto que os modelos de fato treinam -- "
+            f"{len(audit.get('features_audited') or [])} features, defasagens "
+            f"incluídas, que a seleção não chegou a ver -- nenhuma feature não "
+            f"autorregressiva passou do teto de proxy "
+            f"|r|={audit.get('proxy_correlation_threshold')}, e as não "
+            f"autorregressivas reconstroem o alvo com R2="
+            f"{_measured(audit.get('joint_reconstruction_r2'))} contra um "
+            f"limiar de identidade de {audit.get('identity_r2_threshold')}. "
+            f"Exemções autorregressivas concedidas, com a correlação medida: "
+            f"{granted}.{audit_note or ''}")
+        sources.append('feature_audit_<paradigma>.json')
     else:
-        answers['L2.screen'] = _answer(
-            PENDING,
-            "As correlações marginais por feature virão do artefato de seleção.",
-            'feature_selection_<paradigma>.json')
+        parts.append(
+            "O veredito sobre o conjunto treinado -- teto de proxy e limiar de "
+            "identidade após a inclusão das defasagens -- virá da auditoria de "
+            f"features.{audit_note or ''}")
+
+    answers['L2.screen'] = _answer(
+        DERIVED if (selection and audit) else PENDING,
+        ' '.join(parts),
+        ', '.join(sources) or 'feature_audit_<paradigma>.json')
 
     answers['L2.argument'] = _answer(
         ARGUMENT,
@@ -206,13 +292,8 @@ def _l3_distribution(root: Path, paradigms: List[str]) -> Dict:
     """L3: the test set comes from the distribution the claim is about."""
     answers = {}
 
-    folds = None
-    for paradigm in paradigms:
-        payload = _read_json(root / 'ml_pipeline' / 'architectures' / paradigm
-                             / 'prep' / f'temporal_folds_{paradigm}.json')
-        if payload:
-            folds = payload.get('folds')
-            break
+    payload, note = _agreed(root, paradigms, 'temporal_folds', ('folds',))
+    folds = payload.get('folds') if payload else None
 
     if folds:
         first = folds[0]
@@ -224,13 +305,13 @@ def _l3_distribution(root: Path, paradigms: List[str]) -> Dict:
             f"avaliada. Isso não é o horizonte de informação: no instante da "
             f"predição o modelo lê defasagens do alvo, e o valor mais recente "
             f"consultado está a {first.get('information_horizon_years')} anos "
-            f"do ano avaliado.",
+            f"do ano avaliado.{note or ''}",
             'temporal_folds_<paradigma>.json')
     else:
         answers['L3.1'] = _answer(
             PENDING,
-            "As duas separações -- de ajuste e de informação -- virão do "
-            "artefato de folds.",
+            note or ("As duas separações -- de ajuste e de informação -- virão "
+                     "do artefato de folds."),
             'temporal_folds_<paradigma>.json')
 
     answers['L3.2'] = _answer(
