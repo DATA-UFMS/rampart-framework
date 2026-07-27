@@ -24,7 +24,7 @@ _SRC = _ROOT / 'src'
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-TARGET = 'lower_secondary_completion_rate'
+TARGET = 'target_source_rate'
 
 
 def _collector(tmp_path):
@@ -46,7 +46,7 @@ def _panel(n_years=6, gap_at=2002):
     rows = []
     for entity in ('AAA', 'BBB'):
         for year in range(2000, 2000 + n_years):
-            rows.append({'country_code': entity, 'year': year})
+            rows.append({'entity_id': entity, 'year': year})
     frame = pd.DataFrame(rows)
     rng = np.random.default_rng(5)
     frame[TARGET] = rng.uniform(5.0, 25.0, len(frame))
@@ -54,7 +54,7 @@ def _panel(n_years=6, gap_at=2002):
     frame['internet_users_percent'] = rng.uniform(10.0, 90.0, len(frame))
     # Gaps in two features, one of them in the middle of the series.
     frame.loc[frame['year'] == gap_at, 'gini_index'] = np.nan
-    frame.loc[(frame['country_code'] == 'AAA') & (frame['year'] == 2001),
+    frame.loc[(frame['entity_id'] == 'AAA') & (frame['year'] == 2001),
               'internet_users_percent'] = np.nan
     return frame
 
@@ -120,10 +120,10 @@ class TestImputationExecutes:
     def test_forward_fill_uses_only_the_entity_past(self, tmp_path):
         """One entity must not receive a value from another."""
         panel = _panel()
-        panel.loc[panel['country_code'] == 'AAA', 'gini_index'] = np.nan
-        panel.loc[panel['country_code'] == 'BBB', 'gini_index'] = 99.0
+        panel.loc[panel['entity_id'] == 'AAA', 'gini_index'] = np.nan
+        panel.loc[panel['entity_id'] == 'BBB', 'gini_index'] = 99.0
         result = _collector(tmp_path).apply_conservative_imputation(panel)
-        filled = result[result['country_code'] == 'AAA']['gini_index'].dropna()
+        filled = result[result['entity_id'] == 'AAA']['gini_index'].dropna()
         assert (filled != 99.0).all(), (
             'a value from another entity leaked into AAA'
         )

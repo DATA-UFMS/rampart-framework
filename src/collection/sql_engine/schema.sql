@@ -11,9 +11,9 @@
 
 -- Dimensão Países: Metadados geográficos e estratificação econômica
 CREATE TABLE IF NOT EXISTS dim_countries (
-    country_code VARCHAR(3) PRIMARY KEY,
-    country_name VARCHAR(100) NOT NULL,
-    country_stratum VARCHAR(50) NOT NULL
+    entity_id VARCHAR(3) PRIMARY KEY,
+    entity_name VARCHAR(100) NOT NULL,
+    entity_stratum VARCHAR(50) NOT NULL
 );
 
 -- ============================================================================
@@ -26,15 +26,15 @@ DROP TABLE IF EXISTS analytics_wide;
 
 CREATE TABLE IF NOT EXISTS analytics_wide (
     -- Chave primária composta
-    country_code VARCHAR(3) NOT NULL,
+    entity_id VARCHAR(3) NOT NULL,
     year INTEGER NOT NULL,
     
     -- Metadados dimensionais desnormalizados para performance
-    country_name VARCHAR(100),
-    country_stratum VARCHAR(50),
+    entity_name VARCHAR(100),
+    entity_stratum VARCHAR(50),
     
     -- GRUPO: Variáveis Target Educacionais
-    lower_secondary_completion_rate DOUBLE,
+    target_source_rate DOUBLE,
     enrollment_rate_secondary_net DOUBLE,
     
     -- GRUPO: Indicadores Macroeconômicos
@@ -77,8 +77,8 @@ CREATE TABLE IF NOT EXISTS analytics_wide (
     collection_timestamp TIMESTAMP,
     
     -- Constraints de integridade
-    PRIMARY KEY (country_code, year),
-    FOREIGN KEY (country_code) REFERENCES dim_countries(country_code)
+    PRIMARY KEY (entity_id, year),
+    FOREIGN KEY (entity_id) REFERENCES dim_countries(entity_id)
 );
 
 
@@ -89,14 +89,14 @@ CREATE TABLE IF NOT EXISTS analytics_wide (
 -- ============================================================================
 
 -- Índices compostos para wide table (ordem baseada em cardinalidade e seletividade)
-CREATE INDEX IF NOT EXISTS idx_analytics_country_year ON analytics_wide(country_code, year);
-CREATE INDEX IF NOT EXISTS idx_analytics_targets ON analytics_wide(lower_secondary_completion_rate, enrollment_rate_secondary_net);
-CREATE INDEX IF NOT EXISTS idx_analytics_stratum ON analytics_wide(country_stratum);
+CREATE INDEX IF NOT EXISTS idx_analytics_country_year ON analytics_wide(entity_id, year);
+CREATE INDEX IF NOT EXISTS idx_analytics_targets ON analytics_wide(target_source_rate, enrollment_rate_secondary_net);
+CREATE INDEX IF NOT EXISTS idx_analytics_stratum ON analytics_wide(entity_stratum);
 CREATE INDEX IF NOT EXISTS idx_analytics_completeness ON analytics_wide(data_completeness_score);
 CREATE INDEX IF NOT EXISTS idx_analytics_year ON analytics_wide(year);
 
 -- Índices para dimensão países (aceleram JOINs e filtros dimensionais)
-CREATE INDEX IF NOT EXISTS idx_dim_countries_stratum ON dim_countries(country_stratum);
+CREATE INDEX IF NOT EXISTS idx_dim_countries_stratum ON dim_countries(entity_stratum);
 
 -- ============================================================================
 -- VIEWS ANALÍTICAS PARA RELATÓRIOS CIENTÍFICOS
@@ -106,28 +106,28 @@ CREATE INDEX IF NOT EXISTS idx_dim_countries_stratum ON dim_countries(country_st
 -- View agregada: Estatísticas longitudinais por país
 CREATE OR REPLACE VIEW vw_country_statistics AS
 SELECT 
-    c.country_code,
-    c.country_name,
-    c.country_stratum,
+    c.entity_id,
+    c.entity_name,
+    c.entity_stratum,
     COUNT(DISTINCT a.year) as years_covered,
     MIN(a.year) as first_year,
     MAX(a.year) as last_year,
     AVG(a.data_completeness_score) as avg_completeness,
-    AVG(a.lower_secondary_completion_rate) as avg_secondary_completion,
+    AVG(a.target_source_rate) as avg_target_source_rate,
     AVG(a.gdp_per_capita_constant_2015) as avg_gdp_per_capita
 FROM dim_countries c
-LEFT JOIN analytics_wide a USING (country_code)
-GROUP BY c.country_code, c.country_name, c.country_stratum;
+LEFT JOIN analytics_wide a USING (entity_id)
+GROUP BY c.entity_id, c.entity_name, c.entity_stratum;
 
 -- View de controle: Estatísticas de cobertura de dados
 CREATE OR REPLACE VIEW vw_data_coverage AS
 SELECT 
-    country_stratum,
-    COUNT(DISTINCT country_code) as countries_count,
+    entity_stratum,
+    COUNT(DISTINCT entity_id) as countries_count,
     COUNT(DISTINCT year) as years_covered,
     AVG(data_completeness_score) as avg_completeness
 FROM analytics_wide
-GROUP BY country_stratum;
+GROUP BY entity_stratum;
 
 -- ============================================================================
 -- SCHEMA WIDE TABLE INICIALIZADO

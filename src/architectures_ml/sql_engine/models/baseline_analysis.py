@@ -135,7 +135,7 @@ class BaselineModelAnalysisSqlEngine:
         """Ensures the target column exists in analytics_wide.
 
         If absent, creates and populates it as
-        100 - lower_secondary_completion_rate, preserving NULLs/invalid values.
+        100 - target_source_rate, preserving NULLs/invalid values.
         """
         try:
             exists = self.conn_manager.execute_scalar(
@@ -150,9 +150,9 @@ class BaselineModelAnalysisSqlEngine:
                     f"""
                     UPDATE analytics_wide
                     SET {self.target_col} = CASE
-                        WHEN lower_secondary_completion_rate IS NULL THEN NULL
-                        WHEN lower_secondary_completion_rate < 0 OR lower_secondary_completion_rate > 100 THEN NULL
-                        ELSE 100 - lower_secondary_completion_rate
+                        WHEN target_source_rate IS NULL THEN NULL
+                        WHEN target_source_rate < 0 OR target_source_rate > 100 THEN NULL
+                        ELSE 100 - target_source_rate
                     END
                     """
                 )
@@ -207,7 +207,7 @@ class BaselineModelAnalysisSqlEngine:
             total_records = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM {view_base} WHERE {self.target_col} IS NOT NULL")
             min_year = self.conn_manager.execute_scalar(f"SELECT MIN(year) FROM {view_base} WHERE {self.target_col} IS NOT NULL")
             max_year = self.conn_manager.execute_scalar(f"SELECT MAX(year) FROM {view_base} WHERE {self.target_col} IS NOT NULL")
-            total_countries = self.conn_manager.execute_scalar(f"SELECT COUNT(DISTINCT country_code) FROM {view_base} WHERE {self.target_col} IS NOT NULL")
+            total_countries = self.conn_manager.execute_scalar(f"SELECT COUNT(DISTINCT entity_id) FROM {view_base} WHERE {self.target_col} IS NOT NULL")
             target_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM {view_base} WHERE {self.target_col} IS NOT NULL") or 0
             target_std = self.conn_manager.execute_scalar(f"SELECT STDDEV({self.target_col}) FROM {view_base} WHERE {self.target_col} IS NOT NULL") or 0
             target_min = self.conn_manager.execute_scalar(f"SELECT MIN({self.target_col}) FROM {view_base} WHERE {self.target_col} IS NOT NULL") or 0
@@ -298,7 +298,7 @@ class BaselineModelAnalysisSqlEngine:
                         SELECT column_name
                         FROM information_schema.columns
                         WHERE table_name = '{view_name}'
-                        AND column_name NOT IN ('country_code', 'year', '{self.target_col}')
+                        AND column_name NOT IN ('entity_id', 'year', '{self.target_col}')
                         ORDER BY column_name
                     """
                     
@@ -312,24 +312,24 @@ class BaselineModelAnalysisSqlEngine:
                         # Dynamic query with the features actually available (100% SQL)
                         query = f"""
                             SELECT
-                                country_code,
+                                entity_id,
                                 year,
                                 {self.target_col},
                                 {feature_list}
                             FROM {view_name}
                             WHERE {self.target_col} IS NOT NULL
-                            ORDER BY country_code, year
+                            ORDER BY entity_id, year
                         """
                     else:
                         print(f"      No feature discovered, using basic columns")
                         query = f"""
                             SELECT
-                                country_code,
+                                entity_id,
                                 year,
                                 {self.target_col}
                             FROM {view_name}
                             WHERE {self.target_col} IS NOT NULL
-                            ORDER BY country_code, year
+                            ORDER BY entity_id, year
                         """
                         
                 except SQLProcessingError as e:
@@ -337,12 +337,12 @@ class BaselineModelAnalysisSqlEngine:
                     print(f"      Fallback: using a query with basic columns")
                     query = f"""
                         SELECT
-                            country_code,
+                            entity_id,
                             year,
                             {self.target_col}
                         FROM {view_name}
                         WHERE {self.target_col} IS NOT NULL
-                        ORDER BY country_code, year
+                        ORDER BY entity_id, year
                     """
                     
             else:
@@ -356,9 +356,9 @@ class BaselineModelAnalysisSqlEngine:
                         SELECT column_name
                         FROM information_schema.columns
                         WHERE table_name = 'analytics_wide'
-                        AND column_name NOT IN ('country_code', 'year', '{self.target_col}', 'data_source',
+                        AND column_name NOT IN ('entity_id', 'year', '{self.target_col}', 'data_source',
                                                'data_completeness_score', 'etl_batch_id', 'collection_timestamp',
-                                               'country_name', 'country_stratum')
+                                               'entity_name', 'entity_stratum')
                         AND data_type IN ('DOUBLE', 'INTEGER', 'FLOAT', 'DECIMAL', 'NUMERIC')
                         ORDER BY column_name
                     """
@@ -372,7 +372,7 @@ class BaselineModelAnalysisSqlEngine:
                         
                         query = f"""
                             SELECT
-                                country_code,
+                                entity_id,
                                 year,
                                 {self.target_col},
                                 {base_feature_list}
@@ -380,33 +380,33 @@ class BaselineModelAnalysisSqlEngine:
                             WHERE {self.target_col} IS NOT NULL
                               AND year >= {year_start}
                               AND year <= {year_end}
-                            ORDER BY country_code, year
+                            ORDER BY entity_id, year
                         """
                     else:
                         query = f"""
                             SELECT
-                                country_code,
+                                entity_id,
                                 year,
                                 {self.target_col}
                             FROM analytics_wide
                             WHERE {self.target_col} IS NOT NULL
                               AND year >= {year_start}
                               AND year <= {year_end}
-                            ORDER BY country_code, year
+                            ORDER BY entity_id, year
                         """
                         
                 except SQLProcessingError as e:
                     print(f"      Error discovering features from the base table: {e}")
                     query = f"""
                         SELECT
-                            country_code,
+                            entity_id,
                             year,
                             {self.target_col}
                         FROM analytics_wide
                         WHERE {self.target_col} IS NOT NULL
                           AND year >= {year_start}
                           AND year <= {year_end}
-                        ORDER BY country_code, year
+                        ORDER BY entity_id, year
                     """
             
             df = self.conn_manager.execute_sql(query)
@@ -417,7 +417,7 @@ class BaselineModelAnalysisSqlEngine:
             
             self._fold_data_cache[cache_key] = df
             
-            feature_count = len([col for col in df.columns if col not in ['country_code', 'year', self.target_col]])
+            feature_count = len([col for col in df.columns if col not in ['entity_id', 'year', self.target_col]])
             
             if view_exists:
                 print(f"      Data from the temporal view: {len(df)} records, {feature_count} features")
@@ -530,7 +530,7 @@ class BaselineModelAnalysisSqlEngine:
             
             country_query = f"""
                 SELECT 
-                    country_code,
+                    entity_id,
                     COUNT(*) as count,
                     AVG({self.target_col}) as mean,
                     STDDEV({self.target_col}) as std,
@@ -538,17 +538,17 @@ class BaselineModelAnalysisSqlEngine:
                     MAX({self.target_col}) as max
                 FROM analytics_wide 
                 WHERE {self.target_col} IS NOT NULL
-                GROUP BY country_code
+                GROUP BY entity_id
                 ORDER BY mean
             """
             country_df = self.conn_manager.execute_sql(country_query)
             
             if not country_df.empty:
-                min_dropout_mean = self.conn_manager.execute_scalar(f"SELECT MIN(avg_dropout) FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code)")
-                max_dropout_mean = self.conn_manager.execute_scalar(f"SELECT MAX(avg_dropout) FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code)")
-                min_dropout_country_code = self.conn_manager.execute_scalar(f"SELECT country_code FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code ORDER BY avg_dropout LIMIT 1)")
-                max_dropout_country_code = self.conn_manager.execute_scalar(f"SELECT country_code FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code ORDER BY avg_dropout DESC LIMIT 1)")
-                country_variation = self.conn_manager.execute_scalar(f"SELECT STDDEV(avg_dropout) FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code)")
+                min_dropout_mean = self.conn_manager.execute_scalar(f"SELECT MIN(avg_dropout) FROM (SELECT entity_id, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY entity_id)")
+                max_dropout_mean = self.conn_manager.execute_scalar(f"SELECT MAX(avg_dropout) FROM (SELECT entity_id, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY entity_id)")
+                min_dropout_country_code = self.conn_manager.execute_scalar(f"SELECT entity_id FROM (SELECT entity_id, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY entity_id ORDER BY avg_dropout LIMIT 1)")
+                max_dropout_country_code = self.conn_manager.execute_scalar(f"SELECT entity_id FROM (SELECT entity_id, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY entity_id ORDER BY avg_dropout DESC LIMIT 1)")
+                country_variation = self.conn_manager.execute_scalar(f"SELECT STDDEV(avg_dropout) FROM (SELECT entity_id, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY entity_id)")
                 
                 print(f"\n   Variation across countries:")
                 print(f"      Lowest dropout: {min_dropout_mean:.1f}% ({min_dropout_country_code})")
@@ -634,7 +634,7 @@ class BaselineModelAnalysisSqlEngine:
                     if df is None or len(df) == 0:
                         return None
                     diffs = []
-                    for _, g in df.sort_values(['country_code','year']).groupby('country_code'):
+                    for _, g in df.sort_values(['entity_id','year']).groupby('entity_id'):
                         s = g[self.target_col].values
                         if len(s) >= 2:
                             d = np.abs(np.diff(s))
@@ -699,11 +699,11 @@ class BaselineModelAnalysisSqlEngine:
             
             val_pred_naive = []
             for _, val_row in val_clean.iterrows():
-                country = val_row['country_code']
+                country = val_row['entity_id']
                 val_year = val_row['year']
                 
                 country_history = train_clean[
-                    (train_clean['country_code'] == country) & 
+                    (train_clean['entity_id'] == country) & 
                     (train_clean['year'] <= val_year - MIN_LAG)
                 ].sort_values('year')
                 
@@ -718,11 +718,11 @@ class BaselineModelAnalysisSqlEngine:
             combined_history = pd.concat([train_clean, val_clean], ignore_index=True)
             
             for _, test_row in test_clean.iterrows():
-                country = test_row['country_code']
+                country = test_row['entity_id']
                 test_year = test_row['year']
                 
                 country_history = combined_history[
-                    (combined_history['country_code'] == country) & 
+                    (combined_history['entity_id'] == country) & 
                     (combined_history['year'] <= test_year - MIN_LAG)
                 ].sort_values('year')
                 
@@ -752,7 +752,7 @@ class BaselineModelAnalysisSqlEngine:
             
             val_pred_cross = []
             for _, val_row in val_clean.iterrows():
-                country = val_row['country_code']
+                country = val_row['entity_id']
                 val_year = val_row['year']
 
                 year_data = train_clean[
@@ -760,7 +760,7 @@ class BaselineModelAnalysisSqlEngine:
                 ]
 
                 if len(year_data) > 0:
-                    country_means = year_data.groupby('country_code')[self.target_col].mean()
+                    country_means = year_data.groupby('entity_id')[self.target_col].mean()
                     other_countries = country_means[country_means.index != country]
                     if len(other_countries) > 0:
                         cross_val = other_countries.mean()
@@ -773,7 +773,7 @@ class BaselineModelAnalysisSqlEngine:
             
             test_pred_cross = []
             for _, test_row in test_clean.iterrows():
-                country = test_row['country_code']
+                country = test_row['entity_id']
                 test_year = test_row['year']
 
                 year_data = combined_history[
@@ -781,7 +781,7 @@ class BaselineModelAnalysisSqlEngine:
                 ]
 
                 if len(year_data) > 0:
-                    country_means = year_data.groupby('country_code')[self.target_col].mean()
+                    country_means = year_data.groupby('entity_id')[self.target_col].mean()
                     other_countries = country_means[country_means.index != country]
                     if len(other_countries) > 0:
                         cross_test = other_countries.mean()
@@ -858,16 +858,16 @@ class BaselineModelAnalysisSqlEngine:
             
             self._prediction_recorder.record(
                 fold=fold_id, model='global_mean', y_true=y_test,
-                y_pred=test_pred_global, entities=test_clean['country_code'])
+                y_pred=test_pred_global, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='linear_trend', y_true=y_test,
-                y_pred=test_pred_trend, entities=test_clean['country_code'])
+                y_pred=test_pred_trend, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='naive_with_lag', y_true=y_test,
-                y_pred=test_pred_naive, entities=test_clean['country_code'])
+                y_pred=test_pred_naive, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='cross_country', y_true=y_test,
-                y_pred=test_pred_cross, entities=test_clean['country_code'])
+                y_pred=test_pred_cross, entities=test_clean['entity_id'])
 
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
             fold_results['fold_load_s'] = _fold_load_s

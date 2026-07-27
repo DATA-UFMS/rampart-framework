@@ -122,7 +122,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                  WHERE table_name = 'analytics_wide') as total_columns,
                 MIN(year) as min_year,
                 MAX(year) as max_year,
-                COUNT(DISTINCT country_code) as unique_countries,
+                COUNT(DISTINCT entity_id) as unique_countries,
                 COUNT(DISTINCT year) as temporal_periods
             FROM analytics_wide
         """
@@ -167,7 +167,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
         
         Adequacy criteria:
             - Minimum 50 valid observations for the target (statistical power)
-            - country_code, year required (unique identifiers)
+            - entity_id, year required (unique identifiers)
             - Target coverage >20% to avoid extreme class imbalance
         
         Aborts when the configured target column is absent, rather than
@@ -238,7 +238,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                 COUNT(DISTINCT year) as unique_years,
                 MIN(year) as min_year,
                 MAX(year) as max_year,
-                COUNT(DISTINCT country_code) as unique_countries
+                COUNT(DISTINCT entity_id) as unique_countries
             FROM analytics_wide
         """).iloc[0]
         
@@ -264,7 +264,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             print("    [WARN] Few countries may limit geographic generalization")
         
         # 5. Required column validation
-        required_cols = ['country_code', 'year']
+        required_cols = ['entity_id', 'year']
         missing_cols = []
         
         for col in required_cols:
@@ -477,7 +477,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                     SELECT
                         'train' as split_type,
                         COUNT(*) as obs_count,
-                        COUNT(DISTINCT country_code) as country_count,
+                        COUNT(DISTINCT entity_id) as country_count,
                         COUNT({self.target_column}) as valid_targets,
                         AVG({self.target_column}) as target_mean
                     FROM analytics_wide
@@ -490,7 +490,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                     SELECT
                         'val' as split_type,
                         COUNT(*) as obs_count,
-                        COUNT(DISTINCT country_code) as country_count,
+                        COUNT(DISTINCT entity_id) as country_count,
                         COUNT({self.target_column}) as valid_targets,
                         AVG({self.target_column}) as target_mean
                     FROM analytics_wide
@@ -501,7 +501,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                     SELECT
                         'test' as split_type,
                         COUNT(*) as obs_count,
-                        COUNT(DISTINCT country_code) as country_count,
+                        COUNT(DISTINCT entity_id) as country_count,
                         COUNT({self.target_column}) as valid_targets,
                         AVG({self.target_column}) as target_mean
                     FROM analytics_wide
@@ -549,7 +549,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                 
                 # Criterion 2: Geographic representativeness
                 total_countries = self.conn_manager.execute_scalar(
-                    "SELECT COUNT(DISTINCT country_code) FROM analytics_wide"
+                    "SELECT COUNT(DISTINCT entity_id) FROM analytics_wide"
                 )
                 geographic_coverage = (country_count / total_countries) * 100 if total_countries > 0 else 0
                 
@@ -614,7 +614,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                     SELECT * FROM vw_selected_features 
                     WHERE year >= {fold['train_start']} AND year <= {fold['train_end']}
                       AND NOT (year >= {fold['train_gap_start']} AND year <= {fold['train_gap_end']})
-                    ORDER BY country_code, year
+                    ORDER BY entity_id, year
                 """
                 self.conn_manager.execute_sql_no_return(train_view_query)
                 
@@ -622,7 +622,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                     CREATE OR REPLACE VIEW vw_fold_{fold_id}_val AS
                     SELECT * FROM vw_selected_features 
                     WHERE year >= {fold['val_start']} AND year <= {fold['val_end']}
-                    ORDER BY country_code, year
+                    ORDER BY entity_id, year
                 """
                 self.conn_manager.execute_sql_no_return(val_view_query)
                 
@@ -631,7 +631,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
                     SELECT * FROM vw_selected_features 
                     WHERE year >= {fold['test_start']} AND year <= {fold['test_end']}
                       AND NOT (year >= {fold['val_gap_start']} AND year <= {fold['val_gap_end']})
-                    ORDER BY country_code, year
+                    ORDER BY entity_id, year
                 """
                 self.conn_manager.execute_sql_no_return(test_view_query)
                 
@@ -662,7 +662,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             master_view_query = """
                 CREATE OR REPLACE VIEW vw_master_data AS
                 SELECT * FROM analytics_wide 
-                ORDER BY country_code, year
+                ORDER BY entity_id, year
             """
             self.conn_manager.execute_sql_no_return(master_view_query)
             print(f"  Master view created: vw_master_data")
@@ -672,7 +672,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             raise
         
         total_obs = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-        total_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
+        total_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT entity_id) FROM analytics_wide")
         min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM analytics_wide")
         max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM analytics_wide")
         
@@ -852,7 +852,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             Top-5 limit based on the curse of dimensionality (Bellman, 1961).
 
         Schema of the resulting view:
-            - Metadata: country_code, year, {target_column}
+            - Metadata: entity_id, year, {target_column}
             - Original features: selected_features (after collinearity filtering)
             - Transformed features: {feature}_log_transform for the top-5
         """
@@ -890,7 +890,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             CREATE OR REPLACE VIEW vw_selected_features AS
             SELECT
                 -- Temporal and geographic metadata (essential for temporal ML)
-                a.country_code,
+                a.entity_id,
                 a.year,
                 a.{self.target_column},
                 -- Target lags (2 and 3 years) via temporal join without leakage
@@ -905,11 +905,11 @@ class SqlEngineArchitectureML(BaseArchitectureML):
 
             FROM analytics_wide a
             LEFT JOIN analytics_wide lag2
-                ON a.country_code = lag2.country_code AND a.year = lag2.year + 2
+                ON a.entity_id = lag2.entity_id AND a.year = lag2.year + 2
             LEFT JOIN analytics_wide lag3
-                ON a.country_code = lag3.country_code AND a.year = lag3.year + 3
+                ON a.entity_id = lag3.entity_id AND a.year = lag3.year + 3
             WHERE a.{self.target_column} IS NOT NULL  -- Essential filter for supervised ML
-            ORDER BY a.country_code, a.year           -- Preserves temporal order for walk-forward
+            ORDER BY a.entity_id, a.year           -- Preserves temporal order for walk-forward
         """
         
         try:
@@ -919,7 +919,7 @@ class SqlEngineArchitectureML(BaseArchitectureML):
             view_validation_query = f"""
                 SELECT
                     COUNT(*) as total_records,
-                    COUNT(DISTINCT country_code) as unique_countries,
+                    COUNT(DISTINCT entity_id) as unique_countries,
                     MIN(year) as min_year,
                     MAX(year) as max_year,
                     AVG({self.target_column}) as avg_target

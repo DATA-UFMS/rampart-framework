@@ -25,13 +25,13 @@ class WorldBankDatasetConfig:
     year_column = "year"
 
     # Geographic entity
-    entity_column = "country_code"
-    entity_name_column = "country_name"
-    stratification_column = "country_stratum"
+    entity_column = "entity_id"
+    entity_name_column = "entity_name"
+    stratification_column = "entity_stratum"
     strata = COUNTRY_STRATA
 
     # Target
-    target_source_column = "lower_secondary_completion_rate"
+    target_source_column = "target_source_rate"
     target_expected_range = (0.0, 80.0)
     min_valid_count = 500
 
@@ -44,11 +44,11 @@ class WorldBankDatasetConfig:
     # and it appears in the selection artifact as total_features_analyzed.
     feature_columns = list(ALL_INDICATORS.values())
     excluded_columns = [
-        "country_code", "country_name", "year", "country_stratum",
+        "entity_id", "entity_name", "year", "entity_stratum",
         "synthetic_flag", "data_source", "etl_batch_id",
         "collection_timestamp", "data_completeness_score",
         "processing_method", "processed_timestamp", "partition_id",
-        "lower_secondary_completion_rate",
+        "target_source_rate",
         "enrollment_rate_secondary_net",
     ]
 

@@ -10,7 +10,11 @@ import os
 import pytest
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _ROOT / 'src'
+sys.path.insert(0, str(_SRC))
 
 
 class TestDatasetRegistry:
@@ -28,14 +32,14 @@ class TestDatasetRegistry:
         wb = get_dataset('worldbank')
         assert wb.name == 'worldbank'
         assert wb.temporal_range == (2000, 2023)
-        assert wb.entity_column == 'country_code'
+        assert wb.entity_column == 'entity_id'
 
     def test_get_inep(self):
         from core.dataset_config import get_dataset
         inep = get_dataset('inep_censo')
         assert inep.name == 'inep_censo'
         assert inep.temporal_range == (2007, 2024)
-        assert inep.entity_column == 'country_code'
+        assert inep.entity_column == 'entity_id'
 
     def test_get_nonexistent_raises(self):
         from core.dataset_config import get_dataset
@@ -95,16 +99,16 @@ class TestInepAdapter:
     def test_adapter_renames_columns(self):
         from collection.inep_collector import adapt_to_framework_schema
         adapted = adapt_to_framework_schema(self._make_inep_df())
-        assert 'country_code' in adapted.columns
-        assert 'country_stratum' in adapted.columns
-        assert 'country_name' in adapted.columns
+        assert 'entity_id' in adapted.columns
+        assert 'entity_stratum' in adapted.columns
+        assert 'entity_name' in adapted.columns
         assert 'cod_municipio' not in adapted.columns
 
     def test_adapter_inverts_abandono(self):
         from collection.inep_collector import adapt_to_framework_schema
         adapted = adapt_to_framework_schema(self._make_inep_df(abandono_em=[6.0]))
-        assert 'lower_secondary_completion_rate' in adapted.columns
-        assert adapted['lower_secondary_completion_rate'].iloc[0] == pytest.approx(94.0)
+        assert 'target_source_rate' in adapted.columns
+        assert adapted['target_source_rate'].iloc[0] == pytest.approx(94.0)
 
 
     def test_adapter_preserves_lower_secondary_features(self):
@@ -177,8 +181,8 @@ class TestBaseArchitectureDatasetConfig:
             arch = MockArch('test', tmpdir, dataset_config=inep_cfg)
             try:
                 excluded = arch.get_excluded_features()
-                assert 'country_code' in excluded
-                assert 'country_stratum' in excluded
+                assert 'entity_id' in excluded
+                assert 'entity_stratum' in excluded
             finally:
                 # A failing assertion must not leave the mock in the global
                 # registry, where it would break unrelated tests.
@@ -192,8 +196,8 @@ class TestInepConfigMatchesCollector:
     def _produced_columns():
         from collection.inep_collector import FEATURE_COLS
         framework_schema = {
-            'country_code', 'country_name', 'country_stratum', 'year',
-            'lower_secondary_completion_rate',
+            'entity_id', 'entity_name', 'entity_stratum', 'year',
+            'target_source_rate',
         }
         return framework_schema | set(FEATURE_COLS)
 
@@ -259,3 +263,87 @@ class TestTargetSubstitutionIsRejected:
                 f"{name}: validate_data reassigns source_column, substituting "
                 f"the declared target"
             )
+
+
+class TestTheRegistryIsTheDispatch:
+    """The registry existed, was tested, and production never read it.
+
+    Every dataset registered itself on import and `get_dataset` had unit tests,
+    while `BaseArchitectureML.__init__` resolved the config with an if/else on
+    the name. An extension point declared, exercised by the suite, and unused --
+    the same shape as an artifact nobody reads.
+
+    The branch it replaced ended in `else: worldbank`, so a typo in
+    DATASET_NAME ran the World Bank panel and wrote it under a directory named
+    after the typo. Nothing downstream distinguishes that from a correct run:
+    the outputs root is derived from the same variable.
+    """
+
+    def test_production_resolves_through_the_registry(self):
+        source = (_SRC / 'core' / 'base_architecture.py').read_text()
+        assert 'get_dataset(' in source, (
+            'the dispatch no longer goes through the registry')
+        assert 'InepCensoDatasetConfig()' not in source, (
+            'the core names a concrete dataset again')
+
+    def test_an_unknown_name_halts_instead_of_falling_back(self):
+        import datasets  # noqa: F401
+        from core.dataset_config import get_dataset
+
+        with pytest.raises(KeyError) as caught:
+            get_dataset('inep_cens')
+        assert 'inep_cens' in str(caught.value)
+        assert 'worldbank' in str(caught.value), (
+            'the message should name what is available')
+
+    def test_the_command_line_offers_what_is_registered(self):
+        """An enumerated list ages in silence, in both directions."""
+        import datasets  # noqa: F401
+        from core.dataset_config import list_datasets
+
+        source = (_ROOT / 'pipeline.py').read_text()
+        assert '_registered_datasets()' in source
+        assert "choices=['worldbank', 'inep_censo']" not in source
+        assert set(list_datasets()) == {'worldbank', 'inep_censo'}
+
+
+class TestTheInternalSchemaIsNeutral:
+    """The internal schema spoke the first dataset's vocabulary.
+
+    Both datasets are adapted onto one shared table, and its columns were named
+    for the World Bank: municipalities were stored in `country_code`, and INEP's
+    target -- the complement of upper-secondary dropout -- in a column called
+    `lower_secondary_completion_rate`. The second is the worse of the two: the
+    name asserts the wrong education stage, and it does so inside an artifact a
+    reviewer downloads.
+    """
+
+    RETIRED = ('country_code', 'country_name', 'country_stratum',
+               'lower_secondary_completion_rate')
+
+    @pytest.mark.parametrize('name', RETIRED)
+    def test_the_dataset_specific_name_is_gone(self, name):
+        import subprocess
+        # This file is excluded: a test that forbids a name has to spell it,
+        # both in the list above and in the docstring that says why.
+        found = subprocess.run(
+            ['git', 'grep', '-l', '-w', name, '--', '.',
+             f':!{Path(__file__).relative_to(_ROOT)}'],
+            cwd=_ROOT, capture_output=True, text=True).stdout.split()
+        assert not found, f'{name} came back in: {found}'
+
+    def test_both_datasets_declare_the_neutral_columns(self):
+        import datasets  # noqa: F401
+        from core.dataset_config import get_dataset, list_datasets
+
+        for name in list_datasets():
+            config = get_dataset(name)
+            assert config.entity_column == 'entity_id', name
+            assert config.entity_name_column == 'entity_name', name
+            assert config.target_source_column == 'target_source_rate', name
+
+    def test_the_provenance_of_the_target_is_still_recorded(self):
+        """Neutral in the schema must not mean unstated in the source."""
+        collector = (_SRC / 'collection' / 'inep_collector.py').read_text()
+        assert 'abandono_em' in collector, (
+            'the collector no longer says what the INEP target is derived from')

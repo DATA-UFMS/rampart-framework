@@ -62,6 +62,13 @@ def _imported_names(path):
             names.update(a.name for a in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             names.add(node.module)
+            # `from datasets import worldbank` names a submodule in the alias
+            # list, not in node.module. Reading only node.module made every
+            # package that re-exports its members look like a dead end, which
+            # is exactly how a registry is wired: the package __init__ imports
+            # the members for their registration side effect.
+            for alias in node.names:
+                names.add(f'{node.module}.{alias.name}')
     return names
 
 

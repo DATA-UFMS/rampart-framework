@@ -114,7 +114,7 @@ class HierarchicalModelDataFrameLib:
         stats_df = self.df_lazy.select([
             pl.col('year').min().alias('year_min'),
             pl.col('year').max().alias('year_max'),
-            pl.col('country_code').n_unique().alias('n_countries'),
+            pl.col('entity_id').n_unique().alias('n_countries'),
             pl.len().alias('n_records')
         ]).collect()
 
@@ -176,14 +176,14 @@ class HierarchicalModelDataFrameLib:
         No reference parameter: materializing does not need the training window,
         only fitting a statistic does.
         """
-        data_filtered = data_lazy.filter(pl.col(self.target_col).is_not_null()).sort(['country_code', 'year'])
+        data_filtered = data_lazy.filter(pl.col(self.target_col).is_not_null()).sort(['entity_id', 'year'])
 
         X_lazy = data_filtered.select(self.available_features)
 
         # Materialize for pandas operations
         X_df = X_lazy.collect().to_pandas()
         y_series = data_filtered.select(pl.col(self.target_col)).collect().to_pandas().iloc[:, 0]
-        countries_series = data_filtered.select(pl.col('country_code')).collect().to_pandas().iloc[:, 0]
+        countries_series = data_filtered.select(pl.col('entity_id')).collect().to_pandas().iloc[:, 0]
         years_series = data_filtered.select(pl.col('year')).collect().to_pandas().iloc[:, 0]
 
         return canonical_fold(X_df, y_series, countries_series, years_series,

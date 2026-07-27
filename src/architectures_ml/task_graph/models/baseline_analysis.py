@@ -85,7 +85,7 @@ class BaselineModelAnalysisTaskGraph:
             'total_rows': self.ddf.index.size,
             'year_min': self.ddf['year'].min(),
             'year_max': self.ddf['year'].max(),
-            'countries_count': self.ddf['country_code'].nunique(),
+            'countries_count': self.ddf['entity_id'].nunique(),
             'target_describe': self.ddf[self.target_col].describe(),
             'negative_target_count': (self.ddf[self.target_col] < 0).sum()
         }
@@ -211,7 +211,7 @@ class BaselineModelAnalysisTaskGraph:
             
             analysis['temporal_stats'] = temporal_stats.to_dict()
         
-        country_stats_ddf = self.ddf.groupby('country_code')[self.target_col].agg([
+        country_stats_ddf = self.ddf.groupby('entity_id')[self.target_col].agg([
             'count', 'mean', 'std', 'min', 'max'
         ])
         country_stats = country_stats_ddf.compute().round(2)
@@ -252,15 +252,15 @@ class BaselineModelAnalysisTaskGraph:
             test_ddf = self.ddf[(self.ddf['year'] >= fold['test_start']) & (self.ddf['year'] <= fold['test_end'])]
             test_ddf = test_ddf[~((test_ddf['year'] >= fold['val_gap_start']) & (test_ddf['year'] <= fold['val_gap_end']))]
 
-            cols = ['country_code', 'year', self.target_col]
+            cols = ['entity_id', 'year', self.target_col]
             train_raw, val_raw, test_raw = dask.compute(
                 train_ddf[cols].dropna(subset=[self.target_col]),
                 val_ddf[cols].dropna(subset=[self.target_col]),
                 test_ddf[cols].dropna(subset=[self.target_col]),
             )
-            train_clean = train_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
-            val_clean = val_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
-            test_clean = test_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
+            train_clean = train_raw.sort_values(['entity_id', 'year']).reset_index(drop=True)
+            val_clean = val_raw.sort_values(['entity_id', 'year']).reset_index(drop=True)
+            test_clean = test_raw.sort_values(['entity_id', 'year']).reset_index(drop=True)
             # Boundary of the decomposition: above is fold materialisation, which
             # belongs to the engine; below is the baseline fit, common to all three.
             _fold_load_s = time.perf_counter() - _fold_t0
@@ -284,7 +284,7 @@ class BaselineModelAnalysisTaskGraph:
                     if df is None or df.empty:
                         return None
                     diffs = []
-                    for _, g in df.sort_values(['country_code','year']).groupby('country_code'):
+                    for _, g in df.sort_values(['entity_id','year']).groupby('entity_id'):
                         s = g[self.target_col].values
                         if len(s) >= 2:
                             d = np.abs(np.diff(s))
@@ -352,10 +352,10 @@ class BaselineModelAnalysisTaskGraph:
             val_pred_naive = []
 
             for _, val_row in val_clean.iterrows():
-                country = val_row['country_code']
+                country = val_row['entity_id']
                 val_year = val_row['year']
 
-                country_train = train_clean[train_clean['country_code'] == country]
+                country_train = train_clean[train_clean['entity_id'] == country]
                 country_hist = country_train[country_train['year'] <= val_year - MIN_LAG]
 
                 if len(country_hist) > 0:
@@ -370,10 +370,10 @@ class BaselineModelAnalysisTaskGraph:
             combined_mean = combined_clean[self.target_col].mean()
 
             for _, test_row in test_clean.iterrows():
-                country = test_row['country_code']
+                country = test_row['entity_id']
                 test_year = test_row['year']
 
-                country_combined = combined_clean[combined_clean['country_code'] == country]
+                country_combined = combined_clean[combined_clean['entity_id'] == country]
                 country_hist = country_combined[country_combined['year'] <= test_year - MIN_LAG]
 
                 if len(country_hist) > 0:
@@ -406,13 +406,13 @@ class BaselineModelAnalysisTaskGraph:
 
             val_pred_cross = []
             for _, val_row in val_clean.iterrows():
-                country = val_row['country_code']
+                country = val_row['entity_id']
                 val_year = val_row['year']
 
                 year_data = train_clean[train_clean['year'] <= val_year - MIN_LAG]
 
                 if len(year_data) > 0:
-                    country_means_dict = year_data.groupby('country_code')[self.target_col].mean()
+                    country_means_dict = year_data.groupby('entity_id')[self.target_col].mean()
                     other_countries = country_means_dict[country_means_dict.index != country]
 
                     if len(other_countries) > 0:
@@ -426,13 +426,13 @@ class BaselineModelAnalysisTaskGraph:
 
             test_pred_cross = []
             for _, test_row in test_clean.iterrows():
-                country = test_row['country_code']
+                country = test_row['entity_id']
                 test_year = test_row['year']
 
                 year_data = combined_clean[combined_clean['year'] <= test_year - MIN_LAG]
 
                 if len(year_data) > 0:
-                    country_means_dict = year_data.groupby('country_code')[self.target_col].mean()
+                    country_means_dict = year_data.groupby('entity_id')[self.target_col].mean()
                     other_countries = country_means_dict[country_means_dict.index != country]
 
                     if len(other_countries) > 0:
@@ -494,16 +494,16 @@ class BaselineModelAnalysisTaskGraph:
             
             self._prediction_recorder.record(
                 fold=fold_id, model='global_mean', y_true=y_test,
-                y_pred=test_pred_global, entities=test_clean['country_code'])
+                y_pred=test_pred_global, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='linear_trend', y_true=y_test,
-                y_pred=test_pred_trend, entities=test_clean['country_code'])
+                y_pred=test_pred_trend, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='naive_with_lag', y_true=y_test,
-                y_pred=test_pred_naive, entities=test_clean['country_code'])
+                y_pred=test_pred_naive, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='cross_country', y_true=y_test,
-                y_pred=test_pred_cross, entities=test_clean['country_code'])
+                y_pred=test_pred_cross, entities=test_clean['entity_id'])
 
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
             fold_results['fold_load_s'] = _fold_load_s

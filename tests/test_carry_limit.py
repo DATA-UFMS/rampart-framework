@@ -39,7 +39,7 @@ from collection.raw_data_collector import (CARRY_LIMIT_YEARS,
                                            RawDataCollector,
                                            _years_since_observed)
 
-TARGET = 'lower_secondary_completion_rate'
+TARGET = 'target_source_rate'
 
 
 def _limit_for(column):
@@ -84,8 +84,8 @@ class TestTheReachIsTheDeclaredLimit:
         collector = _quiet(RawDataCollector)
         collector.output_dir = tempfile.mkdtemp()
         frame = pd.DataFrame({
-            'country_code': ['BRA'] * years,
-            'country_name': ['Brazil'] * years,
+            'entity_id': ['BRA'] * years,
+            'entity_name': ['Brazil'] * years,
             'year': list(range(2000, 2000 + years)),
             column: [10.0] + [np.nan] * (years - 1),
             TARGET: np.linspace(60, 80, years),
@@ -113,8 +113,8 @@ class TestTheReachIsTheDeclaredLimit:
         import tempfile
         collector.output_dir = tempfile.mkdtemp()
         frame = pd.DataFrame({
-            'country_code': ['BRA'] * 12,
-            'country_name': ['Brazil'] * 12,
+            'entity_id': ['BRA'] * 12,
+            'entity_name': ['Brazil'] * 12,
             'year': list(range(2000, 2012)),
             'gini_index': [10.0] + [np.nan] * 11,
             TARGET: np.linspace(60, 80, 12),
@@ -132,14 +132,14 @@ class TestNothingCrossesEntities:
         collector.output_dir = tempfile.mkdtemp()
         years = list(range(2000, 2008))
         frame = pd.DataFrame({
-            'country_code': ['AAA'] * len(years) + ['BBB'] * len(years),
-            'country_name': ['A'] * len(years) + ['B'] * len(years),
+            'entity_id': ['AAA'] * len(years) + ['BBB'] * len(years),
+            'entity_name': ['A'] * len(years) + ['B'] * len(years),
             'year': years * 2,
             'gini_index': [40.0] * len(years) + [np.nan] * len(years),
             TARGET: list(np.linspace(60, 80, len(years))) * 2,
         })
         imputed = _quiet(collector.apply_conservative_imputation, frame)
-        second = imputed[imputed['country_code'] == 'BBB']
+        second = imputed[imputed['entity_id'] == 'BBB']
         assert second['gini_index'].isna().all(), (
             'BBB has no observation of its own; anything filled there came '
             'from another entity'
@@ -151,8 +151,8 @@ class TestNothingCrossesEntities:
         import tempfile
         collector.output_dir = tempfile.mkdtemp()
         frame = pd.DataFrame({
-            'country_code': ['BRA'] * 6,
-            'country_name': ['Brazil'] * 6,
+            'entity_id': ['BRA'] * 6,
+            'entity_name': ['Brazil'] * 6,
             'year': list(range(2000, 2006)),
             'gini_index': [np.nan, np.nan, np.nan, 40.0, np.nan, np.nan],
             TARGET: np.linspace(60, 80, 6),
@@ -168,7 +168,7 @@ class TestTheCoverageArtifactMeasuresTheInput:
     def coverage(self):
         import tempfile
         rng = np.random.default_rng(4)
-        rows = [{'country_code': entity, 'country_name': entity, 'year': year,
+        rows = [{'entity_id': entity, 'entity_name': entity, 'year': year,
                  'gini_index': rng.normal(40, 5) if rng.random() > 0.45
                  else np.nan,
                  'unemployment_total': rng.normal(8, 2) if rng.random() > 0.6
@@ -243,8 +243,8 @@ class TestTheCarriedValue:
         collector = _quiet(RawDataCollector)
         collector.output_dir = tempfile.mkdtemp()
         frame = pd.DataFrame({
-            'country_code': ['BRA'] * len(values),
-            'country_name': ['Brazil'] * len(values),
+            'entity_id': ['BRA'] * len(values),
+            'entity_name': ['Brazil'] * len(values),
             'year': list(range(2000, 2000 + len(values))),
             column: values,
             TARGET: np.linspace(60, 80, len(values)),
@@ -360,7 +360,7 @@ class TestImputationNeverAltersAnObservation:
     def _panel(column, seed=9, entities=('AAA', 'BBB', 'CCC')):
         rng = np.random.default_rng(seed)
         return pd.DataFrame([
-            {'country_code': entity, 'country_name': entity, 'year': year,
+            {'entity_id': entity, 'entity_name': entity, 'year': year,
              column: (rng.normal(0, 5000) if rng.random() > 0.35 else np.nan),
              TARGET: rng.normal(70, 10)}
             for entity in entities for year in range(2000, 2016)])
@@ -439,7 +439,7 @@ class TestTheQualityMetricsCountWhatWasFilled:
     def measured(self):
         import tempfile
         rng = np.random.default_rng(4)
-        rows = [{'country_code': entity, 'country_name': entity, 'year': year,
+        rows = [{'entity_id': entity, 'entity_name': entity, 'year': year,
                  'gini_index': rng.normal(40, 5) if rng.random() > 0.55
                  else np.nan,
                  'unemployment_total': rng.normal(8, 2) if rng.random() > 0.6
@@ -514,8 +514,8 @@ class TestTheSensitivityAnalysisMeasuresTheRealMethod:
     def _panel():
         rng = np.random.default_rng(4)
         return pd.DataFrame([
-            {'country_code': entity, 'country_name': entity,
-             'country_stratum': 's1', 'year': year,
+            {'entity_id': entity, 'entity_name': entity,
+             'entity_stratum': 's1', 'year': year,
              'gini_index': rng.normal(40, 5) if rng.random() > 0.55 else np.nan,
              'gdp_per_capita_constant_2015': (rng.normal(9000, 2000)
                                               if rng.random() > 0.6 else np.nan),
@@ -547,7 +547,7 @@ class TestTheSensitivityAnalysisMeasuresTheRealMethod:
     def test_the_temporal_arm_matches_production(self, sensitivity):
         """The arm the pipeline applies must be the arm it measures."""
         from collection.raw_data_collector import carry_forward
-        panel = self._panel().sort_values(['country_code', 'year']).copy()
+        panel = self._panel().sort_values(['entity_id', 'year']).copy()
         for column in ('gini_index', 'gdp_per_capita_constant_2015'):
             filled, _ = carry_forward(panel.copy(), column)
             assert sensitivity[column]['temporal_only']['mean'] == \
@@ -556,12 +556,12 @@ class TestTheSensitivityAnalysisMeasuresTheRealMethod:
     def test_a_lag_one_arm_would_differ_for_low_frequency(self):
         """Pins the divergence, so the test above is not vacuous."""
         from collection.raw_data_collector import carry_forward
-        panel = self._panel().sort_values(['country_code', 'year']).copy()
+        panel = self._panel().sort_values(['entity_id', 'year']).copy()
         column = 'gdp_per_capita_constant_2015'
         production, _ = carry_forward(panel.copy(), column)
 
         lagged = panel.copy()
-        lag1 = lagged.groupby('country_code')[column].shift(1)
+        lag1 = lagged.groupby('entity_id')[column].shift(1)
         mask = lagged[column].isna() & lag1.notna()
         lagged.loc[mask, column] = lag1[mask]
 
@@ -576,4 +576,4 @@ class TestTheSensitivityAnalysisMeasuresTheRealMethod:
         assert source.count('carry_forward(') >= 3, (
             'definition plus both call sites'
         )
-        assert 'groupby(\'country_code\')[col].shift(1)' not in source
+        assert 'groupby(\'entity_id\')[col].shift(1)' not in source

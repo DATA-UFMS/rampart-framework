@@ -6,7 +6,7 @@ World Bank indicator definitions
 # TARGET VARIABLES (Dependent Variables)
 # ============================================================================
 TARGET_INDICATORS = {
-    'SE.SEC.CMPT.LO.ZS': 'lower_secondary_completion_rate',
+    'SE.SEC.CMPT.LO.ZS': 'target_source_rate',
     'SE.SEC.NENR': 'enrollment_rate_secondary_net',
 }
 

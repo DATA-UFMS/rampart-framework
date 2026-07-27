@@ -653,8 +653,8 @@ class TestCreateTemporalFoldsEnforces:
             temporal_range = (2000, 2023)
             walk_forward_config = {'min_train': 8, 'val_len': 2, 'test_len': 2}
             year_column = 'year'
-            entity_column = 'country_code'
-            entity_name_column = 'country_name'
+            entity_column = 'entity_id'
+            entity_name_column = 'entity_name'
             stratification_column = None
             target_source_column = 'source_rate'
             feature_columns = []

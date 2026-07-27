@@ -325,7 +325,7 @@ class TestEveryParadigmUsesTheSharedImplementation:
         # other two produce it themselves. Handing over rows out of order would
         # make canonical_fold fail before the test reached the gap.
         frame = pd.DataFrame({
-            'country_code': np.repeat(['AAA', 'BBB'], n // 2),
+            'entity_id': np.repeat(['AAA', 'BBB'], n // 2),
             'year': np.tile(np.arange(2000, 2000 + n // 2), 2),
             'gini': rng.normal(40, 5, n),
             'internet': rng.normal(50, 8, n),

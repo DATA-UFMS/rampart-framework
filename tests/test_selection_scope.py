@@ -53,12 +53,12 @@ TRAIN_END = 2007
 
 class _Config:
     year_column = 'year'
-    entity_column = 'country_code'
-    entity_name_column = 'country_name'
+    entity_column = 'entity_id'
+    entity_name_column = 'entity_name'
     stratification_column = None
     target_source_column = 'source_rate'
     feature_columns = ['honest', 'future_only']
-    excluded_columns = ['year', 'country_code', 'source_rate']
+    excluded_columns = ['year', 'entity_id', 'source_rate']
     temporal_range = (2000, 2015)
     walk_forward_config = {'min_train': 8, 'val_len': 2}
 
@@ -82,8 +82,8 @@ def _panel():
                           0.95 * target + 0.3 * rng.normal(size=len(YEARS)),
                           rng.normal(size=len(YEARS)))
         for index, year in enumerate(YEARS):
-            rows.append({'year': year, 'country_code': entity,
-                         'country_name': entity, 'source_rate': 0.0,
+            rows.append({'year': year, 'entity_id': entity,
+                         'entity_name': entity, 'source_rate': 0.0,
                          TARGET: target[index], 'honest': honest[index],
                          'future_only': future[index]})
 

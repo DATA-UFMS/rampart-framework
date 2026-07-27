@@ -105,7 +105,7 @@ def _years_since_observed(series):
     return positions - last_observed
 
 
-def carry_forward(frame, column, entity_column='country_code'):
+def carry_forward(frame, column, entity_column='entity_id'):
     """Fill `column` from each entity's own past, within its declared limit.
 
     Returns the frame and how many cells were filled. Shared with the
@@ -165,7 +165,7 @@ class RawDataCollector:
         self.indicator_categories = {
             'education': {
                 'indicators': [
-                    'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
+                    'target_source_rate', 'enrollment_rate_secondary_net',
                     'education_expenditure_gdp_percent', 'gender_parity_index_secondary', 
                     'adult_literacy_rate', 'pupil_teacher_ratio_primary',
                     'female_teachers_secondary_percent', 'pupil_teacher_ratio_secondary'
@@ -273,9 +273,9 @@ class RawDataCollector:
         use_robust = category_config['use_robust_imputation']
         
         if is_zero_centered or use_robust:
-            return df.groupby(['country_stratum', 'year'])[column].transform('median')
+            return df.groupby(['entity_stratum', 'year'])[column].transform('median')
         else:
-            return df.groupby(['country_stratum', 'year'])[column].transform('mean')
+            return df.groupby(['entity_stratum', 'year'])[column].transform('mean')
     
     def collect_indicator_data(self, indicator_name: str, wb_code: str, max_retries: int = 3) -> pd.DataFrame:
         """
@@ -315,8 +315,8 @@ class RawDataCollector:
                     for record in data[1]:
                         if record['value'] is not None:
                             all_data.append({
-                                'country_code': record['country']['id'],
-                                'country_name': record['country']['value'],
+                                'entity_id': record['country']['id'],
+                                'entity_name': record['country']['value'],
                                 'year': int(record['date']),
                                 'indicator_code': wb_code,
                                 'indicator_name': indicator_name,
@@ -417,7 +417,7 @@ class RawDataCollector:
         
         # Bounds based on the official indicator definitions
         logical_bounds = {
-            'lower_secondary_completion_rate': (0, 100),
+            'target_source_rate': (0, 100),
             'enrollment_rate_secondary_net': (0, 100),
             'adult_literacy_rate': (0, 100),
             'immunization_measles_percent': (0, 100),
@@ -480,11 +480,11 @@ class RawDataCollector:
         
         country_strata_map = {}
         for stratum_name, countries_in_stratum in COUNTRY_STRATA.items():
-            for country_code in countries_in_stratum:
-                country_strata_map[country_code] = stratum_name
+            for entity_id in countries_in_stratum:
+                country_strata_map[entity_id] = stratum_name
         
-        df['country_stratum'] = df['country_code'].map(country_strata_map)
-        df['country_stratum'] = df['country_stratum'].fillna('unknown')
+        df['entity_stratum'] = df['entity_id'].map(country_strata_map)
+        df['entity_stratum'] = df['entity_stratum'].fillna('unknown')
         
         df['data_source'] = 'world_bank_api'
         df['collection_method'] = 'raw_single_collection'
@@ -498,7 +498,7 @@ class RawDataCollector:
             df['data_completeness_score'] = 100.0
         
         print(f"Metadata added")
-        print(f"Distribution across strata: {df['country_stratum'].value_counts().to_dict()}")
+        print(f"Distribution across strata: {df['entity_stratum'].value_counts().to_dict()}")
         
         return df
     
@@ -552,10 +552,10 @@ class RawDataCollector:
                 }
         
         geographic_patterns = {}
-        if 'country_stratum' in df_wide.columns:
-            for stratum in df_wide['country_stratum'].unique():
+        if 'entity_stratum' in df_wide.columns:
+            for stratum in df_wide['entity_stratum'].unique():
                 if stratum != 'unknown':
-                    stratum_data = df_wide[df_wide['country_stratum'] == stratum]
+                    stratum_data = df_wide[df_wide['entity_stratum'] == stratum]
                     missing_count = stratum_data[numeric_columns].isna().sum().sum()
                     total_possible = len(stratum_data) * len(numeric_columns)
                     missing_percentage = (missing_count / total_possible) * 100
@@ -577,7 +577,7 @@ class RawDataCollector:
         temporal_dependency = {}
         for col in numeric_columns[:5]:  # Sample for performance
             if col in df_wide.columns:
-                col_data = df_wide.sort_values(['country_code', 'year'])[col]
+                col_data = df_wide.sort_values(['entity_id', 'year'])[col]
                 lag1_data = col_data.shift(1)
                 temp_corr = col_data.corr(lag1_data)
                 temporal_dependency[col] = float(temp_corr) if not pd.isna(temp_corr) else 0.0
@@ -781,7 +781,7 @@ class RawDataCollector:
         # systematically easier to predict than real data, inflating R2 without
         # predictive content. Rows still lacking a target are removed later.
         target_source = getattr(self, 'target_source_column',
-                                'lower_secondary_completion_rate')
+                                'target_source_rate')
 
         for column in numeric_columns:
             if column == target_source:
@@ -817,7 +817,7 @@ class RawDataCollector:
             # some statistic were fitted there -- it was not, but it would
             # become so the day one of those columns gained a carry by mean.
 
-            df_sorted = df_imputed.sort_values(['country_code', 'year']).copy()
+            df_sorted = df_imputed.sort_values(['entity_id', 'year']).copy()
 
             # A single propagation limit, applied once against the observed
             # series.
@@ -953,7 +953,7 @@ class RawDataCollector:
         
         # Subset of indicators for validation (performance)
         validation_indicators = [col for col in numeric_columns if col in [
-            'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
+            'target_source_rate', 'enrollment_rate_secondary_net',
             'gdp_per_capita_constant_2015', 'poverty_headcount_national', 'gini_index'
         ]]
         
@@ -981,8 +981,8 @@ class RawDataCollector:
             use_robust = category_config['use_robust_imputation']
             
             # Temporal
-            df_sorted = df_validation.sort_values(['country_code', 'year'])
-            lag1 = df_sorted.groupby('country_code')[indicator].shift(1)
+            df_sorted = df_validation.sort_values(['entity_id', 'year'])
+            lag1 = df_sorted.groupby('entity_id')[indicator].shift(1)
             temporal_imputable = df_sorted[indicator].isna() & lag1.notna()
             df_sorted.loc[temporal_imputable, indicator] = lag1[temporal_imputable]
             df_validation = df_sorted.sort_index()
@@ -1087,7 +1087,7 @@ class RawDataCollector:
         # *removed* and never filled: the analysis reported the quality of an
         # imputation that does not happen.
         target_source = getattr(self, 'target_source_column',
-                                'lower_secondary_completion_rate')
+                                'target_source_rate')
         numeric_columns = [
             col for col in df_wide.select_dtypes(include=[np.number]).columns
             if col not in {target_source, 'year'}
@@ -1108,7 +1108,7 @@ class RawDataCollector:
             # pipeline uses. It was a lag-1 rewritten here, so for the
             # low-frequency columns it measured a method reaching a third as
             # far as the one actually applied.
-            df_sorted = df_wide.sort_values(['country_code', 'year']).copy()
+            df_sorted = df_wide.sort_values(['entity_id', 'year']).copy()
             df_sorted, _ = carry_forward(df_sorted, col)
             temporal_mean = df_sorted[col].mean()
             temporal_std = df_sorted[col].std()
@@ -1257,7 +1257,7 @@ class RawDataCollector:
             'collection_timestamp': datetime.now().isoformat(),
             'total_records_long': len(df_long),
             'total_records_wide': len(df_wide),
-            'countries_count': df_long['country_code'].nunique(),
+            'countries_count': df_long['entity_id'].nunique(),
             'indicators_count': df_long['indicator_code'].nunique(),
             'year_range': [int(df_long['year'].min()), int(df_long['year'].max())],
             'data_completeness': float(df_wide.select_dtypes(include=[np.number]).notna().mean().mean() * 100),
@@ -1377,7 +1377,7 @@ class RawDataCollector:
             
             # 3. Convert to wide format
             df_wide_original = df_long.pivot_table(
-                index=['country_code', 'country_name', 'year', 'country_stratum',
+                index=['entity_id', 'entity_name', 'year', 'entity_stratum',
                        'data_source', 'collection_method', 'is_original'],
                 columns='indicator_name',
                 values='value',

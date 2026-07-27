@@ -4,7 +4,7 @@ INEP Educational Indicators collector — School Performance Rates.
 
 Downloads XLSX spreadsheets from the INEP portal with pass, fail
 and dropout rates by municipality/year, and produces a Parquet in the framework
-schema (country_code/year/features) for direct consumption by the processors.
+schema (entity_id/year/features) for direct consumption by the processors.
 
 Source: https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/indicadores-educacionais
 Citation: BRASIL. Instituto Nacional de Estudos e Pesquisas Educacionais
@@ -178,29 +178,29 @@ def parse_year(zip_path: str, year: int) -> pd.DataFrame:
 
 def adapt_to_framework_schema(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Maps INEP columns -> framework schema (country_code/year/etc.).
+    Maps INEP columns -> framework schema (entity_id/year/etc.).
 
-    The framework computes dropout_rate = 100 - lower_secondary_completion_rate.
-    Therefore: lower_secondary_completion_rate = 100 - abandono_em.
+    The framework computes dropout_rate = 100 - target_source_rate.
+    Therefore: target_source_rate = 100 - abandono_em.
     """
     adapted = df.copy()
 
     # Rename the entity
     adapted = adapted.rename(columns={
-        'cod_municipio': 'country_code',
-        'nome_municipio': 'country_name',
+        'cod_municipio': 'entity_id',
+        'nome_municipio': 'entity_name',
     })
 
-    # Create country_stratum from the UF (state)
-    adapted['country_stratum'] = adapted['uf']
+    # Create entity_stratum from the UF (state)
+    adapted['entity_stratum'] = adapted['uf']
 
     # Target: invert abandono EM -> completion rate
-    adapted['lower_secondary_completion_rate'] = 100 - adapted['abandono_em']
+    adapted['target_source_rate'] = 100 - adapted['abandono_em']
 
     # Select the final columns
-    keep_cols = ['country_code', 'country_name', 'country_stratum', 'year']
+    keep_cols = ['entity_id', 'entity_name', 'entity_stratum', 'year']
     keep_cols += [c for c in FEATURE_COLS if c in adapted.columns]
-    keep_cols += ['lower_secondary_completion_rate']
+    keep_cols += ['target_source_rate']
 
     # Remove duplicates
     keep_cols = list(dict.fromkeys(keep_cols))
@@ -208,8 +208,8 @@ def adapt_to_framework_schema(df: pd.DataFrame) -> pd.DataFrame:
     adapted = adapted.rename(columns={'ano': 'year'})
     result = adapted[[c for c in keep_cols if c in adapted.columns]].copy()
 
-    # country_code as a string
-    result['country_code'] = result['country_code'].astype(float).astype(int).astype(str)
+    # entity_id as a string
+    result['entity_id'] = result['entity_id'].astype(float).astype(int).astype(str)
     result['year'] = result['year'].astype(int)
 
     return result
@@ -273,7 +273,7 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
 
     # Filter out municipalities without EM data (NaN in the target)
     before = len(adapted)
-    adapted = adapted.dropna(subset=['lower_secondary_completion_rate'])
+    adapted = adapted.dropna(subset=['target_source_rate'])
     dropped = before - len(adapted)
     if dropped > 0:
         print(f"   Filtered out {dropped} records without EM data (NaN in the target)")
@@ -290,7 +290,7 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
     with open(parquet_path, 'rb') as f:
         sha256 = hashlib.sha256(f.read()).hexdigest()
 
-    n_mun = adapted['country_code'].nunique()
+    n_mun = adapted['entity_id'].nunique()
     n_years = adapted['year'].nunique()
 
     metadata.update({

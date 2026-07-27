@@ -34,15 +34,15 @@ from core.validation import AntiLeakageViolation
 SCHEMA = [
     'gini_index',
     'internet_users_percent',
-    'lower_secondary_completion_rate',
+    'target_source_rate',
     'dropout_rate_sql_engine',
     'dropout_rate_task_graph',
     'dropout_rate_dataframe_lib',
     'dropout_rate_lag_2',
     'dropout_rate_lag_3',
     'year',
-    'country_code',
-    'country_name',
+    'entity_id',
+    'entity_name',
     'data_completeness_score',
 ]
 
@@ -59,10 +59,10 @@ class _Config:
     """
 
     year_column = 'year'
-    entity_column = 'country_code'
-    entity_name_column = 'country_name'
+    entity_column = 'entity_id'
+    entity_name_column = 'entity_name'
     stratification_column = None
-    target_source_column = 'lower_secondary_completion_rate'
+    target_source_column = 'target_source_rate'
     feature_columns = ['gini_index', 'internet_users_percent']
     excluded_columns = ['municipality_code', 'state_code']
 
@@ -204,9 +204,9 @@ class TestPoolGate:
         years = list(range(2000, 2016))
         return pd.DataFrame({
             'year': years,
-            'country_code': ['BRA'] * len(years),
+            'entity_id': ['BRA'] * len(years),
             'gini_index': rng.normal(size=len(years)),
-            'lower_secondary_completion_rate': rng.normal(size=len(years)),
+            'target_source_rate': rng.normal(size=len(years)),
             'dropout_rate_sql_engine': rng.normal(size=len(years)),
         })
 
@@ -245,7 +245,7 @@ class TestPoolGate:
         with pytest.raises(AntiLeakageViolation) as exc:
             Leaking('sql_engine', str(tmp_path)).run_feature_selection(
                 self._panel())
-        assert 'lower_secondary_completion_rate' in str(exc.value)
+        assert 'target_source_rate' in str(exc.value)
 
 
 class TestPolicyIsNotOverridden:
@@ -457,7 +457,7 @@ class TestTheSelectionArtifactRecordsItsBounds:
         years = list(range(2000, 2016))
         panel = pd.DataFrame({
             'year': years,
-            'country_code': ['BRA'] * len(years),
+            'entity_id': ['BRA'] * len(years),
             'dropout_rate_sql_engine': rng.normal(size=len(years)),
         })
         for name in correlations:

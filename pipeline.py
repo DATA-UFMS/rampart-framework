@@ -117,6 +117,13 @@ def _snapshot_scientific_config(root: str) -> None:
     print(f"\nScientific snapshot recorded at {path}")
 
 
+def _registered_datasets():
+    """Names the dataset registry knows, for the command line to offer."""
+    import datasets  # noqa: F401 -- the import is what registers them
+    from core.dataset_config import list_datasets
+    return sorted(list_datasets())
+
+
 def _discover():
     """Lazy paradigm discovery — importing triggers the registration."""
     from core.paradigm_registry import discover_paradigms
@@ -387,7 +394,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Research pipeline - architectural benchmarking")
     parser.add_argument(
         '--dataset', default='worldbank',
-        choices=['worldbank', 'inep_censo'],
+        # Derived from the registry, not enumerated. An enumerated list ages in
+        # silence: a dataset registered but absent from here is unreachable
+        # from the command line, and one removed from src/datasets/ still
+        # appears as a valid choice.
+        choices=_registered_datasets(),
         help='Dataset to process (default: worldbank)'
     )
     args = parser.parse_args()

@@ -106,7 +106,7 @@ class DataFrameLibProcessor:
         stats = df_lazy.select([
             pl.col('year').min().alias('year_min'),
             pl.col('year').max().alias('year_max'),
-            pl.col('country_code').n_unique().alias('n_countries')
+            pl.col('entity_id').n_unique().alias('n_countries')
         ]).collect()
 
         year_min = stats['year_min'][0]
@@ -168,7 +168,7 @@ class DataFrameLibProcessor:
             value_col = 'value' if 'value' in schema else 'indicator_value'
 
             # Keep the dimension columns (country, year, etc.)
-            id_cols = ['country_code', 'year']
+            id_cols = ['entity_id', 'year']
 
             # Pivot: turn indicators into columns
             df_wide = df_lazy.pivot(

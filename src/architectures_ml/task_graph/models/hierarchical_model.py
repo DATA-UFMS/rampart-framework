@@ -108,8 +108,8 @@ class HierarchicalModelTaskGraph:
         stats_batch = {
             'year_min': self.ddf['year'].min(),
             'year_max': self.ddf['year'].max(),
-            'n_countries': self.ddf['country_code'].nunique(),
-            'unique_countries': self.ddf['country_code'].unique()
+            'n_countries': self.ddf['entity_id'].nunique(),
+            'unique_countries': self.ddf['entity_id'].unique()
         }
         computed_stats = dask.compute(stats_batch)[0]
         
@@ -171,7 +171,7 @@ class HierarchicalModelTaskGraph:
         final_data = {
             'X': X_ddf,
             'y': data_ddf[self.target_col],
-            'countries': data_ddf['country_code'],
+            'countries': data_ddf['entity_id'],
             'year': data_ddf['year'],
         }
         computed_final = dask.compute(final_data)[0]

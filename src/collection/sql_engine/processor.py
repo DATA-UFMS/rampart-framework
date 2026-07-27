@@ -134,7 +134,7 @@ class SqlEngineProcessor:
             
             # Descriptive statistics for validation
             total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM raw_complete_data")
-            unique_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM raw_complete_data")
+            unique_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT entity_id) FROM raw_complete_data")
             min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM raw_complete_data")
             max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM raw_complete_data")
             has_completeness = self.conn_manager.execute_scalar(
@@ -185,7 +185,7 @@ class SqlEngineProcessor:
            uses an Adaptive Radix Tree (ART) internally, more efficient than a
            traditional B-tree (Leis et al., 2013).
 
-        2. COMPOSITE INDEXES: (country_code, year) for per-country time series
+        2. COMPOSITE INDEXES: (entity_id, year) for per-country time series
            queries, a common pattern in socioeconomic analyses.
 
         3. NON-MATERIALIZED VIEWS: Decision not to materialize views in order
@@ -194,7 +194,7 @@ class SqlEngineProcessor:
 
         Methodology:
             Follows indexing principles for OLAP (Chaudhuri & Dayal, 1997):
-            - Indexes on high-cardinality dimensions (country_code)
+            - Indexes on high-cardinality dimensions (entity_id)
             - Indexes on frequently filtered columns (year, stratum)
             - Avoids over-indexing, which degrades write performance
         """
@@ -217,8 +217,8 @@ class SqlEngineProcessor:
         print("   Creating indexes for analytical queries")
         try:
             index_queries = [
-                "CREATE INDEX IF NOT EXISTS idx_country_year ON analytics_wide(country_code, year)",
-                "CREATE INDEX IF NOT EXISTS idx_stratum_year ON analytics_wide(country_stratum, year)",
+                "CREATE INDEX IF NOT EXISTS idx_entity_year ON analytics_wide(entity_id, year)",
+                "CREATE INDEX IF NOT EXISTS idx_stratum_year ON analytics_wide(entity_stratum, year)",
                 "CREATE INDEX IF NOT EXISTS idx_year ON analytics_wide(year)"
             ]
             self.conn_manager.execute_transaction(index_queries)
@@ -240,9 +240,9 @@ class SqlEngineProcessor:
             agg_parts = [f'AVG("{c}") as avg_{c}' for c in agg_cols]
             agg_parts.append("COUNT(*) as years_available")
             view_query = f"""
-                SELECT country_code, country_stratum, {', '.join(agg_parts)}
+                SELECT entity_id, entity_stratum, {', '.join(agg_parts)}
                 FROM analytics_wide
-                GROUP BY country_code, country_stratum
+                GROUP BY entity_id, entity_stratum
             """
             self.conn_manager.create_view('vw_education_summary', view_query)
             print("   Analytical views created")
@@ -259,7 +259,7 @@ class SqlEngineProcessor:
         Uses COPY TO for an efficient export:
         - Parallel Parquet writing with Snappy compression
         - Preservation of column types and metadata
-        - Ordering by (country_code, year) to optimize subsequent reads
+        - Ordering by (entity_id, year) to optimize subsequent reads
 
         Returns:
             Path of the exported Parquet file
@@ -290,7 +290,7 @@ class SqlEngineProcessor:
             export_query = f"""
                 COPY (
                     SELECT * FROM analytics_wide 
-                    ORDER BY country_code, year
+                    ORDER BY entity_id, year
                 ) TO '{output_path}' (FORMAT PARQUET)
             """
             
@@ -327,9 +327,9 @@ class SqlEngineProcessor:
         Configure the relational schema in DuckDB - dataset-agnostic.
 
         Generates the schema dynamically from the columns of raw_complete_data:
-        1. dim_entities: (country_code, country_name, country_stratum)
+        1. dim_entities: (entity_id, entity_name, entity_stratum)
         2. analytics_wide: CREATE TABLE AS SELECT * FROM raw_complete_data
-        3. Indexes on (country_code, year)
+        3. Indexes on (entity_id, year)
         """
         print("   Configuring relational structure (dynamic)")
 
@@ -339,11 +339,11 @@ class SqlEngineProcessor:
             self.conn_manager.execute_sql_no_return("""
                 CREATE TABLE dim_entities AS
                 SELECT DISTINCT
-                    country_code,
-                    FIRST(country_name) as country_name,
-                    FIRST(country_stratum) as country_stratum
+                    entity_id,
+                    FIRST(entity_name) as entity_name,
+                    FIRST(entity_stratum) as entity_stratum
                 FROM raw_complete_data
-                GROUP BY country_code
+                GROUP BY entity_id
             """)
             entity_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM dim_entities")
             print(f"   dim_entities created: {entity_count} entities")
@@ -359,8 +359,8 @@ class SqlEngineProcessor:
 
             # Indexes
             for idx_sql in [
-                "CREATE INDEX IF NOT EXISTS idx_entity_year ON analytics_wide(country_code, year)",
-                "CREATE INDEX IF NOT EXISTS idx_stratum ON analytics_wide(country_stratum)",
+                "CREATE INDEX IF NOT EXISTS idx_entity_year ON analytics_wide(entity_id, year)",
+                "CREATE INDEX IF NOT EXISTS idx_stratum ON analytics_wide(entity_stratum)",
                 "CREATE INDEX IF NOT EXISTS idx_year ON analytics_wide(year)",
             ]:
                 try:
@@ -390,11 +390,11 @@ class SqlEngineProcessor:
         print("   Validating and enriching the fact table")
 
         try:
-            # Sanitize country_stratum NULLs
+            # Sanitize entity_stratum NULLs
             self.conn_manager.execute_sql_no_return("""
                 UPDATE analytics_wide
-                SET country_stratum = 'unclassified'
-                WHERE country_stratum IS NULL
+                SET entity_stratum = 'unclassified'
+                WHERE entity_stratum IS NULL
             """)
 
             # Add/update lineage metadata
@@ -414,7 +414,7 @@ class SqlEngineProcessor:
                     pass
 
             final_count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
-            entities = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
+            entities = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT entity_id) FROM analytics_wide")
             print(f"   {final_count} records, {entities} entities")
 
         except SQLProcessingError as e:

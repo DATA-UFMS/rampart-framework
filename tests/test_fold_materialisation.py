@@ -46,7 +46,7 @@ FEATURES = ['gini', 'internet']
 def _panel(target_column='dropout_rate'):
     rng = np.random.default_rng(11)
     return pd.DataFrame([
-        {'country_code': entity, 'year': year,
+        {'entity_id': entity, 'year': year,
          'gini': rng.normal(40, 5), 'internet': rng.normal(50, 8),
          target_column: rng.normal(10, 2)}
         for entity in ENTITIES for year in YEARS
@@ -150,7 +150,7 @@ def _materialise(paradigm, frame):
     if paradigm == 'sql_engine':
         # The view supplies the canonical order; nothing else does it for this
         # paradigm, which is why the verification exists.
-        data = frame.sort_values(['country_code', 'year']).reset_index(
+        data = frame.sort_values(['entity_id', 'year']).reset_index(
             drop=True)
         argument = (data, list(FEATURES))
     elif paradigm == 'task_graph':
@@ -201,8 +201,8 @@ class TestTheParadigmsAgree:
         panel = _panel()
         shuffled = panel.sample(frac=1.0, random_state=7).reset_index(
             drop=True)
-        assert not shuffled[['country_code', 'year']].equals(
-            panel[['country_code', 'year']])
+        assert not shuffled[['entity_id', 'year']].equals(
+            panel[['entity_id', 'year']])
 
     def test_the_columns_are_in_the_declared_order(self, materialised):
         for paradigm, (X, _, _) in materialised.items():
@@ -322,7 +322,7 @@ class TestTheLagColumnsAreNotOptional:
         from core.validation import assert_lag_columns
 
         with pytest.raises(ValueError, match='dropout_rate_lag_3'):
-            assert_lag_columns(['country_code', 'year',
+            assert_lag_columns(['entity_id', 'year',
                                 'dropout_rate_lag_2'], 'task_graph',
                                BaseArchitectureML.TARGET_LAG_ORDERS,
                                target_stem=BaseArchitectureML.TARGET_STEM)
@@ -331,7 +331,7 @@ class TestTheLagColumnsAreNotOptional:
         from core.base_architecture import BaseArchitectureML
         from core.validation import assert_lag_columns
 
-        columns = ['country_code', 'year'] + [
+        columns = ['entity_id', 'year'] + [
             f'dropout_rate_lag_{order}'
             for order in BaseArchitectureML.TARGET_LAG_ORDERS]
         assert_lag_columns(columns, 'sql_engine',

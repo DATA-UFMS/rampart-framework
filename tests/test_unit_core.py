@@ -88,7 +88,7 @@ def _transform_via_production(architecture, values, features=('gini_index',),
     """Run the paradigm's prepare_features and return the transformed columns."""
     paradigm = architecture.architecture_name
     frame = pd.DataFrame({
-        'country_code': ['BRA'] * len(values),
+        'entity_id': ['BRA'] * len(values),
         'year': list(range(2000, 2000 + len(values))),
         architecture.target_column: np.arange(len(values), dtype=float),
     })
@@ -204,8 +204,8 @@ def _generate_folds(start_year, end_year, min_train, val_len, test_len, gap,
         walk_forward_config = {'min_train': min_train, 'val_len': val_len,
                                'test_len': test_len, 'step': step}
         year_column = 'year'
-        entity_column = 'country_code'
-        entity_name_column = 'country_name'
+        entity_column = 'entity_id'
+        entity_name_column = 'entity_name'
         stratification_column = None
         target_source_column = 'source_rate'
         feature_columns = []
@@ -302,8 +302,8 @@ class TestWalkForwardFolds:
             temporal_range = (2000, 2023)
             walk_forward_config = {'min_train': 8, 'val_len': 2, 'test_len': 2}
             year_column = 'year'
-            entity_column = 'country_code'
-            entity_name_column = 'country_name'
+            entity_column = 'entity_id'
+            entity_name_column = 'entity_name'
             stratification_column = None
             target_source_column = 'source_rate'
             feature_columns = []

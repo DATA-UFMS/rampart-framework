@@ -114,7 +114,7 @@ class BaselineModelAnalysisDataFrameLib:
             pl.len().alias('total_rows'),
             pl.col('year').min().alias('year_min'),
             pl.col('year').max().alias('year_max'),
-            pl.col('country_code').n_unique().alias('n_countries'),
+            pl.col('entity_id').n_unique().alias('n_countries'),
             pl.col(self.target_col).mean().alias('target_mean'),
             pl.col(self.target_col).std().alias('target_std'),
             pl.col(self.target_col).min().alias('target_min'),
@@ -218,7 +218,7 @@ class BaselineModelAnalysisDataFrameLib:
             analysis['temporal_stats'] = temporal_df.to_dicts()
 
         # Distribution by country
-        country_df = self.df_lazy.group_by('country_code').agg([
+        country_df = self.df_lazy.group_by('entity_id').agg([
             pl.col(self.target_col).count().alias('count'),
             pl.col(self.target_col).mean().alias('mean'),
             pl.col(self.target_col).std().alias('std'),
@@ -228,8 +228,8 @@ class BaselineModelAnalysisDataFrameLib:
 
         print(f"\n   Variation by country (Polars):")
         if len(country_df) > 0:
-            print(f"      Lowest dropout: {country_df[-1, 'mean']:.1f}% ({country_df[-1, 'country_code']})")
-            print(f"      Highest dropout: {country_df[0, 'mean']:.1f}% ({country_df[0, 'country_code']})")
+            print(f"      Lowest dropout: {country_df[-1, 'mean']:.1f}% ({country_df[-1, 'entity_id']})")
+            print(f"      Highest dropout: {country_df[0, 'mean']:.1f}% ({country_df[0, 'entity_id']})")
             country_means = country_df['mean'].to_list()
             print(f"      Variation across countries: {np.std(country_means):.1f}% (std)")
 
@@ -281,9 +281,9 @@ class BaselineModelAnalysisDataFrameLib:
             )
 
             # Materialise for pandas operations (deterministic ordering)
-            train_df = train_lazy.sort(['country_code', 'year']).collect().to_pandas()
-            val_df = val_lazy.sort(['country_code', 'year']).collect().to_pandas()
-            test_df = test_lazy.sort(['country_code', 'year']).collect().to_pandas()
+            train_df = train_lazy.sort(['entity_id', 'year']).collect().to_pandas()
+            val_df = val_lazy.sort(['entity_id', 'year']).collect().to_pandas()
+            test_df = test_lazy.sort(['entity_id', 'year']).collect().to_pandas()
 
             train_len = len(train_df)
             val_len = len(val_df)
@@ -317,7 +317,7 @@ class BaselineModelAnalysisDataFrameLib:
                     if df is None or df.empty:
                         return None
                     diffs = []
-                    for _, g in df.sort_values(['country_code', 'year']).groupby('country_code'):
+                    for _, g in df.sort_values(['entity_id', 'year']).groupby('entity_id'):
                         vals = g[self.target_col].values
                         if len(vals) > 1:
                             diffs.append(np.abs(np.diff(vals)))
@@ -380,10 +380,10 @@ class BaselineModelAnalysisDataFrameLib:
 
             val_pred_naive = []
             for _, row in val_clean.iterrows():
-                country = row['country_code']
+                country = row['entity_id']
                 val_year = row['year']
 
-                country_train = train_clean[train_clean['country_code'] == country]
+                country_train = train_clean[train_clean['entity_id'] == country]
                 country_hist = country_train[country_train['year'] <= val_year - MIN_LAG]
 
                 if len(country_hist) > 0:
@@ -398,10 +398,10 @@ class BaselineModelAnalysisDataFrameLib:
             combined_mean = combined_clean[self.target_col].mean()
 
             for _, row in test_clean.iterrows():
-                country = row['country_code']
+                country = row['entity_id']
                 test_year = row['year']
 
-                country_combined = combined_clean[combined_clean['country_code'] == country]
+                country_combined = combined_clean[combined_clean['entity_id'] == country]
                 country_hist = country_combined[country_combined['year'] <= test_year - MIN_LAG]
 
                 if len(country_hist) > 0:
@@ -429,13 +429,13 @@ class BaselineModelAnalysisDataFrameLib:
             # Baseline 4: Cross-Country Average
             val_pred_cross = []
             for _, row in val_clean.iterrows():
-                country = row['country_code']
+                country = row['entity_id']
                 val_year = row['year']
 
                 year_data = train_clean[train_clean['year'] <= val_year - MIN_LAG]
 
                 if len(year_data) > 0:
-                    country_means_dict = year_data.groupby('country_code')[self.target_col].mean()
+                    country_means_dict = year_data.groupby('entity_id')[self.target_col].mean()
                     other_countries = country_means_dict[country_means_dict.index != country]
 
                     if len(other_countries) > 0:
@@ -449,13 +449,13 @@ class BaselineModelAnalysisDataFrameLib:
 
             test_pred_cross = []
             for _, row in test_clean.iterrows():
-                country = row['country_code']
+                country = row['entity_id']
                 test_year = row['year']
 
                 year_data = combined_clean[combined_clean['year'] <= test_year - MIN_LAG]
 
                 if len(year_data) > 0:
-                    country_means_dict = year_data.groupby('country_code')[self.target_col].mean()
+                    country_means_dict = year_data.groupby('entity_id')[self.target_col].mean()
                     other_countries = country_means_dict[country_means_dict.index != country]
 
                     if len(other_countries) > 0:
@@ -514,16 +514,16 @@ class BaselineModelAnalysisDataFrameLib:
 
             self._prediction_recorder.record(
                 fold=fold_id, model='global_mean', y_true=y_test,
-                y_pred=test_pred_global, entities=test_clean['country_code'])
+                y_pred=test_pred_global, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='linear_trend', y_true=y_test,
-                y_pred=test_pred_trend, entities=test_clean['country_code'])
+                y_pred=test_pred_trend, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='naive_with_lag', y_true=y_test,
-                y_pred=test_pred_naive, entities=test_clean['country_code'])
+                y_pred=test_pred_naive, entities=test_clean['entity_id'])
             self._prediction_recorder.record(
                 fold=fold_id, model='cross_country', y_true=y_test,
-                y_pred=test_pred_cross, entities=test_clean['country_code'])
+                y_pred=test_pred_cross, entities=test_clean['entity_id'])
 
             fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
             fold_results['fold_load_s'] = _fold_load_s

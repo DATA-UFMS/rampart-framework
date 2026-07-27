@@ -143,7 +143,7 @@ class HierarchicalModelSQLFirst:
             total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
             min_year = self.conn_manager.execute_scalar("SELECT MIN(year) FROM analytics_wide")
             max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM analytics_wide")
-            total_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
+            total_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT entity_id) FROM analytics_wide")
             
             print(f"   Data: {total_records} observations")
             print(f"   Period: {min_year}-{max_year}")
@@ -181,7 +181,7 @@ class HierarchicalModelSQLFirst:
                 SELECT *
                 FROM {view_name}
                 WHERE {self.target_col} IS NOT NULL
-                ORDER BY country_code, year
+                ORDER BY entity_id, year
             """
             
             df = self.conn_manager.execute_sql(query)
@@ -236,11 +236,11 @@ class HierarchicalModelSQLFirst:
         window, only fitting a statistic does.
 
         The fold's view already applies WHERE target IS NOT NULL and ORDER BY
-        country_code, year -- the same subset and the same order the other
+        entity_id, year -- the same subset and the same order the other
         paradigms produce in Python.
         """
         return canonical_fold(data[available_features], data[self.target_col],
-                              data['country_code'], data['year'],
+                              data['entity_id'], data['year'],
                               paradigm=PARADIGM)
     
     def simple_hierarchical_model(self, X_train: pd.DataFrame, y_train: pd.Series,

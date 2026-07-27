@@ -223,7 +223,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         stats_to_compute = {
             'year_min': ddf['year'].min(),
             'year_max': ddf['year'].max(),
-            'n_countries': ddf['country_code'].nunique(),
+            'n_countries': ddf['entity_id'].nunique(),
             'total_rows': ddf.index.size
         }
         computed_stats = dask.compute(stats_to_compute)[0]
@@ -340,7 +340,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             print(f"  [WARN] {computed['under_0_count']} values <0% (invalid data)")
 
         # Mandatory schema validation
-        required_cols = ['country_code', 'year']
+        required_cols = ['entity_id', 'year']
         missing_cols = [col for col in required_cols if col not in ddf.columns]
         if missing_cols:
             raise ValueError(
@@ -406,16 +406,16 @@ class TaskGraphArchitectureML(BaseArchitectureML):
 
         print("  Target created via Dask lazy evaluation")
         try:
-            base = ddf_with_target[['country_code', 'year', self.target_column]].rename(
+            base = ddf_with_target[['entity_id', 'year', self.target_column]].rename(
                 columns={self.target_column: 'dropout_rate_t'}
             )
             prev = base.assign(year=base['year'] + 2).rename(columns={'dropout_rate_t': 'dropout_rate_lag_2'})
-            merged = dd.merge(ddf_with_target, prev[['country_code', 'year', 'dropout_rate_lag_2']],
-                              on=['country_code', 'year'], how='left')
+            merged = dd.merge(ddf_with_target, prev[['entity_id', 'year', 'dropout_rate_lag_2']],
+                              on=['entity_id', 'year'], how='left')
             # Lag of 3 years
             prev3 = base.assign(year=base['year'] + 3).rename(columns={'dropout_rate_t': 'dropout_rate_lag_3'})
-            merged = dd.merge(merged, prev3[['country_code', 'year', 'dropout_rate_lag_3']],
-                              on=['country_code', 'year'], how='left')
+            merged = dd.merge(merged, prev3[['entity_id', 'year', 'dropout_rate_lag_3']],
+                              on=['entity_id', 'year'], how='left')
             ddf_with_target = merged
             print("  dropout_rate_lag_2 and dropout_rate_lag_3 created (join country/year-k)")
         except Exception as exc:
@@ -504,9 +504,9 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                 'train_count': train_filter.sum(),
                 'val_count': val_filter.sum(),
                 'test_count': test_filter.sum(),
-                'train_countries': ddf[train_filter]['country_code'].nunique(),
-                'val_countries': ddf[val_filter]['country_code'].nunique(),
-                'test_countries': ddf[test_filter]['country_code'].nunique()
+                'train_countries': ddf[train_filter]['entity_id'].nunique(),
+                'val_countries': ddf[val_filter]['entity_id'].nunique(),
+                'test_countries': ddf[test_filter]['entity_id'].nunique()
             }
             computed_fold = dask.compute(fold_stats)[0]
             fold.update(computed_fold)
@@ -705,7 +705,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                for memory optimization
 
         Final structure:
-            - Metadata: country_code, year, target (essential for temporal ML)
+            - Metadata: entity_id, year, target (essential for temporal ML)
             - Original features: selected_features (post collinearity filtering)
             - Transformed features: {feature}_log_transform (top-5)
 
@@ -752,7 +752,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         # Construction of the final ML dataset
 
         # Metadata essential for temporal ML
-        ml_features = ['country_code', 'year', self.target_column]
+        ml_features = ['entity_id', 'year', self.target_column]
 
         # Original features after collinearity filtering
         ml_features.extend(selected_features)
@@ -882,7 +882,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
 
         # Master configuration
         total_obs = len(master_df)
-        total_countries = master_df['country_code'].nunique()
+        total_countries = master_df['entity_id'].nunique()
         year_min = int(master_df['year'].min())
         year_max = int(master_df['year'].max())
         
@@ -913,9 +913,9 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             
             df = ddf.compute()
             
-            index_cols = ['country_code', 'country_name', 'year']
-            if 'country_stratum' in df.columns:
-                index_cols.append('country_stratum')
+            index_cols = ['entity_id', 'entity_name', 'year']
+            if 'entity_stratum' in df.columns:
+                index_cols.append('entity_stratum')
             
             # Pivot the data
             df_wide = df.pivot_table(

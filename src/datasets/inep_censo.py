@@ -25,11 +25,11 @@ class InepCensoDatasetConfig:
     # Geographic entity.
     #
     # The collector maps each municipality onto the framework's internal schema
-    # (country_code / country_name / country_stratum), so the pipeline needs no
+    # (entity_id / entity_name / entity_stratum), so the pipeline needs no
     # dataset-specific handling. The stratum carries the state abbreviation.
-    entity_column = "country_code"
-    entity_name_column = "country_name"
-    stratification_column = "country_stratum"
+    entity_column = "entity_id"
+    entity_name_column = "entity_name"
+    stratification_column = "entity_stratum"
     strata = {
         "norte": ["AC", "AM", "AP", "PA", "RO", "RR", "TO"],
         "nordeste": ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"],
@@ -40,7 +40,7 @@ class InepCensoDatasetConfig:
 
     # Target. The collector inverts the upper-secondary abandonment rate into a
     # completion rate, from which the framework derives dropout_rate.
-    target_source_column = "lower_secondary_completion_rate"
+    target_source_column = "target_source_rate"
     target_expected_range = (0.0, 100.0)
     min_valid_count = 5000
 
@@ -54,8 +54,8 @@ class InepCensoDatasetConfig:
     ]
 
     excluded_columns = [
-        "country_code", "country_name", "year", "country_stratum",
-        "lower_secondary_completion_rate",  # target source
+        "entity_id", "entity_name", "year", "entity_stratum",
+        "target_source_rate",  # target source
         "data_completeness_score",
     ]
 

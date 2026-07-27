@@ -154,7 +154,7 @@ class TaskGraphProcessor:
         n_rows = len(ddf)
         n_cols = len(ddf.columns)
         year_range = dask.compute(ddf['year'].min(), ddf['year'].max())
-        n_countries = ddf['country_code'].nunique().compute()
+        n_countries = ddf['entity_id'].nunique().compute()
         
         print(f"{n_rows:,} observations x {n_cols} variables")
         print(f"Temporal coverage: {year_range[0]}-{year_range[1]} ({year_range[1]-year_range[0]+1} years)")
@@ -326,16 +326,16 @@ class TaskGraphProcessor:
         ddf_prepared = self.prepare_task_graph_metadata(ddf, metadata_status)
 
         # Handling of missing values in the stratification variable
-        if 'country_stratum' in ddf_prepared.columns:
-            none_count = ddf_prepared['country_stratum'].isna().sum().compute()
+        if 'entity_stratum' in ddf_prepared.columns:
+            none_count = ddf_prepared['entity_stratum'].isna().sum().compute()
             if none_count > 0:
                 print(f"{none_count:,} observations with undefined stratum -> 'unclassified'")
                 ddf_prepared = ddf_prepared.assign(
-                    country_stratum=ddf_prepared['country_stratum'].fillna('unclassified')
+                    entity_stratum=ddf_prepared['entity_stratum'].fillna('unclassified')
                 )
 
         # Computes the optimal number of partitions
-        n_countries = ddf_prepared['country_code'].nunique().compute()
+        n_countries = ddf_prepared['entity_id'].nunique().compute()
         optimal_partitions = min(n_countries, 32)
 
         print(f"Unique countries: {n_countries}, optimal partitions: {optimal_partitions}")
@@ -377,7 +377,7 @@ class TaskGraphProcessor:
         partition['schema_validation_applied'] = 'true'
 
         if not partition.empty:
-            first_country = partition.iloc[0]['country_code']
+            first_country = partition.iloc[0]['entity_id']
             partition['partition_id'] = f"partition_{hash(str(first_country)) % 1000:03d}"
 
         return partition
@@ -502,7 +502,7 @@ class TaskGraphProcessor:
         
         ddf.to_parquet(
             partitioned_output_path,
-            partition_on=['country_code'],
+            partition_on=['entity_id'],
             write_index=False,
             engine='pyarrow',
             compression='snappy'

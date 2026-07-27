@@ -208,7 +208,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
         stats_lf = lf.select([
             pl.col('year').min().alias('year_min'),
             pl.col('year').max().alias('year_max'),
-            pl.col('country_code').n_unique().alias('n_countries'),
+            pl.col('entity_id').n_unique().alias('n_countries'),
             pl.len().alias('total_rows')
         ])
 
@@ -322,7 +322,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
             print(f"  [WARN] {under_0_count} values <0% (invalid data)")
 
         # Mandatory schema validation
-        required_cols = ['country_code', 'year']
+        required_cols = ['entity_id', 'year']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             raise ValueError(
@@ -347,7 +347,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
 
         Polars implementation:
             Uses .with_columns() with expressions for efficiency, creating
-            temporal lags via a temporal join (year+k) by country_code.
+            temporal lags via a temporal join (year+k) by entity_id.
 
         """
         print(f"Building target: {self.source_column} -> {self.target_column}")
@@ -364,14 +364,14 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
         # not a positional shift that assumes data without yearly gaps.
         print("  Creating lag features (dropout_rate_lag_2, lag_3)")
         try:
-            base_lag = df_with_target.select(['country_code', 'year', self.target_column])
+            base_lag = df_with_target.select(['entity_id', 'year', self.target_column])
 
             # Lag of 2 years: joining on year+2 brings the value from 2 years back
             lag2 = base_lag.with_columns(
                 (pl.col('year') + 2).alias('year')
             ).rename({self.target_column: 'dropout_rate_lag_2'})
             df_with_target = df_with_target.join(
-                lag2, on=['country_code', 'year'], how='left'
+                lag2, on=['entity_id', 'year'], how='left'
             )
 
             # Lag of 3 years: same for 3 years back
@@ -379,7 +379,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
                 (pl.col('year') + 3).alias('year')
             ).rename({self.target_column: 'dropout_rate_lag_3'})
             df_with_target = df_with_target.join(
-                lag3, on=['country_code', 'year'], how='left'
+                lag3, on=['entity_id', 'year'], how='left'
             )
 
             print("  dropout_rate_lag_2 and dropout_rate_lag_3 created (temporal join country/year-k)")
@@ -480,9 +480,9 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
                 train_filter.sum().alias('train_count'),
                 val_filter.sum().alias('val_count'),
                 test_filter.sum().alias('test_count'),
-                pl.when(train_filter).then(pl.col('country_code')).n_unique().alias('train_countries'),
-                pl.when(val_filter).then(pl.col('country_code')).n_unique().alias('val_countries'),
-                pl.when(test_filter).then(pl.col('country_code')).n_unique().alias('test_countries'),
+                pl.when(train_filter).then(pl.col('entity_id')).n_unique().alias('train_countries'),
+                pl.when(val_filter).then(pl.col('entity_id')).n_unique().alias('val_countries'),
+                pl.when(test_filter).then(pl.col('entity_id')).n_unique().alias('test_countries'),
             ]).collect()
 
             fold_row = fold_stats.row(0)
@@ -683,7 +683,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
             3. Polars expressions: Efficient transformations via expressions
 
         Final structure:
-            - Metadata: country_code, year, target (essential for temporal ML)
+            - Metadata: entity_id, year, target (essential for temporal ML)
             - Original features: selected_features (post-filtering)
             - Transformed features: {feature}_log_transform (top-5)
         """
@@ -724,7 +724,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
         # Construction of the final ML dataset
 
         # Essential metadata for temporal ML
-        ml_features = ['country_code', 'year', self.target_column]
+        ml_features = ['entity_id', 'year', self.target_column]
 
         # Original features post collinearity filtering
         ml_features.extend(selected_features)
@@ -824,7 +824,7 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
 
         # Master configuration
         total_obs = len(df)
-        total_countries = df.select(pl.col('country_code').n_unique()).item()
+        total_countries = df.select(pl.col('entity_id').n_unique()).item()
         year_min = int(df.select(pl.col('year').min()).item())
         year_max = int(df.select(pl.col('year').max()).item())
 

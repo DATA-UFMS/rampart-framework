@@ -151,15 +151,20 @@ class BaseArchitectureML(ABC):
         self.config = SCIENTIFIC_CONFIG
         setup_reproducibility()
 
-        # Dataset config (lazy import, detected via env var for subprocesses)
+        # Dataset config (lazy import, detected via env var for subprocesses).
+        #
+        # Resolved through the registry rather than by an if/else on the name.
+        # The registry existed, every dataset registered itself into it on
+        # import, and nothing in production ever read it -- an extension point
+        # declared, tested and unused. The branch it replaces ended in `else:
+        # worldbank`, so DATASET_NAME='inep_cens' ran the World Bank panel and
+        # wrote it under a directory named after the typo, in silence. A name
+        # the registry does not know now raises and lists what it does know.
         if dataset_config is None:
-            dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
-            if dataset_name == 'inep_censo':
-                from datasets.inep_censo import InepCensoDatasetConfig
-                dataset_config = InepCensoDatasetConfig()
-            else:
-                from datasets.worldbank import WorldBankDatasetConfig
-                dataset_config = WorldBankDatasetConfig()
+            import datasets  # noqa: F401 -- the import is what registers them
+            from core.dataset_config import get_dataset
+            dataset_config = get_dataset(
+                os.environ.get('DATASET_NAME', 'worldbank'))
         self.dataset_config = dataset_config
 
         # Target configuration (derived from the dataset)
