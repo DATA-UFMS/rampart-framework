@@ -1,44 +1,44 @@
 #!/usr/bin/env python3
 """
-Pipeline de coleta e imputação de dados socioeconômicos para América Latina.
+Collection and imputation pipeline for Latin American socioeconomic data.
 
-Este módulo implementa uma metodologia hierárquica de imputação baseada em três
-princípios fundamentais da teoria de dados faltantes (Rubin, 1976; Little & Rubin, 2019):
+This module implements a hierarchical imputation methodology grounded in three
+fundamental principles of missing-data theory (Rubin, 1976; Little & Rubin, 2019):
 
-1. PRESERVAÇÃO DA CAUSALIDADE TEMPORAL: Imputação estritamente backward-looking 
-   (apenas valores t-1) para prevenir vazamento de informação futura, crítico em
-   análises preditivas onde a direção causal importa (Honaker & King, 2010).
+1. PRESERVATION OF TEMPORAL CAUSALITY: Strictly backward-looking imputation
+   (t-1 values only) to prevent leakage of future information, critical in
+   predictive analyses where the causal direction matters (Honaker & King, 2010).
 
-2. ESTRATIFICAÇÃO POR HOMOGENEIDADE ECONÔMICA: Agrupamento de países por PIB per 
-   capita e estrutura econômica similar, baseado em evidências de convergência
-   condicional (Barro & Sala-i-Martin, 2004) e spillovers regionais (Aroca et al., 2005).
+2. STRATIFICATION BY ECONOMIC HOMOGENEITY: Grouping of countries by GDP per
+   capita and similar economic structure, based on evidence of conditional
+   convergence (Barro & Sala-i-Martin, 2004) and regional spillovers (Aroca et al., 2005).
 
-3. PRESERVAÇÃO DE VARIABILIDADE: Adição de ruído estocástico calibrado pela
-   volatilidade histórica do indicador, seguindo princípios de imputação múltipla
-   (Schafer & Graham, 2002) para evitar subestimação de erros-padrão.
+3. PRESERVATION OF VARIABILITY: Addition of stochastic noise calibrated by the
+   indicator's historical volatility, following multiple-imputation principles
+   (Schafer & Graham, 2002) to avoid underestimating standard errors.
 
-ASSUNÇÕES CRÍTICAS E LIMITAÇÕES:
-- Missingness at Random (MAR): Assume que a probabilidade de dados faltantes 
-  depende apenas de variáveis observadas, não do valor não-observado em si.
-  Violação provável em crises econômicas onde países param de reportar indicadores
-  negativos (censura informativa).
+CRITICAL ASSUMPTIONS AND LIMITATIONS:
+- Missingness at Random (MAR): Assumes that the probability of missing data
+  depends only on observed variables, not on the unobserved value itself.
+  Likely violated in economic crises where countries stop reporting negative
+  indicators (informative censoring).
   
-- Estacionariedade condicional: Assume que relações entre indicadores são estáveis
-  dentro de janelas temporais curtas. Violação provável durante mudanças estruturais
-  (e.g., COVID-19, transições políticas).
+- Conditional stationarity: Assumes that relations between indicators are stable
+  within short temporal windows. Likely violated during structural changes
+  (e.g., COVID-19, political transitions).
 
-- Homogeneidade intra-estrato: Assume similaridade suficiente entre países do mesmo
-  estrato econômico. Pode mascarar heterogeneidades importantes (e.g., economias
-  baseadas em commodities vs. serviços).
+- Intra-stratum homogeneity: Assumes sufficient similarity between countries in the
+  same economic stratum. May mask important heterogeneities (e.g., commodity-based
+  vs. service-based economies).
 
-VALIDAÇÃO METODOLÓGICA:
-Implementa quatro níveis de validação conforme Van Buuren (2018):
-1. Face validity: Valores imputados dentro de ranges lógicos
-2. Convergência: Estabilidade entre métodos alternativos
-3. Validação cruzada: Leave-one-out com MAPE < 15% para indicadores estáveis
-4. Sensibilidade: Robustez a variações metodológicas
+METHODOLOGICAL VALIDATION:
+Implements four levels of validation following Van Buuren (2018):
+1. Face validity: Imputed values within logical ranges
+2. Convergence: Stability across alternative methods
+3. Cross-validation: Leave-one-out with MAPE < 15% for stable indicators
+4. Sensitivity: Robustness to methodological variations
 
-Referências:
+References:
 - Rubin, D.B. (1976). Inference and missing data. Biometrika, 63(3), 581-592.
 - Little, R.J.A. & Rubin, D.B. (2019). Statistical Analysis with Missing Data, 3rd Ed. Wiley.
 - Schafer, J.L. & Graham, J.W. (2002). Missing data: Our view of the state of the art. 
@@ -60,37 +60,112 @@ import pandas as pd
 import requests
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.core.config import COUNTRY_STRATA, get_absolute_output_path, START_YEAR, END_YEAR
-from src.core.indicators import ALL_INDICATORS
-from src.core.scientific_config import RANDOM_SEED, setup_reproducibility
+from core.config import COUNTRY_STRATA, get_absolute_output_path, START_YEAR, END_YEAR
+from core.indicators import ALL_INDICATORS
+from core.scientific_config import RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
 
 
+#: How many consecutive years a temporal fill may carry an observation
+#: forward. One number per column, applied once, so that the reach is the
+#: declared one and not the sum of chained steps.
+CARRY_LIMIT_YEARS = 1
+LOW_FREQUENCY_CARRY_LIMIT_YEARS = 3
+LOW_FREQUENCY_COLUMNS = frozenset({'unemployment_total',
+                                   'gdp_per_capita_constant_2015'})
+
+
+def _fillable_cells(observed, source, gap, limit):
+    """Which cells a temporal carry may fill.
+
+    Missing, with something to carry into them, and no further than `limit`
+    years from the entity's last observation.
+
+    The distance bound is not implied by the source. Both sources in use are
+    incidentally bounded -- a limited forward fill, and a rolling mean whose
+    window equals the limit -- so removing the bound changes nothing today.
+    It is stated here because the source has already changed once, and the
+    previous arrangement derived its reach from how many fill steps happened
+    to be chained rather than from a number anyone had written down.
+    """
+    return observed.isna() & source.notna() & (gap <= limit)
+
+
+def _years_since_observed(series):
+    """Distance, in positions, to the entity's own last observation.
+
+    Zero where there is an observation; NaN before the first. It serves to
+    impose the propagation limit explicitly, instead of letting it emerge from
+    how many fill steps were chained.
+    """
+    positions = pd.Series(np.arange(len(series)), index=series.index,
+                          dtype=float)
+    last_observed = positions.where(series.notna()).ffill()
+    return positions - last_observed
+
+
+def carry_forward(frame, column, entity_column='entity_id'):
+    """Fill `column` from each entity's own past, within its declared limit.
+
+    Returns the frame and how many cells were filled. Shared with the
+    sensitivity analysis, which reimplemented it as a bare lag-1 and so
+    measured a method the pipeline does not apply -- for the low-frequency
+    columns, one that reaches a third as far.
+    """
+    limit = (LOW_FREQUENCY_CARRY_LIMIT_YEARS if column in LOW_FREQUENCY_COLUMNS
+             else CARRY_LIMIT_YEARS)
+    grouped = frame.groupby(entity_column, group_keys=False)
+
+    if column == 'unemployment_total':
+        # Mean of up to `window` previous observations, to smooth cycles, over
+        # the observed series: averaging already-filled cells is what used to
+        # extend the reach. The window derives from the limit rather than
+        # being a bare 3 that happens to equal it.
+        window = LOW_FREQUENCY_CARRY_LIMIT_YEARS
+        source = grouped[column].apply(
+            lambda s: s.shift(1).rolling(window=window, min_periods=1).mean())
+    else:
+        source = grouped[column].ffill(limit=limit)
+    source = source.reindex(frame.index)
+
+    # Distance to the entity's last observation. This is what makes the reach
+    # checkable instead of emergent from how many fill steps were chained.
+    gap = grouped[column].apply(_years_since_observed).reindex(frame.index)
+
+    fillable = _fillable_cells(frame[column], source, gap, limit)
+    frame = frame.copy()
+    frame.loc[fillable, column] = source[fillable]
+    return frame, int(fillable.sum())
+
+
+
 class RawDataCollector:
     """
-    Sistema de coleta e imputação hierárquica para dados socioeconômicos da América Latina.
+    Hierarchical collection and imputation system for Latin American socioeconomic data.
     
-    A classe implementa um pipeline completo desde a coleta via API World Bank até
-    a geração de dataset analítico com tratamento de dados faltantes,
-    seguindo metodologia publicável em periódicos de ciências sociais computacionais.
+    The class implements a complete pipeline from collection via the World Bank API to
+    the generation of an analytical dataset with missing-data treatment,
+    following a methodology publishable in computational social science journals.
     
-    Hierarquia de Imputação (ordem de preferência baseada em confiabilidade):
-    1. TEMPORAL LAG-1: Correlação serial típica de 0.85-0.95 em indicadores educacionais
-    2. GEOGRÁFICA ESTRATIFICADA: Correlação intra-cluster de 0.60-0.75 
-    3. GLOBAL CONSERVADORA: Último recurso, preserva distribuição populacional
-    
-    A categorização de indicadores em voláteis/estáveis segue análise empírica
-    de coeficientes de variação em painel 1990-2020 (dados não mostrados).
+    Imputation: forward fill within the entity, and nothing else at this stage.
+    It fits no statistic, hence it cannot have seen validation or test, and it is
+    the only mechanism that can be applied before the folds exist without
+    violating P5. The median that covers the remainder is fold-scoped
+    (core.validation.impute_from_training_window). The target's source column is not
+    imputed, and rows without an observed target are removed.
     """
     
-    def __init__(self):
-        print("Coleta de dados")
+    def __init__(self, allow_missing_indicators: bool = False):
+        print("Data collection")
+        # The absence of a declared indicator is a failure, not a warning: it must
+        # be accepted explicitly so that it is recorded as a decision.
+        self.allow_missing_indicators = allow_missing_indicators
         
         self.indicator_categories = {
             'education': {
                 'indicators': [
-                    'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
+                    'target_source_rate', 'enrollment_rate_secondary_net',
                     'education_expenditure_gdp_percent', 'gender_parity_index_secondary', 
                     'adult_literacy_rate', 'pupil_teacher_ratio_primary',
                     'female_teachers_secondary_percent', 'pupil_teacher_ratio_secondary'
@@ -109,7 +184,7 @@ class RawDataCollector:
                 'indicators': [
                     'gdp_per_capita_constant_2015', 'unemployment_total'
                 ],
-                'use_robust_imputation': True  # Distribuições assimétricas com caudas pesadas
+                'use_robust_imputation': True  # Skewed distributions with heavy tails
             },
             'social': {
                 'indicators': [
@@ -136,53 +211,59 @@ class RawDataCollector:
         self.output_dir = get_absolute_output_path('collection/raw_data')
         os.makedirs(self.output_dir, exist_ok=True)
         
-        print(f"{len(self.indicators)} indicadores, {len(self.countries)} paises")
-        print(f"Diretorio de saida: {self.output_dir}")
+        print(f"{len(self.indicators)} indicators, {len(self.countries)} countries")
+        print(f"Output directory: {self.output_dir}")
     
     def get_indicator_category_config(self, indicator_name: str) -> Dict:
         """
-        Retorna configuração metodológica específica para categoria do indicador.
+        Returns the methodological configuration specific to the indicator's category.
         
-        Categorização baseada em análise empírica de coeficiente de variação (CV) e
-        teste de normalidade Shapiro-Wilk em dados 1990-2020. Indicadores com
-        CV > 0.30 ou rejeição de normalidade (p < 0.05) classificados como voláteis,
-        requerendo estimadores robustos (mediana) conforme Wilcox (2012).
+        Categorization based on an empirical analysis of the coefficient of variation (CV) and
+        the Shapiro-Wilk normality test on 1990-2020 data. Indicators with
+        CV > 0.30 or rejection of normality (p < 0.05) are classified as volatile,
+        requiring robust estimators (median) following Wilcox (2012).
         
         Args:
-            indicator_name: Nome do indicador
+            indicator_name: Indicator name
             
         Returns:
-            Configuração com pesos de imputação e método estatístico
+            Configuration with imputation weights and statistical method
         """
         category = self.indicator_to_category.get(indicator_name, 'social')
         return self.indicator_categories[category]
     
     def is_zero_centered_indicator(self, indicator_name: str) -> bool:
         """
-        Identifica indicadores com distribuição simétrica centrada em zero.
+        Identifies indicators with a symmetric distribution centred on zero.
         
-        Indicadores de governança do Worldwide Governance Indicators (WGI) são
-        normalizados para média 0 e desvio 2.5. Usar média aritmética nestes
-        casos introduziria bias sistemático para valores positivos devido à
-        assimetria de dados faltantes (países com governança fraca reportam menos).
+        Governance indicators from the Worldwide Governance Indicators (WGI) are
+        normalized to mean 0 and deviation 2.5. Using the arithmetic mean in these
+        cases would introduce a systematic bias towards positive values due to the
+        asymmetry of missing data (countries with weak governance report less).
         
         Args:
-            indicator_name: Nome do indicador
+            indicator_name: Indicator name
             
         Returns:
-            True se indicador é centrado em zero (requer mediana)
+            True if the indicator is zero-centred (requires the median)
         """
         zero_centered_indicators = ['government_effectiveness']
         return indicator_name in zero_centered_indicators
     
     def _apply_geographic_imputation(self, df: pd.DataFrame, column: str, indicator_name: str = None) -> pd.Series:
         """
-        Aplica imputação geográfica estratificada por similaridade econômica.
-        
-        Estratificação baseada em clusters de PIB per capita reduz RMSE em 23%
-        comparado a imputação regional simples (análise não mostrada). Uso de
-        mediana para indicadores voláteis segue recomendação de Tukey (1977)
-        para estimadores resistentes em presença de outliers.
+        Mean or median of the peers in the same stratum in the same year.
+
+        NOT APPLIED TO THE DATA. Filling a cell with values from other
+        entities writes cross-sectional information into the target and the features, and the
+        equivalent global variant fits a statistic over validation and test
+        (P5 violation, Kaufman et al. 2012). Collection uses only forward fill
+        within the entity.
+
+        Kept as a reference for
+        compare_candidate_imputation_methods(), which quantifies the distributional
+        distortion of this alternative and of the global one — the evidence that motivates
+        rejecting them. Median for volatile indicators follows Tukey (1977).
         """
         if indicator_name is None:
             indicator_name = column
@@ -192,27 +273,27 @@ class RawDataCollector:
         use_robust = category_config['use_robust_imputation']
         
         if is_zero_centered or use_robust:
-            return df.groupby(['country_stratum', 'year'])[column].transform('median')
+            return df.groupby(['entity_stratum', 'year'])[column].transform('median')
         else:
-            return df.groupby(['country_stratum', 'year'])[column].transform('mean')
+            return df.groupby(['entity_stratum', 'year'])[column].transform('mean')
     
     def collect_indicator_data(self, indicator_name: str, wb_code: str, max_retries: int = 3) -> pd.DataFrame:
         """
-        Interface com API World Bank v2 com retry exponencial.
+        Interface to the World Bank v2 API with exponential retry.
         
-        Implementa backoff exponencial (2^n segundos) seguindo best practices
-        para APIs REST (Fielding & Taylor, 2002). Timeout de 30s baseado em
-        P99 de latência observada em 10,000 requisições de teste.
+        Implements exponential backoff (2^n seconds) following best practices
+        for REST APIs (Fielding & Taylor, 2002). 30s timeout based on the
+        P99 latency observed over 10,000 test requests.
         
         Args:
-            indicator_name: Nome legível do indicador
-            wb_code: Código oficial World Bank
-            max_retries: Tentativas máximas (default=3 baseado em taxa de sucesso 99.9%)
+            indicator_name: Human-readable indicator name
+            wb_code: Official World Bank code
+            max_retries: Maximum attempts (default=3 based on a 99.9% success rate)
             
         Returns:
-            DataFrame com dados coletados ou vazio se falha total
+            DataFrame with the collected data, or empty on total failure
         """
-        print(f"Processando {indicator_name}")
+        print(f"Processing {indicator_name}")
         
         all_data = []
         countries_str = ';'.join(self.countries)
@@ -221,7 +302,7 @@ class RawDataCollector:
         params = {
             'format': 'json',
             'date': f'{START_YEAR}:{END_YEAR}',
-            'per_page': 10000  # Máximo permitido pela API
+            'per_page': 10000  # Maximum allowed by the API
         }
         
         for attempt in range(max_retries):
@@ -234,8 +315,8 @@ class RawDataCollector:
                     for record in data[1]:
                         if record['value'] is not None:
                             all_data.append({
-                                'country_code': record['country']['id'],
-                                'country_name': record['country']['value'],
+                                'entity_id': record['country']['id'],
+                                'entity_name': record['country']['value'],
                                 'year': int(record['date']),
                                 'indicator_code': wb_code,
                                 'indicator_name': indicator_name,
@@ -243,36 +324,36 @@ class RawDataCollector:
                             })
                     break
                 else:
-                    print(f"      Sem dados retornados (tentativa {attempt + 1})")
+                    print(f"      No data returned (attempt {attempt + 1})")
                     
             except requests.exceptions.RequestException as e:
-                print(f"      [ERROR] Erro na tentativa {attempt + 1}: {e}")
+                print(f"      [ERROR] Error on attempt {attempt + 1}: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Backoff exponencial
+                    time.sleep(2 ** attempt)  # Exponential backoff
                     
         if all_data:
             df = pd.DataFrame(all_data)
-            print(f"      {len(df)} registros coletados")
+            print(f"      {len(df)} records collected")
             return df
         else:
-            print(f"      [ERROR] Falha na coleta apos {max_retries} tentativas")
+            print(f"      [ERROR] Collection failed after {max_retries} attempts")
             return pd.DataFrame()
     
     def collect_all_indicators(self) -> pd.DataFrame:
         """
-        Coleta batch de todos indicadores configurados.
+        Batch collection of every configured indicator.
         
-        Execução sequencial (não paralela) para respeitar rate limiting da API
-        World Bank (sem limites oficiais publicados, mas throttling observado
-        acima de 60 requests/minuto).
+        Sequential (not parallel) execution to respect the World Bank API's rate
+        limiting (no official published limits, but throttling observed
+        above 60 requests/minute).
         
         Returns:
-            DataFrame consolidado em formato long
+            Consolidated DataFrame in long format
             
         Raises:
-            Exception: Se nenhum indicador foi coletado (falha total de conectividade)
+            Exception: If no indicator was collected (total connectivity failure)
         """
-        print("\nColetando dados do World Bank")
+        print("\nCollecting World Bank data")
         
         all_dataframes = []
         failed_indicators = []
@@ -286,33 +367,44 @@ class RawDataCollector:
                 
         if all_dataframes:
             final_df = pd.concat(all_dataframes, ignore_index=True)
-            print(f"\n{len(final_df)} registros totais coletados")
+            print(f"\n{len(final_df)} total records collected")
 
+            if failed_indicators and not self.allow_missing_indicators:
+                # A warning on stdout left the published panel with 22 of the 23
+                # declared indicators: the collected set came to differ from the
+                # declared one without any artifact recording the difference.
+                raise RuntimeError(
+                    f"Declared indicators that were not collected: "
+                    f"{failed_indicators}. The resulting panel does not match "
+                    f"the declaration in core/indicators.py. Fix the declaration "
+                    f"or use --allow-missing-indicators to record the "
+                    f"absence deliberately."
+                )
             if failed_indicators:
-                print(f"[WARN] Falhas na coleta: {failed_indicators}")
-                
+                print(f"[WARN] Absences accepted explicitly: {failed_indicators}")
+
             return final_df
         else:
-            raise Exception("Nenhum dado foi coletado com sucesso")
+            raise Exception("No data was collected successfully")
     
     def validate_outliers_intelligently(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Correção conservadora de valores logicamente impossíveis.
+        Conservative correction of logically impossible values.
         
-        NÃO aplica detecção estatística de outliers (e.g., z-score, IQR) pois
-        valores extremos podem ser legítimos em contextos de crise. Corrige
-        apenas violações de constraints lógicos (e.g., percentuais > 100%).
+        Does NOT apply statistical outlier detection (e.g., z-score, IQR) because
+        extreme values may be legitimate in crisis contexts. It corrects
+        only violations of logical constraints (e.g., percentages > 100%).
         
-        Preservar outliers legítimos é crucial para análises de eventos
-        raros e choques econômicos (Taleb, 2007).
+        Preserving legitimate outliers is crucial for analyses of rare
+        events and economic shocks (Taleb, 2007).
         
         Args:
-            df: DataFrame com dados a validar
+            df: DataFrame with data to validate
             
         Returns:
-            DataFrame com correções aplicadas apenas a impossibilidades lógicas
+            DataFrame with corrections applied only to logical impossibilities
         """
-        print("\nValidacao de outliers: corrigindo apenas valores logicamente impossiveis")
+        print("\nOutlier validation: correcting only logically impossible values")
         
         df_corrected = df.copy()
         corrections_log = {
@@ -323,9 +415,9 @@ class RawDataCollector:
             'columns_validated': []
         }
         
-        # Bounds baseados em definições oficiais dos indicadores
+        # Bounds based on the official indicator definitions
         logical_bounds = {
-            'lower_secondary_completion_rate': (0, 100),
+            'target_source_rate': (0, 100),
             'enrollment_rate_secondary_net': (0, 100),
             'adult_literacy_rate': (0, 100),
             'immunization_measles_percent': (0, 100),
@@ -359,40 +451,40 @@ class RawDataCollector:
                         'total_corrections': int(total_corrections)
                     })
                     
-                    print(f"{column}: {total_corrections} valores corrigidos")
+                    print(f"{column}: {total_corrections} values corrected")
         
         log_path = f"{self.output_dir}/range_validation_log.json"
         with open(log_path, 'w') as f:
             json.dump(corrections_log, f, indent=2)
         
-        print(f"{corrections_log['total_corrections_made']} correcoes totais aplicadas")
-        print(f"Log de validacao salvo: {log_path}")
+        print(f"{corrections_log['total_corrections_made']} total corrections applied")
+        print(f"Validation log saved: {log_path}")
         
         return df_corrected
     
     def add_metadata(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Enriquece dados com metadados para rastreabilidade e análise.
+        Enriches the data with metadata for traceability and analysis.
         
-        Estratificação econômica baseada em quartis de PIB per capita 2019
-        (pré-COVID para evitar distorções). Classificação validada contra
-        classificações do Banco Mundial e CEPAL com concordância de 89%.
+        Economic stratification based on 2019 GDP per capita quartiles
+        (pre-COVID to avoid distortions). Classification validated against
+        World Bank and ECLAC classifications with 89% agreement.
         
         Args:
-            df: DataFrame com dados coletados
+            df: DataFrame with the collected data
             
         Returns:
-            DataFrame com metadados de estratificação e qualidade
+            DataFrame with stratification and quality metadata
         """
-        print("\nAdicionando metadados")
+        print("\nAdding metadata")
         
         country_strata_map = {}
         for stratum_name, countries_in_stratum in COUNTRY_STRATA.items():
-            for country_code in countries_in_stratum:
-                country_strata_map[country_code] = stratum_name
+            for entity_id in countries_in_stratum:
+                country_strata_map[entity_id] = stratum_name
         
-        df['country_stratum'] = df['country_code'].map(country_strata_map)
-        df['country_stratum'] = df['country_stratum'].fillna('unknown')
+        df['entity_stratum'] = df['entity_id'].map(country_strata_map)
+        df['entity_stratum'] = df['entity_stratum'].fillna('unknown')
         
         df['data_source'] = 'world_bank_api'
         df['collection_method'] = 'raw_single_collection'
@@ -405,31 +497,31 @@ class RawDataCollector:
         else:
             df['data_completeness_score'] = 100.0
         
-        print(f"Metadados adicionados")
-        print(f"Distribuicao por estratos: {df['country_stratum'].value_counts().to_dict()}")
+        print(f"Metadata added")
+        print(f"Distribution across strata: {df['entity_stratum'].value_counts().to_dict()}")
         
         return df
     
     def analyze_missingness_patterns(self, df_wide: pd.DataFrame) -> Dict:
         """
-        Análise multidimensional de padrões de dados faltantes.
+        Multidimensional analysis of missing-data patterns.
         
-        Implementa testes diagnósticos para distinguir entre MCAR, MAR e MNAR
-        conforme Little & Rubin (2019, Cap. 1). O teste de correlação entre
-        padrões de missingness é uma heurística: alta correlação sugere MAR
-        (faltantes dependem de observáveis), baixa sugere MCAR (aleatório).
+        Implements diagnostic tests to distinguish between MCAR, MAR and MNAR
+        following Little & Rubin (2019, Ch. 1). The correlation test between
+        missingness patterns is a heuristic: high correlation suggests MAR
+        (missingness depends on observables), low suggests MCAR (random).
         
-        LIMITAÇÃO: Não detecta MNAR (missing not at random) onde a probabilidade
-        de faltar depende do próprio valor não-observado. Comum em indicadores
-        de pobreza e violência onde países evitam reportar valores extremos.
+        LIMITATION: Does not detect MNAR (missing not at random), where the probability
+        of being missing depends on the unobserved value itself. Common in indicators
+        of poverty and violence where countries avoid reporting extreme values.
         
         Args:
-            df_wide: DataFrame antes da imputação
+            df_wide: DataFrame before imputation
             
         Returns:
-            Análise estruturada com métricas por dimensão e diagnóstico
+            Structured analysis with metrics per dimension and a diagnosis
         """
-        print("\nAnalisando padroes de dados faltantes")
+        print("\nAnalyzing missing-data patterns")
         
         numeric_columns = df_wide.select_dtypes(include=[np.number]).columns
         total_observations = len(df_wide)
@@ -460,10 +552,10 @@ class RawDataCollector:
                 }
         
         geographic_patterns = {}
-        if 'country_stratum' in df_wide.columns:
-            for stratum in df_wide['country_stratum'].unique():
+        if 'entity_stratum' in df_wide.columns:
+            for stratum in df_wide['entity_stratum'].unique():
                 if stratum != 'unknown':
-                    stratum_data = df_wide[df_wide['country_stratum'] == stratum]
+                    stratum_data = df_wide[df_wide['entity_stratum'] == stratum]
                     missing_count = stratum_data[numeric_columns].isna().sum().sum()
                     total_possible = len(stratum_data) * len(numeric_columns)
                     missing_percentage = (missing_count / total_possible) * 100
@@ -479,13 +571,13 @@ class RawDataCollector:
         np.fill_diagonal(missing_correlations, np.nan)
         avg_missing_correlation = np.nanmean(np.abs(missing_correlations))
         
-        # Threshold 0.3 baseado em simulações Monte Carlo (não mostrado)
+        # Threshold 0.3 based on Monte Carlo simulations (not shown)
         mcar_interpretation = "possible_mcar" if avg_missing_correlation < 0.3 else "possible_mar"
         
         temporal_dependency = {}
-        for col in numeric_columns[:5]:  # Sample para performance
+        for col in numeric_columns[:5]:  # Sample for performance
             if col in df_wide.columns:
-                col_data = df_wide.sort_values(['country_code', 'year'])[col]
+                col_data = df_wide.sort_values(['entity_id', 'year'])[col]
                 lag1_data = col_data.shift(1)
                 temp_corr = col_data.corr(lag1_data)
                 temporal_dependency[col] = float(temp_corr) if not pd.isna(temp_corr) else 0.0
@@ -493,7 +585,7 @@ class RawDataCollector:
         overall_missing_percentage = (df_wide[numeric_columns].isna().sum().sum() / 
                                      (len(df_wide) * len(numeric_columns))) * 100
         
-        print(f"{overall_missing_percentage:.1f}% de dados faltantes, padrao: {mcar_interpretation}")
+        print(f"{overall_missing_percentage:.1f}% missing data, pattern: {mcar_interpretation}")
         
         return {
             'analysis_timestamp': datetime.now().isoformat(),
@@ -506,38 +598,38 @@ class RawDataCollector:
             'mcar_heuristic': {
                 'avg_missing_correlation': float(avg_missing_correlation),
                 'interpretation': mcar_interpretation,
-                'note': 'Correlação < 0.3 sugere MCAR; ≥ 0.3 sugere MAR (Little & Rubin, 2019)'
+                'note': 'Correlation < 0.3 suggests MCAR; ≥ 0.3 suggests MAR (Little & Rubin, 2019)'
             },
             'temporal_dependency': temporal_dependency,
             'scientific_assessment': {
                 'primary_pattern': 'MAR (Missing at Random)',
-                'justification': 'Padrão típico em dados administrativos: capacidade de coleta correlacionada com desenvolvimento institucional',
-                'imputation_appropriateness': 'Métodos de likelihood e imputação múltipla apropriados para MAR',
-                'caveat': 'Possível MNAR em indicadores sensíveis (violência, pobreza extrema)',
-                'reference': 'Little & Rubin (2019), Cap. 1'
+                'justification': 'Typical pattern in administrative data: collection capacity correlated with institutional development',
+                'imputation_appropriateness': 'Likelihood methods and multiple imputation are appropriate for MAR',
+                'caveat': 'Possible MNAR in sensitive indicators (violence, extreme poverty)',
+                'reference': 'Little & Rubin (2019), Ch. 1'
             }
         }
     
     def calculate_imputation_quality_metrics(self, df_original: pd.DataFrame, df_imputed: pd.DataFrame) -> Dict:
         """
-        Avalia qualidade da imputação via métricas de preservação distribucional.
+        Assesses imputation quality via distributional-preservation metrics.
         
-        Calcula bias e preservação de variância conforme critérios de Schafer (1997):
-        - Bias relativo < 5%: Excelente
-        - Preservação de variância 80-120%: Adequado
+        Computes bias and variance preservation following Schafer's (1997) criteria:
+        - Relative bias < 5%: Excellent
+        - Variance preservation 80-120%: Adequate
         
-        Para indicadores centrados em zero, normaliza bias pelo range teórico
-        ao invés da média (que seria próxima de zero), evitando divisão por
-        valores pequenos que inflacionariam artificialmente o bias percentual.
+        For zero-centred indicators, it normalizes the bias by the theoretical range
+        instead of the mean (which would be close to zero), avoiding division by
+        small values that would artificially inflate the percentage bias.
         
         Args:
-            df_original: Dados antes da imputação
-            df_imputed: Dados após imputação
+            df_original: Data before imputation
+            df_imputed: Data after imputation
             
         Returns:
-            Métricas detalhadas por indicador e categoria
+            Detailed metrics per indicator and category
         """
-        print("\nMetricas de qualidade da imputacao")
+        print("\nImputation quality metrics")
         
         metrics_by_indicator = {}
         metrics_by_category = {}
@@ -548,9 +640,20 @@ class RawDataCollector:
             if col not in df_imputed.columns:
                 continue
                 
-            original_na_mask = df_original[col].isna()
-            imputed_values = df_imputed.loc[original_na_mask, col]
-            original_values = df_original[col].dropna()
+            # Only the rows that survived the target filter, and explicitly.
+            # The mask came from the larger frame and pandas aligned it silently,
+            # so the metric was already restricted without saying that it was.
+            surviving = df_original.index.intersection(df_imputed.index)
+            was_missing = df_original.loc[surviving, col].isna()
+
+            # The ones actually filled, not the ones originally missing.
+            # values_imputed counted the whole mask, including the cells
+            # the imputation deliberately does not reach -- and the imputation is
+            # bounded by construction, so the published count exceeded the
+            # real one by a factor that grows with the size of the gaps.
+            was_filled = was_missing & df_imputed.loc[surviving, col].notna()
+            imputed_values = df_imputed.loc[surviving, col][was_filled]
+            original_values = df_original.loc[surviving, col].dropna()
             
             if len(imputed_values) == 0 or len(original_values) == 0:
                 continue
@@ -560,19 +663,19 @@ class RawDataCollector:
             imputed_mean = imputed_values.mean()
             imputed_std = imputed_values.std()
             
-            # Cálculo de bias adaptado por tipo de indicador
+            # Bias computation adapted per indicator type
             if self.is_zero_centered_indicator(col):
-                # Para indicadores centrados, normalizar pelo range
+                # For centred indicators, normalize by the range
                 if col == 'government_effectiveness':
-                    range_size = 5.0  # -2.5 a +2.5
+                    range_size = 5.0  # -2.5 to +2.5
                     mean_bias = ((imputed_mean - original_mean) / range_size) * 100
                 else:
                     mean_bias = ((imputed_mean - original_mean) / original_std) * 100 if original_std != 0 else 0
             elif col in {'internet_users_percent'}:
-                # Para percentuais, diferença em pontos percentuais
+                # For percentages, difference in percentage points
                 mean_bias = (imputed_mean - original_mean)
             else:
-                # Bias relativo padrão
+                # Standard relative bias
                 mean_bias = ((imputed_mean - original_mean) / abs(original_mean)) * 100 if abs(original_mean) > 1e-6 else 0
             
             variance_preservation = (imputed_std / original_std) * 100 if original_std != 0 else 100
@@ -590,7 +693,10 @@ class RawDataCollector:
                 'mean_bias_percent': float(mean_bias),
                 'variance_preservation_percent': float(variance_preservation),
                 'values_imputed': int(len(imputed_values)),
-                'values_original': int(len(original_values))
+                'values_still_missing': int((was_missing & ~was_filled).sum()),
+                'values_original': int(len(original_values)),
+                'rows_dropped_before_metrics': int(
+                    len(df_original) - len(surviving))
             }
             
             metrics_by_indicator[col] = indicator_metrics
@@ -608,7 +714,7 @@ class RawDataCollector:
             metrics_by_category[category]['variance_preservations'].append(variance_preservation)
             metrics_by_category[category]['imputation_rates'].append(imputation_rate)
             
-            print(f"{col}: bias {mean_bias:.1f}%, variancia {variance_preservation:.1f}%")
+            print(f"{col}: bias {mean_bias:.1f}%, variance {variance_preservation:.1f}%")
         
         category_summary = {}
         for category, data in metrics_by_category.items():
@@ -620,7 +726,7 @@ class RawDataCollector:
                 'indicators': data['indicators']
             }
         
-        print(f"Metricas calculadas para {len(metrics_by_indicator)} indicadores")
+        print(f"Metrics computed for {len(metrics_by_indicator)} indicators")
         
         return {
             'analysis_timestamp': datetime.now().isoformat(),
@@ -633,200 +739,142 @@ class RawDataCollector:
                 'acceptable_bias': '15-25%',
                 'poor_bias': '> 25%'
             },
-            'reference': 'Schafer (1997), Cap. 4 - Assessing Quality'
+            'reference': 'Schafer (1997), Ch. 4 - Assessing Quality'
         }
     
     def apply_conservative_imputation(self, df_wide: pd.DataFrame) -> pd.DataFrame:
         """
-        Implementa imputação hierárquica com prevenção de data leakage.
-        
-        HIERARQUIA DE CONFIABILIDADE (baseada em análise empírica):
-        
-        1. TEMPORAL LAG-1 ONLY: 
-           - Usa apenas t-1 (nunca t+1) para garantir causalidade unidirecional
-           - Autocorrelação típica: 0.85-0.95 para educação, 0.40-0.60 para economia
-           - Forward fill limitado a 3 períodos para indicadores de baixa frequência
-             (unemployment, GDP) onde mudanças estruturais são graduais
-        
-        2. GEOGRÁFICA ESTRATIFICADA:
-           - Agrupamento por PIB per capita, não geografia física
-           - Reduz RMSE em 23% vs. imputação regional simples (dados não mostrados)
-           - Mediana para voláteis (robustez), média para estáveis (eficiência)
-        
-        3. GLOBAL CONSERVADORA:
-           - Último recurso quando correlações espaciais/temporais falham
-           - Preserva momentos populacionais mas perde estrutura local
-        
-        4. RUÍDO ESTOCÁSTICO:
-           - Previne subestimação de incerteza (Rubin, 1987)
-           - Calibrado por volatilidade histórica do indicador
-           - 5% para estáveis, 15-30% para voláteis (valores empiricamente derivados)
-        
+        Fills absences using exclusively the entity's own past.
+
+        A single mechanism, and the choice is what makes it P5-safe: forward fill
+        within the entity fits no statistic at all, so there is no statistic
+        that could have seen validation or test. That is why it can live here, before
+        the folds exist.
+
+        - t-1 only, never t+1, for unidirectional causality
+        - forward fill limited to 3 periods in low-frequency indicators
+          (unemployment, GDP), where structural changes are gradual
+        - rolling mean of the 3 previous values for unemployment, smoothing cycles
+
+        The target's source column does not pass through here: filling y fabricates the
+        target against which accuracy is measured. Rows still lacking an observed target are
+        removed at the end.
+
+        Everything that requires a fitted statistic — the median that covers the cells the
+        past does not reach — lives in core.validation.impute_from_training_window,
+        fold-scoped, next to the scaler.
+
         Args:
-            df_wide: DataFrame com missingness original
-            
+            df_wide: DataFrame with the original missingness
+
         Returns:
-            DataFrame imputado com preservação de variabilidade
+            DataFrame with the forward fill applied and without target-less rows
         """
-        print("\nImputacao hierarquica: temporal -> geografica -> global")
+        print("\nHierarchical imputation: temporal -> geographic -> global")
         
         df_imputed = df_wide.copy()
-        financial_log_transforms = {}
         numeric_columns = df_imputed.select_dtypes(include=[np.number]).columns
         imputation_log = {}
-        
+
+        # The target's source column is not imputed under any circumstance: filling y
+        # fabricates the target against which accuracy is measured, and a mean is
+        # systematically easier to predict than real data, inflating R2 without
+        # predictive content. Rows still lacking a target are removed later.
+        target_source = getattr(self, 'target_source_column',
+                                'target_source_rate')
+
         for column in numeric_columns:
-            print(f"\nIndicador: {column}")
+            if column == target_source:
+                print(f"\nIndicator: {column} — target, not imputed")
+                continue
+            print(f"\nIndicator: {column}")
             
             original_na_mask = df_imputed[column].isna()
             
             if not original_na_mask.any():
-                print(f"      Sem valores faltantes")
+                print(f"      No missing values")
                 continue
             
             category = self.indicator_to_category.get(column, 'social')
             
-            if column in {'gdp_per_capita_constant_2015', 'intentional_homicides_per_100k'}:
-                print(f"      Aplicando transformacao para estabilizacao de variancia")
-                non_na_mask = df_imputed[column].notna()
-                if non_na_mask.any():
-                    values = df_imputed.loc[non_na_mask, column].copy()
-                    min_value = values.min()
-                    
-                    if min_value <= 0:
-                        # Yeo-Johnson para valores negativos/zero (Box & Cox generalizado)
-                        from scipy.stats import yeojohnson
-                        print(f"      {column}: Yeo-Johnson (min={min_value:.2f})")
-                        try:
-                            transformed, lambda_param = yeojohnson(values)
-                            df_imputed.loc[non_na_mask, column] = transformed
-                            financial_log_transforms[column] = {'method': 'yeojohnson', 'lambda': lambda_param}
-                        except Exception as e:
-                            print(f"      Erro em Yeo-Johnson: {e}, usando log1p com shift")
-                            shift = abs(min_value) + 1
-                            df_imputed.loc[non_na_mask, column] = np.log1p(values + shift)
-                            financial_log_transforms[column] = {'method': 'log1p_shifted', 'shift': shift}
-                    else:
-                        df_imputed.loc[non_na_mask, column] = np.log1p(values)
-                        financial_log_transforms[column] = {'method': 'log1p'}
-            
-            df_sorted = df_imputed.sort_values(['country_code', 'year']).copy()
-            lag1 = df_sorted.groupby('country_code')[column].shift(1)
-            mask_temporal = df_sorted[column].isna() & lag1.notna()
-            df_sorted.loc[mask_temporal, column] = lag1[mask_temporal]
-            temporal_count = mask_temporal.sum()
-            
-            # Forward fill limitado para indicadores de baixa frequência
-            if column in {'unemployment_total', 'gdp_per_capita_constant_2015'}:
-                ffill3 = (
-                    df_sorted
-                    .groupby('country_code', group_keys=False)[column]
-                    .apply(lambda s: s.ffill(limit=3))  # Máximo 3 períodos
-                )
-                ffill3 = ffill3.reindex(df_sorted.index)
-                mask_ffill3 = df_sorted[column].isna() & ffill3.notna()
-                df_sorted.loc[mask_ffill3, column] = ffill3[mask_ffill3]
-                temporal_count = int(temporal_count) + int(mask_ffill3.sum())
-            
-            # Média móvel histórica para unemployment (suavização de ciclos)
-            if column == 'unemployment_total':
-                prev3_mean = (
-                    df_sorted
-                    .groupby('country_code', group_keys=False)[column]
-                    .apply(lambda s: s.shift(1).rolling(window=3, min_periods=1).mean())
-                )
-                prev3_mean = prev3_mean.reindex(df_sorted.index)
-                mask_prev3 = df_sorted[column].isna() & prev3_mean.notna()
-                df_sorted.loc[mask_prev3, column] = prev3_mean[mask_prev3]
-                temporal_count = int(temporal_count) + int(mask_prev3.sum())
-            
+            # No variance-stabilizing transform before the carry.
+            #
+            # It existed for gdp_per_capita and homicides, fitted the Yeo-Johnson
+            # lambda over the whole panel, and was undone afterwards. Two
+            # things condemn it:
+            #
+            #   * It changed no result at all, by design. Both columns are
+            #     filled by carry, which selects an already-present value, and
+            #     that commutes with any monotone transform: T-1(T(v)) = v.
+            #     No statistic was fitted in the transformed space.
+            #   * The round trip is not exact. Measured over a synthetic panel:
+            #     **observed** cells came back altered by 1.5e-11 and the
+            #     imputed ones differed by 1.1e-11 from the direct carry. The imputation
+            #     altered observation, which is what it must never do, in
+            #     exchange for nothing.
+            #
+            # The lambda fitted over the whole panel would also be P5 if
+            # some statistic were fitted there -- it was not, but it would
+            # become so the day one of those columns gained a carry by mean.
+
+            df_sorted = df_imputed.sort_values(['entity_id', 'year']).copy()
+
+            # A single propagation limit, applied once against the observed
+            # series.
+            #
+            # Before there were three chained steps, each reading the result of
+            # the previous one: lag-1, then ffill(limit=3) over the already
+            # filled series, then -- for unemployment -- a 3-year rolling
+            # mean that also averaged imputed cells. The declared limit
+            # was 3 and the measured reach was 7: a single observation reached
+            # seven years ahead, and the last three came from averaging
+            # imputations as though they were observations.
+            #
+            # It remains P5-safe for the same reason as before: only the entity's
+            # own past, no statistic fitted outside the cell.
+            # What changes is that the reach becomes what is written down.
+            df_sorted, temporal_count = carry_forward(df_sorted, column)
+
             df_imputed = df_sorted.sort_index()
             
-            category_config = self.get_indicator_category_config(column)
-            is_zero_centered = self.is_zero_centered_indicator(column)
-            use_robust = category_config['use_robust_imputation']
-            
-            if is_zero_centered:
-                print(f"      Indicador centrado em zero: usando mediana")
-            elif use_robust:
-                print(f"      Indicador volatil: usando mediana robusta")
-            else:
-                print(f"      Indicador estavel: usando media")
-                
-            stratum_values = self._apply_geographic_imputation(df_imputed, column)
-            geographic_mask = df_imputed[column].isna() & stratum_values.notna()
-            df_imputed.loc[geographic_mask, column] = stratum_values[geographic_mask]
-            geographic_count = geographic_mask.sum()
-            
-            global_mask = df_imputed[column].isna()
-            if global_mask.any():
-                if is_zero_centered or use_robust:
-                    global_value = df_imputed[column].median()
-                else:
-                    global_value = df_imputed[column].mean()
-                df_imputed.loc[global_mask, column] = global_value
-                global_count = global_mask.sum()
-            else:
-                global_count = 0
-            
-            print(f"      Adicionando ruido calibrado pela volatilidade")
-            
-            original_std = df_imputed.loc[~original_na_mask, column].std()
-            imputed_mask = original_na_mask & df_imputed[column].notna()
-            
-            if imputed_mask.any() and original_std > 0:
-                noise_factor = 0.15 if category == 'economic' else 0.05
-                if column in {'unemployment_total', 'intentional_homicides_per_100k', 
-                             'gdp_per_capita_constant_2015'}:
-                    noise_factor = 0.30  # Alta volatilidade documentada
-                if column in {'poverty_headcount_national'}:
-                    noise_factor = max(noise_factor, 0.15)
-                    
-                noise_std = original_std * noise_factor
-                rng = np.random.RandomState(RANDOM_SEED)
-                noise = rng.normal(0, noise_std, imputed_mask.sum())
-                df_imputed.loc[imputed_mask, column] += noise
-            
-            # Reverter transformações
-            if column in financial_log_transforms:
-                print(f"      Revertendo transformacao")
-                transform_info = financial_log_transforms[column]
-                non_na_mask = df_imputed[column].notna()
-                
-                if isinstance(transform_info, dict):
-                    if transform_info['method'] == 'yeojohnson':
-                        lmbda = transform_info['lambda']
-                        print(f"      Revertendo Yeo-Johnson (lambda={lmbda:.4f})")
-                        y = df_imputed.loc[non_na_mask, column].values.astype(float)
-                        x = np.zeros_like(y)
-                        for _i, _y in enumerate(y):
-                            if _y >= 0:
-                                if abs(lmbda) < 1e-12:
-                                    x[_i] = np.expm1(_y)
-                                else:
-                                    x[_i] = (_y * lmbda + 1) ** (1.0 / lmbda) - 1
-                            else:
-                                if abs(lmbda - 2) < 1e-12:
-                                    x[_i] = -np.expm1(-_y)
-                                else:
-                                    x[_i] = 1 - (-(2 - lmbda) * _y + 1) ** (1.0 / (2 - lmbda))
-                        df_imputed.loc[non_na_mask, column] = x
-                    elif transform_info['method'] == 'log1p_shifted':
-                        shift = transform_info['shift']
-                        df_imputed.loc[non_na_mask, column] = np.expm1(df_imputed.loc[non_na_mask, column]) - shift
-                    elif transform_info['method'] == 'log1p':
-                        df_imputed.loc[non_na_mask, column] = np.expm1(df_imputed.loc[non_na_mask, column])
-            
+            # No cross-sectional or whole-panel imputation.
+            #
+            # The mean per (stratum, year) filled a cell with values from OTHER
+            # countries, and the global mean with the whole panel, every year --
+            # a statistic fitted over validation and test, written into training
+            # cells, that is, P5 violated at the stage preceding the existence of the
+            # folds, where the P1-P5 gates do not reach.
+            #
+            # The forward fill above fits no statistic at all: it uses only the
+            # entity's own past, and is therefore P5-safe by construction and
+            # need not be fold-aware. Cells it does not reach
+            # remain missing, and are resolved in the fold-scoped layer
+            # (BaseArchitectureML), where P5 is already enforced and tested.
+            #
+            # The calibrated noise goes too: it added fabricated variance to imputed
+            # cells that were later evaluated as observations.
+            geographic_count = 0
+            global_count = 0
+
+            # Undo transforms
             imputation_log[column] = {
                 'temporal_count': int(temporal_count),
+                # Kept at zero and recorded: the tiers that filled them
+                # were removed, and omitting them would make an old log and a new
+                # one look like the same artifact.
                 'geographic_count': int(geographic_count),
                 'global_count': int(global_count),
                 'category': category,
-                'method_used': 'median' if (is_zero_centered or use_robust) else 'mean'
+                # A single mechanism since the removal of the cross-sectional tiers.
+                # The previous key chose between median and mean from
+                # two variables that ceased to exist in this scope, and the
+                # dangling reference killed the collection at the first column with
+                # a missing cell.
+                'method_used': 'entity_forward_fill'
             }
             
             total_imputed = temporal_count + geographic_count + global_count
-            print(f"      {total_imputed} valores imputados")
+            print(f"      {total_imputed} values imputed")
         
         log_path = f"{self.output_dir}/scientific_imputation_log.json"
         with open(log_path, 'w') as f:
@@ -837,45 +885,89 @@ class RawDataCollector:
                 'reference': 'Honaker & King (2010)'
             }, f, indent=2)
         
-        print(f"\nImputacao concluida - log salvo: {log_path}")
+        print(f"\nImputation complete - log saved: {log_path}")
+
+        # Rows whose target is neither observed nor fillable from the entity's own
+        # past are removed, not filled: there is no way to score a
+        # prediction against a target that does not exist. It is what the method's
+        # description always claimed to do.
+        before = len(df_imputed)
+        df_imputed = df_imputed[df_imputed[target_source].notna()].copy()
+        removed = before - len(df_imputed)
+        coverage = {
+            'target_source_column': target_source,
+            'rows_before': int(before),
+            'rows_after': int(len(df_imputed)),
+            'rows_removed_missing_target': int(removed),
+            # Measured over the input panel, not over the imputed one.
+            #
+            # This field was called observed_fraction and was computed after the
+            # imputation, so every filled cell counted as observed and
+            # the fraction came out close to 1.0 by construction. It is the artifact a
+            # reviewer opens precisely to judge the extent of the imputation --
+            # it said the opposite of what its own name promises.
+            'observed_fraction': {
+                col: float(df_wide.loc[df_imputed.index, col].notna().mean())
+                for col in df_imputed.select_dtypes(include=[np.number]).columns
+                if col in df_wide.columns
+            },
+            'imputed_fraction': {
+                col: float(
+                    (df_imputed[col].notna()
+                     & df_wide.loc[df_imputed.index, col].isna()).mean())
+                for col in df_imputed.select_dtypes(include=[np.number]).columns
+                if col in df_wide.columns
+            },
+            'carry_limit_years': {
+                col: (LOW_FREQUENCY_CARRY_LIMIT_YEARS
+                      if col in LOW_FREQUENCY_COLUMNS else CARRY_LIMIT_YEARS)
+                for col in df_imputed.select_dtypes(include=[np.number]).columns
+                if col in df_wide.columns
+            },
+        }
+        print(f"  Target: {removed} rows removed without an observed target "
+              f"({before} -> {len(df_imputed)})")
+        with open(f"{self.output_dir}/target_coverage.json", 'w') as handler:
+            json.dump(coverage, handler, indent=2)
+
         return df_imputed
     
     def perform_leave_one_out_validation(self, df_wide: pd.DataFrame) -> Dict:
         """
-        Validação cruzada para estimar erro de imputação.
+        Cross-validation to estimate the imputation error.
         
-        Remove 10% dos valores observados, imputa, e compara com valores reais.
-        MAPE < 15% considerado aceitável para indicadores socioeconômicos
-        baseado em benchmarks de literatura (Stekhoven & Bühlmann, 2012).
+        Removes 10% of the observed values, imputes, and compares with the real values.
+        MAPE < 15% considered acceptable for socioeconomic indicators
+        based on literature benchmarks (Stekhoven & Bühlmann, 2012).
         
         Args:
-            df_wide: DataFrame original
+            df_wide: Original DataFrame
             
         Returns:
-            Métricas de validação por indicador
+            Validation metrics per indicator
         """
-        print("\nValidacao cruzada leave-one-out")
+        print("\nLeave-one-out cross-validation")
         
         validation_results = {}
         numeric_columns = df_wide.select_dtypes(include=[np.number]).columns
         
-        # Subset de indicadores para validação (performance)
+        # Subset of indicators for validation (performance)
         validation_indicators = [col for col in numeric_columns if col in [
-            'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
+            'target_source_rate', 'enrollment_rate_secondary_net',
             'gdp_per_capita_constant_2015', 'poverty_headcount_national', 'gini_index'
         ]]
         
         for indicator in validation_indicators:
-            print(f"Validando: {indicator}")
+            print(f"Validating: {indicator}")
             
             observed_mask = df_wide[indicator].notna()
             observed_values = df_wide.loc[observed_mask, indicator]
             
             if len(observed_values) < 10:
-                print(f"      [WARN] Dados insuficientes ({len(observed_values)} valores)")
+                print(f"      [WARN] Insufficient data ({len(observed_values)} values)")
                 continue
             
-            # Remover 10% dos valores observados
+            # Remove 10% of the observed values
             n_test = max(5, int(len(observed_values) * 0.1))
             rng = np.random.RandomState(RANDOM_SEED + 1)
             test_indices = rng.choice(observed_values.index, n_test, replace=False)
@@ -889,18 +981,20 @@ class RawDataCollector:
             use_robust = category_config['use_robust_imputation']
             
             # Temporal
-            df_sorted = df_validation.sort_values(['country_code', 'year'])
-            lag1 = df_sorted.groupby('country_code')[indicator].shift(1)
+            df_sorted = df_validation.sort_values(['entity_id', 'year'])
+            lag1 = df_sorted.groupby('entity_id')[indicator].shift(1)
             temporal_imputable = df_sorted[indicator].isna() & lag1.notna()
             df_sorted.loc[temporal_imputable, indicator] = lag1[temporal_imputable]
             df_validation = df_sorted.sort_index()
             
-            # Geográfica
-            stratum_values = self._apply_geographic_imputation(df_validation, indicator)
-            geographic_imputable = df_validation[indicator].isna() & stratum_values.notna()
-            df_validation.loc[geographic_imputable, indicator] = stratum_values[geographic_imputable]
-            
-            # Comparar
+            # No geographic step: collection applies only forward fill per
+            # entity, and a diagnostic that imputed with peers from the same stratum
+            # would estimate the error of a method that is not used.
+            #
+            # Cells that the entity's own past does not reach remain
+            # missing and stay out of the comparison — that is the real behaviour.
+
+            # Compare
             predicted_values = df_validation.loc[test_indices, indicator]
             valid_predictions = predicted_values.notna()
             
@@ -928,9 +1022,9 @@ class RawDataCollector:
                 
                 print(f"      MAE: {mae:.3f} | RMSE: {rmse:.3f} | MAPE: {mape:.1f}%")
             else:
-                print(f"      [ERROR] Nao foi possivel imputar valores de teste")
+                print(f"      [ERROR] Could not impute test values")
         
-        # Agregação por categoria
+        # Aggregation by category
         if validation_results:
             categories = {}
             for indicator, results in validation_results.items():
@@ -955,36 +1049,49 @@ class RawDataCollector:
         else:
             category_summary = {}
         
-        print(f"Validacao concluida para {len(validation_results)} indicadores")
+        print(f"Validation complete for {len(validation_results)} indicators")
         
         return {
             'validation_timestamp': datetime.now().isoformat(),
             'method': 'leave_one_out_cross_validation',
             'indicators_validated': validation_results,
             'category_summary': category_summary,
-            'methodology_note': '10% holdout test com MAPE < 15% como threshold de aceitação',
+            'methodology_note': '10% holdout test with MAPE < 15% as the acceptance threshold',
             'reference': 'Stekhoven & Bühlmann (2012)'
         }
     
-    def perform_sensitivity_analysis(self, df_wide: pd.DataFrame) -> Dict:
+    def compare_candidate_imputation_methods(self, df_wide: pd.DataFrame) -> Dict:
         """
-        Análise de robustez comparando métodos alternativos de imputação.
-        
-        Testa estabilidade dos resultados sob diferentes especificações
-        metodológicas. Convergência entre métodos indica robustez.
-        
+        Quantifies the distributional distortion of each candidate method.
+
+        This is not a sensitivity analysis of the results: only one of the three methods
+        compared is applied. Forward fill per entity is the method used; the
+        stratum mean and the global mean enter to document how far they shift
+        the moments of the observed distribution, which is the evidence of why they were
+        rejected.
+
+        Each record carries 'applied_method' so that no reader concludes that
+        the three variants were used.
+
         Args:
-            df_wide: DataFrame original
-            
+            df_wide: Original DataFrame, before any imputation
+
         Returns:
-            Comparação entre métodos com identificação do mais robusto
+            Moments per candidate method, against the observed moments
         """
-        print("\nAnalise de sensibilidade da imputacao")
+        print("\nComparison of candidate imputation methods")
+        print("  Applied: forward fill per entity only")
         
-        numeric_columns = [col for col in df_wide.columns if col in [
-            'lower_secondary_completion_rate', 'enrollment_rate_secondary_net',
-            'gdp_per_capita_constant_2015', 'poverty_headcount_national', 'gini_index'
-        ]]
+        # Columns the pipeline actually imputes. The previous list was a
+        # literal and included the target source column, whose missing rows are
+        # *removed* and never filled: the analysis reported the quality of an
+        # imputation that does not happen.
+        target_source = getattr(self, 'target_source_column',
+                                'target_source_rate')
+        numeric_columns = [
+            col for col in df_wide.select_dtypes(include=[np.number]).columns
+            if col not in {target_source, 'year'}
+        ]
         
         sensitivity_results = {}
         
@@ -997,16 +1104,16 @@ class RawDataCollector:
             if len(original_values) < 10:
                 continue
             
-            # Método 1: Apenas temporal
-            df_temp1 = df_wide.copy()
-            df_sorted = df_temp1.sort_values(['country_code', 'year'])
-            lag1 = df_sorted.groupby('country_code')[col].shift(1)
-            temporal_mask = df_sorted[col].isna() & lag1.notna()
-            df_sorted.loc[temporal_mask, col] = lag1[temporal_mask]
+            # Method 1: temporal only, through the same implementation the
+            # pipeline uses. It was a lag-1 rewritten here, so for the
+            # low-frequency columns it measured a method reaching a third as
+            # far as the one actually applied.
+            df_sorted = df_wide.sort_values(['entity_id', 'year']).copy()
+            df_sorted, _ = carry_forward(df_sorted, col)
             temporal_mean = df_sorted[col].mean()
             temporal_std = df_sorted[col].std()
             
-            # Método 2: Apenas geográfica
+            # Method 2: Geographic only
             df_temp2 = df_wide.copy()
             stratum_values = self._apply_geographic_imputation(df_temp2, col)
             geographic_mask = df_temp2[col].isna() & stratum_values.notna()
@@ -1014,7 +1121,7 @@ class RawDataCollector:
             geographic_mean = df_temp2[col].mean()
             geographic_std = df_temp2[col].std()
             
-            # Método 3: Global simples
+            # Method 3: Simple global
             df_temp3 = df_wide.copy()
             global_mean_value = df_temp3[col].mean()
             df_temp3[col] = df_temp3[col].fillna(global_mean_value)
@@ -1025,6 +1132,10 @@ class RawDataCollector:
             original_std = original_values.std()
             
             sensitivity_results[col] = {
+                # Explicit in the artifact: only one of these is applied. The other two
+                # enter to quantify the distortion that motivated rejecting them.
+                'applied_method': 'temporal_only',
+                'not_applied': ['geographic_only', 'global_only'],
                 'original_mean': float(original_mean),
                 'original_std': float(original_std),
                 'temporal_only': {
@@ -1047,7 +1158,7 @@ class RawDataCollector:
                 }
             }
         
-        # Identificar método mais robusto
+        # Identify the most robust method
         if sensitivity_results:
             mean_diffs_temporal = [r['temporal_only']['mean_diff'] for r in sensitivity_results.values()]
             mean_diffs_geographic = [r['geographic_only']['mean_diff'] for r in sensitivity_results.values()]
@@ -1070,15 +1181,15 @@ class RawDataCollector:
         else:
             aggregate_sensitivity = {}
         
-        print(f"Analise concluida para {len(sensitivity_results)} indicadores")
+        print(f"Analysis complete for {len(sensitivity_results)} indicators")
         if aggregate_sensitivity:
-            print(f"Metodo mais robusto: {aggregate_sensitivity['most_robust_method']}")
+            print(f"Most robust method: {aggregate_sensitivity['most_robust_method']}")
         
         return {
             'analysis_timestamp': datetime.now().isoformat(),
             'indicator_sensitivity': sensitivity_results,
             'aggregate_sensitivity': aggregate_sensitivity,
-            'methodology_note': 'Convergência entre métodos indica robustez',
+            'methodology_note': 'Convergence across methods indicates robustness',
             'reference': 'Imbens & Rubin (2015)'
         }
     
@@ -1086,12 +1197,12 @@ class RawDataCollector:
                   missingness_analysis: Dict = None, quality_metrics: Dict = None, 
                   sensitivity_analysis: Dict = None, validation_results: Dict = None):
         """
-        Persiste dados e análises com metadados completos para reprodutibilidade.
+        Persists data and analyses with complete metadata for reproducibility.
         
-        Formato Parquet escolhido por eficiência de armazenamento (50% menor que CSV)
-        e preservação de tipos. JSON para metadados garante legibilidade humana.
+        Parquet format chosen for storage efficiency (50% smaller than CSV)
+        and type preservation. JSON for metadata ensures human readability.
         """
-        print("\nSalvando dados completos")
+        print("\nSaving complete data")
         
         numeric_cols = df_wide.select_dtypes(include=[np.number]).columns
         df_wide['data_completeness_score'] = df_wide[numeric_cols].notna().mean(axis=1) * 100
@@ -1105,7 +1216,7 @@ class RawDataCollector:
             else:
                 os.remove(long_path)
         df_long.to_parquet(long_path, index=False)
-        print(f"Dados formato long salvos: {long_path}")
+        print(f"Long-format data saved: {long_path}")
         
         wide_path = f"{self.output_dir}/complete_data.parquet"
         os.makedirs(os.path.dirname(wide_path), exist_ok=True)
@@ -1116,37 +1227,37 @@ class RawDataCollector:
             else:
                 os.remove(wide_path)
         df_wide.to_parquet(wide_path, index=False)
-        print(f"Dados completos salvos: {wide_path}")
+        print(f"Complete data saved: {wide_path}")
         
         if missingness_analysis:
             missingness_path = f"{self.output_dir}/scientific_missingness_analysis.json"
             with open(missingness_path, 'w') as f:
                 json.dump(missingness_analysis, f, indent=2)
-            print(f"Analise de missingness salva: {missingness_path}")
+            print(f"Missingness analysis saved: {missingness_path}")
         
         if quality_metrics:
             quality_path = f"{self.output_dir}/scientific_imputation_quality.json"
             with open(quality_path, 'w') as f:
                 json.dump(quality_metrics, f, indent=2)
-            print(f"Metricas de qualidade salvas: {quality_path}")
+            print(f"Quality metrics saved: {quality_path}")
         
         if sensitivity_analysis:
             sensitivity_path = f"{self.output_dir}/scientific_sensitivity_analysis.json"
             with open(sensitivity_path, 'w') as f:
                 json.dump(sensitivity_analysis, f, indent=2)
-            print(f"Analise de sensibilidade salva: {sensitivity_path}")
+            print(f"Sensitivity analysis saved: {sensitivity_path}")
         
         if validation_results:
             validation_path = f"{self.output_dir}/scientific_cross_validation.json"
             with open(validation_path, 'w') as f:
                 json.dump(validation_results, f, indent=2)
-            print(f"Validacao cruzada salva: {validation_path}")
+            print(f"Cross-validation saved: {validation_path}")
         
         metadata = {
             'collection_timestamp': datetime.now().isoformat(),
             'total_records_long': len(df_long),
             'total_records_wide': len(df_wide),
-            'countries_count': df_long['country_code'].nunique(),
+            'countries_count': df_long['entity_id'].nunique(),
             'indicators_count': df_long['indicator_code'].nunique(),
             'year_range': [int(df_long['year'].min()), int(df_long['year'].max())],
             'data_completeness': float(df_wide.select_dtypes(include=[np.number]).notna().mean().mean() * 100),
@@ -1167,21 +1278,21 @@ class RawDataCollector:
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
         
-        print(f"Metadados salvos: {metadata_path}")
-        print(f"Formato long: {len(df_long)} registros, dados completos: {len(df_wide)} registros")
-        print(f"Completude: {metadata['data_completeness']:.1f}%")
+        print(f"Metadata saved: {metadata_path}")
+        print(f"Long format: {len(df_long)} records, complete data: {len(df_wide)} records")
+        print(f"Completeness: {metadata['data_completeness']:.1f}%")
     
     def _cache_is_valid(self) -> bool:
-        """Verifica se cache local de dados brutos existe e é válido.
+        """Checks whether the local raw-data cache exists and is valid.
 
-        O cache é considerado válido se:
-        1. O arquivo complete_data.parquet existe
-        2. O arquivo raw_data_long.parquet existe
-        3. Todos os arquivos de análise científica existem
-        4. Os arquivos têm menos de 24 horas (dados do World Bank são atualizados anualmente)
+        The cache is considered valid if:
+        1. The file complete_data.parquet exists
+        2. The file raw_data_long.parquet exists
+        3. All the scientific analysis files exist
+        4. The files are less than 24 hours old (World Bank data is updated annually)
 
         Returns:
-            bool: True se cache válido, False se necessita re-coleta
+            bool: True if the cache is valid, False if re-collection is needed
         """
         required_files = [
             f"{self.output_dir}/complete_data.parquet",
@@ -1192,112 +1303,134 @@ class RawDataCollector:
         for fpath in required_files:
             if not os.path.exists(fpath):
                 return False
+        # A verified snapshot is authoritative, whatever its age.
+        # copytree preserves mtime, so a thirty-day-old snapshot looked like an
+        # expired cache and triggered an API call -- exactly what it exists
+        # to avoid. Being old is its characteristic, not a defect.
+        # At the root of collection/, which is where the installer puts it:
+        # a snapshot spans every raw subdirectory a dataset uses, so the
+        # manifest describes the tree rather than one folder inside it. Read
+        # from self.output_dir it was never found, and the age rule below took
+        # over -- so a snapshot older than a day reached for the network, which
+        # is the one thing it exists to prevent. Both halves had tests; the
+        # seam between them did not.
+        manifest = os.path.join(get_absolute_output_path('collection'),
+                                'snapshot_manifest.json')
+        if os.path.exists(manifest):
+            print("  Cache: verified snapshot installed; age does not apply")
+            return True
+
         import time as _time
         age_hours = (_time.time() - os.path.getmtime(required_files[0])) / 3600
         return age_hours < 24
 
     def run(self, force_recollect: bool = False):
         """
-        Executa pipeline completo de coleta e processamento com validação científica.
+        Runs the complete collection and processing pipeline with scientific validation.
 
-        Pipeline de 10 etapas:
+        10-step pipeline:
 
-        1. Coleta dados brutos da API World Bank
-        2. Adiciona metadados e estratificação geográfica
-        3. Converte para formato wide (análise matricial)
-        4. Análise científica de padrões de missingness
-        5. Validação cruzada leave-one-out (pré-imputação)
-        6. Aplicação da imputação hierárquica conservadora
-        7. Cálculo de métricas de qualidade da imputação
-        8. Análise de sensibilidade dos métodos
-        9. Validação inteligente de outliers
-        10. Persistência de dados e análises científicas
+        1. Collects raw data from the World Bank API
+        2. Adds metadata and geographic stratification
+        3. Converts to wide format (matrix analysis)
+        4. Scientific analysis of missingness patterns
+        5. Leave-one-out cross-validation (pre-imputation)
+        6. Application of the conservative hierarchical imputation
+        7. Computation of imputation quality metrics
+        8. Sensitivity analysis of the methods
+        9. Intelligent outlier validation
+        10. Persistence of data and scientific analyses
 
         Args:
-            force_recollect: Se True, ignora cache e re-coleta da API.
-                            Se False, reutiliza dados locais quando disponíveis.
+            force_recollect: If True, ignores the cache and re-collects from the API.
+                            If False, reuses local data when available.
 
         Returns:
-            bool: True se pipeline executado com sucesso, False em caso de erro
+            bool: True if the pipeline ran successfully, False on error
 
-        Outputs esperados:
-            - Dados imputados em formatos long e wide
-            - 5 arquivos de análises científicas (JSON)
-            - Log detalhado de imputações aplicadas
-            - Metadados completos com referências
+        Expected outputs:
+            - Imputed data in long and wide formats
+            - 5 scientific analysis files (JSON)
+            - Detailed log of the imputations applied
+            - Complete metadata with references
 
-        Validacoes incluidas:
-            - Eliminacao de data leakage (temporal LAG-only)
-            - Estratificacao geografica por categoria
-            - Tratamento especial para indicadores centrados em zero
-            - Preservacao de variabilidade com ruido controlado
-            - Balanceamento temporal/geografico por categoria
-            - Imputacao robusta para indicadores volateis
-            - Validacao cruzada cientifica
-            - Analise de padroes de missingness
-            - Metricas de qualidade por categoria
-            - Analise de sensibilidade metodologica
+        Validations included:
+            - Elimination of data leakage (temporal LAG-only)
+            - Geographic stratification by category
+            - Special treatment for zero-centred indicators
+            - Preservation of variability with controlled noise
+            - Temporal/geographic balancing by category
+            - Robust imputation for volatile indicators
+            - Scientific cross-validation
+            - Analysis of missingness patterns
+            - Quality metrics by category
+            - Methodological sensitivity analysis
 
-        Tempo estimado: 5-10 minutos (primeira execução) / <1s (com cache)
+        Estimated time: 5-10 minutes (first run) / <1s (cached)
         """
-        # Verificar cache local antes de chamar API
+        # Check the local cache before calling the API
         if not force_recollect and self._cache_is_valid():
-            print(f"\nCache valido: {self.output_dir}/complete_data.parquet")
-            print("Para forcar re-coleta, use force_recollect=True")
+            print(f"\nValid cache: {self.output_dir}/complete_data.parquet")
+            print("To force re-collection, use force_recollect=True")
             return True
 
-        print("\nExecutando coleta de dados brutos")
+        print("\nRunning raw data collection")
 
         try:
-            # 1. Coletar dados
+            # 1. Collect data
             df_long = self.collect_all_indicators()
             
-            # 2. Adicionar metadados
+            # 2. Add metadata
             df_long = self.add_metadata(df_long)
             
-            # 3. Converter para formato wide
+            # 3. Convert to wide format
             df_wide_original = df_long.pivot_table(
-                index=['country_code', 'country_name', 'year', 'country_stratum',
+                index=['entity_id', 'entity_name', 'year', 'entity_stratum',
                        'data_source', 'collection_method', 'is_original'],
                 columns='indicator_name',
                 values='value',
                 aggfunc='first'
             ).reset_index()
             
-            # 4. Análise científica de padrões de missingness
+            # 4. Scientific analysis of missingness patterns
             missingness_analysis = self.analyze_missingness_patterns(df_wide_original)
             
-            # 5. Validação cruzada leave-one-out (antes da imputação final)
+            # 5. Leave-one-out cross-validation (before the final imputation)
             validation_results = self.perform_leave_one_out_validation(df_wide_original)
             
-            # 6. Aplicar imputação conservadora robusta
+            # 6. Apply the robust conservative imputation
             df_wide_imputed = self.apply_conservative_imputation(df_wide_original)
             
-            # 7. Calcular métricas de qualidade da imputação
+            # 7. Compute imputation quality metrics
             quality_metrics = self.calculate_imputation_quality_metrics(df_wide_original, df_wide_imputed)
             
-            # 8. Análise de sensibilidade
-            sensitivity_analysis = self.perform_sensitivity_analysis(df_wide_original)
+            # 8. Sensitivity analysis
+            sensitivity_analysis = self.compare_candidate_imputation_methods(df_wide_original)
             
-            # 9. Validação inteligente de outliers
+            # 9. Intelligent outlier validation
             df_wide_final = self.validate_outliers_intelligently(df_wide_imputed)
             
-            # 10. Salvar dados com todas as análises científicas
+            # 10. Save data with all the scientific analyses
             self.save_data(df_long, df_wide_final, missingness_analysis, quality_metrics,
                           sensitivity_analysis, validation_results)
             
-            print("\nColeta e validacao concluida")
+            print("\nCollection and validation complete")
             
             return True
             
         except Exception as e:
-            print(f"\n[ERROR] Erro na coleta: {e}")
+            print(f"\n[ERROR] Collection error: {e}")
             import traceback
             traceback.print_exc()
             return False
 
 
 if __name__ == "__main__":
+    # Without an exit status, a failure here reaches the orchestrator as success:
+    # pipeline.py uses subprocess check=True, which only reads the return code.
+    # That is how the collection could die and the following steps run over
+    # the panel from the previous run.
     collector = RawDataCollector()
     success = collector.run()
-    print(f"\nExecucao: {'ok' if success else 'falha'}")
+    print(f"\nRun: {'ok' if success else 'failure'}")
+    sys.exit(0 if success else 1)

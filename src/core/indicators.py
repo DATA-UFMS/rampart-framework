@@ -1,17 +1,17 @@
 """
-Definições de indicadores do Banco Mundial
+World Bank indicator definitions
 """
 
 # ============================================================================
-# TARGET VARIABLES (Variáveis Dependentes)
+# TARGET VARIABLES (Dependent Variables)
 # ============================================================================
 TARGET_INDICATORS = {
-    'SE.SEC.CMPT.LO.ZS': 'lower_secondary_completion_rate',
+    'SE.SEC.CMPT.LO.ZS': 'target_source_rate',
     'SE.SEC.NENR': 'enrollment_rate_secondary_net',
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis Socioeconômicas Estruturais
+# PREDICTORS - Structural Socioeconomic Variables
 # ============================================================================
 SOCIOECONOMIC_INDICATORS = {
     'NY.GDP.PCAP.KD': 'gdp_per_capita_constant_2015',
@@ -21,7 +21,7 @@ SOCIOECONOMIC_INDICATORS = {
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis de Infraestrutura e Acesso
+# PREDICTORS - Infrastructure and Access Variables
 # ============================================================================
 INFRASTRUCTURE_INDICATORS = {
     'EG.ELC.ACCS.ZS': 'electricity_access_percent',
@@ -30,7 +30,7 @@ INFRASTRUCTURE_INDICATORS = {
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis Demográficas de Contexto
+# PREDICTORS - Demographic Context Variables
 # ============================================================================
 DEMOGRAPHIC_INDICATORS = {
     'SP.POP.0014.TO.ZS': 'population_ages_0_14_percent',
@@ -39,7 +39,7 @@ DEMOGRAPHIC_INDICATORS = {
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis Educacionais de Contexto (Sem Leakage)
+# PREDICTORS - Educational Context Variables (No Leakage)
 # ============================================================================
 EDUCATION_CONTEXT_INDICATORS = {
     'SE.XPD.TOTL.GD.ZS': 'education_expenditure_gdp_percent',
@@ -51,7 +51,7 @@ EDUCATION_CONTEXT_INDICATORS = {
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis de Saúde e Bem-Estar
+# PREDICTORS - Health and Well-Being Variables
 # ============================================================================
 HEALTH_INDICATORS = {
     'SH.STA.MALN.ZS': 'malnutrition_prevalence_weight_age',
@@ -60,20 +60,19 @@ HEALTH_INDICATORS = {
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis Institucionais e Governança
+# PREDICTORS - Institutional and Governance Variables
 # ============================================================================
 GOVERNANCE_INDICATORS = {
     'VC.IHR.PSRC.P5': 'intentional_homicides_per_100k',
-    'GE.EST': 'government_effectiveness',
 }
 
 # ============================================================================
-# PREDICTORS - Variáveis Econômicas Complementares (reservado para expansão)
+# PREDICTORS - Complementary Economic Variables (reserved for expansion)
 # ============================================================================
 ECONOMIC_INDICATORS = {}
 
 # ============================================================================
-# CONSOLIDAÇÃO
+# CONSOLIDATION
 # ============================================================================
 ALL_INDICATORS = {
     **TARGET_INDICATORS,

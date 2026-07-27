@@ -1,8 +1,8 @@
 """
-Testes para o sistema de configuração de datasets.
+Tests for the dataset configuration system.
 
-Verifica que o DatasetConfig Protocol funciona, que ambos datasets
-estão registrados, e que o adapter INEP→framework é correto.
+Verifies that the DatasetConfig Protocol works, that both datasets are
+registered, and that the INEP→framework adapter is correct.
 """
 
 import sys
@@ -10,11 +10,15 @@ import os
 import pytest
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _ROOT / 'src'
+sys.path.insert(0, str(_SRC))
 
 
 class TestDatasetRegistry:
-    """Testes do registry e Protocol de datasets."""
+    """Tests of the dataset registry and Protocol."""
 
     def test_both_datasets_registered(self):
         import datasets  # noqa: F401
@@ -28,18 +32,18 @@ class TestDatasetRegistry:
         wb = get_dataset('worldbank')
         assert wb.name == 'worldbank'
         assert wb.temporal_range == (2000, 2023)
-        assert wb.entity_column == 'country_code'
+        assert wb.entity_column == 'entity_id'
 
     def test_get_inep(self):
         from core.dataset_config import get_dataset
         inep = get_dataset('inep_censo')
         assert inep.name == 'inep_censo'
         assert inep.temporal_range == (2007, 2024)
-        assert inep.entity_column == 'municipality_code'
+        assert inep.entity_column == 'entity_id'
 
     def test_get_nonexistent_raises(self):
         from core.dataset_config import get_dataset
-        with pytest.raises(KeyError, match="não registrado"):
+        with pytest.raises(KeyError, match="not registered"):
             get_dataset('nonexistent_dataset')
 
     def test_protocol_compliance(self):
@@ -69,7 +73,7 @@ class TestDatasetRegistry:
                 assert len(entities) > 0
 
     def test_excluded_columns_include_entity(self):
-        """Excluded columns devem incluir a entity column (evita usar como feature)."""
+        """Excluded columns must include the entity column (keeps it from being used as a feature)."""
         from core.dataset_config import get_dataset
         for name in ['worldbank', 'inep_censo']:
             cfg = get_dataset(name)
@@ -77,11 +81,11 @@ class TestDatasetRegistry:
 
 
 class TestInepAdapter:
-    """Testes do adapter INEP → schema do framework."""
+    """Tests of the INEP → framework schema adapter."""
 
     @staticmethod
     def _make_inep_df(**extra):
-        """DataFrame no formato que parse_year() produz."""
+        """DataFrame in the format parse_year() produces."""
         base = {
             'ano': [2019], 'regiao': ['Sudeste'], 'uf': ['SP'],
             'cod_municipio': [3550308.0], 'nome_municipio': ['São Paulo'],
@@ -95,30 +99,48 @@ class TestInepAdapter:
     def test_adapter_renames_columns(self):
         from collection.inep_collector import adapt_to_framework_schema
         adapted = adapt_to_framework_schema(self._make_inep_df())
-        assert 'country_code' in adapted.columns
-        assert 'country_stratum' in adapted.columns
-        assert 'country_name' in adapted.columns
+        assert 'entity_id' in adapted.columns
+        assert 'entity_stratum' in adapted.columns
+        assert 'entity_name' in adapted.columns
         assert 'cod_municipio' not in adapted.columns
 
     def test_adapter_inverts_abandono(self):
         from collection.inep_collector import adapt_to_framework_schema
         adapted = adapt_to_framework_schema(self._make_inep_df(abandono_em=[6.0]))
-        assert 'lower_secondary_completion_rate' in adapted.columns
-        assert adapted['lower_secondary_completion_rate'].iloc[0] == pytest.approx(94.0)
+        assert 'target_source_rate' in adapted.columns
+        assert adapted['target_source_rate'].iloc[0] == pytest.approx(94.0)
 
 
-    def test_adapter_preserves_features(self):
-        """Features INEP (aprov_ef, reprov_em, etc.) passam inalteradas."""
+    def test_adapter_preserves_lower_secondary_features(self):
+        """Lower-secondary rates reach the final dataset unchanged."""
         from collection.inep_collector import adapt_to_framework_schema
         adapted = adapt_to_framework_schema(
-            self._make_inep_df(aprov_ef=[92.5], reprov_em=[3.7])
+            self._make_inep_df(aprov_ef=[92.5], reprov_ef=[4.2])
         )
         assert adapted['aprov_ef'].iloc[0] == pytest.approx(92.5)
-        assert adapted['reprov_em'].iloc[0] == pytest.approx(3.7)
+        assert adapted['reprov_ef'].iloc[0] == pytest.approx(4.2)
+
+    def test_adapter_drops_upper_secondary_rates(self):
+        """The target's algebraic components must not reach the feature pool.
+
+        aprovacao + reprovacao + abandono partition each level exactly, so any
+        upper-secondary rate reconstructs the upper-secondary dropout target.
+        """
+        from collection.inep_collector import adapt_to_framework_schema
+        adapted = adapt_to_framework_schema(self._make_inep_df())
+
+        leaked = [
+            col for col in adapted.columns
+            if col.endswith('_em') or '_em_' in col
+        ]
+        assert not leaked, (
+            f"upper-secondary rates reached the feature pool and reconstruct "
+            f"the target: {leaked}"
+        )
 
 
 class TestBaseArchitectureDatasetConfig:
-    """Testa que BaseArchitectureML respeita DatasetConfig."""
+    """Tests that BaseArchitectureML respects DatasetConfig."""
 
     def test_default_is_worldbank(self):
         from core.base_architecture import BaseArchitectureML
@@ -129,11 +151,11 @@ class TestBaseArchitectureDatasetConfig:
         assert default is None  # None = default worldbank
 
     def test_excluded_features_from_config(self):
-        """get_excluded_features deve usar dataset_config.excluded_columns."""
+        """get_excluded_features must use dataset_config.excluded_columns."""
         from core.base_architecture import BaseArchitectureML
         from core.dataset_config import get_dataset
 
-        # Criar mock mínimo para testar
+        # Build a minimal mock for the test
         class MockArch(BaseArchitectureML):
             PARADIGM_META = {
                 'name': '_test_dataset_excl',
@@ -150,15 +172,180 @@ class TestBaseArchitectureDatasetConfig:
             def save_folds(self, d, f): pass
             def compute_feature_correlations(self, d, f): pass
             def apply_collinearity_filter(self, d, f): pass
-            def get_numeric_features(self, d): pass
+            def discover_numeric_columns(self, d): pass
             def prepare_features(self, d, f, t): pass
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             inep_cfg = get_dataset('inep_censo')
             arch = MockArch('test', tmpdir, dataset_config=inep_cfg)
-            excluded = arch.get_excluded_features()
-            assert 'municipality_code' in excluded
-            assert 'state_code' in excluded
+            try:
+                excluded = arch.get_excluded_features()
+                assert 'entity_id' in excluded
+                assert 'entity_stratum' in excluded
+            finally:
+                # A failing assertion must not leave the mock in the global
+                # registry, where it would break unrelated tests.
+                BaseArchitectureML._registry.pop('_test_dataset_excl', None)
 
-        BaseArchitectureML._registry.pop('_test_dataset_excl', None)
+
+class TestInepConfigMatchesCollector:
+    """The declared schema must be the one the collector produces."""
+
+    @staticmethod
+    def _produced_columns():
+        from collection.inep_collector import FEATURE_COLS
+        framework_schema = {
+            'entity_id', 'entity_name', 'entity_stratum', 'year',
+            'target_source_rate',
+        }
+        return framework_schema | set(FEATURE_COLS)
+
+    def test_declared_columns_exist(self):
+        from datasets.inep_censo import InepCensoDatasetConfig as cfg
+        produced = self._produced_columns()
+        for field in ('entity_column', 'entity_name_column',
+                      'stratification_column', 'target_source_column'):
+            column = getattr(cfg, field)
+            assert column in produced, (
+                f"{field}={column!r} is not produced by the collector"
+            )
+
+    def test_declared_features_exist(self):
+        from datasets.inep_censo import InepCensoDatasetConfig as cfg
+        missing = [c for c in cfg.feature_columns
+                   if c not in self._produced_columns()]
+        assert not missing, f"declared features absent from the data: {missing}"
+
+    def test_exclusion_list_reaches_real_columns(self):
+        """An exclusion list of absent names would disable P3 silently."""
+        from datasets.inep_censo import InepCensoDatasetConfig as cfg
+        effective = set(cfg.excluded_columns) & self._produced_columns()
+        assert effective, (
+            "no excluded column exists in the data, so the P3 exclusion list "
+            "has no effect"
+        )
+
+
+class TestTargetSubstitutionIsRejected:
+    """A missing target must abort, never fall back to a similar name."""
+
+    def test_no_setup_substitutes_the_target(self):
+        import ast
+        from pathlib import Path
+        from core.paradigm_registry import discover_paradigms
+
+        root = Path(__file__).resolve().parents[1]
+        for name, meta in sorted(discover_paradigms().items()):
+            if 'setup_script' not in meta:
+                continue
+            source = (root / meta['setup_script']).read_text()
+            tree = ast.parse(source)
+            validate = next(
+                (n for n in ast.walk(tree)
+                 if isinstance(n, ast.FunctionDef) and n.name == 'validate_data'),
+                None,
+            )
+            assert validate is not None, f"{name}: no validate_data"
+
+            body = ast.unparse(validate)
+            assert 'Target column' in body, (
+                f"{name}: validate_data does not abort on a missing target"
+            )
+            # Reassigning source_column here is how the substitution happened.
+            reassigns = [
+                n for n in ast.walk(validate)
+                if isinstance(n, ast.Assign)
+                and any(getattr(t, 'attr', None) == 'source_column'
+                        for t in n.targets)
+            ]
+            assert not reassigns, (
+                f"{name}: validate_data reassigns source_column, substituting "
+                f"the declared target"
+            )
+
+
+class TestTheRegistryIsTheDispatch:
+    """The registry existed, was tested, and production never read it.
+
+    Every dataset registered itself on import and `get_dataset` had unit tests,
+    while `BaseArchitectureML.__init__` resolved the config with an if/else on
+    the name. An extension point declared, exercised by the suite, and unused --
+    the same shape as an artifact nobody reads.
+
+    The branch it replaced ended in `else: worldbank`, so a typo in
+    DATASET_NAME ran the World Bank panel and wrote it under a directory named
+    after the typo. Nothing downstream distinguishes that from a correct run:
+    the outputs root is derived from the same variable.
+    """
+
+    def test_production_resolves_through_the_registry(self):
+        source = (_SRC / 'core' / 'base_architecture.py').read_text()
+        assert 'get_dataset(' in source, (
+            'the dispatch no longer goes through the registry')
+        assert 'InepCensoDatasetConfig()' not in source, (
+            'the core names a concrete dataset again')
+
+    def test_an_unknown_name_halts_instead_of_falling_back(self):
+        import datasets  # noqa: F401
+        from core.dataset_config import get_dataset
+
+        with pytest.raises(KeyError) as caught:
+            get_dataset('inep_cens')
+        assert 'inep_cens' in str(caught.value)
+        assert 'worldbank' in str(caught.value), (
+            'the message should name what is available')
+
+    def test_the_command_line_offers_what_is_registered(self):
+        """An enumerated list ages in silence, in both directions."""
+        import datasets  # noqa: F401
+        from core.dataset_config import list_datasets
+
+        source = (_ROOT / 'pipeline.py').read_text()
+        assert '_registered_datasets()' in source
+        assert "choices=['worldbank', 'inep_censo']" not in source
+        assert set(list_datasets()) == {'worldbank', 'inep_censo'}
+
+
+class TestTheInternalSchemaIsNeutral:
+    """The internal schema spoke the first dataset's vocabulary.
+
+    Both datasets are adapted onto one shared table, and its columns were named
+    for the World Bank: municipalities were stored in `country_code`, and INEP's
+    target -- the complement of upper-secondary dropout -- in a column called
+    `lower_secondary_completion_rate`. The second is the worse of the two: the
+    name asserts the wrong education stage, and it does so inside an artifact a
+    reviewer downloads.
+    """
+
+    RETIRED = ('country_code', 'country_name', 'country_stratum',
+               'lower_secondary_completion_rate')
+
+    @pytest.mark.parametrize('name', RETIRED)
+    def test_the_dataset_specific_name_is_gone(self, name):
+        import subprocess
+        # Code and schema only. Prose may name a retired column -- this test
+        # does, in the list above and in the docstring saying why, and the
+        # README does, explaining what the rename was for. What must not come
+        # back is a program reading or writing the name.
+        found = subprocess.run(
+            ['git', 'grep', '-l', '-w', name, '--',
+             '*.py', '*.sql', ':!tests/test_dataset_config.py'],
+            cwd=_ROOT, capture_output=True, text=True).stdout.split()
+        assert not found, f'{name} came back in: {found}'
+
+    def test_both_datasets_declare_the_neutral_columns(self):
+        import datasets  # noqa: F401
+        from core.dataset_config import get_dataset, list_datasets
+
+        for name in list_datasets():
+            config = get_dataset(name)
+            assert config.entity_column == 'entity_id', name
+            assert config.entity_name_column == 'entity_name', name
+            assert config.target_source_column == 'target_source_rate', name
+
+    def test_the_provenance_of_the_target_is_still_recorded(self):
+        """Neutral in the schema must not mean unstated in the source."""
+        collector = (_SRC / 'collection' / 'inep_collector.py').read_text()
+        assert 'abandono_em' in collector, (
+            'the collector no longer says what the INEP target is derived from')

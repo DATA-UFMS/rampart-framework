@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Resumo do uso de recursos por fase (médias/picos) a partir do log JSONL.
+Summary of resource usage per phase (means/peaks) from the JSONL log.
 
-Entrada:
+Input:
   - outputs/benchmarks/architectural_benchmark_resource_log.jsonl
 
-Saídas:
+Outputs:
   - outputs/statistics/architectural_resource_usage.json
   - outputs/statistics/architectural_resource_usage.tex
 
-Colunas na Tabela (LaTeX):
-  Fase, Arq, CPU(proc) média, CPU(proc) pico, RSS(MB) média, RSS(MB) pico,
-  CPU(sist) média, CPU(sist) pico, Mem(sist)% média, Mem(sist)% pico, IO Read(MB), IO Write(MB), n
+Columns in the (LaTeX) table:
+  Phase, Arch, CPU(proc) mean, CPU(proc) peak, RSS(MB) mean, RSS(MB) peak,
+  CPU(sys) mean, CPU(sys) peak, Mem(sys)% mean, Mem(sys)% peak, IO Read(MB), IO Write(MB), n
 
-Se não houver dados, gera uma tabela mínima com "Sem dados".
+If there is no data, generates a minimal table with "No data".
 """
 
 from __future__ import annotations
@@ -26,8 +26,19 @@ import numpy as np
 import pandas as pd
 
 
-LOG = Path("outputs/benchmarks/architectural_benchmark_resource_log.jsonl")
-OUT_DIR = Path("outputs/statistics")
+import os
+import sys
+
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SRC_DIR = os.path.join(_BASE_DIR, "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from core.config import get_absolute_output_path
+
+LOG = Path(get_absolute_output_path(
+    "outputs/benchmarks/architectural_benchmark_resource_log.jsonl"))
+OUT_DIR = Path(get_absolute_output_path("outputs/statistics"))
 OUT_JSON = OUT_DIR / "architectural_resource_usage.json"
 OUT_TEX = OUT_DIR / "architectural_resource_usage.tex"
 
@@ -47,7 +58,7 @@ def _load_jsonl(path: Path) -> pd.DataFrame:
             continue
         try:
             obj = json.loads(line)
-            # Desaninha os campos aninhados
+            # Flattens the nested fields
             flat_obj = {
                 'run_id': obj.get('run_id'),
                 'phase': obj.get('phase'),
@@ -63,16 +74,30 @@ def _load_jsonl(path: Path) -> pd.DataFrame:
                 'mem_sys_max': obj.get('mem_sys_percent', {}).get('max'),
                 'io_read_mb': obj.get('io_read_mb', 0),
                 'io_write_mb': obj.get('io_write_mb', 0),
-                'n': obj.get('cpu_proc', {}).get('n', 0)
+                'n': obj.get('cpu_proc', {}).get('n', 0),
+                'is_warmup': obj.get('is_warmup'),
             }
             rows.append(flat_obj)
         except Exception as e:
-            print(f"Erro ao processar linha: {e}")
+            print(f"Error processing line: {e}")
             continue
     
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(rows)
+
+    frame = pd.DataFrame(rows)
+    # A record without the field predates the distinction, and there is no way
+    # to know which side it falls on. Filling it with False would treat it as a
+    # measurement.
+    unmarked = int(frame['is_warmup'].isna().sum())
+    if unmarked:
+        raise ValueError(
+            f"{unmarked} of {len(frame)} resource records do not say whether "
+            f"they are warmup ({path}). They come from a run that predates the "
+            f"distinction; the log is truncated at the start of every "
+            f"benchmark, so this means the file did not come from this run."
+        )
+    return frame[~frame['is_warmup'].astype(bool)].drop(columns=['is_warmup'])
 
 
 def _escape_latex(text: str) -> str:
@@ -145,11 +170,11 @@ def para_latex(resumo: Dict) -> str:
         r"\setlength{\tabcolsep}{4pt}",
         r"\scriptsize",
         r"\begin{center}",
-        r"\begin{tabular}{@{}l l r r r r r r r r r r r@{}}",  # 13 colunas
+        r"\begin{tabular}{@{}l l r r r r r r r r r r r@{}}",  # 13 columns
         r"\hline",
-        r"\multicolumn{13}{c}{\textbf{Uso de Recursos por Fase}} \\",
+        r"\multicolumn{13}{c}{\textbf{Resource Usage per Phase}} \\",
         r"\hline",
-        r"Fase & Arq & \multicolumn{2}{c}{CPU (\%)} & \multicolumn{2}{c}{RSS (MB)} & \multicolumn{2}{c}{CPU (s)} & \multicolumn{2}{c}{Mem (\%)} & \multicolumn{2}{c}{I/O (MB)} & n \\",
+        r"Phase & Arch & \multicolumn{2}{c}{CPU (\%)} & \multicolumn{2}{c}{RSS (MB)} & \multicolumn{2}{c}{CPU (s)} & \multicolumn{2}{c}{Mem (\%)} & \multicolumn{2}{c}{I/O (MB)} & n \\",
         r"\cline{3-4} \cline{5-6} \cline{7-8} \cline{9-10} \cline{11-12}",
         r" & & $\mu$ & max & $\mu$ & max & $\mu$ & max & $\mu$ & max & R & W & \\",
         r"\hline"
@@ -165,14 +190,14 @@ def para_latex(resumo: Dict) -> str:
 
     if not resumo or "per_phase" not in resumo or not resumo["per_phase"]:
         linhas_erro = wrapper_prefix + [
-            r"Sem dados & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\",
+            r"No data & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\",
         ] + wrapper_suffix
         return "\n".join(linhas_erro) + "\n"
 
-    # Monta as linhas de dados
+    # Builds the data rows
     linhas = [
-        "% Gerado automaticamente por derive_resource_usage_table.py",
-        "% Uso de recursos por fase e arquitetura",
+        "% Automatically generated by derive_resource_usage_table.py",
+        "% Resource usage per phase and architecture",
         "",
     ]
     linhas.extend(wrapper_prefix)
@@ -213,20 +238,20 @@ def main() -> None:
     
     if not LOG.exists():
         msg = {
-            "erro": f"Arquivo de log não encontrado: {str(LOG)}",
-            "dica": "Execute o benchmark arquitetural para gerar o log de recursos.",
+            "erro": f"Log file not found: {str(LOG)}",
+            "dica": "Run the architectural benchmark to generate the resource log.",
         }
         OUT_JSON.write_text(json.dumps(msg, indent=2, ensure_ascii=False), encoding="utf-8")
-        OUT_TEX.write_text("% Sem dados\n" + para_latex({}), encoding="utf-8")
+        OUT_TEX.write_text("% No data\n" + para_latex({}), encoding="utf-8")
         print(json.dumps(msg, indent=2, ensure_ascii=False))
         return
     
     try:
         df = _load_jsonl(LOG)
         if df.empty:
-            msg = {"erro": "Nenhum dado válido encontrado no arquivo de log."}
+            msg = {"erro": "No valid data found in the log file."}
             OUT_JSON.write_text(json.dumps(msg, indent=2, ensure_ascii=False), encoding="utf-8")
-            OUT_TEX.write_text("% Sem dados\n" + para_latex({}), encoding="utf-8")
+            OUT_TEX.write_text("% No data\n" + para_latex({}), encoding="utf-8")
             print(json.dumps(msg, indent=2, ensure_ascii=False))
             return
         
@@ -250,7 +275,7 @@ def main() -> None:
         
     except Exception as e:
         erro_msg = {
-            "erro": f"Falha no processamento: {str(e)}",
+            "erro": f"Processing failure: {str(e)}",
             "arquivo": str(LOG)
         }
         OUT_JSON.write_text(json.dumps(erro_msg, indent=2, ensure_ascii=False), encoding="utf-8")

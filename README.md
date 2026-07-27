@@ -1,10 +1,12 @@
 # rampart-framework
 
-Framework para benchmarking reprodutível de arquiteturas de dados com verificação automática de anti-leakage temporal. Compara DuckDB, Dask e Polars processando os mesmos dados e modelos, verificando se os pipelines produzem predições bitwise-idênticas (Δ=0.0) como validação negativa da integridade de ETL.
+Framework for reproducible benchmarking of data architectures with automatic temporal anti-leakage checking. It compares DuckDB, Dask and Polars processing the same data and models, checking whether the pipelines produce bitwise-identical predictions (Δ=0.0) as a negative validation of ETL integrity.
 
 ## Quickstart
 
-Requisitos: Python 3.10+, 8 GB RAM, acesso à internet (coleta dados da World Bank API, sem API key).
+Requirements: Python 3.10+, 8 GB RAM, internet access, no API key. The World
+Bank dataset is collected from `api.worldbank.org`; the INEP one downloads the
+yearly rate files from `download.inep.gov.br`.
 
 ```bash
 git clone https://github.com/DATA-UFMS/rampart-framework.git
@@ -12,35 +14,102 @@ cd rampart-framework
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python pipeline.py                        # World Bank (default, ~20 min na primeira execução)
-python pipeline.py --dataset inep_censo   # INEP Censo Escolar (~2h na primeira execução)
-pytest tests/                             # testes unitários
+python pipeline.py                        # World Bank (default)
+python pipeline.py --dataset inep_censo   # INEP Censo Escolar
+pytest tests/                             # unit tests
 ```
 
-O pipeline gera artefatos em `outputs/`: folds temporais, métricas de benchmark (CSV/JSON) e tabelas LaTeX. Execuções subsequentes usam cache e levam ~5 min.
+The pipeline writes artifacts to `outputs/<dataset>/`: temporal folds, benchmark
+metrics (CSV/JSON) and LaTeX tables. The root is separated by dataset, so that
+running the second one does not overwrite the first.
 
-## O que faz
+### Verified reproduction
+
+The path above assumes you know the sequence. This one does not:
+
+```bash
+scripts/reproduce.sh                          # World Bank
+scripts/reproduce.sh --dataset inep_censo     # INEP
+```
+
+It installs from `requirements-lock.txt`, checks that the declared core budget
+fits on the machine **before** starting, and runs the pipeline and the test suite.
+
+In a container, with the base image pinned by digest:
+
+```bash
+docker build -t rampart .
+docker run --rm rampart bash scripts/reproduce.sh
+```
+
+**Data snapshot.** Collection reads an external API whose values are revised, and
+without this a difference between runs is indistinguishable from a code change.
+A hashed snapshot separates the two, and removes the need for network access:
+
+```bash
+python scripts/verify_data_snapshot.py --snapshot data/ --dataset worldbank --record
+scripts/reproduce.sh --data-snapshot data/
+```
+
+**Core budget.** Each paradigm receives the same number of cores
+(`engine_threads`), and the numerical libraries under scikit-learn run with a
+single thread (`blas_threads`) — they are the component common to all three, and
+letting them size themselves to the machine made part of the measured difference be thread contention.
+Every published latency is conditional on these values, which are kept in the snapshot.
+
+**Run cost.** The benchmark stage dominates total time: it re-runs the
+processing, setup, baseline and hierarchical phases of the three paradigms
+`warmup + n` times — by default 2 + 10 = 12 passes, so 144 measured phase
+executions. Collection is the one phase it does not repeat: it runs once ahead
+of the repetitions and is recorded under `run_id=-1` for reference, so the
+collection cache shortens that single pass and nothing else. Everything the
+benchmark measures is recomputed on every pass, which is what makes the latency
+distribution a measurement rather than a reading of a cache. In practice, World Bank takes about an hour and a half and INEP Censo Escolar
+takes over a day on the reference machine. That machine has to accommodate the
+budget: `pipeline.py` refuses to run when `engine_threads + blas_threads
+- 1` exceeds the available cores, which with the current values means eight
+cores at minimum. For an exploratory run, reduce `repetitions` in
+`src/core/config.py` — aware that this does not reproduce the latency table.
+
+## What it does
 
 ```mermaid
-flowchart LR
-    subgraph U["Upstream -- 1x"]
-        A["World Bank API\n32 países, 2000-2023"] --> B["Coleta + Imputação"]
+flowchart TB
+    subgraph U["Upstream -- once"]
+        Z["Stage 0: reproducibility snapshot<br/>run_id minted into RAMPART_RUN_ID"]
+        DS{"--dataset<br/>resolved by the registry"}
+        WB["World Bank<br/>32 countries, 2000-2023"]
+        IN["INEP Censo Escolar<br/>municipality x year, 2007-2024"]
+        B["Stage 1: Collection<br/>+ bounded carry-forward"]
+        Z --> DS
+        DS --> WB & IN
+        WB & IN --> B
+    end
+
+    subgraph P["Stage 2: Processing -- one per paradigm"]
+        DW["sql_engine<br/>DuckDB, schema-on-write"]:::dw
+        DL["task_graph<br/>Dask, schema-on-read"]:::dl
+        PL["dataframe_lib<br/>Polars, lazy evaluation"]:::pl
+    end
+
+    subgraph D["Downstream -- stages per paradigm, gates across all three"]
+        S["Stage 3: ML setup<br/>temporal folds, feature selection under P4"]
+        G1{{"Setup provenance<br/>run_id on folds and selection"}}:::gate
+        G2{{"Anti-leakage<br/>P1-P2, folds identical across paradigms"}}:::gate
+        M4["Stage 4: Baselines<br/>global_mean, linear_trend,<br/>naive_with_lag, cross_entity"]
+        M5["Stage 5: Hierarchical<br/>RidgeCV + Random Forest"]
+        G3{{"Protocol receipts<br/>P5 imputation, P3 post-lag re-audit"}}:::gate
+        G4{{"Prediction equivalence<br/>same rows, same bytes"}}:::gate
+        S --> G1 --> G2 --> M4 --> M5 --> G3 --> G4
     end
 
     B --> DW & DL & PL
-
-    DW["DuckDB\nschema-on-write"]:::dw
-    DL["Dask\nschema-on-read"]:::dl
-    PL["Polars\nlazy evaluation"]:::pl
-
     DW & DL & PL --> S
 
-    subgraph D["Downstream -- Nx"]
-        S["Setup ML"] --> G{{"Anti-Leak\nGate"}}:::gate
-        G --> M["Ridge + Random Forest"]
-    end
-
-    M --> V["Bootstrap CI\n+ Effect Sizes"] --> T["LaTeX"]
+    G4 --> BM["Stage 6: Architectural benchmark<br/>warmup + n passes over the four<br/>repeated phases; collection runs once"]
+    BM --> DZ["SHA-256: the benchmark left the<br/>certified predictions untouched"]
+    DZ --> V["Stage 7: bootstrap CI, SESOI equivalence,<br/>effect sizes, latency and throughput,<br/>resources, model-vs-baseline, scorecard"]
+    V --> T["JSON artifacts<br/>+ LaTeX tables"]
 
     classDef dw fill:#1e88e5,stroke:#0d47a1,color:#fff,font-weight:bold
     classDef dl fill:#43a047,stroke:#1b5e20,color:#fff,font-weight:bold
@@ -48,124 +117,247 @@ flowchart LR
     classDef gate fill:#e53935,stroke:#b71c1c,color:#fff,font-weight:bold
 ```
 
-Os mesmos dados do Banco Mundial (evasão escolar, 32 países, 2000–2023) são processados em três backends — **DuckDB** (SQL analítico), **Dask** (DataFrames distribuídos) e **Polars** (lazy evaluation) — e alimentam os mesmos modelos (Ridge hierárquico + Random Forest). Um **gate anti-leakage** valida integridade temporal antes de cada execução de modelo; se qualquer fold violar as garantias, o pipeline interrompe com `ValueError`.
+The same data — the World Bank panel by default, INEP Censo Escolar with `--dataset inep_censo` — is processed in three backends: **DuckDB** (`sql_engine`, analytical SQL), **Dask** (`task_graph`, a task-graph scheduler) and **Polars** (`dataframe_lib`, lazy evaluation). All three feed the same models, a hierarchical Ridge and a Random Forest. **Four gates** stand between the stages: two after setup, checking that the fold artifacts belong to this run and that the folds satisfy P1–P2 and are identical across paradigms; two after the models, checking that P3's re-audit and P5's imputation actually ran and that the three paradigms predicted the same values for the same rows. Any of them failing stops the pipeline rather than annotating the output.
 
-A comparação estatística usa SESOI (menor efeito de interesse prático) com IC 95% por bootstrap, complementada por Wilcoxon pareado e Hodges–Lehmann. O objetivo é testar se a escolha de paradigma de processamento introduz viés nos resultados — a contribuição é o protocolo, não o resultado preditivo.
+The statistical comparison uses SESOI (smallest effect size of interest) with bootstrap 95% CI, complemented by paired Wilcoxon and Hodges–Lehmann. The goal is to test whether the choice of processing paradigm introduces bias in the results — the contribution is the protocol, not the predictive result.
 
-Avaliado em dois datasets (World Bank: 32 países, 768 obs; INEP: 5.564 municípios, 94K obs), o framework confirma equivalência preditiva bitwise nos três paradigmas e revela um crossover dependente de escala: engines in-process dominam dados pequenos (~9,6× end-to-end em WB), enquanto Dask vence as fases de ML em dados grandes (~2,0–2,2× em INEP via caching de `persist()` entre folds).
+Evaluated on two datasets (World Bank: 32 countries × 24 years, complete panel of 768 cell-years; INEP: 5,564 municipalities, 94K), the framework confirms bitwise predictive equivalence across the three paradigms and reveals a scale-dependent crossover: in-process engines dominate the small panel, while the task scheduler wins the ML phases on the large panel, via `persist()` caching across folds. The factors are not transcribed here — each run regenerates them in `statistics/architectural_latency_percentiles.json` and in the table derived by `scripts/derive_paper_tables.py`, conditional on the commit and the core budget stated in the caption. The complete panel is not the analyzed n: rows without an observed target are removed, and the count that remains is in `target_coverage.json`, together with the observed and imputed fractions per column.
 
 ## Anti-leakage (P1–P5)
 
-O pipeline aplica 5 verificações automáticas em todos os paradigmas:
+The pipeline applies five automatic checks across every paradigm, and four gates that verify the checks themselves ran:
 
-| Protocolo | Verificação | Enforcement |
-|-----------|------------|-------------|
-| P1 | Ordenação temporal dos splits | `ValueError` em runtime |
-| P2 | Gap mínimo de 2 anos entre splits | `ValueError` em runtime |
-| P3 | Separação de features + detecção de proxy | `ValueError` em runtime |
-| P4 | Feature selection restrita ao treino | `ValueError` em runtime |
-| P5 | Scaling/imputação ajustados só no treino | Contrato + testes unitários |
+| Protocol | Check | Enforcement | Where |
+|-----------|------------|-------------|------|
+| P1 | Temporal ordering of the splits | `AntiLeakageViolation` at runtime | `TemporalValidator.enforce_walk_forward` |
+| P2 | Minimum 2-year gap between splits | `AntiLeakageViolation` at runtime | `TemporalValidator.enforce_walk_forward` |
+| P3 | Feature separation, proxy ceiling, joint reconstruction and exact target reproduction | `AntiLeakageViolation` at runtime, in selection and again in the post-lag re-audit; that the re-audit ran at all is what the receipt establishes | `run_feature_selection`, `audit_feature_set` |
+| P4 | Feature selection restricted to the training window of the first fold | by construction: the panel is filtered to `train_end` before any correlation is computed, so there is no violation left to raise on | `BaseArchitectureML._first_fold_train_end`, `run_feature_selection` |
+| P5 | Scaling and imputation fitted on the training set only | imputation: `ValueError` at runtime for a column with no observation in the training window, and `AntiLeakageViolation` by receipt at the end of the hierarchical stage; scaling: by construction, no receipt | `impute_from_training_window`, and the `StandardScaler` fit that follows it in each paradigm's `hierarchical_model.py` |
 
-A validação usa walk-forward temporal: o treino sempre cresce para frente no tempo, com gap de 2 anos entre splits, garantindo que nenhuma informação futura contamine o modelo. Produz 9 folds em WB (janela train=8yr, val=2yr, test=2yr sobre 24 anos) e 8 folds em INEP (janela train=5yr, val=1yr, test=1yr sobre 18 anos). Referência: Kapoor & Narayanan (2023).
+P1, P2 and P4 are enforced by the base class: they live inside concrete methods
+that the setup skeleton calls, so a paradigm does not reach the models without
+going through them. P5 and the P3 re-audit cannot be — they need the
+materialized fold, which is precisely what each paradigm builds in a different
+way. They run in the model code, and what the core guaranteed about them was
+that the author had remembered to call them.
 
-## Estrutura
+The receipt gate closes this from the other side: each call leaves an artifact,
+and `_validate_protocol_receipts` stops execution when the receipt is missing,
+when it carries no run identifier, when the identifier is another run's, when
+its `folds` field is empty — the record of a protocol that reached no fold at
+all — or when `checks_across_folds` marks any check indeterminate in any fold.
+That last one is the difference between a receipt of presence and a receipt of
+conformance: a reconstruction that could not be computed leaves a report that
+otherwise reads exactly like one where the check passed. A new paradigm that
+omits either call stops the pipeline instead of reporting results under a
+protocol it did not follow.
+
+Belonging to a run is settled by a nonce in `RAMPART_RUN_ID`, never by
+comparing clocks, and by one gate rather than two. The receipt gate runs hours
+after the start on the INEP panel, and over that window a backward NTP
+correction would make a fresh receipt look stale and abort the run. The nonce
+is also the stronger test: a leftover receipt carrying a *newer* timestamp
+passes a clock comparison and fails this one. The setup artifacts are checked
+the same way, by `_validate_setup_provenance`, which is why the temporal gate
+below it judges fold integrity and nothing else — it used to compare timestamps
+on the same file, one gate apart, and it was the weaker of the two answers.
+
+An empty fold set, folds that differ across paradigms, and a column with no
+observation at all in the training window also stop the run — each was, at
+some point, a case that passed in silence.
+
+**What P1–P5 do not cover, and why.** The Kapoor & Narayanan taxonomy has
+eight types. Five are enforced here; two require an argument from the author and not
+code — L3.2 (the same entity in training and test, legitimate for panel
+forecasting but a scientific claim) and L3.3 (rows without an observed target are
+removed, and target absence is not random). The third, L2, is tracked and
+not settled: K&N do not subdivide that category because the judgment requires
+domain knowledge.
+
+`scripts/derive_model_info_sheet.py` emits the model info sheet with the derivable
+answers read from the artifacts and the three above flagged as requiring an
+argument. This addresses the limitation the authors themselves state about the
+instrument: *the claims of an info sheet cannot be verified in the
+absence of computational reproducibility*. The contribution is not to extend the
+taxonomy — it is to derive the answers instead of asserting them, and to guarantee that each
+check gives the same verdict across the three paradigms, which a taxonomy
+written for one implementation does not need to require.
+
+The comparison against the naive baseline enters for the same reason: it is the method of
+their case study, and it is what measures whether the task is trivial — the risk L2
+leaves open when a feature is legitimately available but makes the
+prediction easy.
+
+Validation uses temporal walk-forward: training always grows forward in time, with a 2-year gap between splits. It produces 9 folds on WB (window train=8yr, val=2yr, test=2yr over 24 years) and 8 folds on INEP (window train=5yr, val=1yr, test=1yr over 18 years).
+
+Temporal ordering (P1) is category L3.1 of Kapoor & Narayanan (2023). The **gap** is not: their taxonomy does not mention gaps anywhere. It mitigates L3.2 — dependence between training and test, here temporal autocorrelation — by way of blocked cross-validation with a buffer (Roberts et al., 2017, which is the reference K&N themselves cite in L3.2), with the embargo variant of López de Prado (2018).
+
+## Structure
 
 ```
 src/
 ├── core/
-│   ├── base_architecture.py    # Classe abstrata (Template Method)
-│   ├── paradigm_registry.py    # Auto-descoberta via __init_subclass__
+│   ├── base_architecture.py    # Abstract class (Template Method)
+│   ├── paradigm_registry.py    # Auto-discovery via __init_subclass__
 │   ├── validation.py           # TemporalValidator + DataIntegrityValidator
-│   ├── scientific_config.py    # Parâmetros centralizados (gaps, SESOI, seeds)
-│   ├── dataset_config.py       # Protocol + registry de datasets
-│   ├── config.py               # Paths, países, configurações gerais
-│   ├── indicators.py           # Indicadores World Bank
-│   ├── logging_config.py       # Logging estruturado
-│   └── models/baseline.py      # Modelos baseline (Ridge, RF)
+│   ├── scientific_config.py    # Centralized parameters (gaps, SESOI, seeds)
+│   ├── dataset_config.py       # Protocol + dataset registry
+│   ├── config.py               # Paths, countries, general settings
+│   ├── indicators.py           # World Bank indicators
+│   ├── logging_config.py       # Structured logging
+│   ├── prediction_store.py     # Per-fold prediction vectors (PredictionRecorder)
+│   └── models/hierarchical.py  # Shared hierarchical model (RidgeCV) + P3/P5 receipt writers
 ├── collection/
-│   ├── raw_data_collector.py   # Coleta World Bank API
-│   ├── inep_collector.py       # Coleta INEP Censo Escolar
-│   ├── data_lake/              # Processador Dask
-│   ├── data_warehouse/         # Processador DuckDB
-│   └── polars_dataframe/       # Processador Polars
+│   ├── raw_data_collector.py   # World Bank API collection
+│   ├── inep_collector.py       # INEP Censo Escolar collection
+│   ├── task_graph/             # Dask processor (task-graph)
+│   ├── sql_engine/             # DuckDB processor (SQL)
+│   └── dataframe_lib/          # Polars processor (DataFrame)
 ├── datasets/
-│   ├── worldbank.py            # Config World Bank (32 países, 2000-2023)
-│   └── inep_censo.py           # Config INEP (5.564 municípios, 2007-2024)
-├── architectures_ml/           # Setup + modelos por paradigma
-│   ├── data_lake/
-│   ├── data_warehouse/
-│   └── polars_dataframe/
-├── benchmarking/               # Instrumentação e métricas de latência
-└── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 79 testes (unitários, discovery, anti-leakage)
-pipeline.py                     # Orquestra o pipeline completo
+│   ├── worldbank.py            # World Bank config (32 countries, 2000-2023)
+│   └── inep_censo.py           # INEP config (5,564 municipalities, 2007-2024)
+├── architectures_ml/           # Setup + models per paradigm
+│   ├── task_graph/
+│   ├── sql_engine/
+│   └── dataframe_lib/
+├── benchmarking/               # Instrumentation and latency metrics
+└── statistical_validation/     # Equivalence, bootstrap, effect sizes
+scripts/
+├── reproduce.sh                # End-to-end run: pipeline + test suite
+├── verify_data_snapshot.py     # Verifies and installs the offline data snapshot
+├── derive_paper_tables.py      # Paper tables, spanning both datasets
+├── derive_model_info_sheet.py  # Kapoor & Narayanan model info sheet
+└── validation/                 # Leakage-injection negative control
+tests/                          # 1560 tests (unit, discovery, anti-leakage)
+pipeline.py                     # Orchestrates the full pipeline
 ```
 
 ### Outputs
 
 ```
-outputs/
-├── collection/                 # Dados brutos e processados por paradigma
-├── ml_pipeline/architectures/  # Folds, features, resultados de modelos
-├── benchmarks/                 # CSV + JSONL de latência e uso de recursos
-└── statistics/                 # Effect sizes, significância, scorecard LaTeX
+outputs/<dataset>/              # One root per dataset: worldbank, inep_censo
+├── scientific_config_snapshot.json  # Config, environment and lockfile hash of the run
+├── collection/                 # Raw data, shared by the paradigms; processed output per paradigm
+├── ml_pipeline/architectures/  # Per paradigm: folds, feature selection, P3 and P5 receipts,
+│                               # model results, and the prediction vectors the gates compare
+├── benchmarks/                 # CSV + JSONL of latency and resource usage
+└── statistics/                 # Effect sizes, significance, model-vs-baseline, LaTeX scorecard
 ```
 
-## Extensão
+## Extension
 
-### Novo paradigma
+### New paradigm
 
-Crie uma subclasse de `BaseArchitectureML` com `PARADIGM_META` definido. O framework descobre automaticamente via `__init_subclass__` — nenhum arquivo existente precisa ser editado. As verificações anti-leakage são herdadas.
+Create a subclass of `BaseArchitectureML` with `PARADIGM_META` defined. Discovery is automatic via `__init_subclass__`: no orchestration, analysis or statistics module needs to be edited — they all derive from the registry.
+
+P1, P2 and P4 are inherited from the base class. The P5 imputation and the P3 re-audit are not: they run over the materialized fold, which is what the paradigm implements, so it falls to the paradigm's model to call them. Forgetting does not pass in silence — the receipt gate requires the evidence of both at the end of the hierarchical stage and stops without it.
+
+The test suite is a different matter, and worth budgeting for. Six assertions fix
+the paradigm count at three by globbing `src/architectures_ml/*/models/`
+(`test_fit_window.py`, `test_hierarchical_config.py`, `test_imputation_scope.py`,
+`test_stage_decomposition.py` twice, `test_unit_core.py`); a fourth paradigm
+fails all six. It also raises the collected test count, since most other suites
+parametrize over `discover_paradigms()` — and one test holds this README's stated
+count to what pytest actually collects. Three further suites carry hardcoded
+paradigm tuples and would pass without exercising the new paradigm at all, which
+is worse than failing.
 
 ```python
-# src/architectures_ml/meu_paradigma/setup.py
+# src/architectures_ml/my_paradigm/setup.py
 class MeuParadigmaML(BaseArchitectureML):
     PARADIGM_META = {
-        'name': 'meu_paradigma',
-        'label': 'Meu Paradigma',
-        'setup_script': 'src/architectures_ml/meu_paradigma/setup.py',
-        # ... módulos de processamento, baseline e hierárquico
+        'name': 'my_paradigm',
+        'label': 'My Paradigm',
+        'baseline_class': ...,
+        'baseline_module': ...,
+        'baseline_results_json': ...,
+        'baseline_script': ...,
+        'hierarchical_class': ...,
+        'hierarchical_module': ...,
+        'hierarchical_script': ...,
+        'master_artifact': ...,
+        'processor_class': ...,
+        'processor_module': ...,
+        'processor_run_method': ...,
+        'processor_script': ...,
+        'setup_script': ...
     }
-    # Implementar métodos abstratos: setup_environment, load_data,
-    # validate_data, create_target_implementation, save_folds,
-    # compute_feature_correlations, apply_collinearity_filter,
-    # get_numeric_features, prepare_features, entre outros.
+
+    # Abstract methods to implement (11):
+    #   _compute_target_statistics
+    #   _validate_temporal_folds
+    #   apply_collinearity_filter
+    #   compute_feature_correlations
+    #   create_target_implementation
+    #   discover_numeric_columns
+    #   load_data
+    #   prepare_features
+    #   save_folds
+    #   setup_environment
+    #   validate_data
 ```
 
-### Novo dataset
+`get_numeric_features` is **not** on that list, and overriding it makes the
+suite fail by design: the candidate pool has to be identical across
+paradigms, otherwise the comparison starts from different search spaces. What
+decides which columns are numeric in a given engine is `discover_numeric_columns`;
+the exclusion policy lives in the base class, once only.
 
-O framework suporta múltiplos datasets via `DatasetConfig`. Já inclui World Bank (32 países) e INEP Censo Escolar (5.564 municípios brasileiros):
+### New dataset
+
+The framework supports multiple datasets via `DatasetConfig`. It already includes World Bank (32 countries) and INEP Censo Escolar (5,564 Brazilian municipalities):
 
 ```bash
 python pipeline.py                        # World Bank (default)
 python pipeline.py --dataset inep_censo   # INEP
 ```
 
-Para adicionar um dataset, implemente um `DatasetConfig` em `src/datasets/` e um coletor em `src/collection/`. O adapter pattern converte dados para o schema interno (`country_code`, `year`, features numéricas) sem modificar processadores ou modelos.
+To add a dataset: implement a `DatasetConfig` in `src/datasets/`, add its import
+to `src/datasets/__init__.py`, and write a collector in `src/collection/`.
+Registration happens on import and nothing scans the directory, so a module
+nobody imports is a dataset the command line cannot offer. The adapter maps the
+source onto the internal schema — `entity_id`, `entity_name`, `entity_stratum`,
+`year`, `target_source_rate`, numeric features — whose names are deliberately
+neutral: both datasets are adapted onto one table, and naming its columns after
+the first one had municipalities stored in `country_code`.
 
-### Parâmetros
+Three declared fields carry the rest. `raw_data_subdir` tells the processors and
+the benchmark where the collector drops its output; `collector_module` tells the
+pipeline which collector to run; `target_source_column` names the column the
+target derives from. All three are read from the registry, so an unregistered
+name is refused rather than falling through to whichever dataset happened to be
+the `else` arm.
 
-Edite `src/core/scientific_config.py`: gaps temporais, limiares SESOI, embargo, bootstrap iterations, seed.
+What still dispatches by name is the collection phase of the benchmark, because
+the two collectors have different shapes — one is a class with `run()`, the
+other a function taking an output directory. A third dataset needs an arm there.
+Models and analysis modules need nothing: they interpolate the dataset name into
+a path and never branch on it.
 
-### Métricas
+### Parameters
 
-Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão JSON → LaTeX.
+Edit `src/core/scientific_config.py`: temporal gaps, SESOI thresholds, embargo, bootstrap iterations, seed.
 
-## Decisões metodológicas
+### Metrics
 
-- **Walk-forward com gap=2 anos** produz 9 folds em WB e 8 em INEP, o máximo sem comprometer anti-leakage em cada span temporal. Efeitos de latência observados são grandes (Cohen's d_z > 7); a decisão primária usa bootstrap CI e o Wilcoxon é complemento (Lakens et al., 2018).
-- **Fairness no benchmark**: ordem DW/DL/PL randomizada por iteração (seed=42), `gc.collect()` entre fases, feature set idêntico entre paradigmas.
-- **Upstream executa 1x** (coleta + processamento produzem dados determinísticos); **downstream executa Nx** (setup + modelos são o alvo do benchmark).
+Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON → LaTeX pattern.
 
-## Reprodutibilidade
+## Methodological decisions
 
-- Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
-- Snapshot de ambiente: packages, hardware, git commit
-- `requirements-lock.txt` com versões exatas
-- 79 testes automatizados (`pytest tests/`)
+- **Walk-forward with gap=2 years** produces 9 folds on WB and 8 on INEP, the maximum without compromising anti-leakage in each temporal span. Observed latency effects are large (Cohen's d_z > 7); the primary decision uses bootstrap CI and Wilcoxon is a complement (Lakens et al., 2018).
+- **Benchmark fairness**: the order of the three paradigms is shuffled on every pass with a fixed seed (42), `gc.collect()` runs between phases, and the feature set is identical across paradigms.
+- **Collection runs once** — it reads an external API and repeating it buys HTTP latency, not information — and is recorded under `run_id=-1`. Everything else is repeated: processing, setup, baselines and the hierarchical models are all phases where the paradigms differ, so all four are measured on every pass.
 
-Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
+## Reproducibility
+
+- Seeds centralized in `scientific_config.py`, `n_jobs=1`
+- Environment snapshot: packages, hardware, git commit
+- `requirements-lock.txt` with exact versions
+- 1560 automated tests (`pytest tests/`)
+
+For operational details, see [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 
 ---
 
-**Contato**: Eos Xavier (eos.xavier@ufms.br)
+**Contact**: Eos Xavier (eos.xavier@ufms.br)

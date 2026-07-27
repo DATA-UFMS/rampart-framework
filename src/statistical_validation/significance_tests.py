@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-Testes de Significância Estatística para Benchmark Arquitetural (3-Way)
+Statistical Significance Tests for the Architectural Benchmark (3-Way)
 
-Executa testes estatísticos pareados entre os 3 paradigmas arquiteturais:
-Data Lake (DL), Data Warehouse (DW) e Polars DataFrame (PL) em comparações
-pairwise (DL×DW, DL×PL, DW×PL). Para cada fase e para o total arquitetural,
-o script alinha execuções por run_id e aplica:
+Runs paired statistical tests between the 3 architectural paradigms:
+Data Lake (DL), Data Warehouse (DW) and Polars DataFrame (PL) in pairwise
+comparisons (DL×DW, DL×PL, DW×PL). For each phase and for the architectural
+total, the script aligns runs by run_id and applies:
 
-- Paired t-test (diferença de médias entre arquiteturas)
-- Wilcoxon signed-rank (não-paramétrico)
-- Testes de normalidade (Shapiro-Wilk e Anderson-Darling) no vetor de diferenças
-- Bootstrap (intervalos de confiança) para diferença de médias e speedup
+- Paired t-test (difference of means between architectures)
+- Wilcoxon signed-rank (non-parametric)
+- Normality tests (Shapiro-Wilk and Anderson-Darling) on the difference vector
+- Bootstrap (confidence intervals) for the difference of means and the speedup
 
-Saídas:
-  - outputs/statistics/significance_summary.json (estrutura aninhada por pair)
-  - outputs/statistics/significance_summary.csv (estrutura plana com coluna 'pair')
+Outputs:
+  - outputs/statistics/significance_summary.json (nested structure by pair)
+  - outputs/statistics/significance_summary.csv (flat structure with a 'pair' column)
   - outputs/statistics/significance_summary.md
 
-Definições:
-  - Diferença (diff_s) = arch_a - arch_b (em segundos)
-  - Speedup (arch_b_vs_arch_a) = arch_a_mean / arch_b_mean (maior que 1 favorece arch_b)
-  - Total arquitetural: soma das fases específicas por arquitetura
-    (exclui 'collection' que é comum a todas)
+Definitions:
+  - Difference (diff_s) = arch_a - arch_b (in seconds)
+  - Speedup (arch_b_vs_arch_a) = arch_a_mean / arch_b_mean (greater than 1 favors arch_b)
+  - Architectural total: sum of the architecture-specific phases
+    (excludes 'collection', which is common to all)
 """
 
 from __future__ import annotations
@@ -37,61 +37,81 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-# Raiz do projeto para importar configuração
+# Project root, so the configuration can be imported
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
-try:
-    from src.core.scientific_config import SCIENTIFIC_CONFIG
-    DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG.get('bootstrap_iters', 3000))
-except Exception:
-    DEFAULT_BOOTSTRAP_ITERS = 3000
+_SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+# No fallback: a local default would let the analysis run with a resample count
+# other than the configured one, which is how the reported figure drifts from
+# the executed one. Without the configuration the run is not reproducible.
+from core.config import get_absolute_output_path
+from core.paradigm_registry import COMPARABLE_PHASES, paradigm_pairs
+from core.scientific_config import SCIENTIFIC_CONFIG
+
+DEFAULT_BOOTSTRAP_ITERS = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
 
 
-# Pares de arquiteturas para comparação (3-way)
-ALL_PAIRS = [
-    ("data_lake", "data_warehouse"),
-    ("data_lake", "polars_dataframe"),
-    ("data_warehouse", "polars_dataframe"),
-]
-
-PAIR_LABELS = {
-    ("data_lake", "data_warehouse"): ("dl", "dw"),
-    ("data_lake", "polars_dataframe"): ("dl", "pl"),
-    ("data_warehouse", "polars_dataframe"): ("dw", "pl"),
-}
+# Derived from the registry, so a fourth paradigm enters the comparison without
+# this module being edited. The abbreviations dl/dw/pl are gone: they encoded the
+# pre-rename names (data_lake, data_warehouse, polars) and named nothing after it.
+ALL_PAIRS = paradigm_pairs()
 
 
-RESULTS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-    "outputs",
-    "statistics",
-)
+RESULTS_DIR = get_absolute_output_path("outputs/statistics")
 
 
 def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+# Read order for the CSV columns. It is ordering, not filtering: the previous
+# version was a whitelist of pre-rename names and silently discarded everything
+# it did not recognize -- the per-paradigm means and every speedup with its
+# 95% CI, which are precisely the columns whose name contains the paradigm.
+# Four survived: n, mean_diff_s and the CI of the difference.
+_COLUMN_ORDER = ("n", "mean_", "speedup_", "diff_mean_ci95_",
+                 "shapiro_", "anderson_", "t_", "wilcoxon_")
+
+
+def column_rank(name: str) -> tuple:
+    """Read position of a column; unknown ones go to the end, in order."""
+    for index, prefix in enumerate(_COLUMN_ORDER):
+        if name == prefix or name.startswith(prefix):
+            return (index, name)
+    return (len(_COLUMN_ORDER), name)
+
+
 def load_benchmark(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     if "run_id" not in df.columns and "rep" in df.columns:
         df = df.rename(columns={"rep": "run_id"})
+
+    # A failed phase used to be recorded as duration_ns = -1, which reached this
+    # point as a latency of -1e-09 and was averaged in as a measurement. The
+    # benchmark now aborts instead, but a CSV produced before that must not be
+    # consumed silently either.
+    if "duration_s" in df.columns:
+        invalid = df[~(df["duration_s"] > 0)]
+        if not invalid.empty:
+            offenders = invalid[["run_id", "phase", "architecture",
+                                 "duration_s"]].head(5).to_dict("records")
+            raise ValueError(
+                f"{csv_path}: {len(invalid)} rows carry a non-positive "
+                f"duration, which cannot be a latency measurement. A failed "
+                f"phase must not enter the comparison: {offenders}"
+            )
     return df
 
 
 def paired_vectors_for_phase(
-    df: pd.DataFrame, phase: str, arch_a: str = "data_lake", arch_b: str = "data_warehouse"
+    df: pd.DataFrame, phase: str, arch_a: str, arch_b: str
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Retorna vetores alinhados para dois arquiteturas por run_id em uma fase."""
+    """Return aligned vectors for two architectures, by run_id, within one phase."""
     a = df[(df["phase"] == phase) & (df["architecture"] == arch_a)]
     b = df[(df["phase"] == phase) & (df["architecture"] == arch_b)]
 
-    pair_key = (arch_a, arch_b)
-    if pair_key in PAIR_LABELS:
-        suffix_a, suffix_b = PAIR_LABELS[pair_key]
-    else:
-        suffix_a, suffix_b = ("a", "b")
+    suffix_a, suffix_b = arch_a, arch_b
 
     merged = pd.merge(
         a[["run_id", "duration_s"]],
@@ -108,14 +128,19 @@ def paired_vectors_for_phase(
 
 def paired_vectors_total(
     df: pd.DataFrame,
-    arch_a: str = "data_lake",
-    arch_b: str = "data_warehouse",
+    arch_a: str,
+    arch_b: str,
     exclude_phases: Optional[List[str]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Soma durations por run_id e arquitetura nas fases especificadas (excluindo collection)."""
+    """Sum durations by run_id and architecture over the comparable phases.
+
+    Which ones those are comes from core.paradigm_registry: four files used to
+    enumerate the policy, and one of them had already forgotten to apply it.
+    """
     if exclude_phases is None:
-        exclude_phases = ["collection"]
-    filt = ~df["phase"].isin(exclude_phases)
+        filt = df["phase"].isin(COMPARABLE_PHASES)
+    else:
+        filt = ~df["phase"].isin(exclude_phases)
     sub = df[filt & df["architecture"].isin([arch_a, arch_b])]
     tot = (
         sub.groupby(["run_id", "architecture"])['duration_s']
@@ -125,11 +150,7 @@ def paired_vectors_total(
     a = tot[tot["architecture"] == arch_a][["run_id", "duration_s"]]
     b = tot[tot["architecture"] == arch_b][["run_id", "duration_s"]]
 
-    pair_key = (arch_a, arch_b)
-    if pair_key in PAIR_LABELS:
-        suffix_a, suffix_b = PAIR_LABELS[pair_key]
-    else:
-        suffix_a, suffix_b = ("a", "b")
+    suffix_a, suffix_b = arch_a, arch_b
 
     merged = pd.merge(a, b, on="run_id", suffixes=(f"_{suffix_a}", f"_{suffix_b}"), how="inner").sort_values("run_id")
     col_a = f"duration_s_{suffix_a}"
@@ -140,12 +161,12 @@ def paired_vectors_total(
 def bootstrap_ci(
     x: np.ndarray,
     y: np.ndarray,
-    label_a: str = "dl",
-    label_b: str = "dw",
+    label_a: str,
+    label_b: str,
     iters: int = DEFAULT_BOOTSTRAP_ITERS,
     rng: Optional[np.random.Generator] = None,
 ) -> Dict[str, Tuple[float, float]]:
-    """Bootstrap 95% CI para diferença de médias (x-y) e speedup (x_mean/y_mean)."""
+    """Bootstrap 95% CI for the difference of means (x-y) and the speedup (x_mean/y_mean)."""
     if rng is None:
         rng = np.random.default_rng(SCIENTIFIC_CONFIG.get('random_seed', 42))
     n = len(x)
@@ -169,14 +190,14 @@ def bootstrap_ci(
 def run_tests(
     x: np.ndarray,
     y: np.ndarray,
-    label_a: str = "dl",
-    label_b: str = "dw",
+    label_a: str,
+    label_b: str,
     bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS,
 ) -> Dict[str, float]:
-    """Executa testes de significância e normalidade sobre as diferenças (x - y)."""
+    """Run the significance and normality tests on the differences (x - y)."""
     res: Dict[str, float] = {}
     diff = x - y
-    # Normalidade
+    # Normality
     if len(diff) >= 3:
         sh_w, sh_p = stats.shapiro(diff)
     else:
@@ -187,7 +208,7 @@ def run_tests(
     except Exception:
         ad_stat = float("nan")
 
-    # Testes pareados
+    # Paired tests
     try:
         t_stat, t_p = stats.ttest_rel(x, y)
     except Exception:
@@ -205,9 +226,17 @@ def run_tests(
     speedup_key = f"speedup_{label_b}_vs_{label_a}"
     speedup_ci_key = f"speedup_{label_b}_vs_{label_a}_ci95"
 
+    # The signed-rank test discards exactly-zero differences, so the test's n
+    # is not the number of pairs. It is that n which determines the smallest
+    # attainable p (2/2^n two-sided), and the reported floor came out computed
+    # over the pairs: with three ties out of ten, the real floor is eight times
+    # larger.
+    n_nonzero = int(np.count_nonzero(np.asarray(diff, dtype=float)))
+
     res.update(
         dict(
             n=len(diff),
+            n_nonzero_diffs=n_nonzero,
             **{f"mean_{label_a}_s": mean_x},
             **{f"mean_{label_b}_s": mean_y},
             mean_diff_s=float(np.mean(diff)),
@@ -229,25 +258,26 @@ def run_tests(
 
 
 def analyze(csv_path: str, bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS) -> Dict[str, Dict[str, Dict[str, float]]]:
-    """Analisa todas as comparações pairwise (DL×DW, DL×PL, DW×PL)."""
+    """Analyze every pairwise comparison (DL×DW, DL×PL, DW×PL)."""
     df = load_benchmark(csv_path)
-    phases = sorted([p for p in df['phase'].unique() if p != 'collection'])
+    phases = sorted([p for p in df['phase'].unique()
+                     if p in COMPARABLE_PHASES])
     results: Dict[str, Dict[str, Dict[str, float]]] = {}
 
-    # Para cada par de arquiteturas
+    # For each pair of architectures
     for arch_a, arch_b in ALL_PAIRS:
-        la, lb = PAIR_LABELS[(arch_a, arch_b)]
+        la, lb = arch_a, arch_b
         pair_key = f"{la}_vs_{lb}"
         pair_results: Dict[str, Dict[str, float]] = {}
 
-        # Por fase
+        # By phase
         for p in phases:
             x, y = paired_vectors_for_phase(df, p, arch_a, arch_b)
             if len(x) >= 2 and len(y) >= 2:
                 pair_results[p] = run_tests(x, y, label_a=la, label_b=lb, bootstrap_iters=bootstrap_iters)
 
-        # Total arquitetural (exclui collection)
-        x_tot, y_tot = paired_vectors_total(df, arch_a, arch_b, exclude_phases=["collection"])
+        # Architectural total over the comparable phases; the list comes from the registry.
+        x_tot, y_tot = paired_vectors_total(df, arch_a, arch_b)
         if len(x_tot) >= 2 and len(y_tot) >= 2:
             pair_results["total_architectural"] = run_tests(
                 x_tot, y_tot, label_a=la, label_b=lb, bootstrap_iters=bootstrap_iters
@@ -259,7 +289,7 @@ def analyze(csv_path: str, bootstrap_iters: int = DEFAULT_BOOTSTRAP_ITERS) -> Di
 
 
 def _format_markdown_table(rows: List[Dict[str, float]], cols: List[str], include_pair: bool = False) -> str:
-    """Cria uma tabela Markdown estável sem depender de tabulate."""
+    """Build a stable Markdown table without depending on tabulate."""
     headers = (['pair'] if include_pair else []) + ['phase'] + cols
     out = ['|' + '|'.join(headers) + '|', '|' + '|'.join(['---'] * len(headers)) + '|']
     for r in rows:
@@ -283,7 +313,7 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
     csv_path = os.path.join(RESULTS_DIR, "significance_summary.csv")
     md_path = os.path.join(RESULTS_DIR, "significance_summary.md")
 
-    # JSON: estrutura aninhada por pair
+    # JSON: nested structure by pair
     with open(json_path, "w") as f:
         json.dump(results, f, indent=2)
 
@@ -294,43 +324,17 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
             row.update(metrics)
             rows.append(row)
 
-    possible_cols = [
-        "n",
-        "mean_dl_s",
-        "mean_dw_s",
-        "mean_pl_s",
-        "mean_diff_s",
-        "speedup_dw_vs_dl",
-        "speedup_pl_vs_dl",
-        "speedup_pl_vs_dw",
-        "diff_mean_ci95_lo",
-        "diff_mean_ci95_hi",
-        "speedup_dw_vs_dl_ci95_lo",
-        "speedup_dw_vs_dl_ci95_hi",
-        "speedup_pl_vs_dl_ci95_lo",
-        "speedup_pl_vs_dl_ci95_hi",
-        "speedup_pl_vs_dw_ci95_lo",
-        "speedup_pl_vs_dw_ci95_hi",
-        "shapiro_W",
-        "shapiro_p",
-        "anderson_stat",
-        "t_stat",
-        "t_p",
-        "wilcoxon_stat",
-        "wilcoxon_p",
-    ]
-    # Determina quais colunas realmente existem
     cols_present = set()
     for row in rows:
         cols_present.update(k for k in row.keys() if k not in ["pair", "phase"])
-    cols = [c for c in possible_cols if c in cols_present]
+    cols = sorted(cols_present, key=column_rank)
 
     # CSV
     df = pd.DataFrame(rows)
     df_csv = df[["pair", "phase"] + cols]
     df_csv.to_csv(csv_path, index=False)
 
-    # Markdown (colunas selecionadas e arredondadas)
+    # Markdown (selected and rounded columns)
     md_cols = [
         "n",
         "mean_diff_s",
@@ -340,11 +344,11 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
         "wilcoxon_stat",
         "wilcoxon_p",
     ]
-    # Filtra apenas colunas que existem
+    # Keep only the columns that exist
     md_cols = [c for c in md_cols if c in cols_present]
 
     with open(md_path, "w") as fmd:
-        fmd.write("# Resumo de Significância Estatística (3-Way Pairwise)\n\n")
+        fmd.write("# Statistical Significance Summary (3-Way Pairwise)\n\n")
         for pair_key in sorted(results.keys()):
             fmd.write(f"## {pair_key.upper()}\n\n")
             pair_rows = [r for r in rows if r["pair"] == pair_key]
@@ -365,23 +369,25 @@ def write_outputs(results: Dict[str, Dict[str, Dict[str, float]]]) -> None:
             tex_file = os.path.join(RESULTS_DIR, f"significance_summary_{pair_key}.tex")
             with open(tex_file, "w") as ftx:
                 ftx.write(latex)
-    except Exception:
-        pass
+    except Exception as exc:
+        # It used to be swallowed: the per-pair table simply did not appear, and
+        # the step went on with exit 0. A published artifact that is missing is
+        # indistinguishable from one that was never asked for.
+        raise RuntimeError(
+            f"Failed to write the significance tables to "
+            f"{RESULTS_DIR}: {exc}"
+        ) from exc
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Testes de significância estatística para benchmark arquitetural")
+    p = argparse.ArgumentParser(description="Statistical significance tests for the architectural benchmark")
     p.add_argument(
         "--csv",
-        default=os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "outputs",
-            "benchmarks",
-            "architectural_benchmark_results.csv",
-        ),
-        help="Caminho para o CSV do benchmark",
+        default=get_absolute_output_path(
+            "outputs/benchmarks/architectural_benchmark_results.csv"),
+        help="Path to the benchmark CSV",
     )
-    p.add_argument("--bootstrap", type=int, default=DEFAULT_BOOTSTRAP_ITERS, help=f"Iterações bootstrap (default={DEFAULT_BOOTSTRAP_ITERS})")
+    p.add_argument("--bootstrap", type=int, default=DEFAULT_BOOTSTRAP_ITERS, help=f"Bootstrap iterations (default={DEFAULT_BOOTSTRAP_ITERS})")
     return p.parse_args()
 
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Análise de sensibilidade bootstrap para SESOI e contagens de iterações.
+"""Bootstrap sensitivity analysis for SESOI and iteration counts.
 
-Este utilitário reutiliza a extração de deltas pareados implementada em
-`equivalence_estimation.py` para recomputar estimativas pontuais, intervalos de confiança
-e decisões sob valores alternativos de SESOI e contagens de iterações bootstrap.
+This utility reuses the paired-delta extraction implemented in
+`equivalence_estimation.py` to recompute point estimates, confidence intervals
+and decisions under alternative SESOI values and bootstrap iteration counts.
 
-Saídas:
-- Resumo JSON armazenado em outputs/statistics/bootstrap_sensitivity.json
-- Tabela LaTeX opcional (quando --latex é fornecido)
+Outputs:
+- JSON summary stored at outputs/statistics/bootstrap_sensitivity.json
+- Optional LaTeX table (when --latex is given)
 """
 
 import argparse
@@ -21,36 +21,35 @@ import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+_SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
-from src.core.scientific_config import SCIENTIFIC_CONFIG
-from src.statistical_validation.equivalence_estimation import (
-    _bootstrap_ci,
+from core.scientific_config import SCIENTIFIC_CONFIG
+from core.config import get_absolute_output_path
+from core.paradigm_registry import paradigm_pairs
+from statistical_validation.equivalence_estimation import (
+    _advantage,
+    bootstrap_ci,
     _decision_equivalence,
     _load_baseline_pairs,
     _paired_deltas_for_metric,
 )
 
-DEFAULT_OUTPUT_JSON = os.path.join(
-    PROJECT_ROOT, "outputs", "statistics", "bootstrap_sensitivity.json"
-)
-DEFAULT_OUTPUT_LATEX = os.path.join(
-    PROJECT_ROOT, "outputs", "statistics", "bootstrap_sensitivity.tex"
-)
+DEFAULT_OUTPUT_JSON = get_absolute_output_path(
+    "outputs/statistics/bootstrap_sensitivity.json")
+DEFAULT_OUTPUT_LATEX = get_absolute_output_path(
+    "outputs/statistics/bootstrap_sensitivity.tex")
 
 MetricConfig = Dict[str, Dict[str, float]]
 
 
-PAIR_CONFIGS = [
-    ("dl", "dw"),
-    ("dl", "pl"),
-    ("dw", "pl"),
-]
+# Derived from the registry, as in the other analysis modules.
+PAIR_CONFIGS = paradigm_pairs()
 
 
 def _collect_deltas() -> Dict[str, np.ndarray]:
-    """Coleta deltas pareados para os 3 pares × 3 métricas."""
+    """Collects paired deltas for the 3 pairs × 3 metrics."""
     pairs = _load_baseline_pairs()
     metrics = {}
     for arch_a, arch_b in PAIR_CONFIGS:
@@ -66,7 +65,7 @@ def _sensitivity_grid(
     bootstrap_iters: List[int],
     seed: int,
 ) -> List[Dict[str, object]]:
-    """Computa resumo de sensibilidade para todas as combinações."""
+    """Computes the sensitivity summary for every combination."""
 
     base_deltas: MetricConfig = {
         "r2": {"delta": float(SCIENTIFIC_CONFIG.get("sesoi_r2", 0.01))},
@@ -79,14 +78,17 @@ def _sensitivity_grid(
     for metric_key, deltas in metrics.items():
         if deltas.size == 0:
             continue
-        # Extrair métrica base (r2/wape/mase) da key composta (dl_vs_dw_r2)
+        # Extract the base metric (r2/wape/mase) from the composite key (dl_vs_dw_r2)
         base_metric = metric_key.rsplit('_', 1)[-1]
+        arch_a, arch_b = metric_key.rsplit('_', 1)[0].split('_vs_')
         if base_metric not in base_deltas:
             continue
         for scale, iters in product(delta_scales, bootstrap_iters):
             sesoi = base_deltas[base_metric]["delta"] * scale
-            point, (ci_lo, ci_hi) = _bootstrap_ci(deltas, iters=iters, seed=seed)
+            point, (ci_lo, ci_hi), ci_method = bootstrap_ci(
+                deltas, iters=iters, seed=seed)
             decision = _decision_equivalence(ci_lo, ci_hi, sesoi)
+            advantage = _advantage(decision, base_metric, arch_a, arch_b)
             rows.append(
                 {
                     "metric": metric_key,
@@ -98,6 +100,8 @@ def _sensitivity_grid(
                     "ci_lo": float(ci_lo),
                     "ci_hi": float(ci_hi),
                     "decision": decision,
+                    "advantage": advantage,
+                    "ci95_method": ci_method,
                 }
             )
     return rows
@@ -120,6 +124,10 @@ def _write_outputs(rows: List[Dict[str, object]], json_path: str, latex_path: st
             index=False,
             float_format=lambda x: f"{x:.3f}",
             longtable=True,
+            # Not the default: pandas 2.x writes the raw underscore, and the
+            # pair keys carry it (sql_engine_vs_task_graph). The generated file
+            # did not compile.
+            escape=True,
         )
         with open(latex_path, "w") as fh:
             fh.write(latex_table)
@@ -135,31 +143,34 @@ def main(argv: List[str] = None) -> int:
         nargs="*",
         type=float,
         default=[0.5, 1.0, 1.5],
-        help="Multiplicadores aplicados aos valores de SESOI definidos em scientific_config.py.",
+        help="Multipliers applied to the SESOI values defined in scientific_config.py.",
     )
     parser.add_argument(
         "--bootstrap-iters",
         nargs="*",
         type=int,
-        default=[1000, 3000, 5000],
-        help="Números de iterações de bootstrap a serem avaliados.",
+        # Spans the previously used count, Hesterberg's routine figure and the
+        # requirement for percentile interval endpoints, so the report shows
+        # whether the decision moves with the resample count.
+        default=[1000, 3000, 10000, 15000],
+        help="Bootstrap iteration counts to evaluate.",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=int(SCIENTIFIC_CONFIG.get("random_seed", 42)),
-        help="Seed para o gerador pseudoaleatório.",
+        help="Seed for the pseudorandom generator.",
     )
     parser.add_argument(
         "--json-out",
         type=str,
         default=DEFAULT_OUTPUT_JSON,
-        help="Caminho para salvar o resumo em JSON.",
+        help="Path at which to save the JSON summary.",
     )
     parser.add_argument(
         "--latex",
         action="store_true",
-        help="Gerar tabela LaTeX com os resultados.",
+        help="Generate a LaTeX table with the results.",
     )
     args = parser.parse_args(argv)
 
@@ -168,9 +179,9 @@ def main(argv: List[str] = None) -> int:
     latex_path = DEFAULT_OUTPUT_LATEX if args.latex else ""
     _write_outputs(rows, args.json_out, latex_path)
 
-    print(f"Resultados gravados em {args.json_out}")
+    print(f"Results written to {args.json_out}")
     if args.latex:
-        print(f"Tabela LaTeX gravada em {latex_path}")
+        print(f"LaTeX table written to {latex_path}")
     return 0
 
 

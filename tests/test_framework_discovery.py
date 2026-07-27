@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Testes de auto-descoberta do framework de paradigmas ML.
+Auto-discovery tests for the ML paradigm framework.
 
-Valida o mecanismo __init_subclass__ de BaseArchitectureML:
-- registro automático de subclasses concretas com PARADIGM_META
-- rejeição de subclasses abstratas intermediárias
-- TypeError para subclasses concretas sem PARADIGM_META
-- descoberta dos três paradigmas reais após importação dos módulos
-- presença das chaves obrigatórias em cada PARADIGM_META
+Validates BaseArchitectureML's __init_subclass__ mechanism:
+- automatic registration of concrete subclasses with PARADIGM_META
+- rejection of intermediate abstract subclasses
+- TypeError for concrete subclasses without PARADIGM_META
+- discovery of the three real paradigms after importing the modules
+- presence of the mandatory keys in each PARADIGM_META
 """
 
 import pytest
@@ -15,7 +15,7 @@ from abc import abstractmethod
 from core.base_architecture import BaseArchitectureML
 
 # ---------------------------------------------------------------------------
-# Helpers: stubs mínimos para criar subclasses de teste sem instanciar
+# Helpers: minimal stubs to create test subclasses without instantiating
 # ---------------------------------------------------------------------------
 
 _ABSTRACT_METHOD_NAMES = [
@@ -28,21 +28,21 @@ _ABSTRACT_METHOD_NAMES = [
     'save_folds',
     'compute_feature_correlations',
     'apply_collinearity_filter',
-    'get_numeric_features',
+    'discover_numeric_columns',
     'prepare_features',
 ]
 
 
 def _make_concrete_class(name: str, paradigm_meta: dict) -> type:
-    """Retorna uma subclasse completamente concreta de BaseArchitectureML com PARADIGM_META."""
+    """Returns a fully concrete subclass of BaseArchitectureML with PARADIGM_META."""
     stubs = {m: (lambda self, *a, **kw: None) for m in _ABSTRACT_METHOD_NAMES}
     stubs['PARADIGM_META'] = paradigm_meta
     return type(name, (BaseArchitectureML,), stubs)
 
 
 def _make_abstract_intermediate(name: str) -> type:
-    """Retorna uma subclasse intermediária abstrata (mantém pelo menos um método abstrato)."""
-    # Implementa todos exceto um método abstrato para que a classe ainda seja abstrata
+    """Returns an intermediate abstract subclass (keeps at least one abstract method)."""
+    # Implements all but one abstract method so that the class is still abstract
     stubs = {m: (lambda self, *a, **kw: None) for m in _ABSTRACT_METHOD_NAMES[1:]}
 
     @abstractmethod
@@ -54,7 +54,7 @@ def _make_abstract_intermediate(name: str) -> type:
 
 
 # ---------------------------------------------------------------------------
-# Teste 1 — _registry existe em BaseArchitectureML
+# Test 1 — _registry exists on BaseArchitectureML
 # ---------------------------------------------------------------------------
 
 class TestBaseClassHasRegistry:
@@ -67,7 +67,7 @@ class TestBaseClassHasRegistry:
         assert isinstance(result, dict)
 
     def test_get_registered_paradigms_is_copy(self):
-        """Modificar o dicionário retornado não deve corromper o registro."""
+        """Modifying the returned dictionary must not corrupt the registry."""
         result = BaseArchitectureML.get_registered_paradigms()
         original_len = len(BaseArchitectureML._registry)
         result['__test_key__'] = object()
@@ -75,7 +75,7 @@ class TestBaseClassHasRegistry:
 
 
 # ---------------------------------------------------------------------------
-# Teste 2 — subclasse concreta com PARADIGM_META registra automaticamente
+# Test 2 — a concrete subclass with PARADIGM_META registers automatically
 # ---------------------------------------------------------------------------
 
 class TestConcreteSubclassRegistersAutomatically:
@@ -90,7 +90,7 @@ class TestConcreteSubclassRegistersAutomatically:
 
 
 # ---------------------------------------------------------------------------
-# Teste 3 — subclasse intermediária abstrata NÃO registra
+# Test 3 — an intermediate abstract subclass does NOT register
 # ---------------------------------------------------------------------------
 
 class TestAbstractSubclassDoesNotRegister:
@@ -104,11 +104,11 @@ class TestAbstractSubclassDoesNotRegister:
 
 
 # ---------------------------------------------------------------------------
-# Teste 4 — subclasse concreta sem PARADIGM_META é ignorada silenciosamente
+# Test 4 — a concrete subclass without PARADIGM_META is silently ignored
 # ---------------------------------------------------------------------------
 
 class TestSubclassWithoutMetaIsSkipped:
-    """Subclasse concreta SEM PARADIGM_META é ignorada silenciosamente (não é um paradigma)."""
+    """A concrete subclass WITHOUT PARADIGM_META is silently ignored (it is not a paradigm)."""
 
     def test_concrete_without_meta_does_not_register(self):
         stubs = {m: (lambda self, *a, **kw: None) for m in _ABSTRACT_METHOD_NAMES}
@@ -124,36 +124,36 @@ class TestSubclassWithoutMetaIsSkipped:
             type('_NoNameMetaConcreteClass', (BaseArchitectureML,), stubs)
 
     def test_duplicate_name_raises(self):
-        """Dois paradigmas com o mesmo nome devem lançar TypeError."""
+        """Two paradigms with the same name must raise TypeError."""
         meta = {'name': '__dup_test__', 'label': 'First'}
         _make_concrete_class('_DupFirst', meta)
         try:
-            with pytest.raises(TypeError, match='já está registrado'):
+            with pytest.raises(TypeError, match='is already registered by'):
                 _make_concrete_class('_DupSecond', {'name': '__dup_test__', 'label': 'Second'})
         finally:
             BaseArchitectureML._registry.pop('__dup_test__', None)
 
 
 # ---------------------------------------------------------------------------
-# Teste 5 — os três paradigmas reais são descobertos após importação
+# Test 5 — the three real paradigms are discovered after importing
 # ---------------------------------------------------------------------------
 
 class TestAllThreeParadigmsDiscovered:
     def test_all_three_paradigms_discovered(self):
-        # Importar os módulos aciona o registro via __init_subclass__
-        import architectures_ml.data_lake.setup  # noqa: F401
-        import architectures_ml.data_warehouse.setup  # noqa: F401
-        import architectures_ml.polars_dataframe.setup  # noqa: F401
+        # Importing the modules triggers registration via __init_subclass__
+        import architectures_ml.task_graph.setup  # noqa: F401
+        import architectures_ml.sql_engine.setup  # noqa: F401
+        import architectures_ml.dataframe_lib.setup  # noqa: F401
 
         registry = BaseArchitectureML.get_registered_paradigms()
-        assert 'data_lake' in registry, "data_lake not in registry"
-        assert 'data_warehouse' in registry, "data_warehouse not in registry"
-        assert 'polars_dataframe' in registry, "polars_dataframe not in registry"
+        assert 'task_graph' in registry, "task_graph not in registry"
+        assert 'sql_engine' in registry, "sql_engine not in registry"
+        assert 'dataframe_lib' in registry, "dataframe_lib not in registry"
 
     def test_registry_values_are_classes(self):
-        import architectures_ml.data_lake.setup  # noqa: F401
-        import architectures_ml.data_warehouse.setup  # noqa: F401
-        import architectures_ml.polars_dataframe.setup  # noqa: F401
+        import architectures_ml.task_graph.setup  # noqa: F401
+        import architectures_ml.sql_engine.setup  # noqa: F401
+        import architectures_ml.dataframe_lib.setup  # noqa: F401
 
         registry = BaseArchitectureML.get_registered_paradigms()
         for name, cls in registry.items():
@@ -164,7 +164,7 @@ class TestAllThreeParadigmsDiscovered:
 
 
 # ---------------------------------------------------------------------------
-# Teste 6 — cada PARADIGM_META possui as chaves obrigatórias
+# Test 6 — each PARADIGM_META has the mandatory keys
 # ---------------------------------------------------------------------------
 
 REQUIRED_KEYS = {
@@ -179,9 +179,9 @@ REQUIRED_KEYS = {
 class TestEachParadigmMetaHasRequiredKeys:
     @pytest.fixture(autouse=True)
     def _import_paradigms(self):
-        import architectures_ml.data_lake.setup  # noqa: F401
-        import architectures_ml.data_warehouse.setup  # noqa: F401
-        import architectures_ml.polars_dataframe.setup  # noqa: F401
+        import architectures_ml.task_graph.setup  # noqa: F401
+        import architectures_ml.sql_engine.setup  # noqa: F401
+        import architectures_ml.dataframe_lib.setup  # noqa: F401
 
     def test_all_paradigms_in_registry_have_required_keys(self):
         registry = BaseArchitectureML.get_registered_paradigms()
@@ -203,17 +203,22 @@ class TestEachParadigmMetaHasRequiredKeys:
 
 
 class TestDiscoverParadigms:
-    """Testa o módulo de descoberta automática."""
+    """Tests the automatic discovery module."""
 
     def test_discover_returns_dict_with_all_paradigms(self):
         from core.paradigm_registry import discover_paradigms
         paradigms = discover_paradigms()
         assert isinstance(paradigms, dict)
-        expected = {'data_lake', 'data_warehouse', 'polars_dataframe'}
+        expected = {'task_graph', 'sql_engine', 'dataframe_lib'}
         assert expected.issubset(set(paradigms.keys())), \
             f"Missing paradigms: {expected - set(paradigms.keys())}"
-        unexpected = set(paradigms.keys()) - expected
-        assert not unexpected, f"Unexpected paradigms in registry (test leak?): {unexpected}"
+        # Extra paradigms are legitimate; the registry exists to allow them.
+        # A paradigm declared outside src/architectures_ml/ is not.
+        for name, meta in paradigms.items():
+            setup_script = str(meta.get('setup_script', ''))
+            assert setup_script.startswith('src/architectures_ml/'), \
+                (f"Paradigm '{name}' is not declared under src/architectures_ml/ "
+                 f"(setup_script={setup_script!r}); possible test leak into the registry")
 
     def test_discover_returns_script_paths(self):
         from core.paradigm_registry import discover_paradigms
@@ -232,14 +237,14 @@ class TestDiscoverParadigms:
 
 
 class TestFrameworkContract:
-    """Verifica o contrato completo: descoberta → registro → execução."""
+    """Checks the complete contract: discovery → registration → execution."""
 
     def test_each_setup_module_has_main(self):
-        """Cada paradigma deve ter setup.py com main()."""
+        """Each paradigm must have a setup.py with main()."""
         import importlib
         from core.paradigm_registry import discover_paradigms
         for name, meta in discover_paradigms().items():
-            # Usa o mesmo namespace de módulo que paradigm_registry (sem prefixo src.)
+            # Uses the same module namespace as paradigm_registry (no src. prefix)
             mod_path = f'architectures_ml.{name}.setup'
             mod = importlib.import_module(mod_path)
             assert hasattr(mod, 'main'), f"{name} setup module missing main()"
@@ -263,13 +268,13 @@ class TestFrameworkContract:
                 f"{name} hierarchical class missing run_hierarchical_analysis()"
 
     def test_zero_paradigm_names_hardcoded_in_pipeline(self):
-        """pipeline.py não deve conter nomes de paradigmas hardcoded."""
+        """pipeline.py must not contain hardcoded paradigm names."""
         import re, os
         pipeline_path = os.path.join(os.path.dirname(__file__), '..', 'pipeline.py')
         with open(pipeline_path) as f:
             content = f.read()
         hardcoded = re.findall(
-            r"['\"](?:data_lake|data_warehouse|polars_dataframe)['\"]",
+            r"['\"](?:task_graph|sql_engine|dataframe_lib)['\"]",
             content
         )
         assert len(hardcoded) == 0, \

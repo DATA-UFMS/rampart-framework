@@ -1,9 +1,9 @@
 """
-Configuração do dataset World Bank para o framework de benchmarking.
+World Bank dataset configuration for the benchmarking framework.
 
-Encapsula indicadores, range temporal, estratificação geográfica e
-parâmetros de walk-forward para os dados do Banco Mundial (LATAM,
-2000-2023, nível país×ano).
+Encapsulates indicators, temporal range, geographic stratification and
+walk-forward parameters for the World Bank data (LATAM,
+2000-2023, country×year level).
 """
 
 from core.dataset_config import register_dataset
@@ -14,9 +14,9 @@ from core.config import COUNTRY_STRATA
 
 
 class WorldBankDatasetConfig:
-    """Configuração do dataset World Bank (país × ano, LATAM)."""
+    """World Bank dataset configuration (country × year, LATAM)."""
 
-    # Identificação
+    # Identification
     name = "worldbank"
     label = "World Bank - LATAM Education Indicators"
 
@@ -24,25 +24,31 @@ class WorldBankDatasetConfig:
     temporal_range = (2000, 2023)
     year_column = "year"
 
-    # Entidade geográfica
-    entity_column = "country_code"
-    entity_name_column = "country_name"
-    stratification_column = "country_stratum"
+    # Geographic entity
+    entity_column = "entity_id"
+    entity_name_column = "entity_name"
+    stratification_column = "entity_stratum"
     strata = COUNTRY_STRATA
 
     # Target
-    target_source_column = "lower_secondary_completion_rate"
+    target_source_column = "target_source_rate"
     target_expected_range = (0.0, 80.0)
     min_valid_count = 500
 
     # Features
+    # The collected catalog, not the candidate pool. excluded_columns narrows it:
+    # two of those declared here are dropped by an L2 decision -- the target's
+    # source column, and the enrollment rate, which is mechanically tied to
+    # dropout (dropout reduces enrollment, so predicting one from the other
+    # measures the same phenomenon twice). The effective pool is the difference,
+    # and it appears in the selection artifact as total_features_analyzed.
     feature_columns = list(ALL_INDICATORS.values())
     excluded_columns = [
-        "country_code", "country_name", "year", "country_stratum",
+        "entity_id", "entity_name", "year", "entity_stratum",
         "synthetic_flag", "data_source", "etl_batch_id",
         "collection_timestamp", "data_completeness_score",
         "processing_method", "processed_timestamp", "partition_id",
-        "lower_secondary_completion_rate",
+        "target_source_rate",
         "enrollment_rate_secondary_net",
     ]
 

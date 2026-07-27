@@ -1,9 +1,9 @@
 """
-Protocolo e registro de configurações de dataset.
+Protocol and registry of dataset configurations.
 
-Define o contrato DatasetConfig que encapsula tudo que varia entre
-datasets (World Bank, INEP Censo Escolar, etc.), permitindo que o
-framework opere de forma dataset-agnostica.
+Defines the DatasetConfig contract that encapsulates everything that varies
+between datasets (World Bank, INEP Censo Escolar, etc.), allowing the
+framework to operate in a dataset-agnostic way.
 """
 
 from typing import Any, Dict, List, Tuple, runtime_checkable, Protocol
@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Tuple, runtime_checkable, Protocol
 
 @runtime_checkable
 class DatasetConfig(Protocol):
-    """Protocolo que todo dataset deve satisfazer."""
+    """Protocol that every dataset must satisfy."""
 
-    # Identificação
+    # Identification
     name: str
     label: str
 
@@ -21,7 +21,7 @@ class DatasetConfig(Protocol):
     temporal_range: Tuple[int, int]
     year_column: str
 
-    # Entidade geográfica
+    # Geographic entity
     entity_column: str
     entity_name_column: str
     stratification_column: str
@@ -51,24 +51,24 @@ _DATASET_REGISTRY: Dict[str, Any] = {}
 
 
 def register_dataset(config: Any) -> None:
-    """Registra um DatasetConfig no registry global."""
+    """Register a DatasetConfig in the global registry."""
     if not isinstance(config, DatasetConfig):
         raise TypeError(
-            f"{type(config).__name__} não satisfaz o protocolo DatasetConfig"
+            f"{type(config).__name__} does not satisfy the DatasetConfig protocol"
         )
     _DATASET_REGISTRY[config.name] = config
 
 
 def get_dataset(name: str) -> Any:
-    """Retorna DatasetConfig pelo nome. Levanta KeyError se não encontrado."""
+    """Return a DatasetConfig by name. Raises KeyError if not found."""
     if name not in _DATASET_REGISTRY:
         available = list(_DATASET_REGISTRY.keys())
         raise KeyError(
-            f"Dataset '{name}' não registrado. Disponíveis: {available}"
+            f"Dataset '{name}' not registered. Available: {available}"
         )
     return _DATASET_REGISTRY[name]
 
 
 def list_datasets() -> List[str]:
-    """Retorna lista de nomes de datasets registrados."""
+    """Return a list of registered dataset names."""
     return list(_DATASET_REGISTRY.keys())

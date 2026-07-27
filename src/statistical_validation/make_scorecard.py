@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Geração automática do painel consolidado (scorecard) em LaTeX a partir dos
-artefatos já produzidos pelo pipeline.
+Automatic generation of the consolidated panel (scorecard) in LaTeX from the
+artifacts already produced by the pipeline.
 
-Entradas (melhor esforço, com fallbacks):
- - outputs/statistics/significance_summary.json ou .tex (speedups + IC95 por fase)
- - outputs/statistics/equivalence_estimation.json (equivalência por estimativa SESOI+IC)
- - outputs/statistics/architectural_resource_usage.tex (CPU(proc) média e RSS para processing)
+Inputs (best effort, with fallbacks):
+ - outputs/statistics/significance_summary.json or .tex (speedups + 95% CI per phase)
+ - outputs/statistics/equivalence_estimation.json (equivalence by SESOI+CI estimation)
+ - outputs/statistics/architectural_resource_usage.tex (mean CPU(proc) and RSS for processing)
 
-Saída:
+Output:
  - outputs/statistics/architectural_scorecard.tex
 
-Uso:
- - Execute diretamente: `python src/statistical_validation/make_scorecard.py`
- - Integrado ao pipeline: chamado automaticamente após o benchmark.
+Usage:
+ - Run directly: `python src/statistical_validation/make_scorecard.py`
+ - Integrated into the pipeline: called automatically after the benchmark.
 """
 from __future__ import annotations
 
@@ -22,11 +22,18 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-BASE = Path('outputs/statistics')
+import os
+import sys
 
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SRC_DIR = os.path.join(_BASE_DIR, "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
-def read_text(p: Path) -> str:
-    return p.read_text(encoding='utf-8') if p.exists() else ''
+from core.config import get_absolute_output_path
+from core.paradigm_registry import discover_paradigms, paradigm_pairs
+
+BASE = Path(get_absolute_output_path('outputs/statistics'))
 
 
 def load_json(p: Path) -> Optional[dict]:
@@ -36,31 +43,8 @@ def load_json(p: Path) -> Optional[dict]:
         return None
 
 
-def parse_significance_tex(tex: str) -> Dict[str, Tuple[float, float, float]]:
-    """Extrai speedup e IC 95% de significance_summary.tex.
-    Retorna dict fase -> (speedup, lo, hi).
-    """
-    res: Dict[str, Tuple[float, float, float]] = {}
-    # Linhas esperadas: "Processing & 10.00 & 1.00 & 9.00 [8.00, 10.00] & 13.70 [10.32, 18.18] & ..."
-    for line in tex.splitlines():
-        if not line or '&' not in line or line.startswith('%'):
-            continue
-        parts = [p.strip() for p in line.split('&')]
-        if len(parts) < 6:
-            continue
-        phase = parts[0].lower()
-        # Campo speedup no formato: "7.10 [6.58, 7.67]"
-        m = re.search(r"([0-9]+\.?[0-9]*)\s*\[\s*([0-9]+\.?[0-9]*),\s*([0-9]+\.?[0-9]*)\s*\]", parts[5])
-        if m:
-            val = float(m.group(1))
-            lo = float(m.group(2))
-            hi = float(m.group(3))
-            res[phase] = (val, lo, hi)
-    return res
-
-
 def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
-    """Retorna {pair_key: {phase: (speedup, lo, hi)}}"""
+    """Returns {pair_key: {phase: (speedup, lo, hi)}}"""
     j = load_json(BASE / 'significance_summary.json')
     if j:
         out: Dict[str, Dict[str, Tuple[float, float, float]]] = {}
@@ -71,7 +55,7 @@ def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
             for phase, metrics in phases.items():
                 if not isinstance(metrics, dict):
                     continue
-                # Detectar chave de speedup dinamicamente
+                # Detect the speedup key dynamically
                 speedup_key = [k for k in metrics if k.startswith('speedup_') and not k.endswith('_lo') and not k.endswith('_hi')]
                 ci_lo_key = [k for k in metrics if k.endswith('ci95_lo') and 'speedup' in k]
                 ci_hi_key = [k for k in metrics if k.endswith('ci95_hi') and 'speedup' in k]
@@ -85,16 +69,16 @@ def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
                 out[pair_key] = pair_speedups
         if out:
             return out
-    # Fallback para estrutura legada
-    tex = read_text(BASE / 'significance_summary.tex')
-    if tex:
-        flat_speedups = parse_significance_tex(tex)
-        return {'dl_vs_dw': flat_speedups} if flat_speedups else {}
+    # No LaTeX-parsing fallback. It recovered numbers from the table that
+    # another script renders and keyed them under 'dl_vs_dw', a pair that
+    # stopped existing at the rename -- so the result never matched anything and
+    # the absence of the JSON showed up as an empty scorecard instead of as an
+    # absence.
     return {}
 
 
-def summarize_equivalence(metric: str, pair_key: str = 'dl_vs_dw') -> Optional[str]:
-    """Lê equivalence_estimation.json e retorna resumo para a métrica dada."""
+def summarize_equivalence(metric: str, pair_key: str) -> Optional[str]:
+    """Reads equivalence_estimation.json and returns a summary for the given metric."""
     data = load_json(BASE / 'equivalence_estimation.json')
     if not data:
         return None
@@ -106,52 +90,56 @@ def summarize_equivalence(metric: str, pair_key: str = 'dl_vs_dw') -> Optional[s
     decision = entry.get('decision', '?')
     delta = entry.get('delta', float('nan'))
     ci = entry.get('ci95', [float('nan'), float('nan')])
-    status = 'Sim' if 'equivalen' in decision.lower() else 'Não'
+    status = 'Yes' if 'equivalen' in decision.lower() else 'No'
     return f"{status} ($\\delta={delta:.3f}$, IC=[{ci[0]:.3f},{ci[1]:.3f}])"
 
 
-def get_resources_processing() -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """Retorna (cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl) de resource_usage.tex para fase de processamento."""
-    tex = read_text(BASE / 'architectural_resource_usage.tex')
-    if not tex:
-        return (None, None, None, None, None, None)
-    cpu_dl = cpu_dw = cpu_pl = rss_dl = rss_dw = rss_pl = None
-    for line in tex.splitlines():
-        if line.startswith('%'):
+def get_resources_processing(phase: str = 'processing') -> Dict[str, Dict[str, Optional[float]]]:
+    """CPU and RSS per paradigm in one phase, read from the JSON.
+
+    This used to parse the LaTeX table that another script generates,
+    recovering by text numbers that exist in JSON. Two consequences: any format
+    change broke the extraction silently, and one paradigm's name went stale --
+    it looked for 'processing & polars', which stopped existing at the rename,
+    so the third paradigm was never extracted and the `except` hid it.
+
+    The names come from the registry, and not from literals, for the same
+    reason.
+    """
+    payload = load_json(BASE / 'architectural_resource_usage.json')
+    if not payload:
+        return {}
+    per_phase = payload.get('per_phase', {}).get(phase, {})
+    resources: Dict[str, Dict[str, Optional[float]]] = {}
+    for paradigm in sorted(discover_paradigms()):
+        row = per_phase.get(paradigm)
+        if row is None:
             continue
-        # Normalizar underscores escapados do LaTeX para comparação
-        norm = line.replace('\\_', '_')
-        if 'processing & data_lake' in norm:
-            parts = [p.strip() for p in norm.split('&')]
-            try:
-                cpu_dl = float(re.sub(r'[\\%\s]', '', parts[2]))
-                rss_dl = float(re.sub(r'[\\%\s]', '', parts[4]))
-            except Exception:
-                pass
-        elif 'processing & data_warehouse' in norm:
-            parts = [p.strip() for p in norm.split('&')]
-            try:
-                cpu_dw = float(re.sub(r'[\\%\s]', '', parts[2]))
-                rss_dw = float(re.sub(r'[\\%\s]', '', parts[4]))
-            except Exception:
-                pass
-        elif 'processing & polars' in norm:
-            parts = [p.strip() for p in norm.split('&')]
-            try:
-                cpu_pl = float(re.sub(r'[\\%\s]', '', parts[2]))
-                rss_pl = float(re.sub(r'[\\%\s]', '', parts[4]))
-            except Exception:
-                pass
-    return (cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl)
+        resources[paradigm] = {
+            'cpu_proc_mean': row.get('cpu_proc_mean'),
+            'rss_mb_mean': row.get('rss_mb_mean'),
+        }
+    return resources
+
 
 
 def build_scorecard() -> str:
     speedups_by_pair = get_speedups()
 
-    # Pares e rótulos
-    pairs = [('dl_vs_dw', 'DL vs DW'), ('dl_vs_pl', 'DL vs PL'), ('dw_vs_pl', 'DW vs PL')]
+    # Pairs derived from the registry. The literal keys were pre-rename
+    # ('dl_vs_dw' etc.) while the artifacts moved to the paradigm names, so no
+    # pair matched and the scorecard came out with an em dash in two of the three
+    # rows -- 12 speedups and 9 SESOI decisions lost silently.
+    pairs = [(f'{left}_vs_{right}',
+              f"{left.replace('_', chr(92) + '_')} vs {right.replace('_', chr(92) + '_')}")
+             for left, right in paradigm_pairs()]
+    if speedups_by_pair and not any(k in speedups_by_pair for k, _ in pairs):
+        raise KeyError(
+            f"No pair from the registry {[k for k, _ in pairs]} appears in the "
+            f"artifacts {sorted(speedups_by_pair)}: the scorecard would come out empty."
+        )
 
-    # Linhas de speedup por par
+    # Speedup rows per pair
     speedup_rows = {}
     for pair_key, pair_label in pairs:
         sp = speedups_by_pair.get(pair_key, {})
@@ -172,7 +160,7 @@ def build_scorecard() -> str:
             speed_lines.append(f"Total: {total_s}")
         speedup_rows[pair_key] = '; '.join(speed_lines) if speed_lines else '—'
 
-    # Linhas de equivalência por par
+    # Equivalence rows per pair
     equiv_rows = {}
     for pair_key, pair_label in pairs:
         r2 = summarize_equivalence('r2', pair_key) or '—'
@@ -180,33 +168,41 @@ def build_scorecard() -> str:
         wape = summarize_equivalence('wape', pair_key) or '—'
         equiv_rows[pair_key] = f"R$^2$: {r2}; MASE: {mase}; WAPE: {wape}"
 
-    # Informações de recursos
-    cpu_dl, cpu_dw, cpu_pl, rss_dl, rss_dw, rss_pl = get_resources_processing()
+    # Resource information
+    # One row per paradigm present, named: the abbreviations DL/DW/PL
+    # designated the names from before the rename.
+    resources = get_resources_processing()
     resource_lines = []
-    if cpu_dl is not None and cpu_dw is not None:
-        resource_lines.append(f"CPU(proc) média: DL={cpu_dl:.1f}\\%, DW={cpu_dw:.1f}\\%")
-    if cpu_pl is not None:
-        resource_lines.append(f"CPU(proc) média PL={cpu_pl:.1f}\\%")
-    if rss_dl is not None and rss_dw is not None:
-        resource_lines.append(f"RSS (MB): DL={rss_dl:.1f}, DW={rss_dw:.1f}")
-    if rss_pl is not None:
-        resource_lines.append(f"RSS (MB) PL={rss_pl:.1f}")
+    for paradigm, values in sorted(resources.items()):
+        cpu, rss = values['cpu_proc_mean'], values['rss_mb_mean']
+        if cpu is None and rss is None:
+            continue
+        parts = [paradigm.replace('_', r'\_')]
+        if cpu is not None:
+            parts.append(f"CPU(proc) {cpu:.1f}\\%")
+        if rss is not None:
+            parts.append(f"RSS {rss:.1f} MB")
+        resource_lines.append(' '.join(parts))
     resource_s = '; '.join(resource_lines) if resource_lines else '—'
 
-    # Tabela 3-way
+    # 3-way table
     parts = []
-    parts.append('% Gerado automaticamente')
+    parts.append('% Generated automatically')
     parts.append('\\begin{table}[htbp]')
     parts.append('\\centering')
-    parts.append('\\caption{Painel de evidências (resumo consolidado 3-way)}')
+    parts.append('\\caption{Evidence panel (consolidated 3-way summary)}')
     parts.append('\\label{tab:architectural-scorecard}')
-    parts.append('\\begin{tabular}{p{0.18\\linewidth}p{0.26\\linewidth}p{0.26\\linewidth}p{0.26\\linewidth}}')
+    width = 0.78 / max(len(pairs), 1)
+    parts.append('\\begin{tabular}{p{0.18\\linewidth}'
+                 + f'p{{{width:.2f}\\linewidth}}' * len(pairs) + '}')
     parts.append('\\toprule')
-    parts.append(' & DL vs DW & DL vs PL & DW vs PL \\\\')
+    parts.append(' & ' + ' & '.join(label for _, label in pairs) + ' \\\\')
     parts.append('\\midrule')
-    parts.append('\\textbf{Speedup por fase} & ' + speedup_rows['dl_vs_dw'] + ' & ' + speedup_rows['dl_vs_pl'] + ' & ' + speedup_rows['dw_vs_pl'] + ' \\\\')
-    parts.append('\\textbf{Equivalência (SESOI+IC)} & ' + equiv_rows['dl_vs_dw'] + ' & ' + equiv_rows['dl_vs_pl'] + ' & ' + equiv_rows['dw_vs_pl'] + ' \\\\')
-    parts.append('\\textbf{Recursos (processing)} & \\multicolumn{3}{l}{' + resource_s + '} \\\\')
+    parts.append('\\textbf{Speedup per phase} & '
+                 + ' & '.join(speedup_rows[k] for k, _ in pairs) + ' \\\\')
+    parts.append('\\textbf{Equivalence (SESOI+CI)} & '
+                 + ' & '.join(equiv_rows[k] for k, _ in pairs) + ' \\\\')
+    parts.append('\\textbf{Resources (processing)} & \\multicolumn{3}{l}{' + resource_s + '} \\\\')
     parts.append('\\bottomrule')
     parts.append('\\end{tabular}')
     parts.append('\\end{table}')

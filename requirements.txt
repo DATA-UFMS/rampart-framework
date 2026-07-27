@@ -18,3 +18,9 @@ matplotlib==3.9.2
 psutil==5.9.8
 requests==2.31.0
 pyarrow==18.1.0
+
+# Excel engine required by pandas.read_excel for the INEP source
+openpyxl==3.1.5
+
+# Test runner (the suite ships with the artifact)
+pytest==8.3.4

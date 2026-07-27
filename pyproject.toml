@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rampart"
+version = "1.0.0"
+description = "Reproducible benchmarking of data processing paradigms with automated anti-leakage verification"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dynamic = ["dependencies"]
+
+[project.urls]
+Repository = "https://github.com/DATA-UFMS/rampart-framework"
+
+# Single source of truth for dependencies; requirements-lock.txt pins the
+# transitive closure.
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+# Top-level packages live under src/ and are imported without a prefix
+# (`from core.validation import ...`). They carry no __init__.py, hence
+# namespaces = true below.
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

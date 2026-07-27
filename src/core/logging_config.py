@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Configuração de logging estruturado para o projeto de benchmarking.
+Structured logging configuration for the benchmarking project.
 
-Implementa logging centralizado com:
-- Múltiplos handlers (console, arquivo, JSON)
-- Níveis configuráveis por módulo
-- Contexto estruturado
-- Rotação de logs
+Implements centralised logging with:
+- Multiple handlers (console, file, JSON)
+- Per-module configurable levels
+- Structured context
+- Log rotation
 - Performance tracking
 """
 
@@ -26,21 +26,21 @@ from contextlib import contextmanager
 
 class StructuredFormatter(logging.Formatter):
     """
-    Formatter para logs estruturados em JSON.
-    
-    Adiciona contexto relevante como timestamp, módulo, função,
-    e informações de erro quando aplicável.
+    Formatter for structured JSON logs.
+
+    Adds relevant context such as timestamp, module, function,
+    and error information where applicable.
     """
     
     def format(self, record: logging.LogRecord) -> str:
         """
-        Formata o log record como JSON estruturado.
+        Format the log record as structured JSON.
         
         Args:
-            record: LogRecord a formatar
+            record: LogRecord to format
             
         Returns:
-            String JSON formatada
+            Formatted JSON string
         """
         log_obj = {
             'timestamp': datetime.now().astimezone().isoformat(),
@@ -76,9 +76,9 @@ class StructuredFormatter(logging.Formatter):
 
 class ColoredConsoleFormatter(logging.Formatter):
     """
-    Formatter colorido para console.
-    
-    Usa cores ANSI para melhor visualização no terminal.
+    Coloured formatter for the console.
+
+    Uses ANSI colours for better visualisation in the terminal.
     """
     
     COLORS = {
@@ -93,13 +93,13 @@ class ColoredConsoleFormatter(logging.Formatter):
     
     def format(self, record: logging.LogRecord) -> str:
         """
-        Formata o log record com cores.
+        Format the log record with colours.
         
         Args:
-            record: LogRecord a formatar
+            record: LogRecord to format
             
         Returns:
-            String formatada com cores ANSI
+            String formatted with ANSI colours
         """
         levelname = record.levelname
         if levelname in self.COLORS:
@@ -121,77 +121,77 @@ class ColoredConsoleFormatter(logging.Formatter):
 
 class MLContextLogger:
     """
-    Logger com contexto específico para ML.
-    
-    Adiciona automaticamente contexto relevante para
-    operações de machine learning.
+    Logger with ML-specific context.
+
+    Automatically adds context relevant to
+    machine learning operations.
     """
     
     def __init__(self, logger: logging.Logger):
         """
-        Inicializa o logger com contexto ML.
-        
+        Initialise the logger with ML context.
+
         Args:
-            logger: Logger base
+            logger: Base logger
         """
         self.logger = logger
         self.context = {}
         self.ml_context = {}
     
     def set_context(self, **kwargs):
-        """Define contexto permanente para todos os logs."""
+        """Set permanent context for all logs."""
         self.context.update(kwargs)
     
     def set_ml_context(self, **kwargs):
-        """Define contexto ML específico."""
+        """Set ML-specific context."""
         self.ml_context.update(kwargs)
     
     def clear_context(self):
-        """Limpa o contexto."""
+        """Clear the context."""
         self.context.clear()
         self.ml_context.clear()
     
     def _log_with_context(self, level: int, msg: str, **kwargs):
-        """Log com contexto adicionado."""
+        """Log with added context."""
         extra = {'context': {**self.context, **kwargs}}
         if self.ml_context:
             extra['ml_context'] = self.ml_context
         self.logger.log(level, msg, extra=extra)
     
     def debug(self, msg: str, **kwargs):
-        """Log de debug com contexto."""
+        """Debug log with context."""
         self._log_with_context(logging.DEBUG, msg, **kwargs)
     
     def info(self, msg: str, **kwargs):
-        """Log de info com contexto."""
+        """Info log with context."""
         self._log_with_context(logging.INFO, msg, **kwargs)
     
     def warning(self, msg: str, **kwargs):
-        """Log de warning com contexto."""
+        """Warning log with context."""
         self._log_with_context(logging.WARNING, msg, **kwargs)
     
     def error(self, msg: str, **kwargs):
-        """Log de erro com contexto."""
+        """Error log with context."""
         self._log_with_context(logging.ERROR, msg, **kwargs)
     
     def critical(self, msg: str, **kwargs):
-        """Log crítico com contexto."""
+        """Critical log with context."""
         self._log_with_context(logging.CRITICAL, msg, **kwargs)
     
     @contextmanager
     def timer(self, operation: str):
         """
-        Context manager para medir tempo de operações.
-        
+        Context manager for measuring the duration of operations.
+
         Args:
-            operation: Nome da operação
+            operation: Name of the operation
             
         Example:
             with logger.timer('model_training'):
                 model.fit(X, y)
         """
         start_time = time.time()
-        self.info(f"Iniciando: {operation}")
+        self.info(f"Starting: {operation}")
         
         try:
             yield
@@ -202,19 +202,19 @@ class MLContextLogger:
                 extra['ml_context'] = self.ml_context
             
             self.logger.info(
-                f"Concluído: {operation} ({duration:.2f}s)",
+                f"Finished: {operation} ({duration:.2f}s)",
                 extra=extra
             )
     
     def log_model_metrics(self, model_name: str, metrics: Dict[str, float], 
                          phase: str = 'test'):
         """
-        Log de métricas de modelo.
-        
+        Log model metrics.
+
         Args:
-            model_name: Nome do modelo
-            metrics: Dicionário de métricas
-            phase: Fase (train/val/test)
+            model_name: Model name
+            metrics: Dictionary of metrics
+            phase: Phase (train/val/test)
         """
         self.set_ml_context(
             model=model_name,
@@ -223,17 +223,17 @@ class MLContextLogger:
         )
         
         metrics_str = ', '.join(f"{k}={v:.4f}" for k, v in metrics.items())
-        self.info(f"Métricas {phase} para {model_name}: {metrics_str}")
+        self.info(f"{phase} metrics for {model_name}: {metrics_str}")
     
     def log_data_info(self, dataset_name: str, shape: tuple, 
                       missing_pct: float = None):
         """
-        Log de informações sobre dados.
-        
+        Log information about the data.
+
         Args:
-            dataset_name: Nome do dataset
-            shape: Shape dos dados
-            missing_pct: Percentual de dados faltantes
+            dataset_name: Dataset name
+            shape: Shape of the data
+            missing_pct: Percentage of missing data
         """
         info = {
             'dataset': dataset_name,
@@ -245,19 +245,19 @@ class MLContextLogger:
             info['missing_pct'] = missing_pct
         
         self.set_context(**info)
-        self.info(f"Dataset {dataset_name} carregado: {shape}")
+        self.info(f"Dataset {dataset_name} loaded: {shape}")
 
 
 def get_logger(name: str, with_ml_context: bool = False) -> Union[logging.Logger, MLContextLogger]:
     """
-    Obtém um logger para um módulo específico.
-    
+    Obtain a logger for a specific module.
+
     Args:
-        name: Nome do módulo (geralmente __name__)
-        with_ml_context: Se deve retornar MLContextLogger
-        
+        name: Module name (usually __name__)
+        with_ml_context: Whether to return an MLContextLogger
+
     Returns:
-        Logger configurado
+        Configured logger
     """
     logger = logging.getLogger(name)
     
@@ -269,10 +269,10 @@ def get_logger(name: str, with_ml_context: bool = False) -> Union[logging.Logger
 
 def log_ml_pipeline(phase: str):
     """
-    Decorator para logar fases do pipeline ML.
-    
+    Decorator for logging ML pipeline phases.
+
     Args:
-        phase: Nome da fase (e.g., 'preprocessing', 'training', 'evaluation')
+        phase: Phase name (e.g., 'preprocessing', 'training', 'evaluation')
         
     Example:
         @log_ml_pipeline('training')
@@ -289,13 +289,13 @@ def log_ml_pipeline(phase: str):
                 function=func.__name__
             )
             
-            with logger.timer(f"Pipeline ML - {phase}"):
+            with logger.timer(f"ML pipeline - {phase}"):
                 try:
                     result = func(*args, **kwargs)
-                    logger.info(f"Fase {phase} concluída com sucesso")
+                    logger.info(f"Phase {phase} completed successfully")
                     return result
                 except Exception as e:
-                    logger.error(f"Erro na fase {phase}: {str(e)}", exc_info=True)
+                    logger.error(f"Error in phase {phase}: {str(e)}", exc_info=True)
                     raise
                 finally:
                     logger.clear_context()
@@ -309,15 +309,15 @@ if __name__ == "__main__":
 
     logger = get_logger(__name__, with_ml_context=True)
 
-    logger.info("Sistema de logging inicializado")
+    logger.info("Logging system initialised")
 
     logger.set_context(
         experiment_id="exp_001",
         dataset="worldbank",
-        architecture="data_lake"
+        architecture="task_graph"
     )
 
-    logger.info("Iniciando processamento de dados")
+    logger.info("Starting data processing")
 
     logger.log_model_metrics(
         "RandomForest",
@@ -326,9 +326,9 @@ if __name__ == "__main__":
     )
 
     with logger.timer("feature_engineering"):
-        time.sleep(1)  # Simular processamento
+        time.sleep(1)  # Simulate processing
 
-    # Log de informações de dados
+    # Log data information
     logger.log_data_info("train_data", shape=(10000, 50), missing_pct=5.2)
 
-    logger.info("Teste de logging concluído")
+    logger.info("Logging test completed")
