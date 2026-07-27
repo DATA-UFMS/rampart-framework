@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Os geradores de tabela cobrem todos os paradigmas e produzem LaTeX válido.
+"""The table generators cover every paradigm and produce valid LaTeX.
 
-Quatro tabelas publicadas tinham colunas fixas para dois paradigmas, e o terceiro
-não aparecia em lugar nenhum. Uma quinta lia uma chave de speedup com a ordem
-invertida em relação à que era escrita, então a coluna saía em travessão em toda
-linha -- e travessão parece dado ausente, não defeito.
+Four published tables had columns fixed for two paradigms, and the third did not
+appear anywhere. A fifth read a speedup key with the order reversed relative to
+the one that was written, so the column came out as an em dash on every row --
+and an em dash looks like missing data, not like a defect.
 
-O scorecard procurava pares pré-rename ('dl_vs_dw') em artefatos pós-rename, e
-saía com duas das três linhas vazias; a única linha que funcionava era a de
-recursos, que é exatamente a única que tinha teste.
+The scorecard looked for pre-rename pairs ('dl_vs_dw') in post-rename artifacts,
+and came out with two of its three rows empty; the only row that worked was the
+resources one, which is exactly the only one that had a test.
 
-Estes testes verificam a classe do defeito: nenhum gerador nomeia um paradigma,
-todos cobrem os que o registro conhece, e a especificação de colunas do LaTeX
-bate com o número de células de cada linha.
+These tests check the class of defect: no generator names a paradigm, all of
+them cover the ones the registry knows about, and the LaTeX column specification
+matches the number of cells in each row.
 """
 
 import ast
@@ -49,7 +49,7 @@ class TestNoGeneratorNamesAParadigm:
 
     @pytest.mark.parametrize('module_name', GENERATORS)
     def test_no_paradigm_literal_in_code(self, module_name):
-        """Docstrings podem citar; código não."""
+        """Docstrings may cite one; code may not."""
         tree = ast.parse(_source(module_name))
         docstrings = {id(n.value) for n in ast.walk(tree)
                       if isinstance(n, ast.Expr)
@@ -62,8 +62,9 @@ class TestNoGeneratorNamesAParadigm:
                 continue
             for paradigm in PARADIGMS:
                 assert paradigm not in node.value, (
-                    f'{module_name}:{node.lineno} nomeia {paradigm!r}; um quarto '
-                    f'paradigma ficaria fora da tabela sem que nada acusasse'
+                    f'{module_name}:{node.lineno} names {paradigm!r}; a fourth '
+                    f'paradigm would be left out of the table with nothing '
+                    f'reporting it'
                 )
 
     @pytest.mark.parametrize('module_name', GENERATORS)
@@ -80,8 +81,8 @@ class TestNoGeneratorNamesAParadigm:
             for stale in ('dl_vs_dw', 'dw_vs_pl', 'dl_vs_pl',
                           'DL vs DW', 'DL P50', 'DW P50'):
                 assert stale not in node.value, (
-                    f'{module_name}:{node.lineno} usa {stale!r}, que nomeia '
-                    f'paradigmas que deixaram de existir no rename'
+                    f'{module_name}:{node.lineno} uses {stale!r}, which names '
+                    f'paradigms that stopped existing in the rename'
                 )
 
     @pytest.mark.parametrize('module_name', GENERATORS)
@@ -91,7 +92,7 @@ class TestNoGeneratorNamesAParadigm:
 
 
 class TestSpeedupKeysRoundTrip:
-    """Chave escrita e chave lida têm de ser a mesma."""
+    """The key that is written and the key that is read must be the same."""
 
     def test_written_and_read_keys_match(self):
         module = importlib.import_module(
@@ -110,7 +111,9 @@ class TestSpeedupKeysRoundTrip:
         assert set(summary['total']['speedups_p50']) == expected
 
     def test_the_speedups_are_not_all_absent(self):
-        """A coluna saía em travessão em toda linha; travessão parecia dado."""
+        """The column came out as an em dash on every row; an em dash looked
+        like data.
+        """
         module = importlib.import_module(
             'benchmarking.derive_latency_percentiles')
         importlib.reload(module)
@@ -122,7 +125,7 @@ class TestSpeedupKeysRoundTrip:
         summary = summarise(pd.DataFrame(rows))
         values = summary['per_phase']['processing']['speedups_p50'].values()
         assert all(v is not None for v in values), (
-            f'speedups ausentes com dados presentes: {values}'
+            f'speedups missing while the data is present: {values}'
         )
 
     def test_the_table_shows_them(self):
@@ -160,13 +163,13 @@ class TestEveryParadigmAppears:
         for paradigm in PARADIGMS:
             escaped = paradigm.replace('_', r'\_')
             assert escaped in table, (
-                f'{module_name} não renderiza {paradigm}; era o caso de '
-                f'dataframe_lib nas tabelas publicadas'
+                f'{module_name} does not render {paradigm}; that was the case '
+                f'of dataframe_lib in the published tables'
             )
 
 
 class TestLatexIsWellFormed:
-    """Especificação de colunas contra células por linha."""
+    """Column specification against cells per row."""
 
     @pytest.mark.parametrize('module_name', [
         'benchmarking.derive_latency_percentiles',
@@ -190,8 +193,8 @@ class TestLatexIsWellFormed:
                     if '&' in line and not line.strip().startswith('%')]
             widths = {line.count('&') + 1 for line in body}
             assert widths == {columns}, (
-                f'{module_name}: spec declara {columns} colunas, linhas têm '
-                f'{sorted(widths)} -- desalinha ou não compila'
+                f'{module_name}: spec declares {columns} columns, rows have '
+                f'{sorted(widths)} -- it misaligns or it does not compile'
             )
 
     @pytest.mark.parametrize('module_name', [
@@ -216,16 +219,16 @@ class TestLatexIsWellFormed:
 class TestScorecardFailsLoudOnNoMatch:
 
     def test_it_raises_rather_than_emitting_dashes(self, monkeypatch):
-        """Duas de três linhas saíam vazias e nada acusava."""
+        """Two of three rows came out empty and nothing reported it."""
         from statistical_validation import make_scorecard as module
 
         monkeypatch.setattr(module, 'get_speedups',
                             lambda: {'dl_vs_dw': {'processing': (1.0, 0.9, 1.1)}})
-        with pytest.raises(KeyError, match='Nenhum par'):
+        with pytest.raises(KeyError, match='No pair from the registry'):
             module.build_scorecard()
 
     def test_no_latex_parsing_fallback_remains(self):
-        """Recuperava números da tabela que outro script renderiza."""
+        """It recovered numbers from the table that another script renders."""
         source = _source('statistical_validation.make_scorecard')
         assert 'parse_significance_tex' not in source
         assert 'significance_summary.tex' not in source

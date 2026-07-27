@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Pipeline orquestrador da pesquisa: executa as fases na ordem com caminhos absolutos.
+Research orchestrator pipeline: runs the phases in order with absolute paths.
 
-Fases:
-  1) Coleta bruta (World Bank ou INEP Censo Escolar)
-  2) Processamento por paradigma (sql_engine, task_graph, dataframe_lib)
-  3) Setup ML (folds idênticos com gaps de 2 anos; seleção de features)
-  4) Baselines (um por paradigma)
-  5) Hierárquicos (um por paradigma)
-  6) Benchmark arquitetural (um por paradigma)
-  7) Análise estatística e tabelas derivadas
+Phases:
+  1) Raw collection (World Bank or INEP Censo Escolar)
+  2) Processing per paradigm (sql_engine, task_graph, dataframe_lib)
+  3) ML setup (identical folds with 2-year gaps; feature selection)
+  4) Baselines (one per paradigm)
+  5) Hierarchical (one per paradigm)
+  6) Architectural benchmark (one per paradigm)
+  7) Statistical analysis and derived tables
 
-Cada artefato publicado é produzido por uma etapa daqui. Um script de análise
-fora deste orquestrador significa que reproduzir os resultados exige conhecer
-uma sequência que não está escrita em lugar algum.
+Every published artifact is produced by a stage from here. An analysis script
+outside this orchestrator means that reproducing the results requires knowing a
+sequence that is written down nowhere.
 """
 import argparse
 import json
@@ -42,31 +42,31 @@ def _log(msg: str) -> None:
     print(f"  {msg}")
 
 def deterministic_environment() -> dict:
-    """Variáveis que precisam existir antes do import de NumPy.
+    """Variables that need to exist before NumPy is imported.
 
-    As bibliotecas numéricas dimensionam seus pools de threads no momento do
-    carregamento, e não há como reduzi-los depois de dentro do processo — por
-    isso são exportadas ao subprocesso, não definidas no orquestrador.
+    The numerical libraries size their thread pools at load time, and there is
+    no way to shrink them afterwards from inside the process — which is why they
+    are exported to the subprocess rather than set in the orchestrator.
 
-    PYTHONHASHSEED fixa a ordem de iteração de conjuntos e dicionários com
-    chaves textuais, da qual dependem alguns caminhos de agregação.
+    PYTHONHASHSEED fixes the iteration order of sets and dictionaries with text
+    keys, which some aggregation paths depend on.
     """
     blas = str(int(SCIENTIFIC_CONFIG['blas_threads']))
     engine = str(int(SCIENTIFIC_CONFIG['engine_threads']))
     return {
-        # Componente comum aos paradigmas: todos materializam em pandas antes do
-        # scikit-learn, então o pool do BLAS não é propriedade de paradigma algum.
+        # Component common to the paradigms: all of them materialize in pandas
+        # before scikit-learn, so the BLAS pool is no paradigm's property.
         'OMP_NUM_THREADS': blas,
         'OPENBLAS_NUM_THREADS': blas,
         'MKL_NUM_THREADS': blas,
         'NUMEXPR_NUM_THREADS': blas,
         'VECLIB_MAXIMUM_THREADS': blas,
-        # Componente do paradigma: o Polars dimensiona seu pool Rayon no import,
-        # de modo que só uma variável de ambiente o alcança. O Dask lê
-        # DASK_NUM_WORKERS da mesma forma, o que o alcança também nas etapas de
-        # baseline e hierárquico -- elas rodam como processos separados e não
-        # herdavam o dask.config.set feito na etapa de processamento, então
-        # mediam com o número de núcleos do host.
+        # Paradigm component: Polars sizes its Rayon pool at import, so only an
+        # environment variable reaches it. Dask reads DASK_NUM_WORKERS the same
+        # way, which reaches it in the baseline and hierarchical stages too --
+        # they run as separate processes and did not inherit the dask.config.set
+        # made in the processing stage, so they measured with the host's core
+        # count.
         'POLARS_MAX_THREADS': engine,
         'DASK_NUM_WORKERS': engine,
         'PYTHONHASHSEED': str(int(SCIENTIFIC_CONFIG['random_seed'])),
@@ -74,10 +74,10 @@ def deterministic_environment() -> dict:
 
 
 def _validate_core_budget() -> None:
-    """O orçamento declarado precisa caber na máquina.
+    """The declared budget has to fit on the machine.
 
-    Sobrescrever os núcleos faria a latência refletir contenção de escalonamento
-    em vez do paradigma, e faria isso em silêncio.
+    Oversubscribing the cores would make the latency reflect scheduling
+    contention rather than the paradigm, and would do so silently.
     """
     import multiprocessing
     available = multiprocessing.cpu_count()
@@ -85,19 +85,19 @@ def _validate_core_budget() -> None:
     blas = int(SCIENTIFIC_CONFIG['blas_threads'])
     if engine + blas - 1 > available:
         raise RuntimeError(
-            f"Orçamento de núcleos não cabe nesta máquina: engine_threads="
-            f"{engine} e blas_threads={blas}, com {available} núcleos "
-            f"disponíveis. Ajuste scientific_config em vez de sobrescrever os "
-            f"núcleos: a latência medida passaria a refletir contenção."
+            f"Core budget does not fit on this machine: engine_threads="
+            f"{engine} and blas_threads={blas}, with {available} cores "
+            f"available. Adjust scientific_config instead of oversubscribing "
+            f"the cores: the measured latency would come to reflect contention."
         )
 
 
 def run(argv: list) -> None:
-    """Executa um subprocesso com PYTHONPATH apontando para src/.
+    """Runs a subprocess with PYTHONPATH pointing at src/.
 
-    Argumentos em lista, sem shell: um caminho de repositório com espaços
-    quebraria a forma em string, e não há razão para interpretar metacaracteres
-    em caminhos que este módulo mesmo constrói.
+    Arguments as a list, without a shell: a repository path with spaces would
+    break the string form, and there is no reason to interpret metacharacters in
+    paths that this module itself builds.
     """
     print(f"\n$ {' '.join(argv)}")
     env = os.environ.copy()
@@ -107,29 +107,29 @@ def run(argv: list) -> None:
     subprocess.run(argv, check=True, env=env)
 
 def _snapshot_scientific_config(root: str) -> None:
-    """Registra configuração e ambiente da execução.
+    """Records the configuration and environment of the run.
 
-    Delega a core.config: o benchmark grava o mesmo registro, e duas cópias
-    divergiriam justamente no arquivo que existe para dizer como a execução foi
-    feita.
+    Delegates to core.config: the benchmark writes the same record, and two
+    copies would diverge in precisely the file that exists to say how the run
+    was made.
     """
     path = write_environment_snapshot(get_absolute_output_path("outputs"))
-    print(f"\nSnapshot científico registrado em {path}")
+    print(f"\nScientific snapshot recorded at {path}")
 
 
 def _discover():
-    """Descoberta preguiçosa de paradigmas — importação aciona o registro."""
+    """Lazy paradigm discovery — importing triggers the registration."""
     from core.paradigm_registry import discover_paradigms
     paradigms = discover_paradigms()
     if not paradigms:
-        raise RuntimeError("Nenhum paradigma descoberto — verifique src/architectures_ml/*/setup.py")
+        raise RuntimeError("No paradigm discovered — check src/architectures_ml/*/setup.py")
     return paradigms
 
 
 def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
-    """Valida integridade temporal de todos os folds antes de prosseguir ao benchmark."""
-    # Indexado, não .get com default: um default silencioso aqui deixaria o
-    # gate validar um gap diferente do configurado.
+    """Validates the temporal integrity of every fold before moving on to the benchmark."""
+    # Indexed, not .get with a default: a silent default here would let the gate
+    # validate a gap different from the configured one.
     gap = int(SCIENTIFIC_CONFIG['temporal_gap_years'])
     embargo = int(SCIENTIFIC_CONFIG['embargo_years'])
     validator = TemporalValidator(min_gap_years=gap, embargo_years=embargo)
@@ -141,7 +141,7 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
             arch, 'prep', f'temporal_folds_{arch}.json'
         )
         if not os.path.exists(folds_path):
-            raise FileNotFoundError(f"Folds não encontrados: {folds_path}")
+            raise FileNotFoundError(f"Folds not found: {folds_path}")
 
         with open(folds_path, 'r') as f:
             folds_config = json.load(f)
@@ -164,23 +164,23 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
 
         folds = folds_config.get('folds', [])
         validator.enforce_walk_forward(folds)
-        _log(f"  {arch}: {len(folds)} folds — integridade temporal verificada")
+        _log(f"  {arch}: {len(folds)} folds — temporal integrity verified")
         per_paradigm[arch] = [
             (f['train_start'], f['train_end'], f['val_start'], f['val_end'],
              f['test_start'], f['test_end']) for f in folds
         ]
 
-    # Cada paradigma era validado isoladamente, e nada exigia que os três
-    # tivessem os mesmos folds. Splits diferentes tornam a comparação entre
-    # paradigmas uma comparação entre problemas diferentes -- e o Δ=0 seria
-    # falsificado por essa razão, não pela implementação.
+    # Each paradigm used to be validated in isolation, and nothing required the
+    # three to have the same folds. Different splits turn the comparison between
+    # paradigms into a comparison between different problems -- and Δ=0 would be
+    # falsified for that reason, not by the implementation.
     distinct = {arch: tuple(windows) for arch, windows in per_paradigm.items()}
     if len(set(distinct.values())) > 1:
         divergent = {arch: len(windows) for arch, windows in distinct.items()}
         raise ValueError(
-            f"Os paradigmas não compartilham os mesmos folds temporais "
-            f"{divergent}. A comparação entre eles pressupõe splits idênticos; "
-            f"caso contrário mede problemas diferentes."
+            f"The paradigms do not share the same temporal folds "
+            f"{divergent}. The comparison between them presupposes identical "
+            f"splits; otherwise it measures different problems."
         )
 
 
@@ -358,41 +358,41 @@ def _assert_benchmark_left_predictions_intact(before: dict) -> None:
     missing = sorted(set(before) - set(after))
     if missing:
         raise ValueError(
-            f"O benchmark removeu artefatos de predicao que o gate havia "
-            f"verificado: {missing}"
+            f"The benchmark removed prediction artifacts that the gate had "
+            f"verified: {missing}"
         )
 
     appeared = sorted(set(after) - set(before))
     if appeared:
         raise ValueError(
-            f"O benchmark criou artefatos de predicao que o gate nao viu: "
-            f"{appeared}. O que sera publicado nao foi verificado."
+            f"The benchmark created prediction artifacts that the gate did not "
+            f"see: {appeared}. What will be published has not been verified."
         )
 
     changed = sorted(path for path, digest in after.items()
                      if before[path] != digest)
     if changed:
         raise ValueError(
-            f"As repeticoes do benchmark produziram predicoes diferentes das "
-            f"que o gate verificou: {changed}. Ou a execucao nao e "
-            f"determinista, ou os artefatos publicados nao sao os que foram "
-            f"atestados -- em qualquer dos casos a afirmacao de equivalencia "
-            f"nao cobre o que esta no pacote."
+            f"The benchmark repetitions produced predictions different from the "
+            f"ones the gate verified: {changed}. Either the run is not "
+            f"deterministic, or the published artifacts are not the ones that "
+            f"were attested -- in either case the equivalence claim does not "
+            f"cover what is in the package."
         )
 
-    _log(f"  {len(after)} artefatos de predicao intactos apos o benchmark")
+    _log(f"  {len(after)} prediction artifacts intact after the benchmark")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline de pesquisa - benchmarking arquitetural")
+    parser = argparse.ArgumentParser(description="Research pipeline - architectural benchmarking")
     parser.add_argument(
         '--dataset', default='worldbank',
         choices=['worldbank', 'inep_censo'],
-        help='Dataset a processar (default: worldbank)'
+        help='Dataset to process (default: worldbank)'
     )
     args = parser.parse_args()
     dataset_name = args.dataset
-    os.environ['DATASET_NAME'] = dataset_name  # propaga via run() para subprocessos
+    os.environ['DATASET_NAME'] = dataset_name  # propagated to subprocesses via run()
     # Identifies this execution for the receipt gates. It travels in the
     # environment rather than as an argument because the receipts are written by
     # the models, three subprocesses below here.
@@ -403,61 +403,61 @@ def main() -> None:
     started_at = datetime.now()
 
     _validate_core_budget()
-    print(f"\nPipeline iniciado (dataset: {dataset_name})")
-    _log(f"Orcamento: {SCIENTIFIC_CONFIG['engine_threads']} nucleos por engine, "
-         f"{SCIENTIFIC_CONFIG['blas_threads']} thread(s) de BLAS")
+    print(f"\nPipeline started (dataset: {dataset_name})")
+    _log(f"Budget: {SCIENTIFIC_CONFIG['engine_threads']} cores per engine, "
+         f"{SCIENTIFIC_CONFIG['blas_threads']} BLAS thread(s)")
     _snapshot_scientific_config(root)
     paradigms = _discover()
-    print("\nEtapa 0: Snapshot de reprodutibilidade")
-    _log(f"Snapshot salvo em {get_absolute_output_path('outputs')}")
+    print("\nStage 0: Reproducibility snapshot")
+    _log(f"Snapshot saved at {get_absolute_output_path('outputs')}")
 
     if dataset_name == 'worldbank':
-        print("\nEtapa 1/7: Coleta")
-        _log("Fonte: World Bank")
+        print("\nStage 1/7: Collection")
+        _log("Source: World Bank")
         run([py, os.path.join(root, "src/collection/raw_data_collector.py")])
     else:
-        print("\nEtapa 1/7: Coleta")
-        _log("Fonte: INEP Censo Escolar")
+        print("\nStage 1/7: Collection")
+        _log("Source: INEP Censo Escolar")
         run([py, os.path.join(root, "src/collection/inep_collector.py")])
-    _log("Etapa 1 concluida")
+    _log("Stage 1 completed")
 
     n_paradigms = len(paradigms)
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print(f"\nEtapa 2{chr(96+i)}/7: Processamento {arch}")
-        _log(f"Arquitetura: {info['label']}")
+        print(f"\nStage 2{chr(96+i)}/7: Processing {arch}")
+        _log(f"Architecture: {info['label']}")
         run([py, os.path.join(root, info["processor_script"])])
-    _log(f"Etapa 2 concluida ({n_paradigms} paradigmas)")
+    _log(f"Stage 2 completed ({n_paradigms} paradigms)")
 
-    print("\nEtapa 3: Setup ML")
-    _log("Gaps temporais: 2 anos (P1-P3)")
+    print("\nStage 3: ML setup")
+    _log("Temporal gaps: 2 years (P1-P3)")
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print(f"\nEtapa 3{chr(96+i)}/7: Setup ML {arch}")
-        _log(f"Arquitetura: {info['label']}")
+        print(f"\nStage 3{chr(96+i)}/7: ML setup {arch}")
+        _log(f"Architecture: {info['label']}")
         run([py, os.path.join(root, info["setup_script"])])
-    _log(f"Etapa 3 concluida ({n_paradigms} paradigmas)")
+    _log(f"Stage 3 completed ({n_paradigms} paradigms)")
 
-    print("\nGate de proveniencia do setup")
+    print("\nSetup provenance gate")
     _validate_setup_provenance(run_id)
     _log("feature_selection and temporal_folds belong to this run")
 
-    print("\nGate anti-leakage")
+    print("\nAnti-leakage gate")
     _validate_anti_leakage_gate(root, started_at)
-    _log("Todos os folds passaram na validacao temporal")
+    _log("All folds passed temporal validation")
 
     for i, (arch, info) in enumerate(paradigms.items(), 1):
-        print(f"\nEtapa 4{chr(96+i)}/7: Baselines {arch}")
+        print(f"\nStage 4{chr(96+i)}/7: Baselines {arch}")
         run([py, os.path.join(root, info["baseline_script"])])
-    _log(f"Etapa 4 concluida ({n_paradigms} paradigmas)")
+    _log(f"Stage 4 completed ({n_paradigms} paradigms)")
 
-    print("\nEtapa 5/7: Hierarquicos")
+    print("\nStage 5/7: Hierarchical")
     for arch, info in paradigms.items():
         run([py, os.path.join(root, info["hierarchical_script"])])
-    _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
+    _log(f"Stage 5 completed ({n_paradigms} paradigms)")
 
     # Here and not alongside the anti-leakage gate: the P3 and P5 receipts are
     # written by the models, in the stage above. Checking them earlier would be
     # checking files that do not exist yet.
-    print("\nGate de recibos dos protocolos")
+    print("\nProtocol receipts gate")
     _validate_protocol_receipts(run_id)
     # Names what the receipt covers. Each paradigm's scaler is fitted on the
     # training window right after imputation, but emits no report, so no receipt
@@ -469,27 +469,27 @@ def main() -> None:
     # meaningful once they are established to predict the same values for the
     # same rows. Running it afterwards could report a timing difference between
     # paradigms that were not doing the same work.
-    print("\nGate de equivalencia de predicoes")
+    print("\nPrediction equivalence gate")
     run([py, os.path.join(root, "src/statistical_validation/prediction_equivalence.py")])
-    _log("Predicoes identicas entre os paradigmas")
+    _log("Predictions identical across the paradigms")
 
-    # Registrado antes do benchmark, conferido depois: as repeticoes
-    # reexecutam as Etapas 3 a 5 e sobrescrevem estes mesmos arquivos.
+    # Recorded before the benchmark, checked afterwards: the repetitions re-run
+    # Stages 3 to 5 and overwrite these same files.
     predictions_before = _prediction_digests()
     if not predictions_before:
         raise FileNotFoundError(
-            "Nenhum artefato de predicao antes do benchmark; o gate de "
-            "equivalencia nao teria o que verificar."
+            "No prediction artifact before the benchmark; the equivalence gate "
+            "would have nothing to verify."
         )
 
-    print("\nEtapa 6/7: Benchmark arquitetural")
-    # Sem --repetitions/--warmup: o benchmark lê BENCHMARK_CONFIG, e repetir os
-    # valores aqui criaria uma segunda fonte para o n do protocolo.
+    print("\nStage 6/7: Architectural benchmark")
+    # Without --repetitions/--warmup: the benchmark reads BENCHMARK_CONFIG, and
+    # repeating the values here would create a second source for the protocol's n.
     run([py, os.path.join(root, "src/benchmarking/architectural_benchmark.py")])
     _assert_benchmark_left_predictions_intact(predictions_before)
-    _log("Etapa 6 concluida")
+    _log("Stage 6 completed")
 
-    print("\nEtapa 7/7: Analise estatistica e tabelas derivadas")
+    print("\nStage 7/7: Statistical analysis and derived tables")
 
     # Skipping the analysis on a missing benchmark would leave a run that
     # reports success while producing an incomplete set of artifacts. The
@@ -507,39 +507,39 @@ def main() -> None:
     #   the panel consumes the latency percentiles and the resource table;
     #   the scorecard consumes significance, equivalence and the resource table.
     ANALYSIS_STAGES = [
-        ('a', 'Significancia (bootstrap)',
+        ('a', 'Significance (bootstrap)',
          'src/statistical_validation/significance_tests.py', []),
-        ('b', 'Equivalencia (SESOI + IC)',
+        ('b', 'Equivalence (SESOI + CI)',
          'src/statistical_validation/equivalence_estimation.py', ['--latex']),
-        ('c', 'Tamanhos de efeito e comparacoes multiplas',
+        ('c', 'Effect sizes and multiple comparisons',
          'src/statistical_validation/effect_analysis.py', []),
-        ('d', 'Sensibilidade ao numero de resamples',
+        ('d', 'Sensitivity to the number of resamples',
          'src/statistical_validation/bootstrap_sensitivity.py', []),
-        # Depois de (a)-(c) porque lê os vetores de predição, e antes das
-        # tabelas porque o resultado dele entra na info sheet.
-        ('d2', 'Modelo contra a melhor baseline',
+        # After (a)-(c) because it reads the prediction vectors, and before the
+        # tables because its result goes into the info sheet.
+        ('d2', 'Model against the best baseline',
          'src/statistical_validation/baseline_comparison.py', []),
-        ('e', 'Percentis de latencia',
+        ('e', 'Latency percentiles',
          'src/benchmarking/derive_latency_percentiles.py', []),
-        ('f', 'Percentis de throughput',
+        ('f', 'Throughput percentiles',
          'src/benchmarking/derive_throughput_percentiles.py', []),
-        ('g', 'Uso de recursos',
+        ('g', 'Resource usage',
          'src/benchmarking/derive_resource_usage_table.py', []),
-        ('h', 'Painel operacional',
+        ('h', 'Operational panel',
          'src/benchmarking/derive_operational_panel.py', []),
-        ('i', 'Atribuicao do estagio (engine vs ajuste)',
+        ('i', 'Stage attribution (engine vs fitting)',
          'src/benchmarking/derive_stage_attribution.py', []),
         ('j', 'Scorecard',
          'src/statistical_validation/make_scorecard.py', []),
     ]
     for suffix, description, script, script_args in ANALYSIS_STAGES:
-        _log(f"Etapa 7{suffix}/7: {description}")
+        _log(f"Stage 7{suffix}/7: {description}")
         run([py, os.path.join(root, script)] + script_args)
 
-    _log("Etapa 7 concluida")
+    _log("Stage 7 completed")
 
-    print("\nPipeline concluido")
-    print(f"Resultados em: {get_absolute_output_path('outputs')}")
+    print("\nPipeline completed")
+    print(f"Results at: {get_absolute_output_path('outputs')}")
 
 if __name__ == "__main__":
     main()

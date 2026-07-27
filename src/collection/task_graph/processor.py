@@ -1,47 +1,47 @@
 #!/usr/bin/env python3
 """
-Processador Data Lake para Dados Educacionais com Processamento Particionado.
+Data Lake Processor for Educational Data with Partitioned Processing.
 
-Implementa pipeline de processamento usando Dask para análise exploratória de indicadores
-educacionais, seguindo princípios arquiteturais Data Lake com validação diferida e
-engenharia de features temporais.
+Implements a processing pipeline using Dask for exploratory analysis of educational
+indicators, following Data Lake architectural principles with deferred validation and
+temporal feature engineering.
 
-Fundamentação Teórica:
-    O paradigma Data Lake (Terrizzano et al., 2015) prioriza a preservação de dados brutos
-    e semântica schema-on-read, viabilizando exploração flexível. Diferentemente de Data
-    Warehouses (Inmon, 2005), Data Lakes adiam restrições estruturais até o momento da
-    análise, suportando teste iterativo de hipóteses em pesquisa educacional.
+Theoretical Grounding:
+    The Data Lake paradigm (Terrizzano et al., 2015) prioritises the preservation of raw
+    data and schema-on-read semantics, enabling flexible exploration. Unlike Data
+    Warehouses (Inmon, 2005), Data Lakes defer structural constraints until analysis
+    time, supporting iterative hypothesis testing in educational research.
 
-Abordagem Metodológica:
-    1. Avaliação Lazy: Seguindo o modelo de grafo computacional do Dask (Rocklin, 2015),
-       operações constroem grafos de tarefas sem execução imediata, otimizando uso de
-       memória para datasets educacionais de grande escala (>10GB).
+Methodological Approach:
+    1. Lazy Evaluation: Following Dask's computational graph model (Rocklin, 2015),
+       operations build task graphs without immediate execution, optimising memory
+       use for large-scale educational datasets (>10GB).
 
-    2. Processamento Particionado: Implementa paralelismo baseado em partições,
-       dividindo o dataset em chunks independentes processados concorrentemente.
+    2. Partitioned Processing: Implements partition-based parallelism,
+       splitting the dataset into independent chunks processed concurrently.
 
-    3. Preservação Temporal: Mantém coerência longitudinal particionando por unidades
-       geográficas ao invés de tempo, crítico para análise de dados em painel (Baltagi, 2021)
-       e designs de diferenças-em-diferenças (Angrist & Pischke, 2009).
+    3. Temporal Preservation: Maintains longitudinal coherence by partitioning on
+       geographic units rather than time, critical for panel data analysis (Baltagi, 2021)
+       and difference-in-differences designs (Angrist & Pischke, 2009).
 
-Decisões de Design:
-    - Máximo 32 partições: Retornos decrescentes além desse ponto para datasets <100GB
-    - Compressão Snappy: Equilibra velocidade vs tamanho (razão 3:1)
-    - Inferência de schema na escrita: Preserva flexibilidade garantindo consistência
-      de tipagem de colunas Parquet (especificação Apache Parquet 2.6.0)
+Design Decisions:
+    - Maximum 32 partitions: Diminishing returns beyond that point for datasets <100GB
+    - Snappy compression: Balances speed vs size (3:1 ratio)
+    - Schema inference on write: Preserves flexibility while guaranteeing type
+      consistency of Parquet columns (Apache Parquet 2.6.0 specification)
 
-Assunções:
-    - Mecanismo de dados faltantes segue MAR (Missing At Random)
-    - Tendências temporais são localmente lineares em janelas de 3 anos
-    - Efeitos país dominam variação subnacional
-    - Recursos computacionais suportam até 32 partições concorrentes
+Assumptions:
+    - The missing data mechanism follows MAR (Missing At Random)
+    - Temporal trends are locally linear over 3-year windows
+    - Country effects dominate subnational variation
+    - Computational resources support up to 32 concurrent partitions
 
-Limitações:
-    - Assume variância homogênea entre estratos geográficos (frequentemente violado)
-    - Limiares de correlação (±0.1) são heurísticos, não derivados estatisticamente
-    - Avaliação lazy pode mascarar problemas de qualidade até computação
+Limitations:
+    - Assumes homogeneous variance across geographic strata (frequently violated)
+    - Correlation thresholds (±0.1) are heuristic, not statistically derived
+    - Lazy evaluation may mask quality problems until computation
 
-Referências:
+References:
     Angrist, J. D., & Pischke, J. S. (2009). Mostly harmless econometrics. Princeton.
     Baltagi, B. H. (2021). Econometric analysis of panel data (6th ed.). Springer.
     Inmon, W. H. (2005). Building the data warehouse (4th ed.). Wiley.
@@ -60,7 +60,7 @@ import warnings
 from datetime import datetime
 from typing import Dict
 
-# Supressão de warnings de amostras pequenas
+# Suppression of small-sample warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*Degrees of freedom <= 0.*')
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*divide by zero encountered.*')
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*invalid value encountered.*')
@@ -73,30 +73,30 @@ from core.indicators import ALL_INDICATORS
 
 class TaskGraphProcessor:
     """
-    Processador científico Data Lake para análise de indicadores educacionais.
-    
-    Implementa processamento particionado seguindo princípios arquiteturais Data Lake,
-    otimizado para análise exploratória de dados e workflows de machine learning em
-    datasets educacionais.
-    
-    Princípios Fundamentais:
-        1. Schema-on-read: Estrutura imposta no momento da análise, não na ingestão
-        2. Avaliação lazy: Grafos computacionais construídos sem materialização
-        3. Preservação de partições: Mantém localidade de dados para análise temporal
-        4. Enriquecimento de metadados: Adiciona features científicas sem modificar dados brutos
-    
-    Vide docstring do módulo para assunções e limitações metodológicas completas.
+    Scientific Data Lake processor for the analysis of educational indicators.
+
+    Implements partitioned processing following Data Lake architectural principles,
+    optimised for exploratory data analysis and machine learning workflows on
+    educational datasets.
+
+    Fundamental Principles:
+        1. Schema-on-read: Structure imposed at analysis time, not at ingestion
+        2. Lazy evaluation: Computational graphs built without materialisation
+        3. Partition preservation: Maintains data locality for temporal analysis
+        4. Metadata enrichment: Adds scientific features without modifying raw data
+
+    See the module docstring for the full methodological assumptions and limitations.
     """
-    
+
     def __init__(self, dataset_name: str = "worldbank"):
         """
-        Inicializa processador Data Lake com configuração Dask otimizada para análises científicas.
+        Initialises the Data Lake processor with a Dask configuration optimised for scientific analyses.
 
         Args:
-            dataset_name: Nome do dataset ("worldbank" ou "inep_censo")
+            dataset_name: Dataset name ("worldbank" or "inep_censo")
         """
-        print("Inicializando processador Dask")
-        print("Arquitetura: Dask, schema-on-read")
+        print("Initialising Dask processor")
+        print("Architecture: Dask, schema-on-read")
 
         self.dataset_name = dataset_name
         self.run_timestamp = datetime.now().isoformat()
@@ -108,45 +108,45 @@ class TaskGraphProcessor:
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.processed_dir, exist_ok=True)
         
-        # Desabilita otimizações automáticas para garantir reprodutibilidade
+        # Disables automatic optimisations to guarantee reproducibility
         dask.config.set({'dataframe.query-planning': False})
-        # Orçamento explícito de núcleos, igual ao dos outros paradigmas.
-        # Sem isto o scheduler dimensiona o pool pela máquina, e a
-        # comparação passa a depender de onde foi executada.
+        # Explicit core budget, equal to that of the other paradigms.
+        # Without this the scheduler sizes the pool from the machine, and the
+        # comparison comes to depend on where it was run.
         dask.config.set(
             {'num_workers': int(SCIENTIFIC_CONFIG['engine_threads'])})
-        
-        print(f"Fonte de dados: {self.complete_data_path}")
-        print(f"Diretorio de processamento: {self.processed_dir}")
+
+        print(f"Data source: {self.complete_data_path}")
+        print(f"Processing directory: {self.processed_dir}")
     
     def load_complete_data(self) -> dd.DataFrame:
         """
-        Carrega dados educacionais completos preservando semântica lazy do Dask.
-        
+        Loads the complete educational data preserving Dask's lazy semantics.
+
         Returns:
-            dd.DataFrame: DataFrame Dask com grafo computacional não materializado,
-                         preservando benefícios de memória para datasets >10GB
-            
+            dd.DataFrame: Dask DataFrame with an unmaterialised computational graph,
+                         preserving memory benefits for datasets >10GB
+
         Raises:
-            FileNotFoundError: Quando arquivo Parquet de entrada não existe,
-                              indicando falha na etapa anterior do pipeline
-            
-        Decisões metodológicas:
-            1. Computação seletiva: Apenas métricas essenciais são materializadas
-               (período temporal, cardinalidade geográfica) para logging.
+            FileNotFoundError: When the input Parquet file does not exist,
+                              indicating a failure in the previous pipeline stage
 
-            2. Indicadores centralizados: Utiliza definições canônicas do módulo core
-               para garantir consistência entre arquiteturas Data Lake e Data Warehouse.
+        Methodological decisions:
+            1. Selective computation: Only essential metrics are materialised
+               (temporal period, geographic cardinality) for logging.
 
-            3. Estatísticas de qualidade: Completude calculada apenas para indicadores
-               científicos validados, excluindo metadados auxiliares.
+            2. Centralised indicators: Uses the canonical definitions from the core module
+               to guarantee consistency between the Data Lake and Data Warehouse architectures.
+
+            3. Quality statistics: Completeness computed only for validated
+               scientific indicators, excluding auxiliary metadata.
         """
-        print("Leitura lazy de dados educacionais completos")
-        
+        print("Lazy read of the complete educational data")
+
         if not os.path.exists(self.complete_data_path):
             raise FileNotFoundError(
-                f"Arquivo de dados completos não encontrado: {self.complete_data_path}\n"
-                f"Execute 'raw_data_collector.py' antes deste processador."
+                f"Complete data file not found: {self.complete_data_path}\n"
+                f"Run 'raw_data_collector.py' before this processor."
             )
         
         ddf = dd.read_parquet(self.complete_data_path)
@@ -156,10 +156,10 @@ class TaskGraphProcessor:
         year_range = dask.compute(ddf['year'].min(), ddf['year'].max())
         n_countries = ddf['country_code'].nunique().compute()
         
-        print(f"{n_rows:,} observacoes x {n_cols} variaveis")
-        print(f"Cobertura temporal: {year_range[0]}-{year_range[1]} ({year_range[1]-year_range[0]+1} anos)")
-        entity_label = "municípios brasileiros" if self.dataset_name == "inep_censo" else "países"
-        print(f"Cobertura geografica: {n_countries} {entity_label}")
+        print(f"{n_rows:,} observations x {n_cols} variables")
+        print(f"Temporal coverage: {year_range[0]}-{year_range[1]} ({year_range[1]-year_range[0]+1} years)")
+        entity_label = "Brazilian municipalities" if self.dataset_name == "inep_censo" else "countries"
+        print(f"Geographic coverage: {n_countries} {entity_label}")
 
         indicator_names = list(ALL_INDICATORS.values())
         scientific_indicators = [col for col in ddf.columns if col in indicator_names]
@@ -169,42 +169,42 @@ class TaskGraphProcessor:
             total_cells = n_rows * len(scientific_indicators)
             missing_pct = (missing_count / total_cells) * 100
             
-            print(f"Completude: {total_cells - missing_count:,}/{total_cells:,} celulas validas ({100-missing_pct:.1f}%)")
-            
+            print(f"Completeness: {total_cells - missing_count:,}/{total_cells:,} valid cells ({100-missing_pct:.1f}%)")
+
             if 'data_completeness_score' in ddf.columns:
                 stats = dask.compute(
                     ddf['data_completeness_score'].mean(),
                     ddf['data_completeness_score'].std()
                 )
-                print(f"Score completude: media={stats[0]:.1f}%, desvio={stats[1]:.1f}%")
-        
-        print("DataFrame Dask preparado")
+                print(f"Completeness score: mean={stats[0]:.1f}%, sd={stats[1]:.1f}%")
+
+        print("Dask DataFrame prepared")
         
         return ddf
     
     def _calculate_completeness_score(self, ddf: dd.DataFrame) -> dd.DataFrame:
         """
-        Calcula score de completude científico para cada observação.
-        
+        Computes the scientific completeness score for each observation.
+
         Args:
-            ddf: DataFrame Dask com indicadores educacionais
-            
+            ddf: Dask DataFrame with educational indicators
+
         Returns:
-            DataFrame Dask enriquecido com coluna 'data_completeness_score' (0-100%)
-            
-        Justificativa metodológica:
-            Score de completude é calculado como média de indicadores não-nulos,
-            seguindo abordagem de Rubin (1976) para quantificação de informação
-            disponível. Apenas indicadores numéricos validados são considerados,
-            excluindo metadados e variáveis categóricas.
-        
-        Fórmula:
+            Dask DataFrame enriched with the 'data_completeness_score' column (0-100%)
+
+        Methodological justification:
+            The completeness score is computed as the mean of non-null indicators,
+            following Rubin's (1976) approach to quantifying available
+            information. Only validated numeric indicators are considered,
+            excluding metadata and categorical variables.
+
+        Formula:
             completeness_i = (Σ I(x_ij ≠ NULL) / n_indicators) × 100
-            onde I() é função indicadora e j indexa indicadores científicos
-        
-        Limitação:
-            Trata todos indicadores com peso igual, ignorando importância relativa
-            para análises específicas (e.g., taxa de conclusão vs gastos).
+            where I() is the indicator function and j indexes scientific indicators
+
+        Limitation:
+            Treats all indicators with equal weight, ignoring relative importance
+            for specific analyses (e.g., completion rate vs spending).
         """
         indicator_names = list(ALL_INDICATORS.values())
         numeric_indicators = [
@@ -213,7 +213,7 @@ class TaskGraphProcessor:
         ]
         
         if numeric_indicators:
-            # Calcula proporção de valores válidos por linha
+            # Computes the proportion of valid values per row
             return ddf.assign(
                 data_completeness_score=ddf[numeric_indicators].notna().mean(axis=1) * 100
             )
@@ -222,30 +222,30 @@ class TaskGraphProcessor:
     
     def detect_quality_metadata(self, ddf: dd.DataFrame) -> Dict[str, bool]:
         """
-        Detecta metadados de qualidade pré-existentes no dataset.
-        
-        Args:
-            ddf: DataFrame Dask com dados educacionais carregados
-            
-        Returns:
-            Dict[str, bool]: Mapeamento de metadados disponíveis, atualmente:
-                - 'has_completeness_score': Score de completude pré-calculado existe
-            
-        Data Lakes preservam metadados da fonte. Detectamos enriquecimentos
-            prévios para evitar recomputação desnecessária.
+        Detects pre-existing quality metadata in the dataset.
 
-        Estrutura preparada para detectar futuros metadados como:
-            - 'has_imputation_flags': Marcadores de imputação
-            - 'has_quality_tiers': Classificação de confiabilidade
+        Args:
+            ddf: Dask DataFrame with the educational data loaded
+
+        Returns:
+            Dict[str, bool]: Mapping of available metadata, currently:
+                - 'has_completeness_score': A pre-computed completeness score exists
+
+        Data Lakes preserve metadata from the source. We detect prior
+            enrichments to avoid unnecessary recomputation.
+
+        Structure prepared to detect future metadata such as:
+            - 'has_imputation_flags': Imputation markers
+            - 'has_quality_tiers': Reliability classification
         """
         metadata_status = {
             'has_completeness_score': 'data_completeness_score' in ddf.columns
         }
-        
-        print("Analisando enriquecimentos pre-existentes")
+
+        print("Analysing pre-existing enrichments")
 
         for metadata_type, is_present in metadata_status.items():
-            status = "Detectado" if is_present else "Ausente"
+            status = "Detected" if is_present else "Absent"
             print(f"  - {metadata_type}: {status}")
         
         if metadata_status["has_completeness_score"]:
@@ -254,108 +254,108 @@ class TaskGraphProcessor:
                 ddf["data_completeness_score"].std(),
                 ddf["data_completeness_score"].quantile([0.25, 0.5, 0.75])
             )
-            print(f"Completude: media={stats[0]:.1f}%, desvio={stats[1]:.1f}%")
+            print(f"Completeness: mean={stats[0]:.1f}%, sd={stats[1]:.1f}%")
             quartiles = stats[2]
-            print(f"             Quartis: Q1={quartiles[0.25]:.1f}%, Q2={quartiles[0.5]:.1f}%, Q3={quartiles[0.75]:.1f}%")
+            print(f"             Quartiles: Q1={quartiles[0.25]:.1f}%, Q2={quartiles[0.5]:.1f}%, Q3={quartiles[0.75]:.1f}%")
         
         return metadata_status
 
     def prepare_task_graph_metadata(self, ddf: dd.DataFrame, metadata_status: Dict[str, bool]) -> dd.DataFrame:
         """
-        Prepara metadados seguindo princípios schema-on-read do Data Lake.
-        
+        Prepares metadata following the Data Lake's schema-on-read principles.
+
         Args:
-            ddf: DataFrame Dask com dados educacionais
-            metadata_status: Dicionário indicando metadados pré-existentes
-            
+            ddf: Dask DataFrame with educational data
+            metadata_status: Dictionary indicating pre-existing metadata
+
         Returns:
-            DataFrame Dask com metadados garantidos mas não validados
-            
-        Data Lakes adiam validação até o momento de uso (Terrizzano et al., 2015).
-            Este método garante apenas existência estrutural de metadados, não sua
-            correção semântica, que será verificada durante processamento distribuído.
+            Dask DataFrame with metadata guaranteed but not validated
 
-        Contraste com Data Warehouse:
-            - Data Lake: Cria placeholder, valida durante processamento
-            - Data Warehouse: Valida imediatamente, rejeita dados inválidos
+        Data Lakes defer validation until the moment of use (Terrizzano et al., 2015).
+            This method guarantees only the structural existence of metadata, not its
+            semantic correctness, which will be verified during distributed processing.
 
-        Validação eager desperdiçaria recursos computacionais se dados
-            forem posteriormente filtrados ou agregados, violando princípio
-            de lazy evaluation do Dask (Rocklin, 2015).
+        Contrast with the Data Warehouse:
+            - Data Lake: Creates a placeholder, validates during processing
+            - Data Warehouse: Validates immediately, rejects invalid data
+
+        Eager validation would waste computational resources if the data
+            is later filtered or aggregated, violating Dask's lazy evaluation
+            principle (Rocklin, 2015).
         """
-        print("Configurando metadados Dask")
+        print("Configuring Dask metadata")
 
         if metadata_status['has_completeness_score']:
-            print("  Score de completude preservado (validacao diferida)")
+            print("  Completeness score preserved (deferred validation)")
         else:
-            print("  Score de completude ausente - criando placeholder (valor 0.0)")
+            print("  Completeness score absent - creating placeholder (value 0.0)")
             ddf = ddf.assign(data_completeness_score=0.0)
         
         return ddf
     
     def create_partitioned_structure(self, ddf: dd.DataFrame) -> dd.DataFrame:
         """
-        Otimiza particionamento para processamento distribuído preservando coerência temporal.
-        
+        Optimises partitioning for distributed processing while preserving temporal coherence.
+
         Args:
-            ddf: DataFrame Dask com dados educacionais completos
-            
+            ddf: Dask DataFrame with the complete educational data
+
         Returns:
-            DataFrame Dask reparticionado para máxima eficiência computacional
-            
-        Estratégia de particionamento:
-            1. Cardinalidade-baseada: min(n_países, 32) partições
-            2. Preserva agrupamento geográfico implícito
-            3. Evita shuffling desnecessário de séries temporais
-        
-        Justificativa do limite de 32 partições:
-            Retornos decrescentes além de 2^5 partições para datasets <100GB
-            devido a overhead de coordenação e custo de serialização.
-        
+            Dask DataFrame repartitioned for maximum computational efficiency
+
+        Partitioning strategy:
+            1. Cardinality-based: min(n_countries, 32) partitions
+            2. Preserves implicit geographic grouping
+            3. Avoids unnecessary shuffling of time series
+
+        Justification of the 32-partition limit:
+            Diminishing returns beyond 2^5 partitions for datasets <100GB
+            due to coordination overhead and serialisation cost.
+
         Trade-offs:
-            - Mais particoes: mais paralelismo, mais overhead de coordenacao
-            - Menos particoes: menos paralelismo, menos overhead, mais memoria/particao
-        
-        Nota sobre stratum missing:
-            Países sem classificação socioeconômica recebem label 'unclassified'
-            para evitar NaN em operações groupby subsequentes (pandas limitation).
+            - More partitions: more parallelism, more coordination overhead
+            - Fewer partitions: less parallelism, less overhead, more memory/partition
+
+        Note on missing stratum:
+            Countries without a socioeconomic classification get the label 'unclassified'
+            to avoid NaN in subsequent groupby operations (pandas limitation).
         """
-        print("Otimizando particionamento para processamento distribuido")
-        
+        print("Optimising partitioning for distributed processing")
+
         metadata_status = self.detect_quality_metadata(ddf)
         ddf_prepared = self.prepare_task_graph_metadata(ddf, metadata_status)
-        
-        # Tratamento de valores missing em variável de estratificação
+
+        # Handling of missing values in the stratification variable
         if 'country_stratum' in ddf_prepared.columns:
             none_count = ddf_prepared['country_stratum'].isna().sum().compute()
             if none_count > 0:
-                print(f"{none_count:,} observacoes com stratum indefinido -> 'unclassified'")
+                print(f"{none_count:,} observations with undefined stratum -> 'unclassified'")
                 ddf_prepared = ddf_prepared.assign(
                     country_stratum=ddf_prepared['country_stratum'].fillna('unclassified')
                 )
-        
-        # Calcula número ótimo de partições
+
+        # Computes the optimal number of partitions
         n_countries = ddf_prepared['country_code'].nunique().compute()
         optimal_partitions = min(n_countries, 32)
-        
-        print(f"Paises unicos: {n_countries}, particoes otimas: {optimal_partitions}")
+
+        print(f"Unique countries: {n_countries}, optimal partitions: {optimal_partitions}")
         ddf_optimized = ddf_prepared.repartition(npartitions=optimal_partitions)
-        
-        # Estatísticas finais
+
+        # Final statistics
         avg_partition_size = len(ddf_optimized) / optimal_partitions
-        print(f"{optimal_partitions} particoes, ~{avg_partition_size:,.0f} obs/particao, {len(ddf_optimized.columns)} variaveis")
+        print(f"{optimal_partitions} partitions, ~{avg_partition_size:,.0f} obs/partition, {len(ddf_optimized.columns)} variables")
         
         return ddf_optimized
 
     def _add_distributed_processing_metadata(self, partition):
         """
-        Adiciona metadados de processamento e validação à partição.
+        Adds processing and validation metadata to the partition.
 
         Args:
-            partition: DataFrame pandas representando uma partição Dask
+            partition: pandas DataFrame representing a Dask partition
 
         Returns:
-            Partição com metadados de auditoria e score de completude validado
+            Partition with audit metadata and a validated completeness score
         """
         if partition.empty:
             return partition
@@ -384,77 +384,77 @@ class TaskGraphProcessor:
 
     def process_task_graph_architecture(self, ddf: dd.DataFrame) -> dd.DataFrame:
         """
-        Executa processamento distribuído com metadados de auditoria.
+        Runs distributed processing with audit metadata.
 
         Args:
-            ddf: DataFrame Dask particionado otimamente
+            ddf: Optimally partitioned Dask DataFrame
 
         Returns:
-            DataFrame Dask com metadados de processamento
+            Dask DataFrame with processing metadata
 
-        Paradigma de processamento:
-            Utiliza map_partitions para aplicar transformações idênticas e
-            independentes em cada partição, seguindo modelo de computação
-            embaraçosamente paralela. Não há comunicação entre partições,
-            garantindo escalabilidade linear.
+        Processing paradigm:
+            Uses map_partitions to apply identical and independent
+            transformations to each partition, following the embarrassingly
+            parallel computation model. There is no communication between
+            partitions, guaranteeing linear scalability.
         """
-        print(f"Pipeline Dask: {ddf.npartitions} particoes")
+        print(f"Dask pipeline: {ddf.npartitions} partitions")
 
         ddf_processed = ddf.map_partitions(
             self._add_distributed_processing_metadata
         )
 
-        print("Metadados adicionados, grafo computacional construido")
+        print("Metadata added, computational graph built")
         
         return ddf_processed
 
     def export_processed_data(self, ddf: dd.DataFrame) -> str:
         """
-        Materializa e persiste dados processados preservando características Data Lake.
-        
-        Args:
-            ddf: DataFrame Dask processado com features enriquecidas
-            
-        Returns:
-            str: Caminho absoluto do dataset final exportado
-            
-        Estratégia de exportação:
-            1. Formato unificado: Single Parquet para análises holísticas
-            2. Formato particionado: Parquet particionado por país para queries seletivas
-            3. Metadados JSON: Estatísticas agregadas e métricas de qualidade
-        
-        Decisões de design:
-            - Compressão Snappy: Balanceamento velocidade/tamanho (3:1) para
-              workflows iterativos.
-            
-            - Engine PyArrow: Suporte nativo para tipos complexos e melhor
-              integração com ecossistema Python científico vs fastparquet.
-            
-            - Sem índice: write_index=False economiza 5-10% espaço sem impacto
-              em queries analíticas que não dependem de row-level access.
-        
-        Batch computation:
-            Estatísticas agregadas computadas em lote único para minimizar
-            materialização do grafo Dask. Alternative seria múltiplos .compute()
-            com 3-5x overhead adicional.
-        
-        Schema-on-read compliance:
-            Inferência de tipos durante escrita, não durante processamento,
-            mantendo flexibilidade do Data Lake (Terrizzano et al., 2015).
-        
-        Limitações:
-            - Particionamento por país pode ser subótimo para queries temporais
-            - Estatísticas agregadas mascaram heterogeneidade intra-país
-            - Formato Parquet impõe schema mínimo (vs formatos totalmente schema-free)
-        """
-        print("Materializando dados processados")
+        Materialises and persists the processed data preserving Data Lake characteristics.
 
-        # Default completude se ausente
+        Args:
+            ddf: Processed Dask DataFrame with enriched features
+
+        Returns:
+            str: Absolute path of the final exported dataset
+
+        Export strategy:
+            1. Unified format: Single Parquet for holistic analyses
+            2. Partitioned format: Parquet partitioned by country for selective queries
+            3. JSON metadata: Aggregate statistics and quality metrics
+
+        Design decisions:
+            - Snappy compression: Speed/size balance (3:1) for
+              iterative workflows.
+
+            - PyArrow engine: Native support for complex types and better
+              integration with the scientific Python ecosystem vs fastparquet.
+
+            - No index: write_index=False saves 5-10% space with no impact
+              on analytical queries that do not depend on row-level access.
+
+        Batch computation:
+            Aggregate statistics computed in a single batch to minimise
+            materialisation of the Dask graph. The alternative would be multiple
+            .compute() calls with 3-5x additional overhead.
+
+        Schema-on-read compliance:
+            Type inference during write, not during processing,
+            keeping the Data Lake's flexibility (Terrizzano et al., 2015).
+
+        Limitations:
+            - Partitioning by country may be suboptimal for temporal queries
+            - Aggregate statistics mask intra-country heterogeneity
+            - The Parquet format imposes a minimal schema (vs fully schema-free formats)
+        """
+        print("Materialising processed data")
+
+        # Completeness default if absent
         if 'data_completeness_score' not in ddf.columns:
-            print("Calculando score de completude ausente")
+            print("Computing the missing completeness score")
             ddf = self._calculate_completeness_score(ddf)
-        
-        print("Computando estatisticas de qualidade")
+
+        print("Computing quality statistics")
         
         stats_to_compute = {
             'completeness_avg': ddf['data_completeness_score'].mean(),
@@ -470,8 +470,8 @@ class TaskGraphProcessor:
         
         computed_stats = dask.compute(stats_to_compute)[0]
         
-        print(f"Qualidade: {computed_stats['total_records']:,} registros, "
-              f"completude media={computed_stats['completeness_avg']:.1f}%, "
+        print(f"Quality: {computed_stats['total_records']:,} records, "
+              f"mean completeness={computed_stats['completeness_avg']:.1f}%, "
               f"Q1={computed_stats['completeness_q25']:.1f}%, "
               f"Q2={computed_stats['completeness_q50']:.1f}%, "
               f"Q3={computed_stats['completeness_q75']:.1f}%")
@@ -484,7 +484,7 @@ class TaskGraphProcessor:
             else:
                 os.remove(output_path)
         
-        print(f"Salvando dataset unificado: {output_path}")
+        print(f"Saving unified dataset: {output_path}")
         
         ddf.to_parquet(
             output_path,
@@ -498,7 +498,7 @@ class TaskGraphProcessor:
         if os.path.exists(partitioned_output_path):
             shutil.rmtree(partitioned_output_path)
         
-        print(f"Salvando dataset particionado: {partitioned_output_path}")
+        print(f"Saving partitioned dataset: {partitioned_output_path}")
         
         ddf.to_parquet(
             partitioned_output_path,
@@ -552,43 +552,43 @@ class TaskGraphProcessor:
         with open(stats_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
         
-        print(f"Artefatos: {output_path}, {partitioned_output_path}, {stats_path}")
+        print(f"Artifacts: {output_path}, {partitioned_output_path}, {stats_path}")
         
         return output_path
 
     def run_task_graph_processing(self) -> Dict:
         """
-        Orquestra pipeline de processamento Data Lake.
+        Orchestrates the Data Lake processing pipeline.
 
         Returns:
-            Dict contendo status de execução, artefatos gerados e metadados
+            Dict containing execution status, generated artifacts and metadata
 
-        Pipeline sequencial:
-            1. Carregamento lazy de dados completos
-            2. Otimização de particionamento para paralelismo
-            3. Feature engineering distribuído
-            4. Materialização e persistência
+        Sequential pipeline:
+            1. Lazy loading of the complete data
+            2. Partitioning optimisation for parallelism
+            3. Distributed feature engineering
+            4. Materialisation and persistence
         """
         start_time = datetime.now()
 
         try:
-            print("\n[1/4] Carregamento de dados")
+            print("\n[1/4] Data loading")
             ddf_complete = self.load_complete_data()
 
-            print("\n[2/4] Otimizacao de particionamento")
+            print("\n[2/4] Partitioning optimisation")
             ddf_partitioned = self.create_partitioned_structure(ddf_complete)
 
-            print("\n[3/4] Feature engineering distribuido")
+            print("\n[3/4] Distributed feature engineering")
             ddf_processed = self.process_task_graph_architecture(ddf_partitioned)
 
-            print("\n[4/4] Materializacao e persistencia")
+            print("\n[4/4] Materialisation and persistence")
             output_path = self.export_processed_data(ddf_processed)
 
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
 
-            print(f"\nProcessamento Dask concluido em {processing_time:.2f}s "
-                  f"({len(ddf_complete)/processing_time:.0f} registros/s)")
+            print(f"\nDask processing completed in {processing_time:.2f}s "
+                  f"({len(ddf_complete)/processing_time:.0f} records/s)")
             
             return {
                 'status': 'success',
@@ -611,8 +611,8 @@ class TaskGraphProcessor:
             }
             
         except FileNotFoundError as e:
-            print(f"\n[ERROR] Dados de entrada nao encontrados: {e}")
-            print("Execute 'raw_data_collector.py' antes deste processador")
+            print(f"\n[ERROR] Input data not found: {e}")
+            print("Run 'raw_data_collector.py' before this processor")
             
             return {
                 'status': 'failed',
@@ -643,12 +643,12 @@ class TaskGraphProcessor:
             }
 
 if __name__ == "__main__":
-    # Sem status de saída, uma falha aqui chega ao orquestrador como sucesso:
-    # pipeline.py usa subprocess check=True, que só lê o código de retorno.
-    # Foi assim que a coleta pôde morrer e as etapas seguintes rodarem sobre
-    # o painel da execução anterior.
+    # Without an exit status, a failure here reaches the orchestrator as success:
+    # pipeline.py uses subprocess check=True, which only reads the return code.
+    # That is how collection could die and the following stages run over
+    # the panel from the previous run.
     processor = TaskGraphProcessor()
     results = processor.run_task_graph_processing()
     status = results.get('status', 'failed')
-    print(f"Execucao: {status}")
+    print(f"Run: {status}")
     sys.exit(0 if status == 'success' else 1)

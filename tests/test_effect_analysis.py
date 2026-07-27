@@ -200,23 +200,24 @@ class TestOutputSchema:
 
 
 class TestSignificanceCsvKeepsEveryColumn:
-    """O CSV mantém tudo o que a análise produz.
+    """The CSV keeps everything the analysis produces.
 
-    Uma lista branca de nomes decidia quais colunas iam para o arquivo, e os
-    nomes eram pré-rename. Ela descartava em silêncio as médias por paradigma e
-    todos os speedups com seus IC95 -- que são exatamente as colunas cujo nome
-    contém o paradigma. Sobreviviam quatro: n, mean_diff_s e o IC da diferença.
+    A whitelist of names decided which columns went into the file, and the
+    names were pre-rename. It silently discarded the per-paradigm means and
+    every speedup with its CI95 -- which are exactly the columns whose name
+    contains the paradigm. Four survived: n, mean_diff_s and the CI of the
+    difference.
 
-    Os testes leem o arquivo escrito, não a função de ordenação: uma lista
-    branca reintroduzida ao lado dela deixaria a ordenação intacta e correta.
+    The tests read the written file, not the ordering function: a whitelist
+    reintroduced alongside it would leave the ordering intact and correct.
     """
 
     @pytest.fixture(scope='class')
     def written(self, tmp_path_factory):
-        """Uma vez por classe: analyze() roda o bootstrap de produção.
+        """Once per class: analyze() runs the production bootstrap.
 
-        Chamado por teste, custava cerca de nove segundos cada e respondia
-        quatro perguntas sobre o mesmo arquivo.
+        Called per test, it cost about nine seconds each and answered four
+        questions about the same file.
         """
         patch = pytest.MonkeyPatch()
         try:
@@ -249,19 +250,20 @@ class TestSignificanceCsvKeepsEveryColumn:
     def test_paradigm_named_columns_reach_the_file(self, written):
         produced, written = written
         named = {k for k in produced if 'mean_' in k or 'speedup' in k}
-        assert named, 'a análise não produziu colunas nomeadas por paradigma'
+        assert named, 'the analysis produced no paradigm-named columns'
         assert named <= written, (
-            f'descartadas do CSV: {sorted(named - written)}'
+            f'dropped from the CSV: {sorted(named - written)}'
         )
 
     def test_nothing_produced_is_dropped(self, written):
         produced, written = written
         assert produced <= written, (
-            f'a análise produziu e o CSV perdeu: {sorted(produced - written)}'
+            f'the analysis produced and the CSV lost: '
+            f'{sorted(produced - written)}'
         )
 
     def test_the_speedups_carry_their_intervals(self, written):
-        """Um speedup sem IC não sustenta a tabela de latência do paper."""
+        """A speedup with no CI does not support the paper's latency table."""
         _, written = written
         speedups = {c for c in written
                     if c.startswith('speedup_') and not c.endswith(

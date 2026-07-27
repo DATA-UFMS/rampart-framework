@@ -1,18 +1,18 @@
 """
-Configurações compartilhadas entre arquiteturas
+Settings shared across architectures
 """
 
 from datetime import datetime
 from typing import Dict, Optional
 
 # ============================================================================
-# CONFIGURAÇÃO TEMPORAL
+# TEMPORAL CONFIGURATION
 # ============================================================================
 START_YEAR = 2000
 END_YEAR = 2023
 
 # ============================================================================
-# ESTRATIFICAÇÃO GEOGRÁFICA (códigos ISO 2 letras - API World Bank)
+# GEOGRAPHIC STRATIFICATION (ISO 2-letter codes - World Bank API)
 # ============================================================================
 COUNTRY_STRATA = {
     'large_economies': ['BR', 'MX', 'AR', 'CO', 'CL', 'PE'],
@@ -27,17 +27,17 @@ for stratum in COUNTRY_STRATA.values():
     LATIN_AMERICA_COUNTRIES.extend(stratum)
 
 # ============================================================================
-# CONFIGURAÇÃO DE ARQUIVOS
+# FILE CONFIGURATION
 # ============================================================================
 BASE_DATA_DIR = 'data'
 
 # ============================================================================
-# CONFIGURAÇÃO DE PERFORMANCE
+# PERFORMANCE CONFIGURATION
 # ============================================================================
 BENCHMARK_CONFIG = {
-    'repetitions': 10,  # Número de repetições por teste (n do protocolo experimental)
-    'warmup_runs': 2,   # Execuções de aquecimento
-    'timeout_seconds': 3600,  # Timeout por operação
+    'repetitions': 10,  # Number of repetitions per test (n of the experimental protocol)
+    'warmup_runs': 2,   # Warm-up runs
+    'timeout_seconds': 3600,  # Timeout per operation
     'memory_limit_gb': 16,
     'profile_memory': True,
     'profile_cpu': True,
@@ -45,12 +45,12 @@ BENCHMARK_CONFIG = {
 }
 
 # ============================================================================
-# METADADOS DE EXECUÇÃO
+# EXECUTION METADATA
 # ============================================================================
 def get_project_root() -> str:
     """
-    Retorna o path absoluto do root do projeto
-    Funciona independente do working directory atual
+    Returns the absolute path of the project root
+    Works regardless of the current working directory
     """
     import os
     
@@ -72,18 +72,18 @@ def get_project_root() -> str:
     if os.path.exists('README.md'):
         return os.path.abspath('.')
     
-    raise FileNotFoundError("Não foi possível encontrar o root do projeto (README.md não encontrado)")
+    raise FileNotFoundError("Could not find the project root (README.md not found)")
 
 DEFAULT_DATASET = 'worldbank'
 
 
 def get_dataset_name() -> str:
     """
-    Dataset em execução, propagado pelo pipeline via DATASET_NAME.
+    Dataset being run, propagated by the pipeline via DATASET_NAME.
 
-    Um único ponto de leitura: o default replicado em dois lugares permitiria
-    que um módulo resolvesse um dataset e outro resolvesse outro na mesma
-    execução.
+    A single point of reading: the default replicated in two places would let
+    one module resolve one dataset and another resolve a different one in the
+    same run.
     """
     import os
     return os.environ.get('DATASET_NAME', DEFAULT_DATASET)
@@ -91,13 +91,13 @@ def get_dataset_name() -> str:
 
 def get_outputs_root() -> str:
     """
-    Raiz dos artefatos do dataset em execução.
+    Root of the artifacts for the dataset being run.
 
-    Segregada por dataset. Sem isso, executar um segundo dataset sobrescreve os
-    artefatos do primeiro sob os mesmos nomes, e uma execução interrompida
-    deixa artefatos de dois datasets convivendo sem que nada o registre — os
-    resultados publicados foram separados em diretórios manualmente, e não pelo
-    código.
+    Segregated per dataset. Without it, running a second dataset overwrites the
+    first one's artifacts under the same names, and an interrupted run leaves
+    artifacts from two datasets coexisting with nothing recording it — the
+    published results were separated into directories by hand, not by the
+    code.
     """
     import os
     return os.path.join(get_project_root(), 'outputs', get_dataset_name())
@@ -105,17 +105,17 @@ def get_outputs_root() -> str:
 
 def get_absolute_output_path(relative_path: str) -> str:
     """
-    Converte path relativo 'outputs/...' em path absoluto sob a raiz do dataset.
+    Converts a relative 'outputs/...' path into an absolute path under the dataset root.
 
-    Exemplo, com DATASET_NAME=inep_censo:
-      'outputs/statistics' -> '/<projeto>/outputs/inep_censo/statistics'
+    Example, with DATASET_NAME=inep_censo:
+      'outputs/statistics' -> '/<project>/outputs/inep_censo/statistics'
     """
     import os
 
-    # Por componente, e não por prefixo textual. A forma nua 'outputs' não
-    # começa com 'outputs/', então escapava do descascamento e produzia
-    # outputs/<dataset>/outputs -- foi assim que o snapshot de ambiente passou a
-    # ser gravado um nível abaixo de onde todos os consumidores o leem.
+    # By component, not by textual prefix. The bare form 'outputs' does not
+    # start with 'outputs/', so it escaped the stripping and produced
+    # outputs/<dataset>/outputs -- that is how the environment snapshot came to
+    # be written one level below where every consumer reads it.
     parts = [part for part in relative_path.replace(os.sep, '/').split('/')
              if part]
     if parts and parts[0] == 'outputs':
@@ -123,7 +123,7 @@ def get_absolute_output_path(relative_path: str) -> str:
     return os.path.join(get_outputs_root(), *parts)
 
 def get_execution_metadata() -> Dict:
-    """Retorna metadados da execução atual"""
+    """Returns metadata of the current run"""
     import platform
     import psutil
     
@@ -140,18 +140,18 @@ def get_execution_metadata() -> Dict:
 
 
 def write_environment_snapshot(destination: str, *, extra: Optional[Dict] = None) -> str:
-    """Grava o registro de configuração e ambiente da execução.
+    """Writes the run's configuration and environment receipt.
 
-    Vive aqui, e não no orquestrador, porque o benchmark também precisa dele: uma
-    execução do benchmark isolada não produzia registro algum, e uma latência sem
-    o ambiente que a produziu não é comparável a nada.
+    Lives here, and not in the orchestrator, because the benchmark needs it too: a
+    standalone benchmark run produced no receipt at all, and a latency without
+    the environment that produced it is comparable to nothing.
 
     Args:
-        destination: diretório onde gravar
-        extra: campos adicionais do chamador (a fase medida, por exemplo)
+        destination: directory to write to
+        extra: additional fields from the caller (the measured phase, for example)
 
     Returns:
-        Caminho do arquivo gravado.
+        Path of the written file.
     """
     import hashlib
     import importlib.metadata

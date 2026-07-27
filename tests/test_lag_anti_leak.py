@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Lags do target e gaps temporais por fold.
+"""Target lags and temporal gaps per fold.
 
-Estes testes exigiam artefatos pré-gerados em disco e portanto **pulavam** em
-toda execução, inclusive no CI: um teste anti-leakage que pula não protege nada.
+These tests required pre-generated artifacts on disk and therefore **skipped** on
+every run, including in CI: an anti-leakage test that skips protects nothing.
 
-As duas propriedades que verificam são puras -- um lag de k anos só pode existir
-onde há observação em t-k, e um fold só é válido se respeita os gaps -- então não
-precisam do pipeline, apenas de um painel em memória.
+The two properties they check are pure -- a lag of k years can only exist where
+there is an observation at t-k, and a fold is only valid if it respects the gaps
+-- so they do not need the pipeline, only an in-memory panel.
 
-O painel sintético tem lacunas deliberadas: uma entidade com série completa, uma
-com um ano faltando no meio, e uma que começa depois do início. Sem lacunas, um
-teste de lag passa trivialmente.
+The synthetic panel has deliberate gaps: one entity with a complete series, one
+with a year missing in the middle, and one that starts after the beginning.
+Without gaps, a lag test passes trivially.
 """
 
 import json
@@ -35,12 +35,12 @@ LAG = 2
 
 def _panel_with_gaps() -> pd.DataFrame:
     rows = []
-    for year in range(2000, 2011):            # série completa
+    for year in range(2000, 2011):            # complete series
         rows.append(('AAA', year))
-    for year in range(2000, 2011):            # 2005 ausente
+    for year in range(2000, 2011):            # 2005 missing
         if year != 2005:
             rows.append(('BBB', year))
-    for year in range(2004, 2011):            # começa depois
+    for year in range(2004, 2011):            # starts later
         rows.append(('CCC', year))
     frame = pd.DataFrame(rows, columns=['country_code', 'year'])
     frame[TARGET] = np.random.default_rng(3).uniform(1.0, 20.0, len(frame))
@@ -48,7 +48,7 @@ def _panel_with_gaps() -> pd.DataFrame:
 
 
 def _with_lag(frame: pd.DataFrame, lag: int) -> pd.DataFrame:
-    """Constrói o lag por junção temporal, como os paradigmas fazem."""
+    """Builds the lag by temporal join, the way the paradigms do."""
     previous = frame[['country_code', 'year', TARGET]].copy()
     previous['year'] = previous['year'] + lag
     previous = previous.rename(columns={TARGET: f'{TARGET}_lag_{lag}'})
@@ -56,7 +56,7 @@ def _with_lag(frame: pd.DataFrame, lag: int) -> pd.DataFrame:
 
 
 def _orphan_lags(panel: pd.DataFrame, source: pd.DataFrame) -> pd.DataFrame:
-    """Lags preenchidos que não têm observação de origem em t-k."""
+    """Filled lags that have no source observation at t-k."""
     reference = source[['country_code', 'year', TARGET]].copy()
     reference['year'] = reference['year'] + LAG
     reference = reference.rename(columns={TARGET: 'source'})
@@ -72,7 +72,7 @@ class TestLagHasASourceObservation:
         assert _orphan_lags(_with_lag(source, LAG), source).empty
 
     def test_the_fixture_actually_exercises_the_property(self):
-        """Sem lacunas o teste acima passaria trivialmente."""
+        """Without gaps the test above would pass trivially."""
         panel = _with_lag(_panel_with_gaps(), LAG)
         assert panel[f'{TARGET}_lag_{LAG}'].isna().sum() > 0
 
@@ -81,12 +81,12 @@ class TestLagHasASourceObservation:
         absent = {(r.country_code, r.year) for r in
                   panel[panel[f'{TARGET}_lag_{LAG}'].isna()].itertuples()}
         assert ('AAA', 2000) in absent and ('AAA', 2001) in absent
-        assert ('BBB', 2007) in absent, 'a lacuna de 2005 deveria aparecer em 2007'
+        assert ('BBB', 2007) in absent, 'the 2005 gap should show up in 2007'
         assert ('CCC', 2004) in absent and ('CCC', 2005) in absent
         assert ('AAA', 2002) not in absent
 
     def test_a_forged_lag_is_detected(self):
-        """A checagem só vale se reprovar um lag sem origem."""
+        """The check is only worth anything if it fails a lag without a source."""
         source = _panel_with_gaps()
         panel = _with_lag(source, LAG)
         panel.loc[(panel['country_code'] == 'BBB') &
@@ -121,14 +121,16 @@ class TestFoldGaps:
             assert fold['test_start'] - fold['val_end'] - 1 >= gap
 
     def test_a_narrow_gap_violates_the_requirement(self):
-        """O teste anterior seria vácuo se nada reprovasse um gap estreito."""
+        """The previous test would be vacuous if nothing failed a narrow gap."""
         gap = SCIENTIFIC_CONFIG['temporal_gap_years']
         narrow = self._folds(gap - 1)
         assert [f for f in narrow
                 if f['val_start'] - f['train_end'] - 1 < gap]
 
     def test_the_validator_accepts_conforming_folds(self):
-        """Liga a propriedade ao componente que a impõe, não só à aritmética."""
+        """Ties the property to the component that enforces it, not just to
+        the arithmetic.
+        """
         gap = SCIENTIFIC_CONFIG['temporal_gap_years']
         TemporalValidator(min_gap_years=gap,
                           embargo_years=0).enforce_walk_forward(self._folds(gap))

@@ -526,7 +526,7 @@ class TestTheTwoThresholdsAnswerDifferentQuestions:
 class TestTheGateHasSomethingToAttestTo:
     """An empty fold list satisfied "no invalid folds" vacuously.
 
-    The pipeline logged "0 folds -- integridade temporal verificada" and went
+    The pipeline logged "0 folds -- temporal integrity verified" and went
     on to the benchmark. Zero folds means the models had nothing to train on,
     or the artifact is broken; neither is temporal integrity.
     """
@@ -615,7 +615,8 @@ class TestTheParadigmsShareTheirFolds:
                                  (2000, 2009, 2012, 2013, 2016, 2017)]
         assert len(windows[paradigms[0]]) == len(self.SHARED)
         self._write(outputs, windows, created)
-        with pytest.raises(ValueError, match='mesmos folds'):
+        with pytest.raises(ValueError,
+                           match='do not share the same temporal folds'):
             pipeline._validate_anti_leakage_gate(str(outputs), started)
 
     def test_a_missing_fold_halts(self, gate):
@@ -624,7 +625,8 @@ class TestTheParadigmsShareTheirFolds:
         windows = {p: self.SHARED for p in paradigms}
         windows[paradigms[-1]] = self.SHARED[:1]
         self._write(outputs, windows, created)
-        with pytest.raises(ValueError, match='mesmos folds'):
+        with pytest.raises(ValueError,
+                           match='do not share the same temporal folds'):
             pipeline._validate_anti_leakage_gate(str(outputs), started)
 
     def test_an_empty_configuration_halts_before_the_comparison(self, gate):

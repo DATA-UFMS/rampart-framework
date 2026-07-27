@@ -80,4 +80,4 @@ class TestMissingIndicatorAborts:
     def test_allowance_is_still_reported(self):
         """An accepted absence must remain visible, not become silent."""
         source = (_SRC / 'collection' / 'raw_data_collector.py').read_text()
-        assert 'Ausências aceitas explicitamente' in source
+        assert 'Absences accepted explicitly' in source

@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Atribui a latência dos estágios de ML ao engine ou à parte comum.
+"""Attributes the latency of the ML stages to the engine or to the common part.
 
-Entrada:
-  - outputs/<dataset>/ml_pipeline/architectures/<paradigma>/models/... (por fold)
+Input:
+  - outputs/<dataset>/ml_pipeline/architectures/<paradigm>/models/... (per fold)
 
-Saídas:
+Outputs:
   - outputs/<dataset>/statistics/stage_attribution.json
   - outputs/<dataset>/statistics/stage_attribution.tex
 
-Por que existe: o estágio de ML contém o carregamento do fold, que é do engine, e
-o ajuste dos modelos, que os três paradigmas fazem igual depois de materializar em
-pandas. Reportar só o total atribui ao paradigma uma parcela que ele não controla,
-e é sobre a parcela de carregamento que a narrativa do cache de partições fala.
+Why it exists: the ML stage contains the fold loading, which belongs to the engine,
+and the model fitting, which the three paradigms do identically after materialising
+into pandas. Reporting only the total attributes to the paradigm a share it does not
+control, and it is about the loading share that the partition-cache narrative speaks.
 
-Esta tabela não decide nada por si: ela mostra onde a diferença medida está. Se o
-ganho de um paradigma não aparece em fold_load, a explicação por cache de
-partições não se sustenta nos números.
+This table decides nothing on its own: it shows where the measured difference sits.
+If a paradigm's gain does not appear in fold_load, the partition-cache explanation
+does not hold up in the numbers.
 """
 
 from __future__ import annotations
@@ -38,16 +38,16 @@ OUT_DIR = Path(get_absolute_output_path("outputs/statistics"))
 
 
 STAGES = {
-    # O padrão de nome do artefato de cada estágio. Os dois estágios de ML são
-    # decompostos, e o Dask ganha em ambos no INEP, então atribuir só um deixaria
-    # metade da afirmação sem medição.
+    # The artifact name pattern of each stage. The two ML stages are
+    # decomposed, and Dask wins in both on INEP, so attributing only one would
+    # leave half of the claim unmeasured.
     'hierarchical': "hierarchical_analysis*results*.json",
     'baseline': "baseline_analysis*results*.json",
 }
 
 
 def _results_path(paradigm: str, pattern: str) -> Optional[Path]:
-    """Localiza o JSON de resultados de um estágio de um paradigma."""
+    """Locates the results JSON of a stage of a paradigm."""
     root = Path(get_absolute_output_path(
         f"outputs/ml_pipeline/architectures/{paradigm}/models"))
     if not root.exists():
@@ -57,10 +57,10 @@ def _results_path(paradigm: str, pattern: str) -> Optional[Path]:
 
 
 def _folds_of(payload: Dict) -> List[Dict]:
-    """Os folds, sob a chave que cada estágio usa.
+    """The folds, under the key that each stage uses.
 
-    O estágio hierárquico grava uma lista sob 'folds'; o de baselines grava um
-    dicionário com chaves 'fold_<n>'. A diferença é de layout, não de conteúdo.
+    The hierarchical stage writes a list under 'folds'; the baseline one writes a
+    dictionary with 'fold_<n>' keys. The difference is of layout, not of content.
     """
     if isinstance(payload.get("folds"), list):
         return payload["folds"]
@@ -74,7 +74,7 @@ def _folds_of(payload: Dict) -> List[Dict]:
 
 
 def _fold_segments(path: Path) -> List[Dict[str, float]]:
-    """Pares (fold_load_s, fit_predict_s) por fold, quando registrados."""
+    """Pairs (fold_load_s, fit_predict_s) per fold, when recorded."""
     payload = json.loads(path.read_text())
     segments = []
     for fold in _folds_of(payload):
@@ -97,15 +97,15 @@ def attribute() -> Dict:
         for paradigm in sorted(discover_paradigms()):
             path = _results_path(paradigm, pattern)
             if path is None:
-                print(f"  [WARN] {paradigm}/{stage}: resultados ausentes")
+                print(f"  [WARN] {paradigm}/{stage}: results missing")
                 continue
             segments = _fold_segments(path)
             if not segments:
-                # Um resultado anterior à decomposição não tem os campos.
-                # Reportado, e não preenchido com zero, que entraria nas somas
-                # como se fosse medição.
-                print(f"  [WARN] {paradigm}/{stage}: {path.name} não registra "
-                      f"a decomposição")
+                # A result predating the decomposition does not have the fields.
+                # Reported, and not filled with zero, which would enter the sums
+                # as if it were a measurement.
+                print(f"  [WARN] {paradigm}/{stage}: {path.name} does not record "
+                      f"the decomposition")
                 continue
             load_total = sum(s["fold_load_s"] for s in segments)
             fit_total = sum(s["fit_predict_s"] for s in segments)
@@ -115,31 +115,31 @@ def attribute() -> Dict:
                 "fold_load_s": load_total,
                 "fit_predict_s": fit_total,
                 "total_s": total,
-                # A fração que o engine controla é o que torna a comparação
-                # atribuível; o resto é comum aos três por construção.
+                # The fraction the engine controls is what makes the comparison
+                # attributable; the rest is common to all three by construction.
                 "engine_share": load_total / total if total > 0 else None,
                 "per_fold": segments,
             }
 
         entry: Dict = {"paradigms": per_paradigm}
 
-        # As razões dividem totais somados sobre os folds de cada paradigma. Com
-        # contagens diferentes -- um artefato parcial, um fold que falhou -- a
-        # razão compara o trabalho de nove folds contra o de oito, e a diferença
-        # de 12% aparece como se fosse do engine. É a atribuição inteira que o
-        # arquivo existe para fazer.
+        # The ratios divide totals summed over each paradigm's folds. With
+        # different counts -- a partial artifact, a fold that failed -- the
+        # ratio compares the work of nine folds against that of eight, and the
+        # 12% difference shows up as if it came from the engine. It is the whole
+        # attribution that this file exists to perform.
         counts = {paradigm: values["folds"]
                   for paradigm, values in per_paradigm.items()}
         if len(set(counts.values())) > 1:
             raise ValueError(
-                f"Estágio '{stage}': os paradigmas registram números de fold "
-                f"diferentes {counts}. As razões entre eles não são "
-                f"atribuíveis ao engine enquanto isso for verdade."
+                f"Stage '{stage}': the paradigms record different fold "
+                f"counts {counts}. The ratios between them are not "
+                f"attributable to the engine while that remains true."
             )
 
         if len(per_paradigm) >= 2:
-            # Razões por segmento: um ganho no total que não aparece em
-            # fold_load não vem do engine.
+            # Per-segment ratios: a gain in the total that does not appear in
+            # fold_load does not come from the engine.
             baseline = min(per_paradigm, key=lambda p: per_paradigm[p]["total_s"])
             entry["fastest_total"] = baseline
             entry["ratios_against_fastest"] = {
@@ -155,25 +155,25 @@ def attribute() -> Dict:
 
 
 def _escape(text: str) -> str:
-    """Nomes de paradigma e de estágio trazem sublinhado, que o LaTeX não aceita.
+    """Paradigm and stage names carry an underscore, which LaTeX does not accept.
 
-    Sem isto o arquivo gerado não compila, e o erro aparece a quem monta o
-    paper, não a quem roda o pipeline.
+    Without this the generated file does not compile, and the error surfaces to
+    whoever assembles the paper, not to whoever runs the pipeline.
     """
     return str(text).replace('_', r'\_')
 
 
 def _latex(report: Dict) -> str:
     lines = [
-        "% Atribuição do estágio hierárquico — gerado automaticamente",
+        "% Hierarchical stage attribution — automatically generated",
         "\\begin{table}[htb]",
         "\\centering",
-        "\\caption{Latência do estágio hierárquico decomposta em carregamento do "
-        "fold (engine) e ajuste (comum aos paradigmas).}",
+        "\\caption{Latency of the hierarchical stage decomposed into fold "
+        "loading (engine) and fitting (common to the paradigms).}",
         "\\begin{tabular}{llrrrr}",
         "\\toprule",
-        "Estagio & Paradigma & Folds & Carregamento (s) & Ajuste (s) & "
-        "Parcela do engine \\\\",
+        "Stage & Paradigm & Folds & Loading (s) & Fitting (s) & "
+        "Engine share \\\\",
         "\\midrule",
     ]
     for stage, entry in sorted(report.get("stages", {}).items()):
@@ -192,7 +192,7 @@ def _latex(report: Dict) -> str:
 def main() -> int:
     report = attribute()
     if not any(e.get("paradigms") for e in report.get("stages", {}).values()):
-        print("  Nenhum estagio registra a decomposicao; nada a atribuir.")
+        print("  No stage records the decomposition; nothing to attribute.")
         return 0
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""O efeito pareado é A menos B, nas duas vias do módulo.
+"""The paired effect is A minus B, on both paths of the module.
 
-`_paired_deltas_for_metric` calculava `vb - va` enquanto tudo o mais assume A−B:
-a docstring do módulo, `_decision_equivalence`, e `paradigm_pairs`, que promete
-"the effect of a pair is measured as A minus B". A via de latência já usava
-log(A/B). Os dois ramos do mesmo módulo discordavam, o que por si prova que um
-estava errado.
+`_paired_deltas_for_metric` computed `vb - va` while everything else assumes
+A−B: the module docstring, `_decision_equivalence`, and `paradigm_pairs`, which
+promises "the effect of a pair is measured as A minus B". The latency path
+already used log(A/B). The two branches of the same module disagreed, which on
+its own proves one of them was wrong.
 
-Consequência: o campo `advantage` nomeava o paradigma **pior** em todas as três
-métricas preditivas, e o mesmo delta alimenta `bootstrap_sensitivity`.
+Consequence: the `advantage` field named the **worse** paradigm on all three
+predictive metrics, and the same delta feeds `bootstrap_sensitivity`.
 
-O caso interessante é que r2 melhora para cima e mase/wape melhoram para baixo:
-um teste que só cobrisse r2 passaria com o sinal invertido em metade das métricas.
+The interesting case is that r2 improves upwards and mase/wape improve
+downwards: a test covering only r2 would pass with the sign inverted on half
+the metrics.
 """
 
 import sys
@@ -29,7 +30,7 @@ from statistical_validation.equivalence_estimation import (
     HIGHER_IS_BETTER, _advantage, bootstrap_ci, _decision_equivalence,
     _paired_deltas_for_metric)
 
-# A é melhor nas três: r2 maior, mase e wape menores.
+# A is better on all three: higher r2, lower mase and wape.
 BETTER = {'r2': 0.9, 'mase': 0.5, 'wape': 0.1}
 WORSE = {'r2': 0.5, 'mase': 1.5, 'wape': 0.4}
 SESOI = {'r2': 0.01, 'mase': 0.05, 'wape': 0.05}
@@ -55,11 +56,11 @@ class TestSignConvention:
         deltas = _paired_deltas_for_metric(pairs, metric, 'archA', 'archB')
         expected = BETTER[metric] - WORSE[metric]
         assert deltas[0] == pytest.approx(expected), (
-            f'{metric}: delta {deltas[0]} não é A−B ({expected})'
+            f'{metric}: delta {deltas[0]} is not A−B ({expected})'
         )
 
     def test_the_latency_branch_uses_the_same_order(self):
-        """log(A/B) é positivo quando A é maior, como A−B."""
+        """log(A/B) is positive when A is larger, like A−B."""
         source = (_SRC / 'statistical_validation'
                   / 'equivalence_estimation.py').read_text()
         assert 'np.log(x[mask] / y[mask])' in source
@@ -72,10 +73,10 @@ class TestAdvantageNamesTheBetterParadigm:
 
     @pytest.mark.parametrize('metric', ['r2', 'mase', 'wape'])
     def test_the_better_paradigm_is_named(self, metric):
-        """Era invertido em 3 de 3."""
+        """It was inverted on 3 out of 3."""
         _, advantage = _decide(metric, _pairs(BETTER, WORSE))
         assert advantage == 'archA', (
-            f'{metric}: nomeou {advantage}, mas archA é melhor'
+            f'{metric}: named {advantage}, but archA is better'
         )
 
     @pytest.mark.parametrize('metric', ['r2', 'mase', 'wape'])
@@ -85,21 +86,23 @@ class TestAdvantageNamesTheBetterParadigm:
 
     @pytest.mark.parametrize('metric', ['r2', 'mase', 'wape'])
     def test_swapping_the_pair_order_keeps_the_winner(self, metric):
-        """paradigm_pairs promete invariância à ordem do par."""
+        """paradigm_pairs promises invariance to the order of the pair."""
         pairs = _pairs(BETTER, WORSE)
         _, direct = _decide(metric, pairs, 'archA', 'archB')
         _, reversed_order = _decide(metric, pairs, 'archB', 'archA')
         assert direct == reversed_order == 'archA'
 
     def test_metrics_with_opposite_directions_agree_on_the_winner(self):
-        """O ponto do campo: r2 sobe, mase e wape descem, o vencedor é o mesmo."""
+        """The point of the field: r2 goes up, mase and wape go down, the
+        winner is the same."""
         pairs = _pairs(BETTER, WORSE)
         winners = {metric: _decide(metric, pairs)[1]
                    for metric in ('r2', 'mase', 'wape')}
         assert set(winners.values()) == {'archA'}, winners
 
     def test_the_decisions_do_differ_by_direction(self):
-        """Se as três decisões fossem iguais, a invariância seria vácua."""
+        """If the three decisions were the same, the invariance would be
+        vacuous."""
         pairs = _pairs(BETTER, WORSE)
         decisions = {metric: _decide(metric, pairs)[0]
                      for metric in ('r2', 'mase', 'wape')}
@@ -114,7 +117,7 @@ class TestAdvantageNamesTheBetterParadigm:
 
 
 class TestSensitivityInheritsTheFix:
-    """bootstrap_sensitivity chama a mesma função sobre os mesmos deltas."""
+    """bootstrap_sensitivity calls the same function over the same deltas."""
 
     def test_it_uses_the_shared_delta_function(self):
         source = (_SRC / 'statistical_validation'

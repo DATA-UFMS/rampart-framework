@@ -171,7 +171,7 @@ class TestNoArtifactWriteIsSwallowed:
         """It was dropped, and the run decided with a threshold nobody asked for."""
         from statistical_validation.equivalence_estimation import (
             _parse_latency_profile)
-        with pytest.raises(ValueError, match='malformado'):
+        with pytest.raises(ValueError, match='Malformed SESOI profile'):
             _parse_latency_profile('setup:0.2,total-0.1', 0.15)
 
     def test_a_well_formed_profile_parses(self):

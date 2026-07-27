@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Geração automática do painel consolidado (scorecard) em LaTeX a partir dos
-artefatos já produzidos pelo pipeline.
+Automatic generation of the consolidated panel (scorecard) in LaTeX from the
+artifacts already produced by the pipeline.
 
-Entradas (melhor esforço, com fallbacks):
- - outputs/statistics/significance_summary.json ou .tex (speedups + IC95 por fase)
- - outputs/statistics/equivalence_estimation.json (equivalência por estimativa SESOI+IC)
- - outputs/statistics/architectural_resource_usage.tex (CPU(proc) média e RSS para processing)
+Inputs (best effort, with fallbacks):
+ - outputs/statistics/significance_summary.json or .tex (speedups + 95% CI per phase)
+ - outputs/statistics/equivalence_estimation.json (equivalence by SESOI+CI estimation)
+ - outputs/statistics/architectural_resource_usage.tex (mean CPU(proc) and RSS for processing)
 
-Saída:
+Output:
  - outputs/statistics/architectural_scorecard.tex
 
-Uso:
- - Execute diretamente: `python src/statistical_validation/make_scorecard.py`
- - Integrado ao pipeline: chamado automaticamente após o benchmark.
+Usage:
+ - Run directly: `python src/statistical_validation/make_scorecard.py`
+ - Integrated into the pipeline: called automatically after the benchmark.
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def load_json(p: Path) -> Optional[dict]:
 
 
 def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
-    """Retorna {pair_key: {phase: (speedup, lo, hi)}}"""
+    """Returns {pair_key: {phase: (speedup, lo, hi)}}"""
     j = load_json(BASE / 'significance_summary.json')
     if j:
         out: Dict[str, Dict[str, Tuple[float, float, float]]] = {}
@@ -55,7 +55,7 @@ def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
             for phase, metrics in phases.items():
                 if not isinstance(metrics, dict):
                     continue
-                # Detectar chave de speedup dinamicamente
+                # Detect the speedup key dynamically
                 speedup_key = [k for k in metrics if k.startswith('speedup_') and not k.endswith('_lo') and not k.endswith('_hi')]
                 ci_lo_key = [k for k in metrics if k.endswith('ci95_lo') and 'speedup' in k]
                 ci_hi_key = [k for k in metrics if k.endswith('ci95_hi') and 'speedup' in k]
@@ -69,15 +69,16 @@ def get_speedups() -> Dict[str, Dict[str, Tuple[float, float, float]]]:
                 out[pair_key] = pair_speedups
         if out:
             return out
-    # Sem fallback por parsing de LaTeX. Ele recuperava números da tabela que
-    # outro script renderiza e os chaveava sob 'dl_vs_dw', um par que deixou de
-    # existir no rename -- então o resultado nunca casava com nada e a ausência
-    # do JSON aparecia como scorecard vazio em vez de como ausência.
+    # No LaTeX-parsing fallback. It recovered numbers from the table that
+    # another script renders and keyed them under 'dl_vs_dw', a pair that
+    # stopped existing at the rename -- so the result never matched anything and
+    # the absence of the JSON showed up as an empty scorecard instead of as an
+    # absence.
     return {}
 
 
 def summarize_equivalence(metric: str, pair_key: str) -> Optional[str]:
-    """Lê equivalence_estimation.json e retorna resumo para a métrica dada."""
+    """Reads equivalence_estimation.json and returns a summary for the given metric."""
     data = load_json(BASE / 'equivalence_estimation.json')
     if not data:
         return None
@@ -89,20 +90,21 @@ def summarize_equivalence(metric: str, pair_key: str) -> Optional[str]:
     decision = entry.get('decision', '?')
     delta = entry.get('delta', float('nan'))
     ci = entry.get('ci95', [float('nan'), float('nan')])
-    status = 'Sim' if 'equivalen' in decision.lower() else 'Não'
+    status = 'Yes' if 'equivalen' in decision.lower() else 'No'
     return f"{status} ($\\delta={delta:.3f}$, IC=[{ci[0]:.3f},{ci[1]:.3f}])"
 
 
 def get_resources_processing(phase: str = 'processing') -> Dict[str, Dict[str, Optional[float]]]:
-    """CPU e RSS por paradigma numa fase, lidos do JSON.
+    """CPU and RSS per paradigm in one phase, read from the JSON.
 
-    Antes isto parseava a tabela LaTeX que outro script gera, recuperando por
-    texto números que existem em JSON. Duas consequências: qualquer mudança de
-    formato quebrava a extração em silêncio, e o nome de um paradigma ficou
-    desatualizado -- procurava-se 'processing & polars', que deixou de existir no
-    rename, então o terceiro paradigma nunca era extraído e o `except` escondia.
+    This used to parse the LaTeX table that another script generates,
+    recovering by text numbers that exist in JSON. Two consequences: any format
+    change broke the extraction silently, and one paradigm's name went stale --
+    it looked for 'processing & polars', which stopped existing at the rename,
+    so the third paradigm was never extracted and the `except` hid it.
 
-    Os nomes vêm do registro, e não de literais, pelo mesmo motivo.
+    The names come from the registry, and not from literals, for the same
+    reason.
     """
     payload = load_json(BASE / 'architectural_resource_usage.json')
     if not payload:
@@ -124,20 +126,20 @@ def get_resources_processing(phase: str = 'processing') -> Dict[str, Dict[str, O
 def build_scorecard() -> str:
     speedups_by_pair = get_speedups()
 
-    # Pares derivados do registro. As chaves literais eram pré-rename
-    # ('dl_vs_dw' etc.) enquanto os artefatos passaram a usar os nomes dos
-    # paradigmas, então nenhum par casava e o scorecard saía com travessão em
-    # duas das três linhas -- 12 speedups e 9 decisões SESOI perdidos em silêncio.
+    # Pairs derived from the registry. The literal keys were pre-rename
+    # ('dl_vs_dw' etc.) while the artifacts moved to the paradigm names, so no
+    # pair matched and the scorecard came out with an em dash in two of the three
+    # rows -- 12 speedups and 9 SESOI decisions lost silently.
     pairs = [(f'{left}_vs_{right}',
               f"{left.replace('_', chr(92) + '_')} vs {right.replace('_', chr(92) + '_')}")
              for left, right in paradigm_pairs()]
     if speedups_by_pair and not any(k in speedups_by_pair for k, _ in pairs):
         raise KeyError(
-            f"Nenhum par do registro {[k for k, _ in pairs]} aparece nos "
-            f"artefatos {sorted(speedups_by_pair)}: o scorecard sairia vazio."
+            f"No pair from the registry {[k for k, _ in pairs]} appears in the "
+            f"artifacts {sorted(speedups_by_pair)}: the scorecard would come out empty."
         )
 
-    # Linhas de speedup por par
+    # Speedup rows per pair
     speedup_rows = {}
     for pair_key, pair_label in pairs:
         sp = speedups_by_pair.get(pair_key, {})
@@ -158,7 +160,7 @@ def build_scorecard() -> str:
             speed_lines.append(f"Total: {total_s}")
         speedup_rows[pair_key] = '; '.join(speed_lines) if speed_lines else '—'
 
-    # Linhas de equivalência por par
+    # Equivalence rows per pair
     equiv_rows = {}
     for pair_key, pair_label in pairs:
         r2 = summarize_equivalence('r2', pair_key) or '—'
@@ -166,9 +168,9 @@ def build_scorecard() -> str:
         wape = summarize_equivalence('wape', pair_key) or '—'
         equiv_rows[pair_key] = f"R$^2$: {r2}; MASE: {mase}; WAPE: {wape}"
 
-    # Informações de recursos
-    # Uma linha por paradigma presente, nomeado: as abreviações DL/DW/PL
-    # designavam os nomes anteriores ao rename.
+    # Resource information
+    # One row per paradigm present, named: the abbreviations DL/DW/PL
+    # designated the names from before the rename.
     resources = get_resources_processing()
     resource_lines = []
     for paradigm, values in sorted(resources.items()):
@@ -183,12 +185,12 @@ def build_scorecard() -> str:
         resource_lines.append(' '.join(parts))
     resource_s = '; '.join(resource_lines) if resource_lines else '—'
 
-    # Tabela 3-way
+    # 3-way table
     parts = []
-    parts.append('% Gerado automaticamente')
+    parts.append('% Generated automatically')
     parts.append('\\begin{table}[htbp]')
     parts.append('\\centering')
-    parts.append('\\caption{Painel de evidências (resumo consolidado 3-way)}')
+    parts.append('\\caption{Evidence panel (consolidated 3-way summary)}')
     parts.append('\\label{tab:architectural-scorecard}')
     width = 0.78 / max(len(pairs), 1)
     parts.append('\\begin{tabular}{p{0.18\\linewidth}'
@@ -196,11 +198,11 @@ def build_scorecard() -> str:
     parts.append('\\toprule')
     parts.append(' & ' + ' & '.join(label for _, label in pairs) + ' \\\\')
     parts.append('\\midrule')
-    parts.append('\\textbf{Speedup por fase} & '
+    parts.append('\\textbf{Speedup per phase} & '
                  + ' & '.join(speedup_rows[k] for k, _ in pairs) + ' \\\\')
-    parts.append('\\textbf{Equivalência (SESOI+IC)} & '
+    parts.append('\\textbf{Equivalence (SESOI+CI)} & '
                  + ' & '.join(equiv_rows[k] for k, _ in pairs) + ' \\\\')
-    parts.append('\\textbf{Recursos (processing)} & \\multicolumn{3}{l}{' + resource_s + '} \\\\')
+    parts.append('\\textbf{Resources (processing)} & \\multicolumn{3}{l}{' + resource_s + '} \\\\')
     parts.append('\\bottomrule')
     parts.append('\\end{tabular}')
     parts.append('\\end{table}')

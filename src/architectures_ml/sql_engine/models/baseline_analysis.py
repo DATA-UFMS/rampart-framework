@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Análise de modelos baseline para arquitetura Data Warehouse.
+Baseline model analysis for the Data Warehouse architecture.
 
-Módulo para análise comparativa usando padrão ML Data Warehouse Consumer
-com queries diretas a views e validação temporal walk-forward com gaps.
+Module for comparative analysis using the ML Data Warehouse Consumer pattern
+with direct queries to views and walk-forward temporal validation with gaps.
 
-Resumo técnico:
-- Padrão ML Data Warehouse Consumer (Connection Manager + views temporais)
-- Validação temporal com gaps (mínimo 2 anos) para prevenir vazamento
-- Modelos baseline: média global, tendência linear, naive com lag, cross-country
-- Acesso via SQL nativo (DuckDB) sem I/O de arquivos durante treinamento
+Technical summary:
+- ML Data Warehouse Consumer pattern (Connection Manager + temporal views)
+- Temporal validation with gaps (minimum of 2 years) to prevent leakage
+- Baseline models: global mean, linear trend, naive with lag, cross-country
+- Access via native SQL (DuckDB) with no file I/O during training
 """
 import time
 
@@ -54,12 +54,12 @@ from connection_manager import DuckDBConnectionManager, SQLProcessingError
 
 
 def _best_by_val_r2(fold_results: dict):
-    """Melhor baseline por R2 de validação, ignorando os indefinidos.
+    """Best baseline by validation R2, ignoring the undefined ones.
 
-    `max` compara com NaN devolvendo False, então bastava o primeiro item ter
-    R2 indefinido para ele ser eleito o melhor -- e `best_test_r2` e
-    `generalization_gap` derivavam desse. A escolha passava a depender da ordem
-    de inserção no dicionário, não do desempenho.
+    `max` compares against NaN by returning False, so it was enough for the
+    first item to have an undefined R2 for it to be elected the best -- and
+    `best_test_r2` and `generalization_gap` derived from it. The choice came to
+    depend on insertion order in the dictionary, not on performance.
     """
     import math
 
@@ -69,35 +69,35 @@ def _best_by_val_r2(fold_results: dict):
               and not math.isnan(float(data['val_r2']))]
     if not scored:
         raise ValueError(
-            "Nenhum baseline tem R2 de validação definido neste fold; não há "
-            "melhor baseline a reportar."
+            "No baseline has a defined validation R2 in this fold; there is no "
+            "best baseline to report."
         )
     return max(scored, key=lambda pair: pair[1])
 
 class BaselineModelAnalysisSqlEngine:
     """
-    ML Data Warehouse Consumer - Análise Baseline.
-    
-    Implementa padrão ML Data Warehouse Consumer para análise científica
-    de modelos baseline com validação temporal utilizando:
-    - Queries diretas via Connection Manager
-    - Consumo de views do Feature Store para treinamento ML
-    - Connection pooling para performance em workloads ML
-    - Eliminação de file I/O durante treinamento
-    
+    ML Data Warehouse Consumer - Baseline Analysis.
+
+    Implements the ML Data Warehouse Consumer pattern for the scientific
+    analysis of baseline models with temporal validation, using:
+    - Direct queries via the Connection Manager
+    - Consumption of Feature Store views for ML training
+    - Connection pooling for performance in ML workloads
+    - Elimination of file I/O during training
+
     Attributes:
-        folds_path (str): Caminho para configuração dos folds temporais
-        results_path (str): Diretório para salvar resultados
-        db_path (str): Caminho para o banco DuckDB
-        conn_manager (DuckDBConnectionManager): Gerenciador de conexões
-        target_col (str): Nome da coluna target para predição
-        folds (list): Lista de configurações dos folds temporais
+        folds_path (str): Path to the temporal fold configuration
+        results_path (str): Directory in which to save results
+        db_path (str): Path to the DuckDB database
+        conn_manager (DuckDBConnectionManager): Connection manager
+        target_col (str): Name of the target column for prediction
+        folds (list): List of temporal fold configurations
     """
     
     def __init__(self):
         self._prediction_recorder = PredictionRecorder('sql_engine')
-        """Inicializa a análise baseline para arquitetura Data Warehouse."""
-        print("Inicializando análise baseline DuckDB")
+        """Initializes the baseline analysis for the Data Warehouse architecture."""
+        print("Initializing DuckDB baseline analysis")
         
         dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/prep/temporal_folds_sql_engine.json")
@@ -107,10 +107,10 @@ class BaselineModelAnalysisSqlEngine:
         os.makedirs(self.results_path, exist_ok=True)
         
         if not os.path.exists(self.folds_path):
-            raise FileNotFoundError(f"Folds Data Warehouse não encontrados: {self.folds_path}")
+            raise FileNotFoundError(f"Data Warehouse folds not found: {self.folds_path}")
         
         if not os.path.exists(self.db_path):
-            raise FileNotFoundError(f"DuckDB Data Warehouse não encontrado: {self.db_path}")
+            raise FileNotFoundError(f"DuckDB Data Warehouse not found: {self.db_path}")
         
         try:
             self.conn_manager = DuckDBConnectionManager(
@@ -120,7 +120,7 @@ class BaselineModelAnalysisSqlEngine:
             )
             print(f"   Connection Manager: {self.db_path}")
         except Exception as e:
-            raise RuntimeError(f"Falha ao inicializar Connection Manager: {e}")
+            raise RuntimeError(f"Failed to initialize the Connection Manager: {e}")
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
@@ -132,17 +132,17 @@ class BaselineModelAnalysisSqlEngine:
         self._load_data_summary_from_views()
 
     def _ensure_target_column(self) -> None:
-        """Garante que a coluna de target exista em analytics_wide.
+        """Ensures the target column exists in analytics_wide.
 
-        Caso ausente, cria e popula como 100 - lower_secondary_completion_rate,
-        preservando NULLs/valores inválidos.
+        If absent, creates and populates it as
+        100 - lower_secondary_completion_rate, preserving NULLs/invalid values.
         """
         try:
             exists = self.conn_manager.execute_scalar(
                 f"SELECT COUNT(*) > 0 FROM information_schema.columns WHERE table_name = 'analytics_wide' AND column_name = '{self.target_col}'"
             )
             if not exists:
-                print(f"   Target '{self.target_col}' ausente - criando coluna...")
+                print(f"   Target '{self.target_col}' missing - creating column...")
                 self.conn_manager.execute_sql_no_return(
                     f"ALTER TABLE analytics_wide ADD COLUMN IF NOT EXISTS {self.target_col} DOUBLE"
                 )
@@ -156,13 +156,13 @@ class BaselineModelAnalysisSqlEngine:
                     END
                     """
                 )
-                print("   Target criado/populado em analytics_wide")
+                print("   Target created/populated in analytics_wide")
         except SQLProcessingError as e:
-            raise RuntimeError(f"Falha ao garantir coluna target: {e}")
+            raise RuntimeError(f"Failed to ensure the target column: {e}")
     
     def _verify_feature_store_views(self):
-        """Verificar se views temporais existem no Data Warehouse."""
-        print("   Verificando views temporais...")
+        """Check whether the temporal views exist in the Data Warehouse."""
+        print("   Checking temporal views...")
         
         try:
             table_exists = self.conn_manager.execute_scalar(f"""
@@ -172,7 +172,7 @@ class BaselineModelAnalysisSqlEngine:
             """)
             
             if not table_exists:
-                raise RuntimeError(f"Tabela base não encontrada: analytics_wide")
+                raise RuntimeError(f"Base table not found: analytics_wide")
             
             views_found = 0
             for fold_id in range(len(self.folds)):
@@ -188,21 +188,21 @@ class BaselineModelAnalysisSqlEngine:
                         views_found += 1
             
             if views_found == 0:
-                print(f"   Aviso: Nenhuma view temporal encontrada")
-                print(f"   Execute o setup.py primeiro para criar as views temporais")
-                print(f"   Usando tabela base como fallback")
+                print(f"   Warning: no temporal view found")
+                print(f"   Run setup.py first to create the temporal views")
+                print(f"   Using the base table as a fallback")
             else:
-                print(f"   Views temporais verificadas: {views_found} views encontradas")
+                print(f"   Temporal views checked: {views_found} views found")
             
         except SQLProcessingError as e:
-            raise RuntimeError(f"Erro ao verificar views temporais: {e}")
+            raise RuntimeError(f"Error checking the temporal views: {e}")
     
     def _load_data_summary_from_views(self):
-        """Carregar resumo dos dados via queries diretas às views."""
-        print("   Carregando resumo dos dados via views...")
+        """Load the data summary via direct queries to the views."""
+        print("   Loading the data summary via views...")
         
         try:
-            # Preferir feature store view (garante presença do target)
+            # Prefer the feature store view (guarantees the target is present)
             view_base = 'vw_selected_features'
             total_records = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM {view_base} WHERE {self.target_col} IS NOT NULL")
             min_year = self.conn_manager.execute_scalar(f"SELECT MIN(year) FROM {view_base} WHERE {self.target_col} IS NOT NULL")
@@ -215,21 +215,21 @@ class BaselineModelAnalysisSqlEngine:
             negative_target = self.conn_manager.execute_scalar(f"SELECT COUNT(*) FROM {view_base} WHERE {self.target_col} < 0") or 0
             target_exists = self.conn_manager.execute_scalar(f"SELECT COUNT(*) > 0 FROM information_schema.columns WHERE table_name = '{view_base}' AND column_name = '{self.target_col}'")
             
-            print(f"   Dados via views: {total_records} observações")
-            print(f"   Período: {min_year}-{max_year}")
-            print(f"   Países: {total_countries}")
+            print(f"   Data via views: {total_records} observations")
+            print(f"   Period: {min_year}-{max_year}")
+            print(f"   Countries: {total_countries}")
             print(f"   Target: {self.target_col}")
             print(f"   Folds: {len(self.folds)}")
             
             if not target_exists:
-                raise ValueError(f"Target {self.target_col} não encontrado na tabela analytics_wide")
+                raise ValueError(f"Target {self.target_col} not found in the analytics_wide table")
             
             print(f"   Target stats: mean={target_mean:.2f}%, std={target_std:.2f}%")
             
             if negative_target > 0:
-                print(f"   Target inválido: {negative_target} valores negativos detectados")
+                print(f"   Invalid target: {negative_target} negative values detected")
             else:
-                print(f"   Target válido: range [{target_min:.2f}%, {target_max:.2f}%]")
+                print(f"   Valid target: range [{target_min:.2f}%, {target_max:.2f}%]")
             
             self._cached_target_stats = {
                 'mean': target_mean,
@@ -243,24 +243,24 @@ class BaselineModelAnalysisSqlEngine:
             }
                 
         except SQLProcessingError as e:
-            raise RuntimeError(f"Erro ao carregar resumo via views: {e}")
+            raise RuntimeError(f"Error loading the summary via views: {e}")
     
     def _load_ml_fold_data(self, fold_id: int, split: str) -> pd.DataFrame:
         """
-        Carregar dados do fold via padrão ML Data Warehouse Consumer com Query Dinâmica SQL-First.
-        
-        Implementa padrão ML Data Warehouse Consumer:
-        - Queries diretas às views temporais pós-filtragem de colinearidade
-        - Descoberta dinâmica de features via information_schema (100% SQL)
-        - Connection pooling para performance em workloads ML
-        - Mantém paradigma SQL-first do Data Warehouse
-        
+        Load the fold data via the ML Data Warehouse Consumer pattern with SQL-First dynamic queries.
+
+        Implements the ML Data Warehouse Consumer pattern:
+        - Direct queries to the temporal views after collinearity filtering
+        - Dynamic feature discovery via information_schema (100% SQL)
+        - Connection pooling for performance in ML workloads
+        - Keeps the SQL-first paradigm of the Data Warehouse
+
         Args:
-            fold_id: ID do fold temporal
-            split: 'train', 'val', ou 'test'
-            
+            fold_id: ID of the temporal fold
+            split: 'train', 'val', or 'test'
+
         Returns:
-            DataFrame com features ML disponíveis pós-filtragem de colinearidade
+            DataFrame with the ML features available after collinearity filtering
         """
         cache_key = f"fold_{fold_id}_{split}"
         if not hasattr(self, '_fold_data_cache'):
@@ -290,9 +290,9 @@ class BaselineModelAnalysisSqlEngine:
             """)
             
             if view_exists:
-                print(f"      Usando view temporal: {view_name}")
+                print(f"      Using temporal view: {view_name}")
                 
-                # Descoberta dinâmica de features via SQL
+                # Dynamic feature discovery via SQL
                 try:
                     available_features_query = f"""
                         SELECT column_name
@@ -307,9 +307,9 @@ class BaselineModelAnalysisSqlEngine:
                     
                     if available_features:
                         feature_list = ', '.join(available_features)
-                        print(f"      Features descobertas via SQL: {len(available_features)} colunas")
+                        print(f"      Features discovered via SQL: {len(available_features)} columns")
                         
-                        # Query dinâmica com features realmente disponíveis (100% SQL)
+                        # Dynamic query with the features actually available (100% SQL)
                         query = f"""
                             SELECT
                                 country_code,
@@ -321,7 +321,7 @@ class BaselineModelAnalysisSqlEngine:
                             ORDER BY country_code, year
                         """
                     else:
-                        print(f"      Nenhuma feature descoberta, usando colunas básicas")
+                        print(f"      No feature discovered, using basic columns")
                         query = f"""
                             SELECT
                                 country_code,
@@ -333,8 +333,8 @@ class BaselineModelAnalysisSqlEngine:
                         """
                         
                 except SQLProcessingError as e:
-                    print(f"      Erro na descoberta de features via SQL: {e}")
-                    print(f"      Fallback: usando query com colunas básicas")
+                    print(f"      Error discovering features via SQL: {e}")
+                    print(f"      Fallback: using a query with basic columns")
                     query = f"""
                         SELECT
                             country_code,
@@ -346,11 +346,11 @@ class BaselineModelAnalysisSqlEngine:
                     """
                     
             else:
-                print(f"      Fallback: View {view_name} não encontrada")
-                print(f"      Usando tabela base: analytics_wide (anos {year_start}-{year_end})")
-                print(f"      Execute setup.py primeiro para criar views temporais")
+                print(f"      Fallback: view {view_name} not found")
+                print(f"      Using the base table: analytics_wide (years {year_start}-{year_end})")
+                print(f"      Run setup.py first to create the temporal views")
                 
-                # Descoberta de features da tabela base (SQL-first)
+                # Feature discovery from the base table (SQL-first)
                 try:
                     base_features_query = f"""
                         SELECT column_name
@@ -368,7 +368,7 @@ class BaselineModelAnalysisSqlEngine:
                     
                     if base_available_features:
                         base_feature_list = ', '.join(base_available_features)
-                        print(f"      Features descobertas da tabela base: {len(base_available_features)} colunas")
+                        print(f"      Features discovered from the base table: {len(base_available_features)} columns")
                         
                         query = f"""
                             SELECT
@@ -396,7 +396,7 @@ class BaselineModelAnalysisSqlEngine:
                         """
                         
                 except SQLProcessingError as e:
-                    print(f"      Erro na descoberta de features da tabela base: {e}")
+                    print(f"      Error discovering features from the base table: {e}")
                     query = f"""
                         SELECT
                             country_code,
@@ -420,32 +420,32 @@ class BaselineModelAnalysisSqlEngine:
             feature_count = len([col for col in df.columns if col not in ['country_code', 'year', self.target_col]])
             
             if view_exists:
-                print(f"      Dados da view temporal: {len(df)} registros, {feature_count} features")
+                print(f"      Data from the temporal view: {len(df)} records, {feature_count} features")
             else:
-                print(f"      Dados da tabela base: {len(df)} registros, {feature_count} features")
+                print(f"      Data from the base table: {len(df)} records, {feature_count} features")
             
             return df
             
         except SQLProcessingError as e:
-            raise RuntimeError(f"Erro ao carregar dados do fold {fold_id} split {split}: {e}")
+            raise RuntimeError(f"Error loading data for fold {fold_id} split {split}: {e}")
     
     def cleanup(self):
-        """Limpar recursos do gerenciador de conexões."""
+        """Release the connection manager's resources."""
         if hasattr(self, 'conn_manager') and self.conn_manager:
             try:
                 self.conn_manager.close_connection()
-                print("   Connection Manager fechado")
+                print("   Connection Manager closed")
             except Exception as e:
-                print(f"   Erro ao fechar Connection Manager: {e}")
+                print(f"   Error closing the Connection Manager: {e}")
     
     def analyze_target_distribution(self) -> Dict:
         """
-        Analisar distribuição do target via Data Warehouse views.
-        
+        Analyze the target distribution via Data Warehouse views.
+
         Returns:
-            Dict: Estatísticas da distribuição do target incluindo temporal e por país
+            Dict: Statistics of the target distribution, including temporal and per-country
         """
-        print(f"\nAnálise da distribuição do target DuckDB")
+        print(f"\nDuckDB target distribution analysis")
         
         analysis = {}
         
@@ -486,8 +486,8 @@ class BaselineModelAnalysisSqlEngine:
                 }
             
             print(f"   Target ({self.target_col}):")
-            print(f"      Média: {target_stats['mean']:.2f}%")
-            print(f"      Desvio: {target_stats['std']:.2f}%")
+            print(f"      Mean: {target_stats['mean']:.2f}%")
+            print(f"      Std: {target_stats['std']:.2f}%")
             print(f"      Range: {target_stats['min']:.2f}% - {target_stats['max']:.2f}%")
             print(f"      Missing: {target_stats['missing_count']} ({target_stats['missing_rate']:.1%})")
             
@@ -519,12 +519,12 @@ class BaselineModelAnalysisSqlEngine:
                 first_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE year = {first_year} AND {self.target_col} IS NOT NULL")
                 last_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE year = {last_year} AND {self.target_col} IS NOT NULL")
                 
-                print(f"\n   Evolução temporal DuckDB:")
-                print(f"      Primeiro ano ({first_year}): {first_mean:.1f}%")
-                print(f"      Último ano ({last_year}): {last_mean:.1f}%")
+                print(f"\n   DuckDB temporal evolution:")
+                print(f"      First year ({first_year}): {first_mean:.1f}%")
+                print(f"      Last year ({last_year}): {last_mean:.1f}%")
                 
                 trend = last_mean - first_mean
-                print(f"      Tendência: {trend:.1f}% em {last_year - first_year} anos")
+                print(f"      Trend: {trend:.1f}% over {last_year - first_year} years")
                 
                 analysis['temporal_stats'] = temporal_df.to_dict('records')
             
@@ -550,17 +550,17 @@ class BaselineModelAnalysisSqlEngine:
                 max_dropout_country_code = self.conn_manager.execute_scalar(f"SELECT country_code FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code ORDER BY avg_dropout DESC LIMIT 1)")
                 country_variation = self.conn_manager.execute_scalar(f"SELECT STDDEV(avg_dropout) FROM (SELECT country_code, AVG({self.target_col}) as avg_dropout FROM analytics_wide WHERE {self.target_col} IS NOT NULL GROUP BY country_code)")
                 
-                print(f"\n   Variação por país:")
-                print(f"      Menor dropout: {min_dropout_mean:.1f}% ({min_dropout_country_code})")
-                print(f"      Maior dropout: {max_dropout_mean:.1f}% ({max_dropout_country_code})")
-                print(f"      Variação entre países: {country_variation:.1f}% (std)")
+                print(f"\n   Variation across countries:")
+                print(f"      Lowest dropout: {min_dropout_mean:.1f}% ({min_dropout_country_code})")
+                print(f"      Highest dropout: {max_dropout_mean:.1f}% ({max_dropout_country_code})")
+                print(f"      Variation between countries: {country_variation:.1f}% (std)")
                 
                 analysis['country_stats'] = country_df.to_dict('records')
             
             return analysis
             
         except SQLProcessingError as e:
-            print(f"   [ERROR] Análise de distribuição: {e}")
+            print(f"   [ERROR] Distribution analysis: {e}")
             return {
                 'architecture': 'sql_engine',
                 'error': str(e),
@@ -568,32 +568,32 @@ class BaselineModelAnalysisSqlEngine:
             }
     
     def _write_prediction_artifact(self) -> None:
-        """Delega à implementação compartilhada."""
+        """Delegates to the shared implementation."""
         shared_write_baseline_predictions(self._prediction_recorder,
                                          architecture='sql_engine')
 
     def test_baseline_models(self) -> Dict:
         """
-        Testar modelos baseline científicos via Data Warehouse.
-        
-        Correções metodológicas implementadas:
-        - Lag mínimo de 2 anos para evitar vazamento temporal
-        - Validação walk-forward científica correta
-        - Gaps temporais apropriados entre conjuntos
-        
+        Test the scientific baseline models via the Data Warehouse.
+
+        Methodological corrections implemented:
+        - Minimum lag of 2 years to avoid temporal leakage
+        - Correct scientific walk-forward validation
+        - Appropriate temporal gaps between the sets
+
         Returns:
-            Dict: Resultados dos baselines com validação temporal
+            Dict: Baseline results with temporal validation
         """
-        print(f"\nBaselines com validação temporal")
+        print(f"\nBaselines with temporal validation")
         
         baseline_results = {}
         
         for fold_id, fold in enumerate(self.folds):
             _fold_t0 = time.perf_counter()
-            # Inicializados aqui, e não só na fronteira: no engine SQL a
-            # fronteira fica dentro de um try, e depender do fluxo de
-            # controle para definir um nome é como se produz NameError.
-            # None significa não medido, e não zero, que entraria nas somas.
+            # Initialized here, and not only at the boundary: in the SQL engine
+            # the boundary sits inside a try, and depending on control flow to
+            # define a name is how a NameError gets produced. None means not
+            # measured, and not zero, which would enter the sums.
             _fold_load_s = None
             _fit_t0 = _fold_t0
             print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) -> Val({fold['val_start']}-{fold['val_end']}) -> Test({fold['test_start']}-{fold['test_end']})")
@@ -603,31 +603,32 @@ class BaselineModelAnalysisSqlEngine:
                 val_data = self._load_ml_fold_data(fold_id, 'val')
                 test_data = self._load_ml_fold_data(fold_id, 'test')
 
-                print(f"   Dados: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
+                print(f"   Data: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
                 print(f"   Gaps: Train-Val={fold['val_start']-fold['train_end']-1}yr, Val-Test={fold['test_start']-fold['val_end']-1}yr")
-                print(f"   Features disponíveis: {len(train_data.columns)} colunas")
+                print(f"   Features available: {len(train_data.columns)} columns")
                 
                 train_clean = train_data
                 val_clean = val_data
                 test_clean = test_data
-                # Fronteira da decomposição: acima é materialização do fold, que é
-                # do engine; abaixo é o ajuste dos baselines, comum aos três.
+                # Boundary of the decomposition: above is materialization of the
+                # fold, which belongs to the engine; below is the fitting of the
+                # baselines, common to all three.
                 _fold_load_s = time.perf_counter() - _fold_t0
                 _fit_t0 = time.perf_counter()
                 
             except Exception as e:
-                print(f"   Erro ao carregar dados do fold {fold_id}: {e}")
+                print(f"   Error loading data for fold {fold_id}: {e}")
                 continue
             
             if len(train_clean) == 0 or len(test_clean) == 0:
-                print(f"   Fold {fold_id}: Dados insuficientes")
+                print(f"   Fold {fold_id}: insufficient data")
                 continue
             
             y_train = train_clean[self.target_col]
             y_val = val_clean[self.target_col] 
             y_test = test_clean[self.target_col]
 
-            # Escala MASE a partir do treino (diferenças absolutas por país)
+            # MASE scale from the training window (absolute differences per country)
             def _mase_scale_from_train(df):
                 try:
                     if df is None or len(df) == 0:
@@ -668,7 +669,7 @@ class BaselineModelAnalysisSqlEngine:
             }
             
             X_train_time = train_clean[['year']].values
-            trend_model = LinearRegression()  # LinearRegression não aceita random_state
+            trend_model = LinearRegression()  # LinearRegression does not accept random_state
             trend_model.fit(X_train_time, y_train)
             
             X_val_time = val_clean[['year']].values
@@ -809,7 +810,7 @@ class BaselineModelAnalysisSqlEngine:
                 'method': 'cross_country_average_excluding_target'
             }
             
-            # Agregar WAPE/MASE para Naive
+            # Aggregate WAPE/MASE for Naive
             try:
                 test_wape_naive = float((np.abs(y_test - test_pred_naive)).sum() / np.maximum(np.abs(y_test).sum(), 1e-12)) if hasattr(y_test, 'sum') else None
                 test_mase_naive = (float(np.mean(np.abs(y_test - test_pred_naive))) / mase_scale) if (mase_scale and mase_scale > 0) else None
@@ -822,16 +823,16 @@ class BaselineModelAnalysisSqlEngine:
                 'mase_scale_train': mase_scale
             })
             
-            print(f"   Resultados (Val | Test):")
+            print(f"   Results (Val | Test):")
             print(f"      Global Mean:      R²={val_r2_global:.3f} | {test_r2_global:.3f}")
             print(f"      Linear Trend:     R²={val_r2_trend:.3f} | {test_r2_trend:.3f}")  
             print(f"      Naive+Lag>=2yr:   R²={val_r2_naive:.3f} | {test_r2_naive:.3f}")
             print(f"      Cross-Country:    R²={val_r2_cross:.3f} | {test_r2_cross:.3f}")
             
-            # Melhor baseline em validação
+            # Best baseline on validation
             best_val_baseline, best_val_r2 = _best_by_val_r2(fold_results)
             
-            # Performance do melhor baseline no teste
+            # Performance of the best baseline on the test set
             best_test_r2 = fold_results[best_val_baseline]['test_r2']
             generalization_gap = best_val_r2 - best_test_r2
             
@@ -842,18 +843,18 @@ class BaselineModelAnalysisSqlEngine:
                 'generalization_gap': generalization_gap
             }
             
-            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
+            print(f"   Best baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
             
-            # Análise mais nuançada do gap de generalização
+            # More nuanced analysis of the generalization gap
             abs_gap = abs(generalization_gap)
             if abs_gap <= 0.05:
-                print(f"      Excelente estabilidade: Gap muito baixo (<=0.05)")
+                print(f"      Excellent stability: very low gap (<=0.05)")
             elif abs_gap <= 0.1:
-                print(f"      Boa estabilidade: Gap dentro do esperado (<=0.10)")
+                print(f"      Good stability: gap within expectation (<=0.10)")
             elif abs_gap <= 0.15:
-                print(f"      Gap moderado: Variação temporal aceitável ({abs_gap:.3f})")
+                print(f"      Moderate gap: acceptable temporal variation ({abs_gap:.3f})")
             else:
-                print(f"      Gap elevado: Possível instabilidade temporal ({abs_gap:.3f})")
+                print(f"      High gap: possible temporal instability ({abs_gap:.3f})")
             
             self._prediction_recorder.record(
                 fold=fold_id, model='global_mean', y_true=y_test,
@@ -879,15 +880,15 @@ class BaselineModelAnalysisSqlEngine:
 
     def analyze_predictability(self, baseline_results: Dict) -> Dict:
         """
-        Analisar predictabilidade científica dos baselines Data Warehouse.
-        
+        Analyze the scientific predictability of the Data Warehouse baselines.
+
         Args:
-            baseline_results: Resultados dos baselines com validação temporal
-            
+            baseline_results: Baseline results with temporal validation
+
         Returns:
-            Dict: Análise de predictabilidade agregada com gaps de generalização
+            Dict: Aggregated predictability analysis with generalization gaps
         """
-        print("\nAnálise de predictabilidade DuckDB")
+        print("\nDuckDB predictability analysis")
         
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -902,11 +903,11 @@ class BaselineModelAnalysisSqlEngine:
             for fold_key in baseline_results:
                 fold_data = baseline_results[fold_key]
                 if baseline in fold_data:
-                    # Scores de teste (métrica principal)
+                    # Test scores (main metric)
                     test_r2_scores.append(fold_data[baseline]['test_r2'])
-                    # Scores de validação (para comparação)
+                    # Validation scores (for comparison)
                     val_r2_scores.append(fold_data[baseline]['val_r2'])
-                    # Gap de generalização
+                    # Generalization gap
                     gaps.append(fold_data[baseline]['val_r2'] - fold_data[baseline]['test_r2'])
             
             if test_r2_scores:
@@ -929,23 +930,23 @@ class BaselineModelAnalysisSqlEngine:
                     'gaps': gaps
                 }
         
-        print("   Performance out-of-sample (TEST SET) dos baselines:")
+        print("   Out-of-sample (TEST SET) performance of the baselines:")
         for baseline, stats in all_test_scores.items():
             val_stats = all_val_scores[baseline]
             gap_stats = generalization_gaps[baseline]
             print(f"      {baseline:20} | Test: R²={stats['mean_r2']:.3f}±{stats['std_r2']:.3f} | Val: R²={val_stats['mean_r2']:.3f} | Gap: {gap_stats['mean_gap']:+.3f}")
         
-        # Encontrar melhor baseline baseado no TESTE (não validação)
+        # Find the best baseline based on the TEST set (not validation)
         if all_test_scores:
             best_baseline_overall = max(all_test_scores.keys(), key=lambda x: all_test_scores[x]['mean_r2'])
             best_mean_test_r2 = all_test_scores[best_baseline_overall]['mean_r2']
             best_mean_val_r2 = all_val_scores[best_baseline_overall]['mean_r2']
             best_generalization_gap = generalization_gaps[best_baseline_overall]['mean_gap']
             
-            print(f"\n   Melhor baseline: {best_baseline_overall}")
-            print(f"      Performance Validação: R² = {best_mean_val_r2:.3f}")
-            print(f"      Performance Teste:     R² = {best_mean_test_r2:.3f}")
-            print(f"      Gap Generalização:     {best_generalization_gap:+.3f}")
+            print(f"\n   Best baseline: {best_baseline_overall}")
+            print(f"      Validation performance: R² = {best_mean_val_r2:.3f}")
+            print(f"      Test performance:       R² = {best_mean_test_r2:.3f}")
+            print(f"      Generalization gap:     {best_generalization_gap:+.3f}")
             
             predictability_analysis = {
                 'architecture': 'sql_engine',
@@ -962,40 +963,40 @@ class BaselineModelAnalysisSqlEngine:
 
             if best_mean_test_r2 < 0:
                 predictability_analysis['predictability_level'] = 'very_low'
-                print(f"   Predictabilidade muito baixa: R²_test < 0")
-                print(f"      Interpretação: Modelo pior que baseline constante")
+                print(f"   Very low predictability: R²_test < 0")
+                print(f"      Interpretation: model worse than a constant baseline")
             elif best_mean_test_r2 < 0.05:
                 predictability_analysis['predictability_level'] = 'very_low'
-                print(f"   Predictabilidade muito baixa: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Quase sem poder preditivo")
+                print(f"   Very low predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: almost no predictive power")
             elif best_mean_test_r2 < 0.15:
                 predictability_analysis['predictability_level'] = 'low'
-                print(f"   Predictabilidade baixa: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Poder preditivo limitado")
+                print(f"   Low predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: limited predictive power")
             elif best_mean_test_r2 < 0.35:
                 predictability_analysis['predictability_level'] = 'moderate'
-                print(f"   Predictabilidade moderada: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Poder preditivo razoável")
+                print(f"   Moderate predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: reasonable predictive power")
             else:
                 predictability_analysis['predictability_level'] = 'good'
-                print(f"   Boa predictabilidade: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Bom poder preditivo")
+                print(f"   Good predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: good predictive power")
             
             avg_generalization_gap = np.mean([gap_data['mean_gap'] for gap_data in generalization_gaps.values()])
             abs_avg_gap = abs(avg_generalization_gap)
 
             if abs_avg_gap <= 0.05:
-                print(f"   Excelente estabilidade: Gap médio muito baixo ({avg_generalization_gap:+.3f})")
+                print(f"   Excellent stability: very low mean gap ({avg_generalization_gap:+.3f})")
                 stability_level = "excellent"
             elif abs_avg_gap <= 0.1:
-                print(f"   Boa estabilidade: Gap médio dentro do esperado ({avg_generalization_gap:+.3f})")
+                print(f"   Good stability: mean gap within expectation ({avg_generalization_gap:+.3f})")
                 stability_level = "good"
             elif abs_avg_gap <= 0.15:
-                print(f"   Estabilidade moderada: Variação temporal aceitável ({avg_generalization_gap:+.3f})")
+                print(f"   Moderate stability: acceptable temporal variation ({avg_generalization_gap:+.3f})")
                 stability_level = "moderate"
             else:
-                print(f"   Instabilidade detectada: Gap médio elevado ({avg_generalization_gap:+.3f})")
-                print(f"      Possível overfitting ou forte variação temporal")
+                print(f"   Instability detected: high mean gap ({avg_generalization_gap:+.3f})")
+                print(f"      Possible overfitting or strong temporal variation")
                 stability_level = "low"
             
             predictability_analysis['stability_analysis'] = {
@@ -1015,17 +1016,17 @@ class BaselineModelAnalysisSqlEngine:
     def save_results(self, target_analysis: Dict, baseline_results: Dict, 
                     predictability_analysis: Dict):
         """
-        Salvar resultados da análise ML Data Warehouse Consumer.
-        
+        Save the results of the ML Data Warehouse Consumer analysis.
+
         Args:
-            target_analysis: Resultados da análise de distribuição do target
-            baseline_results: Resultados dos modelos baseline
-            predictability_analysis: Análise de predictabilidade
-            
+            target_analysis: Results of the target distribution analysis
+            baseline_results: Results of the baseline models
+            predictability_analysis: Predictability analysis
+
         Returns:
-            Dict: Resultados completos salvos
+            Dict: Complete results saved
         """
-        print(f"\nSalvando resultados DuckDB...")
+        print(f"\nSaving DuckDB results...")
         
         full_results = {
             'architecture': 'sql_engine_consumer',
@@ -1049,56 +1050,56 @@ class BaselineModelAnalysisSqlEngine:
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
         
-        print(f"   Resultados salvos: {results_file}")
+        print(f"   Results saved: {results_file}")
         
         return full_results
     
     def run_complete_analysis(self):
         """
-        Executar análise completa de baseline via ML Data Warehouse Consumer.
-        
+        Run the complete baseline analysis via the ML Data Warehouse Consumer.
+
         Returns:
-            Dict: Resultados completos da análise comparativa Data Warehouse vs Data Lake
+            Dict: Complete results of the Data Warehouse vs Data Lake comparative analysis
         """
-        print(f"Análise completa - arquitetura DuckDB")
+        print(f"Complete analysis - DuckDB architecture")
         
         try:
             target_analysis = self.analyze_target_distribution()
             
-            # 2. Testar modelos baseline via Feature Store views
+            # 2. Test the baseline models via Feature Store views
             baseline_results = self.test_baseline_models()
             
-            # 3. Analisar predictabilidade
+            # 3. Analyze predictability
             predictability_analysis = self.analyze_predictability(baseline_results)
             
-            # 4. Salvar resultados
+            # 4. Save results
             results = self.save_results(target_analysis, baseline_results, 
                                        predictability_analysis)
             
-            # 5. Resumo final
-            print(f"\nResumo - arquitetura DuckDB:")
+            # 5. Final summary
+            print(f"\nSummary - DuckDB architecture:")
             print(f"   Target: {self.target_col}")
-            print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
-            print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
-            print(f"   R² Teste: {predictability_analysis.get('best_test_r2', 0):.3f}")
+            print(f"   Predictability: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
+            print(f"   Best baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
+            print(f"   R² Test: {predictability_analysis.get('best_test_r2', 0):.3f}")
             
             gap = predictability_analysis.get('generalization_gap', 0)
 
             if abs(gap) <= 0.05:
-                gap_status = f"Gap: {gap:+.3f} (excelente estabilidade)"
+                gap_status = f"Gap: {gap:+.3f} (excellent stability)"
             elif abs(gap) <= 0.1:
-                gap_status = f"Gap: {gap:+.3f} (boa estabilidade)"
+                gap_status = f"Gap: {gap:+.3f} (good stability)"
             elif abs(gap) <= 0.15:
-                gap_status = f"Gap: {gap:+.3f} (estabilidade moderada)"
+                gap_status = f"Gap: {gap:+.3f} (moderate stability)"
             else:
-                gap_status = f"Gap: {gap:+.3f} (requer atenção)"
+                gap_status = f"Gap: {gap:+.3f} (requires attention)"
                 
             print(f"   {gap_status}")
             
             stability = predictability_analysis.get('stability_analysis', {}).get('stability_level', 'unknown')
-            print(f"   Estabilidade: {stability}")
+            print(f"   Stability: {stability}")
             
-            # Verificar se views temporais foram usadas
+            # Check whether the temporal views were used
             views_used = 0
             fallbacks_used = 0
             if hasattr(self, '_fold_data_cache'):
@@ -1117,19 +1118,19 @@ class BaselineModelAnalysisSqlEngine:
                         fallbacks_used += 1
             
             if views_used > 0 and fallbacks_used == 0:
-                print(f"   Temporal Views: {views_used} views usadas")
+                print(f"   Temporal Views: {views_used} views used")
             elif views_used > 0 and fallbacks_used > 0:
-                print(f"   [WARN] Temporal Views: parcial ({views_used} views, {fallbacks_used} fallbacks)")
+                print(f"   [WARN] Temporal Views: partial ({views_used} views, {fallbacks_used} fallbacks)")
             else:
-                print(f"   [WARN] Temporal Views: nenhuma (apenas fallback)")
-                print(f"   Execute setup.py primeiro para criar views temporais")
+                print(f"   [WARN] Temporal Views: none (fallback only)")
+                print(f"   Run setup.py first to create the temporal views")
 
             return results
             
         except Exception as e:
-            # Re-levanta pelo mesmo motivo do modelo hierárquico: um dicionário
-            # com status 'failed' atravessa como execução bem-sucedida.
-            print(f"\n[ERROR] Análise DuckDB: {e}")
+            # Re-raised for the same reason as in the hierarchical model: a
+            # dictionary with status 'failed' passes through as a successful run.
+            print(f"\n[ERROR] DuckDB analysis: {e}")
             raise
         finally:
             self.cleanup()
@@ -1140,7 +1141,7 @@ if __name__ == "__main__":
     try:
         analyzer = BaselineModelAnalysisSqlEngine()
         results = analyzer.run_complete_analysis()
-        print(f"\nAnálise baseline DuckDB concluída!")
+        print(f"\nDuckDB baseline analysis completed!")
     except Exception as e:
         print(f"\n[ERROR] {e}")
         if analyzer:

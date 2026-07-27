@@ -54,9 +54,15 @@ class TestCollectionNoLongerUsesPanelStatistics:
         source = COLLECTOR.read_text()
         block = source[source.index('def apply_conservative_imputation'):]
         block = block[:block.index('\n    def ', 1)]
-        assert 'noise' not in block, (
+        # The comments record that the noise was removed, so the word survives
+        # in prose; what must not survive is the code that produces it.
+        code = '\n'.join(line.split('#')[0] for line in block.splitlines())
+        assert 'noise' not in code, (
             'calibrated noise fabricates variance in cells later evaluated as '
             'observations'
+        )
+        assert 'np.random' not in code, (
+            'drawing random values here is how the calibrated noise was added'
         )
 
     def test_forward_fill_is_kept(self):
@@ -130,7 +136,7 @@ class TestDiagnosticsMeasureWhatIsApplied:
         source = COLLECTOR.read_text()
         block = source[source.index('def _apply_geographic_imputation'):]
         block = block[:block.index('"""', block.index('"""') + 3)]
-        assert 'NÃO É APLICADA' in block
+        assert 'NOT APPLIED TO THE DATA' in block
 
     def test_no_unverifiable_claims_remain(self):
         """"Reduces RMSE by 23% (data not shown)" is not a citation."""
@@ -183,17 +189,19 @@ class TestFoldScopedImputation:
         assert not filled_test['a'].isna().any()
 
     def test_column_unobserved_in_training_raises(self):
-        """Não pode ocorrer sob janela expansiva + seleção P4; se ocorrer, para.
+        """It cannot occur under an expansive window + P4 selection; if it
+        does, it stops.
 
-        As alternativas são piores: constante fabrica um valor que o treino nunca
-        observou e torna a feature constante no treino e variável no teste;
-        descartar muda o conjunto de features entre folds e entre paradigmas;
-        deixar ausente adia a falha para o RidgeCV, porque o StandardScaler
-        propaga NaN em silêncio em vez de rejeitar.
+        The alternatives are worse: a constant fabricates a value the training
+        window never observed and makes the feature constant in training and
+        variable in test; dropping it changes the feature set between folds and
+        between paradigms; leaving it missing defers the failure to RidgeCV,
+        because StandardScaler propagates NaN silently rather than rejecting it.
         """
         train = pd.DataFrame({'a': [1.0, 2.0], 'empty': [np.nan, np.nan]})
         test = pd.DataFrame({'a': [np.nan], 'empty': [np.nan]})
-        with pytest.raises(ValueError, match='nenhuma observação'):
+        with pytest.raises(ValueError,
+                           match='no observation in the training window'):
             impute_from_training_window(train, test)
 
     def test_the_error_names_the_offending_columns(self):
@@ -203,13 +211,13 @@ class TestFoldScopedImputation:
         assert "'x'" in str(exc.value) and "'y'" in str(exc.value)
 
     def test_the_scaler_would_not_have_caught_it(self):
-        """Justifica levantar aqui: o scaler propaga NaN sem reclamar."""
+        """Justifies raising here: the scaler propagates NaN without complaining."""
         from sklearn.preprocessing import StandardScaler
 
         frame = pd.DataFrame({'a': [1.0, 2.0], 'empty': [np.nan, np.nan]})
         scaled = StandardScaler().fit_transform(frame)
         assert np.isnan(scaled[:, 1]).all(), (
-            'se o scaler rejeitasse NaN, levantar aqui seria redundante'
+            'if the scaler rejected NaN, raising here would be redundant'
         )
 
     def test_median_is_the_default(self):
@@ -280,30 +288,31 @@ class TestEveryParadigmUsesTheSharedImplementation:
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_no_paradigm_rolls_its_own_fill(self, path):
-        """O arquivo inteiro, e os idiomas dos três engines.
+        """The whole file, and the idioms of the three engines.
 
-        A versão anterior fatiava a partir de run_fold_analysis, e _prepare_data
-        vem antes dele nos três arquivos -- então o preenchimento que tornava o
-        helper compartilhado um no-op ficava fora do trecho examinado. A tupla
-        proibida também não incluía fill_null, que é como o polars preenche.
+        The previous version sliced from run_fold_analysis, and _prepare_data
+        comes before it in all three files -- so the fill that turned the
+        shared helper into a no-op fell outside the examined stretch. The
+        forbidden tuple also did not include fill_null, which is how polars
+        fills.
         """
         source = path.read_text()
         for forbidden in ('.fillna(', '.fill_null(', '.interpolate(',
                           'SimpleImputer', 'KNNImputer', '.bfill(', '.ffill('):
             assert forbidden not in source, (
-                f'{path.parts[-3]} preenche ausentes fora da implementação '
-                f'compartilhada ({forbidden}), então os paradigmas podem '
-                f'preprocessar de forma diferente -- e o helper vira no-op'
+                f'{path.parts[-3]} fills missing values outside the shared '
+                f'implementation ({forbidden}), so the paradigms can '
+                f'preprocess differently -- and the helper becomes a no-op'
             )
 
     @pytest.mark.parametrize('paradigm', ['sql_engine', 'task_graph',
                                           'dataframe_lib'])
     def test_materialisation_leaves_gaps_for_the_shared_layer(self, paradigm):
-        """Comportamental: _prepare_data devolve o ausente que recebeu.
+        """Behavioural: _prepare_data returns the missing value it received.
 
-        Um teste textual não distingue "não preenche" de "preenche em um idioma
-        que a lista não cobre". Este entrega um fold com lacuna e exige que ela
-        chegue intacta à camada compartilhada.
+        A textual test does not distinguish "does not fill" from "fills in an
+        idiom the list does not cover". This one hands over a fold with a gap
+        and requires that it reach the shared layer intact.
         """
         import importlib
         import warnings
@@ -311,10 +320,10 @@ class TestEveryParadigmUsesTheSharedImplementation:
         warnings.filterwarnings('ignore')
         rng = np.random.default_rng(3)
         n = 16
-        # Ordenado por (entidade, ano), que é a forma canônica de um fold: em
-        # produção o sql_engine a recebe do ORDER BY da view, e os outros dois
-        # a produzem eles mesmos. Entregar linhas fora de ordem faria
-        # canonical_fold reprovar antes de o teste chegar à lacuna.
+        # Sorted by (entity, year), which is the canonical form of a fold: in
+        # production sql_engine receives it from the view's ORDER BY, and the
+        # other two produce it themselves. Handing over rows out of order would
+        # make canonical_fold fail before the test reached the gap.
         frame = pd.DataFrame({
             'country_code': np.repeat(['AAA', 'BBB'], n // 2),
             'year': np.tile(np.arange(2000, 2000 + n // 2), 2),
@@ -322,7 +331,7 @@ class TestEveryParadigmUsesTheSharedImplementation:
             'internet': rng.normal(50, 8, n),
         })
         frame['dropout_rate'] = rng.normal(10, 2, n)
-        frame.loc[2, 'gini'] = np.nan          # a lacuna sob teste
+        frame.loc[2, 'gini'] = np.nan          # the gap under test
 
         module = importlib.import_module(
             f'architectures_ml.{paradigm}.models.hierarchical_model')
@@ -343,9 +352,9 @@ class TestEveryParadigmUsesTheSharedImplementation:
             X, _, _ = instance._prepare_data(pl.from_pandas(frame).lazy())
 
         assert pd.DataFrame(X)['gini'].isna().any(), (
-            f'{paradigm}._prepare_data preencheu a lacuna, o que torna '
-            f'impute_from_training_window um no-op e devolve as três '
-            f'implementações que a centralização removeu'
+            f'{paradigm}._prepare_data filled the gap, which turns '
+            f'impute_from_training_window into a no-op and brings back the '
+            f'three implementations that centralisation removed'
         )
 
 

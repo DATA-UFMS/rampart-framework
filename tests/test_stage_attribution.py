@@ -46,8 +46,8 @@ def attribution(tmp_path, monkeypatch):
                   'fit_predict_s': 4.0} for i in range(3)]
         (directory / f'hierarchical_analysis_{paradigm}_results.json').write_text(
             json.dumps({'folds': folds}))
-        # O estágio de baselines grava um dicionário com chaves fold_<n>, e não
-        # uma lista: o leitor tem de aceitar os dois layouts.
+        # The baseline stage writes a dictionary with fold_<n> keys, and not a
+        # list: the reader has to accept both layouts.
         (directory / f'baseline_analysis_{paradigm}_results.json').write_text(
             json.dumps({'baseline_model_results': {
                 f'fold_{i}': {'fold_load_s': loads[paradigm] / 2,
@@ -135,7 +135,7 @@ class TestMissingDecompositionIsReported:
 
         report = module.attribute()
         assert paradigm not in report['stages']['hierarchical']['paradigms']
-        assert 'não registra a decomposição' in capsys.readouterr().out
+        assert 'does not record the decomposition' in capsys.readouterr().out
 
     def test_absent_results_are_reported(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv('DATASET_NAME', 'worldbank')
@@ -146,7 +146,7 @@ class TestMissingDecompositionIsReported:
         importlib.reload(module)
 
         assert all(not e['paradigms'] for e in module.attribute()['stages'].values())
-        assert 'ausentes' in capsys.readouterr().out
+        assert 'results missing' in capsys.readouterr().out
 
     def test_main_succeeds_with_nothing_to_attribute(self, tmp_path,
                                                      monkeypatch):
@@ -169,7 +169,7 @@ class TestOutputs:
 
     def test_latex_names_both_segments(self, attribution):
         table = attribution._latex(attribution.attribute())
-        assert 'Carregamento' in table and 'Ajuste' in table
+        assert 'Loading' in table and 'Fitting' in table
         assert 'engine' in table.lower()
 
     def test_latex_has_a_row_per_paradigm(self, attribution):
@@ -209,5 +209,5 @@ class TestOutputs:
             return segments
 
         monkeypatch.setattr(attribution, '_fold_segments', uneven)
-        with pytest.raises(ValueError, match='números de fold'):
+        with pytest.raises(ValueError, match='record different fold counts'):
             attribution.attribute()

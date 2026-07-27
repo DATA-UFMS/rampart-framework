@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Verifica e instala um snapshot imutável dos dados de entrada.
+"""Verifies and installs an immutable snapshot of the input data.
 
-Por que existe: a coleta depende de uma API externa cujos valores mudam com
-revisões da fonte. Uma execução que colete de novo não reproduz a anterior, e a
-diferença é indistinguível de uma mudança de código. Um snapshot com hash separa
-as duas coisas -- e permite rodar sem rede.
+Why it exists: collection depends on an external API whose values change with
+revisions of the source. A run that collects again does not reproduce the
+previous one, and the difference is indistinguishable from a code change. A
+hashed snapshot separates the two things -- and allows running without network.
 
-O hash é do conteúdo, não do nome: renomear um arquivo não deve passar por
-verificação, e um arquivo a mais ou a menos também é divergência.
+The hash is of the content, not of the name: renaming a file must not pass
+verification, and one file more or one file less is divergence too.
 
-Uso:
-    # gravar o manifesto de um diretório de dados já coletado
-    python scripts/verify_data_snapshot.py --snapshot caminho/ --dataset worldbank --record
+Usage:
+    # record the manifest of an already collected data directory
+    python scripts/verify_data_snapshot.py --snapshot path/ --dataset worldbank --record
 
-    # verificar (e opcionalmente instalar em outputs/<dataset>/collection)
-    python scripts/verify_data_snapshot.py --snapshot caminho/ --dataset worldbank [--install]
+    # verify (and optionally install into outputs/<dataset>/collection)
+    python scripts/verify_data_snapshot.py --snapshot path/ --dataset worldbank [--install]
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def _digest(path: Path) -> str:
 
 
 def _inventory(root: Path) -> dict:
-    """Hash de cada arquivo, por caminho relativo, em ordem determinística."""
+    """Hash of each file, by relative path, in deterministic order."""
     files = {}
     for path in sorted(p for p in root.rglob('*') if p.is_file()):
         if path.name == MANIFEST_NAME:
@@ -59,16 +59,16 @@ def record(snapshot: Path, dataset: str) -> Path:
     manifest = {
         'dataset': dataset,
         'file_count': len(files),
-        # Um digest sobre o inventário inteiro: pega arquivo a mais, a menos ou
-        # renomeado, que hashes por arquivo isolados não pegariam.
+        # A digest over the whole inventory: catches a file added, removed or
+        # renamed, which per-file hashes alone would not catch.
         'inventory_sha256': hashlib.sha256(
             json.dumps(files, sort_keys=True).encode()).hexdigest(),
         'files': files,
     }
     target = snapshot / MANIFEST_NAME
     target.write_text(json.dumps(manifest, indent=2, sort_keys=True))
-    print(f"  manifesto gravado: {target}")
-    print(f"  {len(files)} arquivos, inventário "
+    print(f"  manifest recorded: {target}")
+    print(f"  {len(files)} files, inventory "
           f"{manifest['inventory_sha256'][:16]}...")
     return target
 
@@ -77,15 +77,15 @@ def verify(snapshot: Path, dataset: str) -> dict:
     manifest_path = snapshot / MANIFEST_NAME
     if not manifest_path.exists():
         raise FileNotFoundError(
-            f"Snapshot sem manifesto: {manifest_path}. Grave um com --record "
-            f"antes de usá-lo como entrada verificada."
+            f"Snapshot without a manifest: {manifest_path}. Record one with "
+            f"--record before using it as verified input."
         )
     manifest = json.loads(manifest_path.read_text())
 
     if manifest['dataset'] != dataset:
         raise ValueError(
-            f"Snapshot é do dataset {manifest['dataset']!r}, e foi pedido "
-            f"{dataset!r}: os painéis não são intercambiáveis."
+            f"Snapshot is of dataset {manifest['dataset']!r}, and "
+            f"{dataset!r} was requested: the panels are not interchangeable."
         )
 
     observed = _inventory(snapshot)
@@ -97,8 +97,8 @@ def verify(snapshot: Path, dataset: str) -> dict:
                      if expected[name] != observed[name])
     if missing or extra or changed:
         raise ValueError(
-            f"Snapshot divergente do manifesto — ausentes={missing[:5]} "
-            f"extras={extra[:5]} alterados={changed[:5]} "
+            f"Snapshot diverges from the manifest — missing={missing[:5]} "
+            f"extra={extra[:5]} changed={changed[:5]} "
             f"(total {len(missing)}/{len(extra)}/{len(changed)})"
         )
 
@@ -106,10 +106,10 @@ def verify(snapshot: Path, dataset: str) -> dict:
         json.dumps(observed, sort_keys=True).encode()).hexdigest()
     if digest != manifest['inventory_sha256']:
         raise ValueError(
-            f"Inventário não confere: {digest} != {manifest['inventory_sha256']}"
+            f"Inventory does not match: {digest} != {manifest['inventory_sha256']}"
         )
 
-    print(f"  verificado: {len(observed)} arquivos, inventário "
+    print(f"  verified: {len(observed)} files, inventory "
           f"{digest[:16]}...")
     return manifest
 
@@ -119,14 +119,14 @@ def install(snapshot: Path, dataset: str) -> Path:
     destination = Path(get_absolute_output_path('collection'))
     if destination.exists():
         raise FileExistsError(
-            f"{destination} já existe. Remova-o antes de instalar um snapshot, "
-            f"para que não haja dúvida sobre a origem dos dados usados."
+            f"{destination} already exists. Remove it before installing a "
+            f"snapshot, so there is no doubt about the origin of the data used."
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    # O manifesto vai junto: é ele que diz ao coletor que estes dados vêm de um
-    # snapshot verificado e não devem ser re-baixados por idade.
+    # The manifest goes along: it is what tells the collector that this data
+    # comes from a verified snapshot and must not be re-downloaded due to age.
     shutil.copytree(snapshot, destination)
-    print(f"  instalado em {destination}")
+    print(f"  installed at {destination}")
     return destination
 
 
@@ -137,13 +137,13 @@ def main(argv=None) -> int:
     parser.add_argument('--dataset', required=True,
                         choices=['worldbank', 'inep_censo'])
     parser.add_argument('--record', action='store_true',
-                        help='Grava o manifesto em vez de verificar')
+                        help='Records the manifest instead of verifying')
     parser.add_argument('--install', action='store_true',
-                        help='Copia para outputs/<dataset>/collection após verificar')
+                        help='Copies to outputs/<dataset>/collection after verifying')
     args = parser.parse_args(argv)
 
     if not args.snapshot.is_dir():
-        parser.error(f"{args.snapshot} não é um diretório")
+        parser.error(f"{args.snapshot} is not a directory")
 
     if args.record:
         record(args.snapshot, args.dataset)

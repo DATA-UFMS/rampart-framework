@@ -69,11 +69,11 @@ class TestThreadBudget:
 
 
 class TestEngineBudgetReachesEveryStage:
-    """As etapas 4 e 5 rodam como processos separados.
+    """Stages 4 and 5 run as separate processes.
 
-    O dask.config.set da etapa de processamento não as alcança, então elas
-    mediam com o número de núcleos do host enquanto as outras mediam com o
-    orçamento -- e a tabela de latência comparava as duas coisas.
+    The processing stage's dask.config.set does not reach them, so they
+    measured with the host's core count while the others measured with the
+    budget -- and the latency table compared the two things.
     """
 
     def test_dask_receives_the_engine_budget(self):

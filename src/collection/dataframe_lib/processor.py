@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 """
-Processador Polars DataFrame para Dados Educacionais Latino-Americanos.
+Polars DataFrame Processor for Latin American Educational Data.
 
-Implementa pipeline de processamento com Polars mantendo princípios arquiteturais
-Data Lake: leitura lazy, transformações eficientes de memória e schema-on-read.
+Implements a processing pipeline with Polars while keeping Data Lake
+architectural principles: lazy reading, memory-efficient transformations and
+schema-on-read.
 
-Fundamentação Teórica:
-    O paradigma Data Lake (Terrizzano et al., 2015) prioriza a preservação
-    de dados brutos e semântica schema-on-read. Polars oferece lazy evaluation nativa,
-    diferentemente de Pandas eager, permitindo otimizações automáticas de query plan.
+Theoretical Grounding:
+    The Data Lake paradigm (Terrizzano et al., 2015) prioritises the preservation
+    of raw data and schema-on-read semantics. Polars offers native lazy evaluation,
+    unlike eager Pandas, enabling automatic query plan optimisations.
 
-    Diferenças arquiteturais vs Dask:
-    - Polars: Single-machine lazy evaluation com otimizações de query plan
-    - Dask: Multi-machine distributed com overhead de coordenação
-    - Polars é adequado para datasets <100GB em máquinas modernas (≥32GB RAM)
+    Architectural differences vs Dask:
+    - Polars: Single-machine lazy evaluation with query plan optimisations
+    - Dask: Multi-machine distributed with coordination overhead
+    - Polars is suitable for datasets <100GB on modern machines (≥32GB RAM)
 
-Decisões de Design:
-    - Polars lazy scanning: schema-on-read com otimização automática
-    - Pivotagem em memória: trade-off entre velocidade e uso de RAM
-    - Sem particionamento: Polars otimiza automaticamente via query plan
-    - Parquet como formato padrão: compatibilidade com ecossistema
+Design Decisions:
+    - Polars lazy scanning: schema-on-read with automatic optimisation
+    - In-memory pivoting: trade-off between speed and RAM use
+    - No partitioning: Polars optimises automatically via the query plan
+    - Parquet as the default format: ecosystem compatibility
 """
 
 import polars as pl
@@ -38,28 +39,28 @@ from core.indicators import ALL_INDICATORS
 
 class DataFrameLibProcessor:
     """
-    Processador científico Polars DataFrame para análise de indicadores educacionais.
+    Scientific Polars DataFrame processor for educational indicator analysis.
 
-    Implementa processamento lazy com Polars seguindo princípios arquiteturais Data Lake,
-    otimizado para análise exploratória de dados com footprint de memória menor que Dask
-    para datasets <100GB.
+    Implements lazy processing with Polars following Data Lake architectural
+    principles, optimised for exploratory data analysis with a smaller memory
+    footprint than Dask for datasets <100GB.
 
-    Princípios Fundamentais:
-        1. Lazy evaluation nativa: Polars constrói query plans otimizados automaticamente
-        2. Schema-on-read: Estrutura imposta no momento da análise, não na ingestão
-        3. Transformações eficientes: Operações vetorizadas em Rust compiled
-        4. Pivotagem automática: Conversão long->wide otimizada para Parquet
+    Fundamental Principles:
+        1. Native lazy evaluation: Polars builds optimised query plans automatically
+        2. Schema-on-read: Structure imposed at analysis time, not at ingestion
+        3. Efficient transformations: Vectorised operations in compiled Rust
+        4. Automatic pivoting: long->wide conversion optimised for Parquet
     """
 
     def __init__(self, dataset_name: str = "worldbank"):
         """
-        Inicializa processador Polars DataFrame.
+        Initialize the Polars DataFrame processor.
 
         Args:
-            dataset_name: Nome do dataset ("worldbank" ou "inep_censo")
+            dataset_name: Dataset name ("worldbank" or "inep_censo")
         """
-        print("Inicializando processador Polars")
-        print("Arquitetura: Polars, schema-on-read")
+        print("Initializing Polars processor")
+        print("Architecture: Polars, schema-on-read")
 
         self.dataset_name = dataset_name
         raw_subdir = 'collection/inep_raw' if dataset_name == 'inep_censo' else 'collection/raw_data'
@@ -70,30 +71,30 @@ class DataFrameLibProcessor:
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.processed_dir, exist_ok=True)
 
-        print(f"Fonte de dados: {self.complete_data_path}")
-        print(f"Diretorio de processamento: {self.processed_dir}")
+        print(f"Data source: {self.complete_data_path}")
+        print(f"Processing directory: {self.processed_dir}")
 
     def load_complete_data(self) -> pl.LazyFrame:
         """
-        Carrega dados educacionais completos com lazy evaluation.
+        Load the complete educational data with lazy evaluation.
 
         Returns:
-            pl.LazyFrame: DataFrame Polars lazy sem materialização
+            pl.LazyFrame: Lazy Polars DataFrame without materialization
 
         Raises:
-            FileNotFoundError: Quando arquivo Parquet de entrada não existe
+            FileNotFoundError: When the input Parquet file does not exist
 
-        Decisões metodológicas:
-            1. Lazy scanning: Apenas schema é lido inicialmente
-            2. Computação seletiva: Estatísticas críticas computadas seletivamente
-            3. Indicadores centralizados: Garante consistência entre arquiteturas
+        Methodological decisions:
+            1. Lazy scanning: Only the schema is read initially
+            2. Selective computation: Critical statistics computed selectively
+            3. Centralized indicators: Guarantees consistency across architectures
         """
-        print("Leitura lazy de dados educacionais completos")
+        print("Lazy reading of the complete educational data")
 
         if not os.path.exists(self.complete_data_path):
             raise FileNotFoundError(
-                f"Arquivo de dados completos não encontrado: {self.complete_data_path}\n"
-                f"Execute 'raw_data_collector.py' antes deste processador."
+                f"Complete data file not found: {self.complete_data_path}\n"
+                f"Run 'raw_data_collector.py' before this processor."
             )
 
         df_lazy = pl.scan_parquet(self.complete_data_path)
@@ -101,7 +102,7 @@ class DataFrameLibProcessor:
         n_rows = df_lazy.select(pl.lit(1)).collect().shape[0]
         n_cols = len(df_lazy.collect_schema().names())
 
-        # Computar apenas estatísticas críticas
+        # Compute only the critical statistics
         stats = df_lazy.select([
             pl.col('year').min().alias('year_min'),
             pl.col('year').max().alias('year_max'),
@@ -112,10 +113,10 @@ class DataFrameLibProcessor:
         year_max = stats['year_max'][0]
         n_countries = stats['n_countries'][0]
 
-        print(f"{n_rows:,} observacoes x {n_cols} variaveis")
-        print(f"Cobertura temporal: {year_min}-{year_max} ({year_max-year_min+1} anos)")
-        entity_label = "municípios brasileiros" if self.dataset_name == "inep_censo" else "países"
-        print(f"Cobertura geografica: {n_countries} {entity_label}")
+        print(f"{n_rows:,} observations x {n_cols} variables")
+        print(f"Temporal coverage: {year_min}-{year_max} ({year_max-year_min+1} years)")
+        entity_label = "Brazilian municipalities" if self.dataset_name == "inep_censo" else "countries"
+        print(f"Geographic coverage: {n_countries} {entity_label}")
 
         indicator_names = list(ALL_INDICATORS.values())
         scientific_indicators = [col for col in df_lazy.collect_schema().names()
@@ -132,75 +133,75 @@ class DataFrameLibProcessor:
             missing_count = missing_stats['total_missing'][0] * len(scientific_indicators)
             missing_pct = (missing_count / total_cells) * 100 if total_cells > 0 else 0
 
-            print(f"Completude: {total_cells - missing_count:,}/{total_cells:,} celulas validas ({100-missing_pct:.1f}%)")
+            print(f"Completeness: {total_cells - missing_count:,}/{total_cells:,} valid cells ({100-missing_pct:.1f}%)")
 
-        print("LazyFrame Polars preparado")
+        print("Polars LazyFrame prepared")
 
         return df_lazy
 
     def pivot_long_to_wide(self, df_lazy: pl.LazyFrame) -> pl.LazyFrame:
         """
-        Transforma dados de formato longo para largo.
+        Transform data from long to wide format.
 
         Args:
-            df_lazy: DataFrame Polars lazy em formato longo
+            df_lazy: Lazy Polars DataFrame in long format
 
         Returns:
-            DataFrame Polars lazy em formato largo
+            Lazy Polars DataFrame in wide format
 
-        Lógica de transformação:
-            1. Dados originais: (país, ano, indicador, valor)
-            2. Resultado final: (país, ano, indicador1, indicador2, ...)
-            3. Usa unpivot (Polars) equivalente a melt reverso
+        Transformation logic:
+            1. Original data: (country, year, indicator, value)
+            2. Final result: (country, year, indicator1, indicator2, ...)
+            3. Uses unpivot (Polars), equivalent to a reverse melt
         """
-        print("Pivotagem long->wide")
+        print("Pivot long->wide")
 
-        # Verificar se já está em formato wide
+        # Check whether it is already in wide format
         schema = df_lazy.collect_schema()
 
-        # Se tem 'indicator_name' ou 'indicator', precisa fazer pivot
+        # If it has 'indicator_name' or 'indicator', a pivot is needed
         if 'indicator_name' in schema or 'indicator' in schema:
-            print("Detectado formato longo - convertendo para largo")
+            print("Long format detected - converting to wide")
 
-            # Identificar coluna de indicador
+            # Identify the indicator column
             indicator_col = 'indicator_name' if 'indicator_name' in schema else 'indicator'
             value_col = 'value' if 'value' in schema else 'indicator_value'
 
-            # Manter colunas de dimensão (país, ano, etc.)
+            # Keep the dimension columns (country, year, etc.)
             id_cols = ['country_code', 'year']
 
-            # Pivot: converter indicadores em colunas
+            # Pivot: turn indicators into columns
             df_wide = df_lazy.pivot(
                 on=indicator_col,
                 index=id_cols,
                 values=value_col,
-                aggregate_function='first'  # Não deve ter duplicatas
+                aggregate_function='first'  # There should be no duplicates
             )
 
-            print(f"Pivotagem concluida - colunas: {len(df_wide.collect_schema().names())}")
+            print(f"Pivot complete - columns: {len(df_wide.collect_schema().names())}")
 
         else:
-            print("Dados ja em formato largo - preservando estrutura")
+            print("Data already in wide format - preserving structure")
             df_wide = df_lazy
 
         return df_wide
 
     def export_processed_data(self, df_lazy: pl.LazyFrame) -> str:
         """
-        Materializa e persiste dados processados.
+        Materialize and persist the processed data.
 
         Args:
-            df_lazy: DataFrame Polars lazy processado
+            df_lazy: Processed lazy Polars DataFrame
 
         Returns:
-            str: Caminho absoluto do dataset final exportado
+            str: Absolute path of the exported final dataset
 
-        Estratégia de exportação:
-            1. Materialização lazy: Polars otimiza automaticamente antes de escrever
-            2. Formato Parquet: Compatibilidade com ecossistema
-            3. Metadados JSON: Estatísticas de qualidade e auditoria
+        Export strategy:
+            1. Lazy materialization: Polars optimises automatically before writing
+            2. Parquet format: Ecosystem compatibility
+            3. JSON metadata: Quality and audit statistics
         """
-        print("Materializando dados processados")
+        print("Materializing processed data")
 
         output_path = f"{self.processed_dir}/final_results.parquet"
 
@@ -210,16 +211,16 @@ class DataFrameLibProcessor:
             else:
                 os.remove(output_path)
 
-        print(f"Salvando dataset: {output_path}")
+        print(f"Saving dataset: {output_path}")
 
         df_collected = df_lazy.collect()
         df_collected.write_parquet(output_path, compression='snappy')
 
-        # Estatísticas finais
+        # Final statistics
         n_rows = len(df_collected)
         n_cols = len(df_collected.columns)
 
-        # Metadados JSON
+        # JSON metadata
         metadata = {
             'architecture': 'dataframe_lib',
             'processing_paradigm': 'polars_lazy_evaluation',
@@ -253,40 +254,40 @@ class DataFrameLibProcessor:
         with open(stats_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-        print(f"Artefatos: {output_path}, {stats_path}")
-        print(f"{n_rows:,} registros x {n_cols} colunas")
+        print(f"Artifacts: {output_path}, {stats_path}")
+        print(f"{n_rows:,} records x {n_cols} columns")
 
         return output_path
 
     def run_dataframe_lib_processing(self) -> Dict:
         """
-        Orquestra pipeline completo de processamento Polars DataFrame.
+        Orchestrate the complete Polars DataFrame processing pipeline.
 
         Returns:
-            Dict contendo status de execução, artefatos gerados e metadados
+            Dict containing execution status, generated artifacts and metadata
 
-        Pipeline sequencial:
-            1. Carregamento lazy de dados completos
-            2. Transformação long->wide
-            3. Materialização e persistência
+        Sequential pipeline:
+            1. Lazy loading of the complete data
+            2. long->wide transformation
+            3. Materialization and persistence
 
         """
         start_time = datetime.now()
 
         try:
-            print("\n[1/3] Carregamento de dados")
+            print("\n[1/3] Data loading")
             df_lazy = self.load_complete_data()
 
-            print("\n[2/3] Transformacao long->wide")
+            print("\n[2/3] long->wide transformation")
             df_wide = self.pivot_long_to_wide(df_lazy)
 
-            print("\n[3/3] Materializacao e persistencia")
+            print("\n[3/3] Materialization and persistence")
             output_path = self.export_processed_data(df_wide)
 
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
 
-            print(f"\nProcessamento Polars concluido em {processing_time:.2f}s")
+            print(f"\nPolars processing complete in {processing_time:.2f}s")
 
             return {
                 'status': 'success',
@@ -306,8 +307,8 @@ class DataFrameLibProcessor:
             }
 
         except FileNotFoundError as e:
-            print(f"\n[ERROR] Dados de entrada nao encontrados: {e}")
-            print("Execute 'raw_data_collector.py' antes deste processador")
+            print(f"\n[ERROR] Input data not found: {e}")
+            print("Run 'raw_data_collector.py' before this processor")
 
             return {
                 'status': 'failed',
@@ -334,12 +335,12 @@ class DataFrameLibProcessor:
 
 
 if __name__ == "__main__":
-    # Sem status de saída, uma falha aqui chega ao orquestrador como sucesso:
-    # pipeline.py usa subprocess check=True, que só lê o código de retorno.
-    # Foi assim que a coleta pôde morrer e as etapas seguintes rodarem sobre
-    # o painel da execução anterior.
+    # Without an exit status, a failure here reaches the orchestrator as
+    # success: pipeline.py uses subprocess check=True, which only reads the
+    # return code. That is how collection could die and the following stages
+    # still run over the panel of the previous run.
     processor = DataFrameLibProcessor()
     results = processor.run_dataframe_lib_processing()
     status = results.get('status', 'failed')
-    print(f"Execucao: {status}")
+    print(f"Execution: {status}")
     sys.exit(0 if status == 'success' else 1)

@@ -49,7 +49,7 @@ class TestTheContractExists:
     def test_the_default_is_documented_as_empty(self):
         import inspect
         source = inspect.getsource(BaseArchitectureML.release_resources)
-        assert 'Default vazio e por escrito' in source
+        assert 'default is empty, and deliberately so' in source
 
     def test_it_is_safe_to_call_twice(self):
         """A finally clause can run after an earlier release."""

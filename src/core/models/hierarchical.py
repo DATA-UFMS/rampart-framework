@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Modelo hierárquico compartilhado pelos três paradigmas.
+"""Hierarchical model shared by the three paradigms.
 
-Estas funções eram três cópias, uma por paradigma. A extração é provavelmente
-preservadora, e não uma aposta: comparados por AST com chamadas a print e
-literais de nome normalizados, os três corpos são idênticos, e nenhum deles
-lê qualquer atributo de self -- são funções puras que estavam escritas como
-métodos.
+These functions were three copies, one per paradigm. The extraction is probably
+behaviour-preserving, and not a bet: compared by AST with print calls and name
+literals normalised, the three bodies are identical, and none of them reads any
+attribute of self -- they are pure functions that had been written as
+methods.
 
-A verificação é empírica além de estrutural. Antes da extração, os três
-paradigmas produziam predições bitwise idênticas sobre a mesma entrada, para os
-três valores de shrinkage; a mesma comparação roda depois, contra os mesmos
-hashes.
+The verification is empirical as well as structural. Before the extraction, the
+three paradigms produced bitwise identical predictions on the same input, for
+the three shrinkage values; the same comparison runs afterwards, against the
+same hashes.
 
-O nome do paradigma entra como argumento porque é a única coisa que variava
-entre as cópias, e serve apenas para rotular o resultado.
+The paradigm name comes in as an argument because it is the only thing that
+varied between the copies, and it serves only to label the result.
 """
 
 import os
@@ -36,7 +36,7 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
                               residual_shrinkage: float = 0.8,
                               *, architecture: str) -> Dict:
     """
-    Modelo hierárquico simples: médias por país + resíduos com Ridge regularizado.
+    Simple hierarchical model: per-country means + residuals with regularised Ridge.
     """
     # Read once: the return payload describes the grid even when the
     # residual branch below is not taken.
@@ -45,14 +45,14 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
     n_countries = countries_train.nunique()
     total_samples = len(y_train)
     
-    # Calcular médias por país com shrinkage adaptativo
+    # Compute per-country means with adaptive shrinkage
     country_means = {}
     country_residuals_X = []
     country_residuals_y = []
     residual_groups = []
     country_sample_counts = {}
     
-    print(f"Processamento hierárquico distribuído: {n_countries} países, {total_samples} amostras")
+    print(f"Distributed hierarchical processing: {n_countries} countries, {total_samples} samples")
     
     for country in countries_train.unique():
         country_mask = countries_train == country
@@ -60,7 +60,7 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
         country_samples = len(country_y)
         country_sample_counts[country] = country_samples
         
-        # Shrinkage tipo James-Stein: k=5 como prior strength (Efron & Morris, 1975)
+        # James-Stein type shrinkage: k=5 as prior strength (Efron & Morris, 1975)
         shrinkage_factor = country_samples / (country_samples + 5.0)
         raw_country_mean = country_y.mean()
         country_mean_shrunk = (shrinkage_factor * raw_country_mean + 
@@ -81,30 +81,30 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
         features_count = residuals_X.shape[1]
         samples_count = len(residuals_y)
         
-        # Seleção de alpha via CV interna (Hoerl & Kennard, 1970)
+        # Alpha selection via inner CV (Hoerl & Kennard, 1970)
         alphas = np.logspace(_hm['ridge_alpha_log10_start'],
                              _hm['ridge_alpha_log10_stop'],
                              _hm['ridge_alpha_count'])
         # RidgeCV rejects cv < 2; with fewer residual rows than that,
         # cv=None selects alpha by generalised cross-validation instead
         # of raising.
-        # Partição da CV interna, deliberada em vez de acidental.
+        # The inner CV partition, deliberate rather than accidental.
         #
-        # cv=<int> faz o RidgeCV usar KFold sem shuffle, e como os resíduos são
-        # concatenados por entidade os blocos contíguos eram blocos de entidade:
-        # a seleção de alpha vinha fazendo leave-some-entities-out sem que
-        # ninguém a tivesse escolhido, e mudaria em silêncio se a ordem de
-        # concatenação mudasse.
+        # cv=<int> makes RidgeCV use KFold without shuffle, and since the
+        # residuals are concatenated by entity the contiguous blocks were entity
+        # blocks: alpha selection had been doing leave-some-entities-out without
+        # anyone having chosen it, and would change silently if the
+        # concatenation order changed.
         #
-        # Declarado como GroupKFold pela entidade, o que preserva a partição e a
-        # torna independente da ordem das linhas. Não é leakage em nenhuma das
-        # duas formas -- todos os resíduos vêm da janela de treino.
+        # Declared as GroupKFold by entity, which preserves the partition and
+        # makes it independent of row order. It is not leakage in either of the
+        # two forms -- every residual comes from the training window.
         #
-        # TimeSeriesSplit seria mais coerente com a tarefa, que é extrapolação
-        # temporal e não generalização para entidades novas. Exigiria carregar o
-        # ano através do _prepare_data de cada paradigma, que é específico de
-        # engine; fica registrado como escolha de desenho em aberto, e não como
-        # detalhe de implementação.
+        # TimeSeriesSplit would be more coherent with the task, which is
+        # temporal extrapolation and not generalisation to new entities. It
+        # would require carrying the year through each paradigm's _prepare_data,
+        # which is engine specific; it is recorded as an open design choice, and
+        # not as an implementation detail.
         n_residuals = len(residuals_X)
         n_groups = len(set(residual_groups))
         inner_folds = min(_hm['ridge_cv_folds'], n_groups)
@@ -113,8 +113,8 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
             cv = list(splitter.split(residuals_X, residuals_y,
                                      groups=residual_groups))
         else:
-            # Menos de duas entidades: sem grupos para separar, o RidgeCV recai
-            # na validação cruzada generalizada.
+            # Fewer than two entities: with no groups to separate, RidgeCV falls
+            # back to generalised cross-validation.
             cv = None
         ridge_cv = RidgeCV(alphas=alphas, cv=cv)
         ridge_cv.fit(residuals_X, residuals_y)
@@ -122,9 +122,9 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
         residual_model = ridge_cv
 
         print(f"      Simple hierarchical ({architecture}):")
-        print(f"         {features_count} features x {samples_count} samples de resíduos")
-        print(f"         alpha selecionado por RidgeCV: {final_alpha:.2f}")
-        print(f"         Shrinkage aplicado em {n_countries} países")
+        print(f"         {features_count} features x {samples_count} residual samples")
+        print(f"         alpha selected by RidgeCV: {final_alpha:.2f}")
+        print(f"         Shrinkage applied to {n_countries} countries")
     else:
         residual_model = None
         features_count = 0
@@ -165,13 +165,13 @@ def simple_hierarchical_model(X_train: pd.DataFrame, y_train: pd.Series,
         'entities': [str(c) for c in countries_test],
         'country_effects': {str(k): float(v) for k, v in country_means.items()},
         'country_sample_counts': {str(k): int(v) for k, v in country_sample_counts.items()},
-        'regularization_applied': f'RidgeCV: alpha={final_alpha:.2f} (logspace 0.1-1000, cv interno)',
+        'regularization_applied': f'RidgeCV: alpha={final_alpha:.2f} (logspace 0.1-1000, inner cv)',
         'features_count': features_count,
         'regularization_details': {
             'ridgecv_alpha': float(final_alpha),
             'shrinkage_applied': True,
             'alpha_selection': (
-                f"RidgeCV com logspace("
+                f"RidgeCV with logspace("
                 f"{_hm['ridge_alpha_log10_start']}, "
                 f"{_hm['ridge_alpha_log10_stop']}, "
                 f"{_hm['ridge_alpha_count']})"
@@ -219,7 +219,7 @@ def write_imputation_report(reports, *, architecture: str) -> str:
                    'run_id': os.environ.get('RAMPART_RUN_ID'),
                    'folds': per_fold,
                    'across_folds': totals}, handle, indent=2)
-    print(f"   Imputacao por fold -> {path}")
+    print(f"   Fold-level imputation -> {path}")
     return path
 
 
@@ -270,7 +270,7 @@ def write_feature_audit(reports, *, architecture: str) -> str:
                    'run_id': os.environ.get('RAMPART_RUN_ID'),
                    'folds': per_fold,
                    'checks_across_folds': summary}, handle, indent=2)
-    print(f"   Auditoria de features -> {path}")
+    print(f"   Feature audit -> {path}")
     return path
 
 
@@ -303,11 +303,11 @@ def write_prediction_artifact(all_results: Dict, *, architecture: str) -> None:
 
 
 def write_baseline_predictions(recorder, *, architecture: str) -> None:
-    """Persiste os vetores de predição de teste dos baselines.
+    """Persist the test prediction vectors of the baselines.
 
-    Recebe o recorder em vez de lê-lo de self: a versão em cada paradigma era
-    idêntica -- verificado por AST com o nome normalizado -- e a única dependência
-    de estado era esse atributo.
+    Takes the recorder rather than reading it from self: the version in each
+    paradigm was identical -- verified by AST with the name normalised -- and the
+    only state dependency was that attribute.
     """
     path = predictions_path(architecture, 'baseline')
     os.makedirs(os.path.dirname(path), exist_ok=True)

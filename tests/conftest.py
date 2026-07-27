@@ -1,4 +1,4 @@
-"""Configuração Pytest: adiciona src/ ao sys.path para que imports 'from core...' funcionem."""
+"""Pytest configuration: adds src/ to sys.path so that 'from core...' imports work."""
 import sys
 from pathlib import Path
 

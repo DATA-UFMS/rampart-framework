@@ -91,7 +91,7 @@ class TestFailuresAreNotSwallowed:
                             lambda rel: str(tmp_path / rel))
         runner = ab.BenchmarkRunner.__new__(ab.BenchmarkRunner)
         assert runner._count_fold_records('task_graph') is None
-        assert 'folds ausentes' in capsys.readouterr().out
+        assert 'folds missing at' in capsys.readouterr().out
 
     def test_missing_master_is_reported(self, tmp_path, monkeypatch, capsys):
         import benchmarking.architectural_benchmark as ab
@@ -106,7 +106,7 @@ class TestFailuresAreNotSwallowed:
                             lambda rel: str(tmp_path / rel))
         runner = ab.BenchmarkRunner.__new__(ab.BenchmarkRunner)
         assert runner._count_fold_records('task_graph') is None
-        assert 'master ausente' in capsys.readouterr().out
+        assert 'master missing at' in capsys.readouterr().out
 
     def test_an_undeclared_paradigm_raises(self, monkeypatch):
         import benchmarking.architectural_benchmark as ab
@@ -124,7 +124,8 @@ class TestFailuresAreNotSwallowed:
             ab, 'discover_paradigms',
             lambda **kw: {'toy': {'master_artifact': {'kind': 'csv'}}})
         runner = ab.BenchmarkRunner.__new__(ab.BenchmarkRunner)
-        with pytest.raises(ValueError, match='desconhecido'):
+        with pytest.raises(ValueError,
+                           match='master_artifact of unknown kind'):
             runner._fold_years('toy')
 
 

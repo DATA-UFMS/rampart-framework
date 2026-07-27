@@ -32,7 +32,7 @@ not: each check has to give the same verdict in every paradigm, or the check
 itself becomes a source of divergence. Those invariance results are reported
 alongside the leakage answers.
 
-Uso:
+Usage:
     python scripts/derive_model_info_sheet.py [--datasets worldbank inep_censo]
 """
 
@@ -256,9 +256,9 @@ def _l2_feature_legitimacy(root: Path, paradigms: List[str]) -> Dict:
 
     per_fold = list((audit or {}).get('folds', {}).values())
     if per_fold:
-        # Auditado por fold, sobre a matriz que cada modelo ajusta. A resposta
-        # cita o pior caso: um limiar respeitado em média e cruzado num fold foi
-        # cruzado.
+        # Audited per fold, over the matrix each model fits. The answer quotes
+        # the worst case: a threshold respected on average and crossed in one
+        # fold was crossed.
         first = per_fold[0]
         exemptions = first.get('autoregressive_exemptions') or {}
         granted = ('; '.join(f"{name} {value:+.3f}"

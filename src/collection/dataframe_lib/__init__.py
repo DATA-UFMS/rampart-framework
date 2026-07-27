@@ -1,6 +1,6 @@
 """
-Módulo de processamento Polars DataFrame para coleta de dados educacionais.
+Polars DataFrame processing module for educational data collection.
 
-Implementa pipeline de processamento com Polars usando leitura lazy
-e transformações eficientes de memória.
+Implements a processing pipeline with Polars using lazy reading
+and memory-efficient transformations.
 """

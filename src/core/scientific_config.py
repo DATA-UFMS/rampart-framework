@@ -1,75 +1,75 @@
 #!/usr/bin/env python3
 """
-Módulo de Configuração Científica Centralizada para o Benchmark.
+Centralised Scientific Configuration Module for the Benchmark.
 
-Este arquivo define constantes e configurações que devem ser IDÊNTICAS
-entre os três paradigmas (sql_engine, task_graph, dataframe_lib) para
-que o benchmark seja válido.
+This file defines constants and settings that must be IDENTICAL
+across the three paradigms (sql_engine, task_graph, dataframe_lib) for
+the benchmark to be valid.
 
-Parâmetros definidos aqui governam:
-- Reprodutibilidade (seeds)
-- Lógica de seleção de features (correlações pairwise)
-- Validação temporal (P1-P2)
-- Detecção de proxy (P3)
-- Escopo temporal de seleção (P4)
-- Transformações de features
-- Espaço de busca dos modelos hierárquicos
-- Parâmetros estatísticos (bootstrap, SESOI)
+Parameters defined here govern:
+- Reproducibility (seeds)
+- Feature selection logic (pairwise correlations)
+- Temporal validation (P1-P2)
+- Proxy detection (P3)
+- Temporal scope of selection (P4)
+- Feature transforms
+- Search space of the hierarchical models
+- Statistical parameters (bootstrap, SESOI)
 
-Este dicionário é serializado no snapshot de reprodutibilidade, então um
-parâmetro definido fora daqui é um parâmetro ausente do snapshot.
+This dictionary is serialised into the reproducibility snapshot, so a
+parameter defined outside it is a parameter missing from the snapshot.
 
-P5 (escopo de preprocessing) é enforced no código dos modelos, por ser
-uma propriedade de onde as estatísticas são ajustadas, e não um valor;
-os testes unitários verificam esse enforcement.
+P5 (preprocessing scope) is enforced in the model code, since it is
+a property of where the statistics are fitted, and not a value;
+the unit tests verify that enforcement.
 """
 
 import random
 
 import numpy as np
 
-# Seed global para garantir reprodutibilidade em todas as operações
-# estocásticas (amostragem, inicialização de modelos, etc.).
+# Global seed to guarantee reproducibility across all stochastic
+# operations (sampling, model initialisation, etc.).
 RANDOM_SEED = 42
 
-# Dicionário de configuração científica unificado.
-# Usado por ambos os pipelines para garantir consistência.
+# Unified scientific configuration dictionary.
+# Used by both pipelines to guarantee consistency.
 SCIENTIFIC_CONFIG = {
-    # Reprodutibilidade
+    # Reproducibility
     'random_seed': RANDOM_SEED,
 
-    # Seleção de Features
+    # Feature Selection
     # Read by run_feature_selection and handed to each paradigm's pairwise
     # filter. It used to be declared here while the three filters kept their
     # own default, so changing this value did nothing.
     'collinearity_threshold': 0.8,
 
-    # Piso de associação marginal para uma candidata entrar na seleção,
-    # em valor absoluto. O sinal não entra: nem RidgeCV nem RandomForest se
-    # importam com a direção de uma associação marginal, e neste domínio a
-    # maioria dos fatores protetivos (PIB, conclusão, matrícula) associa
-    # negativamente com evasão. A comparação com sinal descartava todos eles.
+    # Floor on marginal association for a candidate to enter selection,
+    # in absolute value. The sign does not enter: neither RidgeCV nor
+    # RandomForest cares about the direction of a marginal association, and in
+    # this domain most protective factors (GDP, completion, enrolment) associate
+    # negatively with dropout. The signed comparison discarded all of them.
     #
-    # 0,15 fica acima do limite convencional de associação desprezível
-    # (Cohen, 1988: 0,10 pequeno, 0,30 médio, 0,50 grande) e abaixo do médio.
+    # 0.15 sits above the conventional limit of negligible association
+    # (Cohen, 1988: 0.10 small, 0.30 medium, 0.50 large) and below medium.
     'feature_selection_min_abs_correlation': 0.15,
 
-    # Piso alternativo, usado só quando o estrito não reúne o mínimo de
-    # features abaixo. É exatamente a fronteira de Cohen para "pequeno": abaixo
-    # disso a associação é convencionalmente desprezível, e admitir a feature
-    # seria trocar ruído por contagem. Substitui um multiplicador de 0,67 que
-    # não tinha derivação nenhuma.
+    # Alternative floor, used only when the strict one does not gather the
+    # minimum number of features below. It is exactly Cohen's boundary for
+    # "small": below that the association is conventionally negligible, and
+    # admitting the feature would be trading noise for count. It replaces a
+    # multiplier of 0.67 that had no derivation at all.
     'feature_selection_relaxed_min_abs_correlation': 0.10,
 
-    # Quantas features tornam o modelo não-degenerado. É um piso pragmático,
-    # não um resultado estatístico, e está escrito como tal: não alcançá-lo não
-    # interrompe a execução -- o que interrompe é chegar a zero.
+    # How many features make the model non-degenerate. It is a pragmatic floor,
+    # not a statistical result, and it is written as such: failing to reach it
+    # does not halt the run -- what halts it is reaching zero.
     'feature_selection_min_features': 5,
-    # |r| a partir do qual uma feature é suspeita de ser o alvo com outro nome
-    # (Kapoor & Narayanan, 2023). Uma pergunta, um número: a seleção o usa como
-    # teto sobre a janela de treino e a auditoria o aplica sobre o painel
-    # inteiro. Eram dois valores iguais por coincidência, e o comentário dizia
-    # que estavam alinhados sem que nada exigisse.
+    # |r| above which a feature is suspected of being the target under another
+    # name (Kapoor & Narayanan, 2023). One question, one number: selection uses
+    # it as a ceiling over the training window and the audit applies it over the
+    # whole panel. They were two values equal by coincidence, and the comment
+    # said they were aligned without anything requiring it.
     'proxy_correlation_threshold': 0.80,
     # Ceiling on how much of the target the selected features may jointly
     # explain. Catches additive identities that pairwise correlation misses.
@@ -90,50 +90,51 @@ SCIENTIFIC_CONFIG = {
     # substring rule here would have silently excused any feature whose name
     # happened to contain it.
 
-    # Validação Temporal
+    # Temporal Validation
     'temporal_gap_years': 2,
-    'embargo_years': 0,  # Embargo adicional (López de Prado 2018); 0 = desativado
-    # Parâmetros do gerador automático de folds
+    'embargo_years': 0,  # Additional embargo (López de Prado 2018); 0 = disabled
+    # Parameters of the automatic fold generator
     #
-    # Estes parâmetros produzem n=9 folds walk-forward. Esse n é o
-    # máximo alcançável sem violar as restrições temporais (P1-P2):
-    # A contagem é de pontos de início de teste, não de intervalos, então é
-    # o tamanho do range fechado [test_start_min, test_start_max]:
+    # These parameters produce n=9 walk-forward folds. That n is the
+    # maximum reachable without violating the temporal constraints (P1-P2):
+    # The count is of test start points, not of intervals, so it is
+    # the size of the closed range [test_start_min, test_start_max]:
     #
     #   test_start_min = start + min_train + val + 2*gap = 2000+8+2+4 = 2014
     #   test_start_max = end - test + 1                  = 2023-2+1  = 2022
     #   n = floor((test_start_max - test_start_min) / step) + 1 = 9
     #
-    # O "+1" não é ajuste ad hoc: um range fechado com extremos iguais tem um
-    # elemento, não zero. A forma anterior subtraía os dois extremos e somava
-    # um depois, o que dava o mesmo número por acidente de arranjo.
+    # The "+1" is not an ad hoc adjustment: a closed range with equal endpoints
+    # has one element, not zero. The previous form subtracted the two endpoints
+    # and added one afterwards, which gave the same number by accident of
+    # arrangement.
     #
-    # Aumentar n exigiria reduzir gap (comprometendo P2), reduzir
-    # min_train (comprometendo estabilidade do treino) ou usar folds
-    # sobrepostos (comprometendo independência). A decisão de manter
-    # n=9 prioriza integridade anti-leakage sobre poder estatístico,
-    # conforme recomendado para dados temporais (Cerqueira et al. 2020;
+    # Raising n would require reducing the gap (compromising P2), reducing
+    # min_train (compromising training stability) or using overlapping
+    # folds (compromising independence). The decision to keep
+    # n=9 prioritises anti-leakage integrity over statistical power,
+    # as recommended for temporal data (Cerqueira et al. 2020;
     # Roberts et al. 2017).
     #
-    # Implicação: o Wilcoxon pareado com n=9 tem poder ~30% para
-    # efeitos médios (d~0.5). Por isso o método primário de decisão
-    # é bootstrap CI (que não depende de premissas assintóticas), e
-    # Wilcoxon + Hodges-Lehmann são complementos de robustez. Um
-    # resultado "inconclusivo" é o desfecho esperado quando o efeito
-    # real é pequeno e n é limitado — não indica falha metodológica,
-    # mas reflete a precisão disponível (Lakens et al. 2018).
+    # Implication: the paired Wilcoxon with n=9 has ~30% power for
+    # medium effects (d~0.5). That is why the primary decision method
+    # is the bootstrap CI (which does not depend on asymptotic premises), and
+    # Wilcoxon + Hodges-Lehmann are robustness complements. An
+    # "inconclusive" result is the expected outcome when the real
+    # effect is small and n is limited — it does not indicate a methodological
+    # failure, but reflects the available precision (Lakens et al. 2018).
     'temporal_range_start': 2000,
     'temporal_range_end': 2023,
     'folds_min_train_years': 8,
     'folds_val_len_years': 2,
     'folds_test_len_years': 2,
     'folds_step_years': 1,
-    # Opcional: limitar número de folds (None para todos)
+    # Optional: cap the number of folds (None for all)
     'folds_max': None,
 
-    # Transformação de Features
+    # Feature Transform
     # Symmetric log transform: T(x) = sign(x) * ln(|x| + 1)
-    # Implementações equivalentes:
+    # Equivalent implementations:
     #   SQL:    SIGN(x) * LN(ABS(x) + 1)
     #   Python: np.sign(x) * np.log(np.abs(x) + 1)
     # Recorded, not dispatched on. The transform is written out in each
@@ -216,7 +217,7 @@ SCIENTIFIC_CONFIG = {
     # enforces, and they were recorded in the published config snapshot, where
     # a reader would reasonably take them for the operative criterion.
     'float_precision_tolerance': 1e-9,
-    # Parâmetros estatísticos
+    # Statistical parameters
     #
     # Bootstrap resamples. The latency and effect-size intervals are percentile
     # intervals; the equivalence estimate uses BCa and falls back to percentile.
@@ -238,27 +239,27 @@ SCIENTIFIC_CONFIG = {
 
     # SESOI (Smallest Effect Size Of Interest) — Lakens et al. (2018)
     #
-    # Definidos a priori usando abordagem híbrida:
-    #   - distribution-based para R² (referência em Cohen 1988)
-    #   - anchor-based para MASE/WAPE (resolução prática de decisão)
+    # Defined a priori using a hybrid approach:
+    #   - distribution-based for R² (reference in Cohen 1988)
+    #   - anchor-based for MASE/WAPE (practical decision resolution)
     #
-    # sesoi_r2 = 0.01: metade do efeito pequeno de Cohen (1988, f²=0.02,
-    #   equivalente a R²~0.02). Deliberadamente conservador — exigimos
-    #   equivalência dentro de uma margem menor que o convencionalmente
-    #   considerado "pequeno". Se |delta_R²| < 0.01, a diferença preditiva
-    #   entre arquiteturas é irrelevante para qualquer aplicação prática.
+    # sesoi_r2 = 0.01: half of Cohen's small effect (1988, f²=0.02,
+    #   equivalent to R²~0.02). Deliberately conservative — we require
+    #   equivalence within a margin smaller than what is conventionally
+    #   considered "small". If |delta_R²| < 0.01, the predictive difference
+    #   between architectures is irrelevant for any practical application.
     #
-    # sesoi_mase = 0.05: MASE é relativo ao forecast naïve (Hyndman &
-    #   Koehler 2006); delta_MASE de 0.05 significa que ambas arquiteturas
-    #   estão dentro de 5% uma da outra em relação ao baseline naïve.
-    #   Abaixo da resolução em que um pesquisador alteraria sua escolha
-    #   de paradigma de dados.
+    # sesoi_mase = 0.05: MASE is relative to the naïve forecast (Hyndman &
+    #   Koehler 2006); a delta_MASE of 0.05 means both architectures
+    #   are within 5% of each other relative to the naïve baseline.
+    #   Below the resolution at which a researcher would change their choice
+    #   of data paradigm.
     #
-    # sesoi_wape = 0.05: 5 pontos percentuais de erro ponderado. Margem
-    #   dentro da qual a diferença não alteraria uma decisão prática
-    #   de adoção de arquitetura em contexto educacional.
+    # sesoi_wape = 0.05: 5 percentage points of weighted error. A margin
+    #   within which the difference would not change a practical decision
+    #   to adopt an architecture in an educational context.
     #
-    # Referências:
+    # References:
     #   Lakens, D., Scheel, A. M., & Isager, P. M. (2018). Equivalence
     #     Testing for Psychological Research: A Tutorial. Advances in
     #     Methods and Practices in Psychological Science, 1(2), 259-269.
@@ -274,16 +275,16 @@ SCIENTIFIC_CONFIG = {
 
 def setup_reproducibility():
     """
-    Função auxiliar para configurar a seed em bibliotecas relevantes.
-    Deve ser chamada no início de cada script de pipeline.
+    Helper function to configure the seed in the relevant libraries.
+    Must be called at the start of each pipeline script.
     """
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     try:
         import dask
-        # Dask não possui config nativa de seed global.
-        # A reprodutibilidade é garantida pela seed do numpy.
+        # Dask has no native global seed config.
+        # Reproducibility is guaranteed by the numpy seed.
     except ImportError:
         pass
 

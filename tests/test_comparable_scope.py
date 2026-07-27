@@ -80,13 +80,15 @@ class TestComparableRows:
         frame.loc[len(frame)] = {'run_id': 0, 'phase': 'setup',
                                  'architecture': 'spark_sql',
                                  'duration_s': 1.0, 'records': 10}
-        with pytest.raises(ValueError, match='registro não conhece'):
+        with pytest.raises(ValueError,
+                           match='architectures the registry does not know'):
             comparable_rows(frame)
 
     def test_a_frame_with_nothing_comparable_halts(self):
         """The latency deriver used to fall back to the unfiltered frame."""
         frame = _frame(include_collection=True).head(1)
-        with pytest.raises(ValueError, match='Nenhuma linha comparável'):
+        with pytest.raises(ValueError,
+                           match='No comparable rows in the benchmark'):
             comparable_rows(frame)
 
     def test_the_phase_list_matches_what_the_benchmark_runs(self):

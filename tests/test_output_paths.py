@@ -70,8 +70,8 @@ class TestSegregation:
         'outputs/benchmarks/architectural_benchmark_results.csv',
         'statistics',
         'outputs/ml_pipeline/architectures/sql_engine/prep',
-        # A forma nua não começa com 'outputs/', então escapava do
-        # descascamento por prefixo e produzia outputs/<dataset>/outputs.
+        # The bare form does not start with 'outputs/', so it escaped the
+        # prefix stripping and produced outputs/<dataset>/outputs.
         'outputs',
         'outputs/',
     ])
@@ -85,13 +85,13 @@ class TestSegregation:
         assert not tail.startswith('outputs')
 
     def test_the_bare_form_is_the_dataset_root(self, dataset):
-        """Era outputs/<dataset>/outputs, um nível abaixo dos consumidores."""
+        """It was outputs/<dataset>/outputs, one level below the consumers."""
         dataset('worldbank')
         assert get_absolute_output_path('outputs') == get_outputs_root()
         assert get_absolute_output_path('') == get_outputs_root()
 
     def test_the_snapshot_lands_where_its_readers_look(self, dataset):
-        """O gerador de tabelas avisava e saía 0 sem gerar nada."""
+        """The table generator warned and exited 0 without generating anything."""
         dataset('worldbank')
         written = Path(get_absolute_output_path('outputs')) / \
             'scientific_config_snapshot.json'

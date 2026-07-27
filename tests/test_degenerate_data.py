@@ -148,7 +148,7 @@ class TestConstantColumns:
         assert bounds['undefined_correlation'] == []
 
     def test_all_undefined_halts_and_says_why(self):
-        with pytest.raises(ValueError, match='correlação indefinida'):
+        with pytest.raises(ValueError, match='with an undefined correlation'):
             _quiet(_architecture().select_features_by_correlation,
                    {'a': float('nan'), 'b': float('nan')})
 
@@ -239,7 +239,8 @@ class TestImputationUnderDegenerateWindows:
         assert applied['a'].iloc[0] == 1.0
 
     def test_a_column_with_nothing_observed_halts(self):
-        with pytest.raises(ValueError, match='nenhuma observação'):
+        with pytest.raises(ValueError,
+                           match='no observation in the training window'):
             impute_from_training_window(pd.DataFrame({'a': [np.nan, np.nan]}),
                                         pd.DataFrame({'a': [np.nan]}))
 

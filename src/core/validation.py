@@ -1,71 +1,71 @@
 #!/usr/bin/env python3
 """
-Módulo centralizado de validação para arquiteturas ML.
+Centralised validation module for ML architectures.
 
-Centraliza toda lógica de validação temporal, integridade de dados e
-métricas científicas, eliminando duplicação entre arquiteturas.
+Centralises all temporal validation, data integrity and scientific metric
+logic, eliminating duplication across architectures.
 
-Protocolo anti-leakage (P1-P5):
-    P1 — Ordenação temporal: train_end < val_start < val_end < test_start.
-    P2 — Gap mínimo: N anos entre splits (default 2), configurável via
-         temporal_gap_years. Embargo opcional para dados sub-anuais.
-    P3 — Separação de features: lista de exclusão (derivadas do target,
-         metadados) + detecção de proxy (|r| com target acima de
-         proxy_correlation_threshold, medido no painel completo) + rejeição
-         de reconstrução conjunta (R2 de mínimos quadrados do target sobre as
-         features selecionadas acima de identity_r2_threshold, medido na
-         janela de treino).
-    P4 — Escopo de seleção: feature selection restrita ao período de
-         treino do primeiro fold (Kapoor & Narayanan, 2023).
-    P5 — Escopo de preprocessing: scaling e imputação ajustados
-         exclusivamente nos dados de treino (Kaufman et al. 2012).
+Anti-leakage protocol (P1-P5):
+    P1 — Temporal ordering: train_end < val_start < val_end < test_start.
+    P2 — Minimum gap: N years between splits (default 2), configurable via
+         temporal_gap_years. Optional embargo for sub-annual data.
+    P3 — Feature separation: exclusion list (target-derived features,
+         metadata) + proxy detection (|r| with the target above
+         proxy_correlation_threshold, measured on the full panel) + rejection
+         of joint reconstruction (least-squares R2 of the target on the
+         selected features above identity_r2_threshold, measured on the
+         training window).
+    P4 — Selection scope: feature selection restricted to the training
+         period of the first fold (Kapoor & Narayanan, 2023).
+    P5 — Preprocessing scope: scaling and imputation fitted
+         exclusively on training data (Kaufman et al. 2012).
 
-HPO: grid search no conjunto de validação; modelo final retreinado
-no treino completo. Previne leakage por otimização no teste (Kapoor & Narayanan, 2023).
+HPO: grid search on the validation set; final model retrained
+on the full training set. Prevents leakage from optimising on the test set (Kapoor & Narayanan, 2023).
 
-Enforcement: violações de P1/P2 geram ValueError via enforce_walk_forward().
+Enforcement: P1/P2 violations raise ValueError via enforce_walk_forward().
 
-Mapeamento à taxonomia de Kapoor & Narayanan (2023), oito tipos:
-    L1.2 pré-processamento sobre treino+teste ....... P5
-    L1.3 seleção de features sobre treino+teste ..... P4
-    L1.4 duplicatas no conjunto de dados ............ canonical_fold
-    L2   feature ilegítima .......................... P3 (rastreio, não quitação)
-    L3.1 vazamento temporal ......................... P1
-    L3.2 dependência entre treino e teste ........... P2 mitiga em parte
+Mapping to the Kapoor & Narayanan (2023) taxonomy, eight types:
+    L1.2 preprocessing over train+test .............. P5
+    L1.3 feature selection over train+test .......... P4
+    L1.4 duplicates in the dataset .................. canonical_fold
+    L2   illegitimate feature ....................... P3 (tracking, not discharge)
+    L3.1 temporal leakage ........................... P1
+    L3.2 dependency between train and test .......... P2 partially mitigates
 
-O gap de P2 não vem de K&N: a taxonomia deles não menciona gaps. Ele segue a
-literatura de validação cruzada em blocos com buffer (Roberts et al., 2017),
-que é a referência que os próprios K&N citam ao tratar de L3.2, com a variante
-de embargo de López de Prado (2018).
+The P2 gap does not come from K&N: their taxonomy does not mention gaps. It
+follows the literature on blocked cross-validation with a buffer (Roberts
+et al., 2017), which is the reference K&N themselves cite when dealing with
+L3.2, with the embargo variant of López de Prado (2018).
 
-L2 fica como rastreio e não como quitação: K&N deliberadamente não subdividem
-essa categoria porque "o julgamento de se o uso de uma dada feature é legítimo
-exige conhecimento de domínio". Um limiar de correlação detecta o subconjunto
-detectável -- o proxy fortemente associado -- e não alcança uma feature que é
-ilegítima por ser consequência do desfecho em vez de causa dele.
+L2 stands as tracking and not as discharge: K&N deliberately do not subdivide
+this category because "judging whether the use of a given feature is legitimate
+requires domain knowledge". A correlation threshold detects the detectable
+subset -- the strongly associated proxy -- and does not reach a feature that is
+illegitimate for being a consequence of the outcome rather than a cause of it.
 
-Dois tipos NÃO são cobertos por P1-P5, e isso é declarado aqui em vez de ficar
-implícito na ausência:
+Two types are NOT covered by P1-P5, and that is declared here rather than left
+implicit in the absence:
 
-    L3.2 dependência entre treino e teste. O mesmo país está em treino e em
-         teste; o split é temporal, não por entidade. K&N dizem que isso é
-         vazamento "a menos que a afirmação científica seja sobre uma
-         distribuição com a mesma estrutura de dependência". Para previsão em
-         painel a estrutura bate -- é o mesmo país, anos à frente -- mas o
-         argumento é do autor e não do código. Note a assimetria deliberada:
-         a CV interna agrupa por país (GroupKFold) porque ali o vazamento de
-         entidade infla a seleção de hiperparâmetro; o split externo não
-         agrupa porque agrupar mudaria a afirmação de previsão para outra.
+    L3.2 dependency between train and test. The same country is in train and
+         in test; the split is temporal, not by entity. K&N say this is
+         leakage "unless the scientific claim is about a distribution with the
+         same dependency structure". For panel forecasting the structure
+         matches -- it is the same country, years ahead -- but the argument is
+         the author's and not the code's. Note the deliberate asymmetry: the
+         inner CV groups by country (GroupKFold) because there entity leakage
+         inflates hyperparameter selection; the outer split does not group
+         because grouping would turn the forecasting claim into a different one.
 
-    L3.3 viés de amostragem no teste. Coberto pela metade: a cobertura
-         geográfica mínima por fold trata o viés espacial, que é o exemplo dos
-         próprios K&N. A outra metade é criada por este pipeline -- linhas sem
-         alvo observado são removidas, e ausência de alvo não é aleatória. A
-         info sheet deles pergunta exatamente isso (Q18-19: "descreva como as
-         linhas incluídas na análise foram selecionadas"). A evidência está em
-         target_coverage.json; o argumento é do autor.
-Violações de P3/P4 geram ValueError em run_feature_selection().
-P5 é enforced por contrato (docstring + testes unitários).
+    L3.3 sampling bias in the test set. Covered by half: the minimum
+         geographic coverage per fold addresses the spatial bias, which is
+         K&N's own example. The other half is created by this pipeline -- rows
+         with no observed target are removed, and target absence is not
+         random. Their info sheet asks exactly this (Q18-19: "describe how the
+         rows included in the analysis were selected"). The evidence is in
+         target_coverage.json; the argument is the author's.
+P3/P4 violations raise ValueError in run_feature_selection().
+P5 is enforced by contract (docstring + unit tests).
 """
 
 import numpy as np
@@ -242,10 +242,10 @@ def assert_lag_columns(present, paradigm: str, lag_orders, *,
     missing = sorted(expected - set(present))
     if missing:
         raise ValueError(
-            f"{paradigm}: as colunas de defasagem do alvo não foram criadas "
-            f"{missing}. Sem elas este paradigma treina sobre um conjunto de "
-            f"features diferente dos outros dois, e a comparação deixa de ser "
-            f"entre paradigmas."
+            f"{paradigm}: the target's lag columns were not created "
+            f"{missing}. Without them this paradigm trains on a feature set "
+            f"different from the other two, and the comparison stops being "
+            f"between paradigms."
         )
 
 
@@ -496,70 +496,70 @@ def audit_feature_set(
 
 class TemporalValidator:
     """
-    Validador temporal para prevenção de vazamento em séries temporais.
+    Temporal validator for leakage prevention in time series.
 
-    Implementa validação de splits temporais com gaps obrigatórios
-    e embargo configurável para garantir validade científica em previsão
-    de dropout educacional.
+    Implements validation of temporal splits with mandatory gaps
+    and a configurable embargo to ensure scientific validity in educational
+    dropout forecasting.
 
-    O protocolo combina dois mecanismos complementares:
-      - **Gap temporal**: período mínimo entre splits consecutivos,
-        impedindo que informação futura influencie o treino.
-      - **Embargo**: um acréscimo exigido ao gap, não uma exclusão de
-        observações. López de Prado (2018) descreve o embargo como a remoção
-        das observações de treino adjacentes ao limite de cada split; aqui o
-        validador apenas verifica que o gap declarado cobre o embargo
-        declarado, e reprova o fold quando não cobre. Nada é removido -- o
-        que remove observações é o gap, na geração dos folds.
+    The protocol combines two complementary mechanisms:
+      - **Temporal gap**: minimum period between consecutive splits,
+        preventing future information from influencing training.
+      - **Embargo**: an increment required of the gap, not an exclusion of
+        observations. López de Prado (2018) describes the embargo as the
+        removal of the training observations adjacent to the boundary of each
+        split; here the validator only checks that the declared gap covers the
+        declared embargo, and fails the fold when it does not. Nothing is
+        removed -- what removes observations is the gap, in fold generation.
 
-        A distinção importa porque as duas formulações diferem quando o gap
-        não é uniforme. Com gap constante de dois anos e um ponto por
-        entidade/ano, exigir gap >= embargo e excluir `embargo` observações
-        adjacentes selecionam o mesmo conjunto de treino, e é por isso que a
-        verificação basta neste painel.
+        The distinction matters because the two formulations differ when the
+        gap is not uniform. With a constant gap of two years and one point per
+        entity/year, requiring gap >= embargo and excluding `embargo` adjacent
+        observations select the same training set, and that is why the check
+        suffices on this panel.
 
-    Nota sobre purging (López de Prado 2018):
-        Purging remove observações de treino cujos labels sobrepõem
-        temporalmente o período de teste. Em dados com granularidade
-        anual (um ponto por país/ano), não há sobreposição de labels
-        entre splits — cada observação é um ponto discreto. Portanto,
-        purging é desnecessário neste contexto. O gap temporal de N
-        anos já subsume o efeito do embargo para dados anuais, pois
-        não existem observações sub-anuais intermediárias a excluir.
-        O parâmetro embargo_years existe para uso em adaptações do
-        framework a dados de maior frequência (mensal, diário).
+    Note on purging (López de Prado 2018):
+        Purging removes training observations whose labels overlap
+        temporally with the test period. In data with annual
+        granularity (one point per country/year), there is no label overlap
+        between splits — each observation is a discrete point. Therefore,
+        purging is unnecessary in this context. The temporal gap of N
+        years already subsumes the effect of the embargo for annual data,
+        since there are no intermediate sub-annual observations to exclude.
+        The embargo_years parameter exists for use in adaptations of the
+        framework to higher-frequency data (monthly, daily).
     """
 
     def __init__(self, min_gap_years: int = 2, embargo_years: int = 0):
         """
-        Inicializa validador temporal.
+        Initialise the temporal validator.
 
         Args:
-            min_gap_years: Gap mínimo em anos entre splits (default: 2).
-                Controla a separação temporal obrigatória entre períodos.
-            embargo_years: Período adicional de embargo em anos (default: 0).
-                Quando > 0, observações no intervalo [train_end+1,
-                train_end+embargo] são excluídas do treino, mesmo que
-                já estejam fora do split de treino. Previne leakage
-                por autocorrelação residual em dados com dependência
-                temporal (lagged features, médias móveis).
+            min_gap_years: Minimum gap in years between splits (default: 2).
+                Controls the mandatory temporal separation between periods.
+            embargo_years: Additional embargo period in years (default: 0).
+                When > 0, observations in the interval [train_end+1,
+                train_end+embargo] are excluded from training, even if
+                they are already outside the training split. Prevents leakage
+                from residual autocorrelation in data with temporal
+                dependency (lagged features, moving averages).
         """
         self.min_gap_years = min_gap_years
         self.embargo_years = embargo_years
     
     def validate_fold_integrity(self, fold: Dict) -> Tuple[bool, List[str]]:
         """
-        Valida integridade completa de um fold temporal.
+        Validate the full integrity of a temporal fold.
         
         Args:
-            fold: Dicionário com configuração do fold
+            fold: Dictionary with the fold configuration
             
         Returns:
-            Tupla (is_valid, lista_de_erros)
+            Tuple (is_valid, list_of_errors)
         """
         errors = []
         
-        # Verificar campos obrigatórios
+        # Check mandatory fields
         required_fields = [
             'train_start', 'train_end', 'val_start', 'val_end',
             'test_start', 'test_end'
@@ -567,50 +567,50 @@ class TemporalValidator:
         
         for field in required_fields:
             if field not in fold:
-                errors.append(f"Campo obrigatório ausente: {field}")
+                errors.append(f"Missing mandatory field: {field}")
         
         if errors:
             return False, errors
         
-        # Verificar ordem cronológica
+        # Check chronological order
         if fold['train_start'] > fold['train_end']:
-            errors.append(f"Train: início ({fold['train_start']}) > fim ({fold['train_end']})")
+            errors.append(f"Train: start ({fold['train_start']}) > end ({fold['train_end']})")
         
         if fold['val_start'] > fold['val_end']:
-            errors.append(f"Val: início ({fold['val_start']}) > fim ({fold['val_end']})")
+            errors.append(f"Val: start ({fold['val_start']}) > end ({fold['val_end']})")
         
         if fold['test_start'] > fold['test_end']:
-            errors.append(f"Test: início ({fold['test_start']}) > fim ({fold['test_end']})")
+            errors.append(f"Test: start ({fold['test_start']}) > end ({fold['test_end']})")
         
-        # Verificar sequência temporal
+        # Check temporal sequence
         if fold['train_end'] >= fold['val_start']:
-            errors.append(f"Sobreposição train-val: train_end={fold['train_end']}, val_start={fold['val_start']}")
+            errors.append(f"Train-val overlap: train_end={fold['train_end']}, val_start={fold['val_start']}")
         
         if fold['val_end'] >= fold['test_start']:
-            errors.append(f"Sobreposição val-test: val_end={fold['val_end']}, test_start={fold['test_start']}")
+            errors.append(f"Val-test overlap: val_end={fold['val_end']}, test_start={fold['test_start']}")
         
-        # Verificar gaps mínimos
+        # Check minimum gaps
         train_val_gap = fold['val_start'] - fold['train_end'] - 1
         val_test_gap = fold['test_start'] - fold['val_end'] - 1
 
         if train_val_gap < self.min_gap_years:
-            errors.append(f"Gap train-val insuficiente: {train_val_gap} < {self.min_gap_years}")
+            errors.append(f"Insufficient train-val gap: {train_val_gap} < {self.min_gap_years}")
 
         if val_test_gap < self.min_gap_years:
-            errors.append(f"Gap val-test insuficiente: {val_test_gap} < {self.min_gap_years}")
+            errors.append(f"Insufficient val-test gap: {val_test_gap} < {self.min_gap_years}")
 
-        # Verificar embargo: o gap efetivo deve cobrir também o embargo
+        # Check the embargo: the effective gap must also cover the embargo
         if self.embargo_years > 0:
             effective_gap_tv = train_val_gap - self.embargo_years
             effective_gap_vt = val_test_gap - self.embargo_years
             if effective_gap_tv < 0:
                 errors.append(
-                    f"Embargo train-val violado: gap={train_val_gap} < "
+                    f"Train-val embargo violated: gap={train_val_gap} < "
                     f"embargo={self.embargo_years}"
                 )
             if effective_gap_vt < 0:
                 errors.append(
-                    f"Embargo val-test violado: gap={val_test_gap} < "
+                    f"Val-test embargo violated: gap={val_test_gap} < "
                     f"embargo={self.embargo_years}"
                 )
 
@@ -619,13 +619,13 @@ class TemporalValidator:
     
     def validate_walk_forward(self, folds: List[Dict]) -> Tuple[bool, Dict]:
         """
-        Valida estrutura walk-forward de múltiplos folds.
+        Validate the walk-forward structure of multiple folds.
         
         Args:
-            folds: Lista de folds para validação
+            folds: List of folds to validate
             
         Returns:
-            Tupla (is_valid, relatório_detalhado)
+            Tuple (is_valid, detailed_report)
         """
         report = {
             'total_folds': len(folds),
@@ -645,10 +645,10 @@ class TemporalValidator:
                 report['invalid_folds'] += 1
                 report['fold_errors'][f'fold_{i}'] = errors
         
-        # Verificar se é walk-forward expansivo
+        # Check whether it is an expanding walk-forward
         if len(folds) > 1:
             for i in range(1, len(folds)):
-                # Train deve expandir ou manter
+                # Train must expand or stay the same
                 if folds[i]['train_end'] < folds[i-1]['train_end']:
                     report['expanding_window'] = False
                     report['walk_forward_valid'] = False
@@ -665,16 +665,16 @@ class TemporalValidator:
 
     def enforce_walk_forward(self, folds: List[Dict]) -> None:
         """
-        Valida estrutura walk-forward e interrompe execução em caso de violação.
+        Validate the walk-forward structure and halt execution on violation.
 
         Raises:
-            ValueError: Se qualquer fold violar integridade temporal
+            ValueError: If any fold violates temporal integrity
         """
-        # Um conjunto vazio satisfaz "nenhum fold inválido" vacuamente, e o
-        # pipeline registrava "0 folds -- integridade temporal verificada".
-        # Zero folds significa que os modelos não tiveram nada em que treinar,
-        # ou que o artefato está quebrado; em nenhum dos dois casos há
-        # integridade a atestar.
+        # An empty set satisfies "no invalid fold" vacuously, and the
+        # pipeline used to record "0 folds -- temporal integrity verified".
+        # Zero folds means the models had nothing to train on, or that the
+        # artifact is broken; in neither case is there any integrity to
+        # attest to.
         if not folds:
             raise AntiLeakageViolation(
                 "Anti-leakage violation: the fold configuration is empty. "
@@ -695,27 +695,27 @@ class TemporalValidator:
 
 class DataIntegrityValidator:
     """
-    Validador de integridade de dados para ML.
+    Data integrity validator for ML.
     
-    Verifica qualidade, completude e consistência dos dados
-    antes do treinamento de modelos.
+    Checks the quality, completeness and consistency of the data
+    before model training.
     """
     
     def validate_target_distribution(self, target_values: np.ndarray,
                                     expected_range: Tuple[float, float] = (0, 100),
                                     name: str = "target") -> Dict:
         """
-        Valida distribuição da variável target.
+        Validate the distribution of the target variable.
         
         Args:
-            target_values: Valores do target
-            expected_range: Range esperado (min, max)
-            name: Nome da variável para relatório
+            target_values: Target values
+            expected_range: Expected range (min, max)
+            name: Variable name for the report
             
         Returns:
-            Dicionário com análise da distribuição
+            Dictionary with the distribution analysis
         """
-        # Remover NaN para análise
+        # Remove NaN for the analysis
         clean_values = target_values[~np.isnan(target_values)]
         
         validation = {
@@ -737,7 +737,7 @@ class DataIntegrityValidator:
                 'q75': float(np.percentile(clean_values, 75))
             })
             
-            # Verificar range
+            # Check the range
             out_of_range = np.sum((clean_values < expected_range[0]) | 
                                  (clean_values > expected_range[1]))
             validation['out_of_range_count'] = int(out_of_range)
@@ -746,22 +746,22 @@ class DataIntegrityValidator:
             negative_count = np.sum(clean_values < 0)
             validation['negative_values'] = int(negative_count)
             
-            # Alertas
+            # Alerts
             validation['warnings'] = []
             
             if validation['missing_rate'] > 20:
-                validation['warnings'].append(f"Alta taxa de missing: {validation['missing_rate']:.1f}%")
+                validation['warnings'].append(f"High missing rate: {validation['missing_rate']:.1f}%")
             
             if validation['out_of_range_rate'] > 5:
-                validation['warnings'].append(f"Valores fora do range: {validation['out_of_range_rate']:.1f}%")
+                validation['warnings'].append(f"Values out of range: {validation['out_of_range_rate']:.1f}%")
             
             if negative_count > 0:
-                validation['warnings'].append(f"Valores negativos detectados: {negative_count}")
+                validation['warnings'].append(f"Negative values detected: {negative_count}")
             
             if validation['std'] < 1:
-                validation['warnings'].append(f"Baixa variabilidade: std={validation['std']:.2f}")
+                validation['warnings'].append(f"Low variability: std={validation['std']:.2f}")
         else:
-            validation['warnings'] = ["Sem dados válidos para análise"]
+            validation['warnings'] = ["No valid data for analysis"]
         
         validation['is_valid'] = len(validation.get('warnings', [])) == 0
         
@@ -771,15 +771,15 @@ class DataIntegrityValidator:
                           target_col: str = None,
                           check_completeness: bool = True) -> Tuple[bool, Dict]:
         """
-        Valida integridade completa de um DataFrame.
+        Validate the full integrity of a DataFrame.
         
         Args:
-            df: DataFrame para validar
-            target_col: Nome da coluna target (opcional)
-            check_completeness: Se deve verificar completude
+            df: DataFrame to validate
+            target_col: Name of the target column (optional)
+            check_completeness: Whether to check completeness
             
         Returns:
-            Tupla (is_valid, validation_report)
+            Tuple (is_valid, validation_report)
         """
         validation_report = {
             'is_valid': True,
@@ -793,7 +793,7 @@ class DataIntegrityValidator:
         
         if df.empty:
             validation_report['is_valid'] = False
-            validation_report['errors'].append("DataFrame está vazio")
+            validation_report['errors'].append("DataFrame is empty")
             return False, validation_report
         
         missing_counts = df.isnull().sum()
@@ -806,13 +806,13 @@ class DataIntegrityValidator:
                     'rate': float(missing_rates[col])
                 }
                 
-                # Se completude é necessária
+                # If completeness is required
                 if check_completeness and missing_rates[col] > 50:
                     validation_report['warnings'].append(
-                        f"Coluna '{col}' tem {missing_rates[col]:.1f}% de dados faltantes"
+                        f"Column '{col}' has {missing_rates[col]:.1f}% missing data"
                     )
         
-        # Validar target se especificado
+        # Validate the target if specified
         if target_col and target_col in df.columns:
             target_validation = self.validate_target_distribution(
                 df[target_col].values,
@@ -826,29 +826,29 @@ class DataIntegrityValidator:
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         for col in numeric_cols:
             if df[col].var() == 0:
-                validation_report['warnings'].append(f"Coluna '{col}' tem variância zero")
+                validation_report['warnings'].append(f"Column '{col}' has zero variance")
         
         inf_counts = np.isinf(df.select_dtypes(include=[np.number])).sum()
         for col, count in inf_counts.items():
             if count > 0:
-                validation_report['warnings'].append(f"Coluna '{col}' tem {count} valores infinitos")
+                validation_report['warnings'].append(f"Column '{col}' has {count} infinite values")
                 validation_report['is_valid'] = False
         
         duplicates = df.duplicated().sum()
         if duplicates > 0:
-            validation_report['warnings'].append(f"DataFrame tem {duplicates} linhas duplicadas")
+            validation_report['warnings'].append(f"DataFrame has {duplicates} duplicated rows")
         
-        # Determinar validade final
+        # Determine final validity
         if validation_report['errors']:
             validation_report['is_valid'] = False
         
-        # Heurística: mais de MAX_TOLERABLE_WARNINGS indica dataset degradado
+        # Heuristic: more than MAX_TOLERABLE_WARNINGS indicates a degraded dataset
         MAX_TOLERABLE_WARNINGS = 5
         if len(validation_report['warnings']) > MAX_TOLERABLE_WARNINGS:
             validation_report['is_valid'] = False
             validation_report['errors'].append(
-                f"Número de warnings ({len(validation_report['warnings'])}) "
-                f"excede o limite tolerável ({MAX_TOLERABLE_WARNINGS})"
+                f"Number of warnings ({len(validation_report['warnings'])}) "
+                f"exceeds the tolerable limit ({MAX_TOLERABLE_WARNINGS})"
             )
         
         return validation_report['is_valid'], validation_report
@@ -911,12 +911,12 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
 
     if unobserved:
         raise ValueError(
-            f"Features com nenhuma observação na janela de treino: "
-            f"{sorted(unobserved)}. Com janela expansiva e seleção sob P4 na "
-            f"janela do primeiro fold, isso não pode ocorrer: uma feature "
-            f"selecionada tem dados ali e portanto em toda janela posterior. "
-            f"Preencher com constante fabricaria um valor que o treino nunca "
-            f"observou."
+            f"Features with no observation in the training window: "
+            f"{sorted(unobserved)}. With an expansive window and selection "
+            f"under P4 on the first fold's window, this cannot occur: a "
+            f"selected feature has data there and therefore in every later "
+            f"window. Filling with a constant would fabricate a value the "
+            f"training window never observed."
         )
 
     # Counted per split, because how much of each window is fabricated is what
@@ -948,8 +948,8 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
         'fitted_on_rows': int(len(train)),
         'filled_cells': filled_cells,
         'values': fitted,
-        # Mantido, sempre vazio: a condição levanta acima. A chave permanece
-        # para que um artefato antigo e um novo sejam comparáveis.
+        # Kept, always empty: the condition raises above. The key remains so
+        # that an old artifact and a new one are comparable.
         'columns_without_training_observation': [],
     }
     return filled, report

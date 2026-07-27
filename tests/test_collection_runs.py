@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""A coleta é EXECUTADA, não inspecionada por texto.
+"""The collection is EXECUTED, not inspected as text.
 
-Motivo de existir: a imputação foi reescrita e ficou com uma referência pendurada
-a duas variáveis que a reescrita removeu do escopo. Qualquer painel com uma célula
-ausente levantava NameError na primeira coluna. Os 34 testes de
-test_imputation_scope.py passaram verdes porque validam a função inteiramente por
-COLLECTOR.read_text() e busca de substring -- confirmam que a deleção textual
-aconteceu, não que o que sobrou roda.
+Reason for existing: the imputation was rewritten and was left with a dangling
+reference to two variables that the rewrite removed from the scope. Any panel
+with a missing cell raised NameError on the first column. The 34 tests in
+test_imputation_scope.py passed green because they validate the function
+entirely through COLLECTOR.read_text() and substring search -- they confirm that
+the textual deletion happened, not that what was left runs.
 
-Nenhum dos 715 testes executava apply_conservative_imputation. Estes executam.
+None of the 715 tests executed apply_conservative_imputation. These do.
 """
 
 import json
@@ -28,7 +28,7 @@ TARGET = 'lower_secondary_completion_rate'
 
 
 def _collector(tmp_path):
-    """Instância sem __init__: ele imprime, lê rede e monta caminhos reais."""
+    """No-__init__ instance: it prints, reads the network, builds real paths."""
     import collection.raw_data_collector as module
 
     cls = next(getattr(module, name) for name in dir(module)
@@ -42,7 +42,7 @@ def _collector(tmp_path):
 
 
 def _panel(n_years=6, gap_at=2002):
-    """Painel com lacunas: sem elas a imputação não é exercitada."""
+    """Panel with gaps: without them the imputation is not exercised."""
     rows = []
     for entity in ('AAA', 'BBB'):
         for year in range(2000, 2000 + n_years):
@@ -52,7 +52,7 @@ def _panel(n_years=6, gap_at=2002):
     frame[TARGET] = rng.uniform(5.0, 25.0, len(frame))
     frame['gini_index'] = rng.uniform(30.0, 55.0, len(frame))
     frame['internet_users_percent'] = rng.uniform(10.0, 90.0, len(frame))
-    # Lacunas em duas features, uma delas no meio da série.
+    # Gaps in two features, one of them in the middle of the series.
     frame.loc[frame['year'] == gap_at, 'gini_index'] = np.nan
     frame.loc[(frame['country_code'] == 'AAA') & (frame['year'] == 2001),
               'internet_users_percent'] = np.nan
@@ -60,7 +60,7 @@ def _panel(n_years=6, gap_at=2002):
 
 
 class TestImputationExecutes:
-    """Cada um destes teria falhado com o NameError."""
+    """Each one of these would have failed with the NameError."""
 
     def test_it_returns_a_frame(self, tmp_path):
         result = _collector(tmp_path).apply_conservative_imputation(_panel())
@@ -68,13 +68,15 @@ class TestImputationExecutes:
         assert len(result) > 0
 
     def test_a_panel_with_gaps_does_not_raise(self, tmp_path):
-        """A condição exata que quebrava: coluna com célula ausente."""
+        """The exact condition that broke: a column with a missing cell."""
         panel = _panel()
-        assert panel['gini_index'].isna().any(), 'fixture sem lacuna'
+        assert panel['gini_index'].isna().any(), 'fixture without a gap'
         _collector(tmp_path).apply_conservative_imputation(panel)
 
     def test_a_panel_without_gaps_also_runs(self, tmp_path):
-        """O caminho que pula a coluna, para não passar só pelo ramo feliz."""
+        """The path that skips the column, so as not to go only through the
+        happy branch.
+        """
         panel = _panel()
         panel['gini_index'] = 40.0
         panel['internet_users_percent'] = 50.0
@@ -84,10 +86,12 @@ class TestImputationExecutes:
         _collector(tmp_path).apply_conservative_imputation(_panel())
         log = json.loads(
             (tmp_path / 'scientific_imputation_log.json').read_text())
-        assert log['imputation_log'], 'log vazio'
+        assert log['imputation_log'], 'empty log'
 
     def test_the_log_records_a_single_mechanism(self, tmp_path):
-        """Os tiers cross-seccionais saíram; o log não pode sugerir escolha."""
+        """The cross-sectional tiers are gone; the log must not suggest a
+        choice.
+        """
         _collector(tmp_path).apply_conservative_imputation(_panel())
         log = json.loads(
             (tmp_path / 'scientific_imputation_log.json').read_text())
@@ -103,38 +107,38 @@ class TestImputationExecutes:
         assert coverage['rows_after'] <= coverage['rows_before']
 
     def test_the_target_is_not_imputed(self, tmp_path):
-        """Executado, não verificado por substring."""
+        """Executed, not verified by substring."""
         panel = _panel()
         panel.loc[panel['year'] == 2003, TARGET] = np.nan
         before = panel[TARGET].notna().sum()
         result = _collector(tmp_path).apply_conservative_imputation(panel)
         assert len(result) == before, (
-            'linhas sem alvo observado deveriam sair, não ser preenchidas'
+            'rows without an observed target should be dropped, not filled in'
         )
         assert result[TARGET].notna().all()
 
     def test_forward_fill_uses_only_the_entity_past(self, tmp_path):
-        """Uma entidade não pode receber valor de outra."""
+        """One entity must not receive a value from another."""
         panel = _panel()
         panel.loc[panel['country_code'] == 'AAA', 'gini_index'] = np.nan
         panel.loc[panel['country_code'] == 'BBB', 'gini_index'] = 99.0
         result = _collector(tmp_path).apply_conservative_imputation(panel)
         filled = result[result['country_code'] == 'AAA']['gini_index'].dropna()
         assert (filled != 99.0).all(), (
-            'valor de outra entidade vazou para AAA'
+            'a value from another entity leaked into AAA'
         )
 
 
 class TestNoDanglingReference:
-    """A classe de defeito, não só a instância."""
+    """The class of defect, not just the instance."""
 
     def test_no_name_is_used_before_assignment_in_the_imputation(self):
-        """Todo nome lido dentro da função tem de estar ligado em algum lugar.
+        """Every name read inside the function has to be bound somewhere.
 
-        Coleta os alvos como Name em contexto Store, o que cobre de uma vez
-        desempacotamento de tupla, alvos de for, compreensões e `with ... as`;
-        mais os nomes de `except ... as`, os argumentos (inclusive de lambdas
-        aninhadas) e o escopo de módulo.
+        It collects the targets as Name in Store context, which covers in one go
+        tuple unpacking, for targets, comprehensions and `with ... as`; plus the
+        names from `except ... as`, the arguments (including those of nested
+        lambdas) and the module scope.
         """
         import ast
         import builtins
@@ -175,6 +179,7 @@ class TestNoDanglingReference:
                 if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
         dangling = sorted(used - bound - module_scope - set(dir(builtins)))
         assert not dangling, (
-            f'nomes lidos e nunca ligados em apply_conservative_imputation: '
-            f'{dangling} -- é a classe de defeito que matou a coleta'
+            f'names read and never bound in apply_conservative_imputation: '
+            f'{dangling} -- this is the class of defect that killed the '
+            f'collection'
         )

@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Resumo de latências do benchmark arquitetural em tabelas de evidência (PT-BR).
+Summary of architectural benchmark latencies into evidence tables (PT-BR).
 
-Entradas:
+Inputs:
   - outputs/benchmarks/architectural_benchmark_results.csv
 
-Saídas:
+Outputs:
   - outputs/statistics/architectural_latency_percentiles.json
   - outputs/statistics/architectural_latency_percentiles.tex
 
-Notas:
-  - Compara só as fases que os três paradigmas executam; a lista vem de
+Notes:
+  - Compares only the phases the three paradigms execute; the list comes from
     core.paradigm_registry.COMPARABLE_PHASES.
-  - Computa P50/P95/P99 por arquitetura e fase (segundos).
-  - Computa speedup por fase como (mediana_DL_seg / mediana_DW_seg) → maior é melhor para DW.
-  - Também reporta percentis e speedup do tempo total por execução (soma das fases não‑excluídas).
+  - Computes P50/P95/P99 per architecture and phase (seconds).
+  - Computes per-phase speedup as (median_DL_s / median_DW_s) → higher is better for DW.
+  - Also reports percentiles and speedup of the total time per run (sum of the non‑excluded phases).
 """
 
 from __future__ import annotations
@@ -52,11 +52,11 @@ def _garantir_diretorio() -> None:
 
 
 def _speedups(por_arq: Dict[str, Dict]) -> Dict[str, float | None]:
-    """Razão de medianas por par de paradigmas, nomeada a/b na ordem do registro.
+    """Ratio of medians per paradigm pair, named a/b in registry order.
 
-    Um par cujo denominador não é positivo devolve None, e o consumidor imprime
-    travessão -- mas por ausência de dado, não por chave escrita com um nome e
-    lida com outro.
+    A pair whose denominator is not positive returns None, and the consumer
+    prints an em dash -- but because the datum is absent, not because a key was
+    written under one name and read under another.
     """
     out: Dict[str, float | None] = {}
     for left, right in paradigm_pairs():
@@ -81,7 +81,7 @@ def _pct(arr: np.ndarray, q: float) -> float | None:
 
 
 def resumir_percentis(df: pd.DataFrame) -> Dict:
-    # Espera colunas: run_id, phase, architecture, step, duration_ns (ou duration_s), records
+    # Expects columns: run_id, phase, architecture, step, duration_ns (or duration_s), records
     if df.empty:
         return {"erro": "resultados_vazios"}
 
@@ -91,11 +91,11 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
     elif "duration_s" in df.columns:
         df["duration_s"] = df["duration_s"].astype(float)
     else:
-        raise SystemExit("CSV de resultados sem coluna de duração (duration_ns/duration_s)")
+        raise SystemExit("Results CSV without a duration column (duration_ns/duration_s)")
 
-    # O fallback anterior reinstalava justamente as linhas excluídas quando o
-    # filtro esvaziava o quadro: sobrando só a coleta, a tabela de latência
-    # saía construída sobre ela.
+    # The previous fallback reinstated exactly the excluded rows whenever the
+    # filter emptied the frame: with only collection left, the latency table
+    # came out built on it.
     df_filt = comparable_rows(df)
 
     fases = sorted(df_filt["phase"].unique())
@@ -103,7 +103,7 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
 
     resumo: Dict = {"per_phase": {}, "architectures": arq, "fases": fases}
 
-    # Percentis por fase
+    # Percentiles per phase
     for fase in fases:
         dff = df_filt[df_filt["phase"] == fase]
         por_arq: Dict[str, Dict[str, float | None]] = {}
@@ -118,13 +118,14 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
 
         resumo["per_phase"][fase] = {
             "architectures": por_arq,
-            # Chaves derivadas do registro e nomeadas na mesma ordem usada no
-            # total. Antes o per_phase gravava speedup_dl_vs_dw_p50 e o LaTeX lia
-            # speedup_dw_vs_dl_p50: a coluna saía vazia em toda linha.
+            # Keys derived from the registry and named in the same order used in
+            # the total. Before, per_phase wrote speedup_dl_vs_dw_p50 and the
+            # LaTeX read speedup_dw_vs_dl_p50: the column came out empty on
+            # every row.
             "speedups_p50": _speedups(por_arq),
         }
 
-    # Totais por execução (somando fases não-excluídas)
+    # Totals per run (summing the non-excluded phases)
     totais = (
         df_filt.groupby(["run_id", "architecture"])
         ["duration_s"].sum().reset_index()
@@ -146,28 +147,28 @@ def resumir_percentis(df: pd.DataFrame) -> Dict:
 
 
 def para_latex(resumo: Dict) -> str:
-    """Tabela transposta: uma linha por (fase, paradigma).
+    """Transposed table: one row per (phase, paradigm).
 
-    O layout anterior tinha uma coluna por percentil de dois paradigmas, com os
-    nomes escritos no cabeçalho -- o terceiro paradigma não aparecia em lugar
-    nenhum da tabela, e um quarto exigiria reescrever o cabeçalho. Transposta,
-    a tabela escala sem alteração e nenhum paradigma pode ser esquecido, porque
-    as linhas vêm do registro.
+    The previous layout had one column per percentile of two paradigms, with the
+    names written in the header -- the third paradigm appeared nowhere in the
+    table, and a fourth would have required rewriting the header. Transposed,
+    the table scales without modification and no paradigm can be forgotten,
+    because the rows come from the registry.
     """
     paradigms = sorted(discover_paradigms())
     por_fase = resumo.get("per_phase", {})
     if not por_fase:
-        return ("% Sem dados de latência\n"
+        return ("% No latency data\n"
                 "\\begin{tabular}{llrrr}\n\\hline\n"
-                "Fase & Paradigma & P50 & P95 & P99 \\\\ \n"
+                "Phase & Paradigm & P50 & P95 & P99 \\\\ \n"
                 "\\hline\n\\end{tabular}\n")
 
     linhas: List[str] = [
-        "% Gerado automaticamente por derive_latency_percentiles.py",
-        "% P50/P95/P99 em segundos, por fase e paradigma",
+        "% Generated automatically by derive_latency_percentiles.py",
+        "% P50/P95/P99 in seconds, by phase and paradigm",
         "\\begin{tabular}{llrrr}",
         "\\hline",
-        "Fase & Paradigma & P50 & P95 & P99 \\\\",
+        "Phase & Paradigm & P50 & P95 & P99 \\\\",
         "\\hline",
     ]
 
@@ -187,11 +188,11 @@ def para_latex(resumo: Dict) -> str:
     _bloco("Total", resumo.get("total", {}).get("architectures", {}))
     linhas += ["\\hline", "\\end{tabular}", ""]
 
-    # Speedups em tabela própria: um par por linha, derivado do registro.
+    # Speedups in a table of their own: one pair per row, derived from the registry.
     linhas += [
         "",
         "% Speedup de mediana por par (P50 de A dividido por P50 de B)",
-        # Uma coluna de rótulo mais uma por fase mais o total.
+        # One label column plus one per phase plus the total.
         "\\begin{tabular}{l" + "r" * (len(por_fase) + 1) + "}",
         "\\hline",
         "Par & " + " & ".join(sorted(por_fase)) + " & Total \\\\",
@@ -216,8 +217,8 @@ def main() -> None:
     _garantir_diretorio()
     if not RESULTS_CSV.exists():
         msg = {
-            "erro": f"CSV não encontrado: {str(RESULTS_CSV)}",
-            "dica": "Execute o benchmark arquitetural para gerar resultados.",
+            "erro": f"CSV not found: {str(RESULTS_CSV)}",
+            "dica": "Run the architectural benchmark to generate results.",
         }
         OUT_JSON.write_text(json.dumps(msg, indent=2, ensure_ascii=False), encoding="utf-8")
         OUT_TEX.write_text("% Sem dados\n" + para_latex({}), encoding="utf-8")

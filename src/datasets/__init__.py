@@ -1,10 +1,10 @@
 """
-Auto-registro de datasets.
+Dataset auto-registration.
 
-Importar este pacote registra automaticamente todos os datasets
-disponíveis no registry global (core.dataset_config).
+Importing this package automatically registers every available dataset
+in the global registry (core.dataset_config).
 """
 
-# Importar cada módulo registra o dataset via register_dataset()
+# Importing each module registers the dataset via register_dataset()
 from datasets import worldbank  # noqa: F401
 from datasets import inep_censo  # noqa: F401

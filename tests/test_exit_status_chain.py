@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Uma etapa que falha tem de chegar ao orquestrador como falha.
+"""A stage that fails has to reach the orchestrator as a failure.
 
-pipeline.py invoca cada etapa com subprocess check=True, que lê exclusivamente o
-código de retorno. Quatro entrypoints imprimiam 'falha' e saíam 0: o coletor e os
-três processadores. O efeito composto com um erro na coleta é que o pipeline
-imprime 'Etapa 1 concluida', os processadores leem o complete_data.parquet da
-execução anterior, e trinta horas produzem os números que o rerun existia para
-substituir.
+pipeline.py invokes each stage with subprocess check=True, which reads the return
+code and nothing else. Four entrypoints printed 'failure' and exited 0: the
+collector and the three processors. Compounded with an error in the collection,
+the effect is that the pipeline prints 'Stage 1 completed', the processors read
+the complete_data.parquet from the previous execution, and thirty hours produce
+the very numbers the rerun existed to replace.
 
-Dois modelos do sql_engine devolviam dicionário de erro em vez de levantar, o que
-faz o benchmark registrar a repetição falha como uma latência curta -- falhar é
-rápido, então a distribuição do paradigma é puxada para baixo.
+Two sql_engine models returned an error dictionary instead of raising, which
+makes the benchmark record the failed repetition as a short latency -- failing is
+fast, so the paradigm's distribution is pulled downwards.
 
-Estes testes EXECUTAM os processos. Verificar por leitura de texto foi como a
-classe de defeito passou.
+These tests EXECUTE the processes. Checking by reading text was how the class of
+defect got through.
 """
 
 import ast
@@ -48,16 +48,16 @@ class TestEveryEntrypointPropagates:
     def test_the_module_guard_exits_with_a_status(self, relative):
         source = (_ROOT / relative).read_text()
         index = source.find('if __name__')
-        assert index >= 0, f'{relative} sem guarda de módulo'
+        assert index >= 0, f'{relative} has no module guard'
         guard = source[index:]
         assert 'sys.exit' in guard or 'SystemExit' in guard, (
-            f'{relative} termina sem status: uma falha chega ao pipeline como '
-            f'sucesso, porque check=True só lê o código de retorno'
+            f'{relative} ends without a status: a failure reaches the pipeline '
+            f'as success, because check=True only reads the return code'
         )
 
     @pytest.mark.parametrize('relative', ENTRYPOINTS)
     def test_the_exit_is_conditional_on_the_outcome(self, relative):
-        """sys.exit(0) incondicional propaga tão pouco quanto não ter nenhum."""
+        """An unconditional sys.exit(0) propagates as little as having none."""
         source = (_ROOT / relative).read_text()
         guard = source[source.find('if __name__'):]
         tree = ast.parse(guard.replace('if __name__ == "__main__":',
@@ -71,12 +71,13 @@ class TestEveryEntrypointPropagates:
                                   and call.args[0].value == 0)
         ]
         assert informative, (
-            f'{relative} só chama sys.exit(0): o status não depende do desfecho'
+            f'{relative} only calls sys.exit(0): the status does not depend on '
+            f'the outcome'
         )
 
 
 class TestFailureReachesTheShell:
-    """Executado de verdade, sem dado de entrada, num diretório vazio."""
+    """Really executed, with no input data, in an empty directory."""
 
     @pytest.mark.parametrize('relative', [
         'src/collection/task_graph/processor.py',
@@ -88,19 +89,19 @@ class TestFailureReachesTheShell:
 
         env = os.environ.copy()
         env['PYTHONPATH'] = str(_SRC) + os.pathsep + env.get('PYTHONPATH', '')
-        # Raiz de saída vazia: não há complete_data.parquet para processar.
+        # Empty output root: there is no complete_data.parquet to process.
         env['DATASET_NAME'] = 'worldbank'
         result = subprocess.run([sys.executable, str(_ROOT / relative)],
                                 cwd=str(tmp_path), env=env,
                                 capture_output=True, text=True, timeout=300)
         assert result.returncode != 0, (
-            f'{relative} saiu 0 sem dado de entrada; stdout:\n'
+            f'{relative} exited 0 with no input data; stdout:\n'
             f'{result.stdout[-800:]}'
         )
 
 
 class TestModelsRaiseInsteadOfReturningErrors:
-    """Um dict de erro atravessa o benchmark como medição."""
+    """An error dict crosses the benchmark as a measurement."""
 
     @pytest.mark.parametrize('relative', [
         'src/architectures_ml/sql_engine/models/hierarchical_model.py',
@@ -110,9 +111,9 @@ class TestModelsRaiseInsteadOfReturningErrors:
         tree = ast.parse((_ROOT / relative).read_text())
         for handler in [n for n in ast.walk(tree)
                         if isinstance(n, ast.ExceptHandler)]:
-            # Só os métodos que produzem o resultado do estágio. Análises
-            # descritivas devolvem dicionário com 'error' de propósito, e o
-            # chamador as trata como informativas.
+            # Only the methods that produce the stage's result. Descriptive
+            # analyses return a dictionary with 'error' on purpose, and the
+            # caller treats them as informative.
             RESULT_METHODS = ('run_hierarchical_analysis', 'run_complete_analysis',
                               'run_fold_analysis', 'test_baseline_models')
             enclosing = [n.name for n in ast.walk(tree)
@@ -127,9 +128,9 @@ class TestModelsRaiseInsteadOfReturningErrors:
                     keys = {k.value for k in node.value.keys
                             if isinstance(k, ast.Constant)}
                     assert not (keys & {'error', 'status'}), (
-                        f'{relative}:{node.lineno} devolve {sorted(keys)} de '
-                        f'dentro de um except; o chamador não distingue isso de '
-                        f'uma execução bem-sucedida'
+                        f'{relative}:{node.lineno} returns {sorted(keys)} from '
+                        f'inside an except; the caller does not tell that apart '
+                        f'from a successful execution'
                     )
 
 
@@ -144,8 +145,8 @@ class TestBenchmarkRejectsFailedStages:
                         if isinstance(n, ast.FunctionDef) and n.name == method)
         raises = [n for n in ast.walk(function) if isinstance(n, ast.Raise)]
         assert raises, (
-            f'{method} aceita qualquer status: uma repetição que falhou entra '
-            f'no CSV como latência curta, e falhar é rápido'
+            f'{method} accepts any status: a repetition that failed goes into '
+            f'the CSV as a short latency, and failing is fast'
         )
 
     @pytest.mark.parametrize('method', ['_phase_processing_generic',

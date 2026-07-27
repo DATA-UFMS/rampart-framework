@@ -133,11 +133,11 @@ def verify(tolerance: Optional[float] = None) -> Dict[str, Any]:
         'violations': [],
     }
 
-    # Todo paradigma registrado precisa ter escrito seus vetores. A afirmação é
-    # que OS TRÊS predizem o mesmo, e um paradigma ausente nunca entra em uma
-    # combinação de pares, logo nunca gera violação: faltar um vetor produzia
-    # violação 'disjoint' e saída 1, enquanto faltar todos os vetores de um
-    # paradigma passava como 'equivalent'.
+    # Every registered paradigm must have written its vectors. The claim is
+    # that ALL THREE predict the same, and a missing paradigm never enters a
+    # pair combination, hence never generates a violation: a single missing
+    # vector produced a 'disjoint' violation and exit 1, while missing every
+    # vector of a paradigm passed as 'equivalent'.
     if missing:
         report['status'] = 'insufficient_data'
         report['detail'] = (

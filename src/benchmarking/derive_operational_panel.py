@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Painel operacional compacto (PT-BR): latência (P50) e recursos médios por fase.
+Compact operational panel: latency (P50) and mean resources per phase.
 
-Lê:
+Reads:
   - outputs/statistics/architectural_latency_percentiles.json
   - outputs/statistics/architectural_resource_usage.json
 
-Gera:
+Generates:
   - outputs/statistics/architectural_operational_panel.tex
 
-Colunas (por fase e total):
-  Fase | DL P50 (s) | DW P50 (s) | Speedup P50 | CPU(proc)% DL | CPU(proc)% DW | RSS(MB) DL | RSS(MB) DW
+Columns (per phase and total):
+  Phase | DL P50 (s) | DW P50 (s) | Speedup P50 | CPU(proc)% DL | CPU(proc)% DW | RSS(MB) DL | RSS(MB) DW
 """
 from __future__ import annotations
 
@@ -67,24 +67,25 @@ def _escape(text) -> str:
 
 
 def para_latex(lat: dict, res: dict, paradigms) -> str:
-    """Painel operacional: uma linha por (fase, paradigma).
+    """Operational panel: one row per (phase, paradigm).
 
-    O layout anterior tinha colunas fixas para dois paradigmas e lia a chave
-    speedup_dw_vs_dl_p50, que o gerador de percentis nunca escreveu no bloco
-    per_phase -- a coluna de speedup saía em travessão em todas as linhas, e o
-    terceiro paradigma não aparecia. Transposto, as linhas vêm do registro.
+    The previous layout had fixed columns for two paradigms and read the key
+    speedup_dw_vs_dl_p50, which the percentile generator never wrote in the
+    per_phase block -- the speedup column came out as an em dash on every row,
+    and the third paradigm did not appear. Transposed, the rows come from the
+    registry.
 
-    Extraído de main para poder ser exercitado: era dentro dela que o
-    percentual sem escape entrava na linha, e nenhum teste alcançava a tabela.
+    Extracted from main so it could be exercised: it was inside main that the
+    unescaped percent entered the row, and no test reached the table.
     """
     per_phase = lat.get("per_phase", {})
     phases = sorted(per_phase)
 
     lines = [
-        "% Painel operacional (P50 de latência e recursos médios)",
+        "% Operational panel (P50 of latency and mean resources)",
         "\\begin{tabular}{llrrr}",
         "\\hline",
-        "Fase & Paradigma & P50 & CPU(proc) & RSS \\\\",
+        "Phase & Paradigm & P50 & CPU(proc) & RSS \\\\",
         "\\hline",
     ]
 

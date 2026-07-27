@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Análise de modelos baseline para arquitetura Data Lake."""
+"""Baseline model analysis for the Data Lake architecture."""
 import time
 import traceback
 
@@ -30,12 +30,12 @@ setup_reproducibility()
 
 
 def _best_by_val_r2(fold_results: dict):
-    """Melhor baseline por R2 de validação, ignorando os indefinidos.
+    """Best baseline by validation R2, ignoring the undefined ones.
 
-    `max` compara com NaN devolvendo False, então bastava o primeiro item ter
-    R2 indefinido para ele ser eleito o melhor -- e `best_test_r2` e
-    `generalization_gap` derivavam desse. A escolha passava a depender da ordem
-    de inserção no dicionário, não do desempenho.
+    `max` compares against NaN returning False, so it was enough for the first
+    item to have an undefined R2 for it to be elected the best -- and
+    `best_test_r2` and `generalization_gap` derived from it. The choice came to
+    depend on the dictionary insertion order, not on performance.
     """
     import math
 
@@ -45,19 +45,19 @@ def _best_by_val_r2(fold_results: dict):
               and not math.isnan(float(data['val_r2']))]
     if not scored:
         raise ValueError(
-            "Nenhum baseline tem R2 de validação definido neste fold; não há "
-            "melhor baseline a reportar."
+            "No baseline has a defined validation R2 in this fold; there is no "
+            "best baseline to report."
         )
     return max(scored, key=lambda pair: pair[1])
 
 class BaselineModelAnalysisTaskGraph:
-    """Análise de modelos baseline para arquitetura Data Lake."""
-    
+    """Baseline model analysis for the Data Lake architecture."""
+
     def __init__(self):
         self._prediction_recorder = PredictionRecorder('task_graph')
-        """Inicializa a análise baseline para arquitetura Data Lake."""
-        print("Inicializando análise baseline Dask")
-        
+        """Initialise the baseline analysis for the Data Lake architecture."""
+        print("Initialising Dask baseline analysis")
+
         self.data_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/master_data_task_graph.parquet")
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/prep/temporal_folds_task_graph.json")
         self.results_path = get_absolute_output_path("ml_pipeline/architectures/task_graph/models/baseline_results")
@@ -65,11 +65,11 @@ class BaselineModelAnalysisTaskGraph:
         os.makedirs(self.results_path, exist_ok=True)
         
         if not os.path.exists(self.data_path):
-            raise FileNotFoundError(f"Dados Data Lake não encontrados: {self.data_path}")
+            raise FileNotFoundError(f"Data Lake data not found: {self.data_path}")
         if not os.path.exists(self.folds_path):
-            raise FileNotFoundError(f"Folds Data Lake não encontrados: {self.folds_path}")
+            raise FileNotFoundError(f"Data Lake folds not found: {self.folds_path}")
 
-        print("   Carregando dados com Dask...")
+        print("   Loading data with Dask...")
         self.ddf = dd.read_parquet(self.data_path)
         self._needs_persist = True
         with open(self.folds_path, 'r') as f:
@@ -80,7 +80,7 @@ class BaselineModelAnalysisTaskGraph:
         self._load_data_summary()
     
     def _load_data_summary(self):
-        """Carregar resumo dos dados."""
+        """Load a summary of the data."""
         stats_tasks = {
             'total_rows': self.ddf.index.size,
             'year_min': self.ddf['year'].min(),
@@ -107,33 +107,33 @@ class BaselineModelAnalysisTaskGraph:
         target_stats = computed_stats.get('target_describe')
         negative_target = computed_stats.get('negative_target_count', 0)
         
-        print(f"   Dados carregados: {total_rows} registros, {len(self.ddf.columns)} colunas")
-        print(f"   Período: {year_min}-{year_max}")
-        print(f"   Países: {countries_count}")
+        print(f"   Data loaded: {total_rows} records, {len(self.ddf.columns)} columns")
+        print(f"   Period: {year_min}-{year_max}")
+        print(f"   Countries: {countries_count}")
         print(f"   Target: {self.target_col}")
         print(f"   Folds: {len(self.folds)}")
-        
+
         print(f"   Target stats: mean={target_stats['mean']:.2f}%, std={target_stats['std']:.2f}%")
-        
+
         if imputed_cols:
             imputed_count = int(computed_stats['imputed_count'])
-            print(f"   Dados com imputação: {imputed_count}/{total_rows} ({(imputed_count/total_rows)*100:.1f}%)")
-            
+            print(f"   Data with imputation: {imputed_count}/{total_rows} ({(imputed_count/total_rows)*100:.1f}%)")
+
         if negative_target > 0:
-            print(f"   Target inválido: {negative_target} valores negativos detectados")
+            print(f"   Invalid target: {negative_target} negative values detected")
         else:
             target_min = target_stats['min']
             target_max = target_stats['max']
-            print(f"   Target válido: range [{target_min:.2f}%, {target_max:.2f}%]")
-        
+            print(f"   Valid target: range [{target_min:.2f}%, {target_max:.2f}%]")
+
         if not imputed_cols:
-            print(f"   Nenhuma coluna de imputação encontrada - usando dados originais")
+            print(f"   No imputation column found - using the original data")
         
         self._cached_basic_stats = computed_stats
     
     def analyze_target_distribution(self) -> Dict:
-        """Analisar distribuição do target Data Lake."""
-        print(f"\nAnálise da distribuição do target Dask")
+        """Analyse the Data Lake target distribution."""
+        print(f"\nDask target distribution analysis")
         
         analysis = {}
         
@@ -186,9 +186,9 @@ class BaselineModelAnalysisTaskGraph:
             year_max = computed_target['year_max']
             unique_years = computed_target['unique_years']
         
-        print(f"   Target Dask ({self.target_col}):")
-        print(f"      Média: {target_stats['mean']:.2f}%")
-        print(f"      Desvio: {target_stats['std']:.2f}%")
+        print(f"   Dask target ({self.target_col}):")
+        print(f"      Mean: {target_stats['mean']:.2f}%")
+        print(f"      SD: {target_stats['std']:.2f}%")
         print(f"      Range: {target_stats['min']:.2f}% - {target_stats['max']:.2f}%")
         print(f"      Missing: {target_stats['missing_count']} ({target_stats['missing_rate']:.1%})")
         
@@ -200,14 +200,14 @@ class BaselineModelAnalysisTaskGraph:
             ])
             temporal_stats = temporal_stats_ddf.compute().round(2)
             
-            print(f"\n   Evolução temporal Dask:")
+            print(f"\n   Dask temporal evolution:")
             if year_min in temporal_stats.index:
-                print(f"      Primeiro ano ({year_min}): {temporal_stats.loc[year_min, 'mean']:.1f}%")
+                print(f"      First year ({year_min}): {temporal_stats.loc[year_min, 'mean']:.1f}%")
             if year_max in temporal_stats.index:
-                print(f"      Último ano ({year_max}): {temporal_stats.loc[year_max, 'mean']:.1f}%")
-            
+                print(f"      Last year ({year_max}): {temporal_stats.loc[year_max, 'mean']:.1f}%")
+
             trend = temporal_stats['mean'].iloc[-1] - temporal_stats['mean'].iloc[0]
-            print(f"      Tendência: {trend:.1f}% em {year_max - year_min} anos")
+            print(f"      Trend: {trend:.1f}% over {year_max - year_min} years")
             
             analysis['temporal_stats'] = temporal_stats.to_dict()
         
@@ -216,32 +216,32 @@ class BaselineModelAnalysisTaskGraph:
         ])
         country_stats = country_stats_ddf.compute().round(2)
         
-        print(f"\n   Variação por país (Dask):")
-        print(f"      Menor dropout: {country_stats['mean'].min():.1f}% ({country_stats['mean'].idxmin()})")
-        print(f"      Maior dropout: {country_stats['mean'].max():.1f}% ({country_stats['mean'].idxmax()})")
-        print(f"      Variação entre países: {country_stats['mean'].std():.1f}% (std)")
+        print(f"\n   Variation by country (Dask):")
+        print(f"      Lowest dropout: {country_stats['mean'].min():.1f}% ({country_stats['mean'].idxmin()})")
+        print(f"      Highest dropout: {country_stats['mean'].max():.1f}% ({country_stats['mean'].idxmax()})")
+        print(f"      Variation across countries: {country_stats['mean'].std():.1f}% (std)")
         
         analysis['country_stats'] = country_stats.to_dict()
         
         return analysis
     
     def _write_prediction_artifact(self) -> None:
-        """Delega à implementação compartilhada."""
+        """Delegates to the shared implementation."""
         shared_write_baseline_predictions(self._prediction_recorder,
                                          architecture='task_graph')
 
     def test_baseline_models(self) -> Dict:
-        """Testar modelos baseline com validação temporal walk-forward."""
-        print(f"\nBaselines com validação temporal")
+        """Test baseline models with walk-forward temporal validation."""
+        print(f"\nBaselines with temporal validation")
         
         baseline_results = {}
         
         for fold_id, fold in enumerate(self.folds):
             _fold_t0 = time.perf_counter()
-            # Inicializados aqui, e não só na fronteira: no engine SQL a
-            # fronteira fica dentro de um try, e depender do fluxo de
-            # controle para definir um nome é como se produz NameError.
-            # None significa não medido, e não zero, que entraria nas somas.
+            # Initialised here, and not only at the boundary: in the SQL engine
+            # the boundary sits inside a try, and depending on control flow
+            # to define a name is how a NameError is produced.
+            # None means not measured, and not zero, which would enter the sums.
             _fold_load_s = None
             _fit_t0 = _fold_t0
             print(f"\nFold {fold_id}: Train({fold['train_start']}-{fold['train_end']}) ->Val({fold['val_start']}-{fold['val_end']}) ->Test({fold['test_start']}-{fold['test_end']})")
@@ -261,17 +261,17 @@ class BaselineModelAnalysisTaskGraph:
             train_clean = train_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
             val_clean = val_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
             test_clean = test_raw.sort_values(['country_code', 'year']).reset_index(drop=True)
-            # Fronteira da decomposição: acima é materialização do fold, que é
-            # do engine; abaixo é o ajuste dos baselines, comum aos três.
+            # Boundary of the decomposition: above is fold materialisation, which
+            # belongs to the engine; below is the baseline fit, common to all three.
             _fold_load_s = time.perf_counter() - _fold_t0
             _fit_t0 = time.perf_counter()
 
             train_len, val_len, test_len = len(train_clean), len(val_clean), len(test_clean)
-            print(f"   Dados: Train={train_len}, Val={val_len}, Test={test_len}")
+            print(f"   Data: Train={train_len}, Val={val_len}, Test={test_len}")
             print(f"    Gaps: Train-Val={fold['val_start']-fold['train_end']-1}yr, Val-Test={fold['test_start']-fold['val_end']-1}yr")
 
             if train_len == 0 or test_len == 0:
-                print(f"   Fold {fold_id}: Dados insuficientes")
+                print(f"   Fold {fold_id}: Insufficient data")
                 continue
 
             y_train = train_clean[self.target_col].values
@@ -300,7 +300,7 @@ class BaselineModelAnalysisTaskGraph:
 
             fold_results = {}
             
-            # Baseline 1: Média Global
+            # Baseline 1: Global Mean
             
             val_pred_global = np.full(len(y_val), global_mean)
             test_pred_global = np.full(len(y_test), global_mean)
@@ -319,7 +319,7 @@ class BaselineModelAnalysisTaskGraph:
                 'method': 'global_mean'
             }
             
-            # Baseline 2: Tendência Linear
+            # Baseline 2: Linear Trend
             X_train_time = train_clean[['year']].values
             X_val_time = val_clean[['year']].values
             X_test_time = test_clean[['year']].values
@@ -345,7 +345,7 @@ class BaselineModelAnalysisTaskGraph:
                 'method': 'linear_trend'
             }
             
-            # Baseline 3: Naive com Lag
+            # Baseline 3: Naive with Lag
             MIN_LAG = int(SCIENTIFIC_CONFIG.get('temporal_gap_years', 2))
             print(f"      Naive baseline...")
 
@@ -462,7 +462,7 @@ class BaselineModelAnalysisTaskGraph:
                 'method': 'cross_country_average_excluding_target'
             }
             
-            print(f"   Resultados (Val | Test):")
+            print(f"   Results (Val | Test):")
             print(f"      Global Mean:      R²={val_r2_global:.3f} | {test_r2_global:.3f}")
             print(f"      Linear Trend:     R²={val_r2_trend:.3f} | {test_r2_trend:.3f}")  
             print(f"      Naive+Lag>=2yr:   R²={val_r2_naive:.3f} | {test_r2_naive:.3f}")
@@ -480,17 +480,17 @@ class BaselineModelAnalysisTaskGraph:
                 'generalization_gap': generalization_gap
             }
             
-            print(f"   Melhor baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
-            
+            print(f"   Best baseline: {best_val_baseline} (Val: {best_val_r2:.3f} ->Test: {best_test_r2:.3f}, Gap: {generalization_gap:+.3f})")
+
             abs_gap = abs(generalization_gap)
             if abs_gap <= 0.05:
-                print(f"      Excelente estabilidade: Gap muito baixo (<=0.05)")
+                print(f"      Excellent stability: Very low gap (<=0.05)")
             elif abs_gap <= 0.1:
-                print(f"      Boa estabilidade: Gap dentro do esperado (<=0.10)")
+                print(f"      Good stability: Gap within expectations (<=0.10)")
             elif abs_gap <= 0.15:
-                print(f"      Gap moderado: Variação temporal aceitável ({abs_gap:.3f})")
+                print(f"      Moderate gap: Acceptable temporal variation ({abs_gap:.3f})")
             else:
-                print(f"      Gap elevado: Possível instabilidade temporal ({abs_gap:.3f})")
+                print(f"      High gap: Possible temporal instability ({abs_gap:.3f})")
             
             self._prediction_recorder.record(
                 fold=fold_id, model='global_mean', y_true=y_test,
@@ -515,8 +515,8 @@ class BaselineModelAnalysisTaskGraph:
         return baseline_results
 
     def analyze_predictability(self, baseline_results: Dict) -> Dict:
-        """Análise de predictabilidade dos modelos baseline."""
-        print("\nAnálise de predictabilidade Dask")
+        """Predictability analysis of the baseline models."""
+        print("\nDask predictability analysis")
         
         baselines = ['global_mean', 'linear_trend', 'naive_with_lag', 'cross_country']
         all_test_scores = {}
@@ -555,7 +555,7 @@ class BaselineModelAnalysisTaskGraph:
                     'gaps': gaps
                 }
         
-        print("   Performance out-of-sample (TEST SET) dos baselines:")
+        print("   Out-of-sample performance (TEST SET) of the baselines:")
         for baseline, stats in all_test_scores.items():
             val_stats = all_val_scores[baseline]
             gap_stats = generalization_gaps[baseline]
@@ -567,10 +567,10 @@ class BaselineModelAnalysisTaskGraph:
             best_mean_val_r2 = all_val_scores[best_baseline_overall]['mean_r2']
             best_generalization_gap = generalization_gaps[best_baseline_overall]['mean_gap']
             
-            print(f"\n   Melhor baseline: {best_baseline_overall}")
-            print(f"      Performance Validação: R² = {best_mean_val_r2:.3f}")
-            print(f"      Performance Teste:     R² = {best_mean_test_r2:.3f}")
-            print(f"      Gap Generalização:     {best_generalization_gap:+.3f}")
+            print(f"\n   Best baseline: {best_baseline_overall}")
+            print(f"      Validation performance: R² = {best_mean_val_r2:.3f}")
+            print(f"      Test performance:       R² = {best_mean_test_r2:.3f}")
+            print(f"      Generalization gap:     {best_generalization_gap:+.3f}")
             
             predictability_analysis = {
                 'architecture': 'task_graph',
@@ -585,43 +585,43 @@ class BaselineModelAnalysisTaskGraph:
                 'predictability_level': 'unknown'
             }
 
-            # Classificação de predictabilidade
+            # Predictability classification
             if best_mean_test_r2 < 0:
                 predictability_analysis['predictability_level'] = 'very_low'
-                print(f"   Predictabilidade muito baixa: R²_test < 0")
-                print(f"      Interpretação: Modelo pior que baseline constante")
+                print(f"   Very low predictability: R²_test < 0")
+                print(f"      Interpretation: Model worse than a constant baseline")
             elif best_mean_test_r2 < 0.05:
                 predictability_analysis['predictability_level'] = 'very_low'
-                print(f"   Predictabilidade muito baixa: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Quase sem poder preditivo")
+                print(f"   Very low predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: Almost no predictive power")
             elif best_mean_test_r2 < 0.15:
                 predictability_analysis['predictability_level'] = 'low'
-                print(f"   Predictabilidade baixa: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Poder preditivo limitado")
+                print(f"   Low predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: Limited predictive power")
             elif best_mean_test_r2 < 0.35:
                 predictability_analysis['predictability_level'] = 'moderate'
-                print(f"   Predictabilidade moderada: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Poder preditivo razoável")
+                print(f"   Moderate predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: Reasonable predictive power")
             else:
                 predictability_analysis['predictability_level'] = 'good'
-                print(f"   Boa predictabilidade: R²_test = {best_mean_test_r2:.3f}")
-                print(f"      Interpretação: Bom poder preditivo")
+                print(f"   Good predictability: R²_test = {best_mean_test_r2:.3f}")
+                print(f"      Interpretation: Good predictive power")
             
             avg_generalization_gap = np.mean([gap_data['mean_gap'] for gap_data in generalization_gaps.values()])
             abs_avg_gap = abs(avg_generalization_gap)
             
             if abs_avg_gap <= 0.05:
-                print(f"   Excelente estabilidade: Gap médio muito baixo ({avg_generalization_gap:+.3f})")
+                print(f"   Excellent stability: Very low mean gap ({avg_generalization_gap:+.3f})")
                 stability_level = "excellent"
             elif abs_avg_gap <= 0.1:
-                print(f"   Boa estabilidade: Gap médio dentro do esperado ({avg_generalization_gap:+.3f})")
+                print(f"   Good stability: Mean gap within expectations ({avg_generalization_gap:+.3f})")
                 stability_level = "good"
             elif abs_avg_gap <= 0.15:
-                print(f"   Estabilidade moderada: Variação temporal aceitável ({avg_generalization_gap:+.3f})")
+                print(f"   Moderate stability: Acceptable temporal variation ({avg_generalization_gap:+.3f})")
                 stability_level = "moderate"
             else:
-                print(f"   Instabilidade detectada: Gap médio elevado ({avg_generalization_gap:+.3f})")
-                print(f"      Possível overfitting ou forte variação temporal")
+                print(f"   Instability detected: High mean gap ({avg_generalization_gap:+.3f})")
+                print(f"      Possible overfitting or strong temporal variation")
                 stability_level = "low"
             
             predictability_analysis['stability_analysis'] = {
@@ -640,8 +640,8 @@ class BaselineModelAnalysisTaskGraph:
     
     def save_results(self, target_analysis: Dict, baseline_results: Dict,
                     predictability_analysis: Dict):
-        """Salvar resultados da análise Data Lake."""
-        print(f"\nSalvando resultados Dask...")
+        """Save the results of the Data Lake analysis."""
+        print(f"\nSaving Dask results...")
         
         full_results = {
             'architecture': 'task_graph',
@@ -662,16 +662,16 @@ class BaselineModelAnalysisTaskGraph:
         with open(results_file, 'w') as f:
             json.dump(full_results, f, indent=2)
         
-        print(f"   Resultados Dask salvos: {results_file}")
+        print(f"   Dask results saved: {results_file}")
         
         return full_results
     
     def run_complete_analysis(self):
-        """Executar análise completa de baseline Data Lake."""
+        """Run the complete Data Lake baseline analysis."""
         if getattr(self, '_needs_persist', False):
             self.ddf = self.ddf.persist()
             self._needs_persist = False
-        print(f"Análise completa - arquitetura Dask")
+        print(f"Complete analysis - Dask architecture")
         
         try:
             target_analysis = self.analyze_target_distribution()
@@ -680,34 +680,34 @@ class BaselineModelAnalysisTaskGraph:
             results = self.save_results(target_analysis, baseline_results, 
                                        predictability_analysis)
             
-            print(f"\nResumo executivo - arquitetura Dask:")
-            print(f"   Pesquisa: Comparação de arquiteturas ML para dropout")
-            print(f"   Arquitetura: Dask (Processamento Distribuído)")
+            print(f"\nExecutive summary - Dask architecture:")
+            print(f"   Research: Comparison of ML architectures for dropout")
+            print(f"   Architecture: Dask (Distributed Processing)")
             print(f"   Target: {self.target_col}")
-            print(f"   Predictabilidade: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
-            print(f"   Melhor baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
-            print(f"   R² Teste: {predictability_analysis.get('best_test_r2', 0):.3f}")
+            print(f"   Predictability: {predictability_analysis.get('predictability_level', 'unknown').upper()}")
+            print(f"   Best baseline: {predictability_analysis.get('best_baseline', 'unknown')}")
+            print(f"   Test R²: {predictability_analysis.get('best_test_r2', 0):.3f}")
             
             gap = predictability_analysis.get('generalization_gap', 0)
             
             if abs(gap) <= 0.05:
-                gap_status = f"Gap: {gap:+.3f} (excelente estabilidade)"
+                gap_status = f"Gap: {gap:+.3f} (excellent stability)"
             elif abs(gap) <= 0.1:
-                gap_status = f"Gap: {gap:+.3f} (boa estabilidade)"
+                gap_status = f"Gap: {gap:+.3f} (good stability)"
             elif abs(gap) <= 0.15:
-                gap_status = f"Gap: {gap:+.3f} (estabilidade moderada)"
+                gap_status = f"Gap: {gap:+.3f} (moderate stability)"
             else:
-                gap_status = f"Gap: {gap:+.3f} (requer atenção)"
-                
+                gap_status = f"Gap: {gap:+.3f} (requires attention)"
+
             print(f"   {gap_status}")
-            
+
             stability = predictability_analysis.get('stability_analysis', {}).get('stability_level', 'unknown')
-            print(f"   Estabilidade: {stability}")
+            print(f"   Stability: {stability}")
             
             return results
             
         except Exception as e:
-            print(f"\nErro na análise Dask: {e}")
+            print(f"\nError in the Dask analysis: {e}")
             traceback.print_exc()
             return {
                 'architecture': 'task_graph',

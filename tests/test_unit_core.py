@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Testes unitários para a lógica central do framework.
+"""Unit tests for the framework's core logic.
 
-Validam algoritmos fundamentais sem depender de saídas de pipeline
-pré-geradas ou de dados externos.
+They validate fundamental algorithms without depending on pre-generated
+pipeline outputs or on external data.
 
-O que eles NÃO fazem mais é reimplementar esses algoritmos aqui. Quatro seções
-traziam cópias locais -- log simétrico, gerador de folds, filtro de
-colinearidade, integridade temporal -- e testavam as cópias. Vinte e oito testes
-passavam com `src/` apagado, e as cópias já haviam divergido: o filtro local não
-ordenava as features, enquanto o de produção ordena, então `test_order_matters`
-afirmava uma propriedade que a produção não tem.
+What they no longer do is reimplement those algorithms here. Four sections
+carried local copies -- symmetric log, fold generator, collinearity filter,
+temporal integrity -- and tested the copies. Twenty-eight tests passed with
+`src/` deleted, and the copies had already diverged: the local filter did not
+sort the features, while the production one does, so `test_order_matters`
+asserted a property that production does not have.
 
-Agora cada seção dirige a implementação de produção. Onde há três (uma por
-paradigma), as três são exercitadas sobre a mesma entrada e comparadas entre si:
-uma divergência aqui é uma divergência no Δ=0.
+Now each section drives the production implementation. Where there are three
+(one per paradigm), the three are exercised over the same input and compared
+against each other: a divergence here is a divergence in Δ=0.
 """
 
 import io
@@ -31,14 +31,14 @@ if _SRC not in sys.path:
 
 
 def _quiet(function, *args, **kwargs):
-    """As implementações de produção imprimem progresso a cada chamada."""
+    """The production implementations print progress on every call."""
     with redirect_stdout(io.StringIO()):
         return function(*args, **kwargs)
 
 
 @pytest.fixture(scope='module')
 def architectures():
-    """Uma instância real de cada paradigma. Os construtores não fazem I/O."""
+    """A real instance of each paradigm. The constructors do no I/O."""
     from architectures_ml.dataframe_lib.setup import DataFrameLibArchitectureML
     from architectures_ml.sql_engine.setup import SqlEngineArchitectureML
     from architectures_ml.task_graph.setup import TaskGraphArchitectureML
@@ -51,7 +51,7 @@ def architectures():
 
 
 def _native(paradigm, frame):
-    """Converte um frame pandas para o tipo que aquele paradigma consome."""
+    """Convert a pandas frame to the type that paradigm consumes."""
     if paradigm == 'dataframe_lib':
         import polars as pl
         return pl.from_pandas(frame)
@@ -69,23 +69,23 @@ def _to_pandas(result):
     return result
 
 
-# 1. Transformação log simétrica, nas três implementações de produção
+# 1. Symmetric log transform, in the three production implementations
 
 def _symmetric_log(x):
-    """Referência matemática: T(x) = sign(x) * ln(|x| + 1)."""
+    """Mathematical reference: T(x) = sign(x) * ln(|x| + 1)."""
     x = np.asarray(x, dtype=float)
     return np.sign(x) * np.log(np.abs(x) + 1)
 
 
-# Cobre os dois sinais, o zero (ramo próprio nas três implementações), valores
-# abaixo e acima de 1 -- onde ln muda de sinal -- e magnitudes extremas.
+# Covers both signs, zero (its own branch in the three implementations), values
+# below and above 1 -- where ln changes sign -- and extreme magnitudes.
 PROBE_VALUES = [-1e6, -1000.0, -3.5, -1.0, -0.5, 0.0, 0.5, 1.0, 7.25,
                 1000.0, 1e6]
 
 
 def _transform_via_production(architecture, values, features=('gini_index',),
                               tmp_path=None):
-    """Roda o prepare_features do paradigma e devolve as colunas transformadas."""
+    """Run the paradigm's prepare_features and return the transformed columns."""
     paradigm = architecture.architecture_name
     frame = pd.DataFrame({
         'country_code': ['BRA'] * len(values),
@@ -114,10 +114,10 @@ def _transform_via_production(architecture, values, features=('gini_index',),
 
 
 class TestSymmetricLogTransform:
-    """T(x) = sign(x) * ln(|x| + 1), como cada paradigma realmente a aplica.
+    """T(x) = sign(x) * ln(|x| + 1), as each paradigm actually applies it.
 
-    Antes isto testava uma cópia numpy local. Um paradigma que trocasse LN por
-    LOG10 na sua expressão SQL, ou perdesse o ramo do zero, passava.
+    This used to test a local numpy copy. A paradigm that swapped LN for LOG10
+    in its SQL expression, or lost the zero branch, passed.
     """
 
     @pytest.fixture(scope='class')
@@ -138,13 +138,13 @@ class TestSymmetricLogTransform:
             rtol=0, atol=1e-12)
 
     def test_the_three_paradigms_agree(self, transformed):
-        """Uma divergência aqui é uma divergência no Δ=0."""
+        """A divergence here is a divergence in Δ=0."""
         columns = {name: frame['gini_index_log_transform'].to_numpy(dtype=float)
                    for name, frame in transformed.items()}
         reference = columns['sql_engine']
         for name, values in columns.items():
             np.testing.assert_allclose(values, reference, rtol=0, atol=0,
-                                       err_msg=f'{name} difere de sql_engine')
+                                       err_msg=f'{name} differs from sql_engine')
 
     @pytest.mark.parametrize('paradigm', ['sql_engine', 'dataframe_lib',
                                           'task_graph'])
@@ -173,7 +173,7 @@ class TestSymmetricLogTransform:
 
     def test_only_the_first_five_features_are_transformed(
             self, architectures, tmp_path_factory):
-        """O limite de top-5 é declarado nos três; nenhum teste o exercitava."""
+        """The top-5 limit is declared in all three; no test exercised it."""
         directory = tmp_path_factory.mktemp('top5')
         features = [f'feature_{index}' for index in range(7)]
         for name, architecture in architectures.items():
@@ -186,15 +186,16 @@ class TestSymmetricLogTransform:
                 f'{feature}_log_transform' for feature in features[:5]), name
 
 
-# 2. Folds walk-forward, pelo gerador de produção
+# 2. Walk-forward folds, through the production generator
 
 def _generate_folds(start_year, end_year, min_train, val_len, test_len, gap,
                     step=1):
-    """Chama BaseArchitectureML._generate_walkforward_folds_auto.
+    """Call BaseArchitectureML._generate_walkforward_folds_auto.
 
-    O gerador lê tudo de `config` e `dataset_config`; esta função só monta os
-    dois a partir dos parâmetros e delega. Antes havia uma cópia do algoritmo
-    aqui, que não tinha o truncamento por `folds_max` da produção.
+    The generator reads everything from `config` and `dataset_config`; this
+    function only assembles the two from the parameters and delegates. There
+    used to be a copy of the algorithm here, which lacked production's
+    truncation by `folds_max`.
     """
     from core.base_architecture import BaseArchitectureML
 
@@ -230,7 +231,7 @@ def _generate_folds(start_year, end_year, min_train, val_len, test_len, gap,
 
 
 class TestWalkForwardFolds:
-    """Geração de folds temporais walk-forward, na implementação de produção."""
+    """Walk-forward temporal fold generation, in the production implementation."""
 
     @pytest.fixture
     def default_folds(self):
@@ -253,7 +254,7 @@ class TestWalkForwardFolds:
             assert fold['test_start'] - fold['val_end'] - 1 >= 2
 
     def test_expanding_train(self, default_folds):
-        """Janela expansiva: o início é fixo e o fim avança."""
+        """Expanding window: the start is fixed and the end advances."""
         starts = {fold['train_start'] for fold in default_folds}
         assert starts == {2000}
         ends = [fold['train_end'] for fold in default_folds]
@@ -272,13 +273,14 @@ class TestWalkForwardFolds:
             assert fold['test_end'] - fold['test_start'] + 1 == 2
 
     def test_impossible_params_halt(self):
-        """A produção levanta; a cópia local devolvia lista vazia.
+        """Production raises; the local copy returned an empty list.
 
-        Divergência encontrada ao religar este teste. Levantar é o
-        comportamento certo: uma lista vazia percorre o pipeline inteiro e sai
-        como zero folds avaliados, sem que nada acuse a configuração inviável.
+        Divergence found when reconnecting this test. Raising is the right
+        behaviour: an empty list travels through the whole pipeline and comes
+        out as zero folds evaluated, with nothing flagging the unviable
+        configuration.
         """
-        with pytest.raises(ValueError, match='Nenhum fold'):
+        with pytest.raises(ValueError, match='No fold could be generated'):
             _generate_folds(2000, 2005, min_train=8, val_len=2, test_len=2,
                             gap=2)
 
@@ -289,10 +291,10 @@ class TestWalkForwardFolds:
                    for earlier, later in zip(starts, starts[1:]))
 
     def test_the_first_fold_train_end_is_the_one_selection_uses(self):
-        """P4 lê `_first_fold_train_end`; os folds vêm de outro método.
+        """P4 reads `_first_fold_train_end`; the folds come from another method.
 
-        Nada garantia que os dois derivassem a mesma janela, e a seleção de
-        features acontece antes de qualquer fold ser materializado.
+        Nothing guaranteed the two derived the same window, and feature
+        selection happens before any fold is materialised.
         """
         from core.base_architecture import BaseArchitectureML
 
@@ -327,29 +329,29 @@ class TestWalkForwardFolds:
         assert architecture._first_fold_train_end() == folds[0]['train_end']
 
 
-# 3. Filtro greedy de colinearidade pairwise, nas três implementações
+# 3. Greedy pairwise collinearity filter, in the three implementations
 
 def _filter_all(architectures, frame, features, threshold=0.8):
-    """{paradigma: features mantidas}, cada uma pelo filtro daquele paradigma."""
+    """{paradigm: features kept}, each one by that paradigm's own filter."""
     return {name: list(_quiet(architecture.apply_collinearity_filter,
                               _native(name, frame), list(features), threshold))
             for name, architecture in architectures.items()}
 
 
 def _frame(columns, rows=100, seed=42):
-    """Frame com o número de linhas que os filtros exigem para correlacionar."""
+    """Frame with the row count the filters require in order to correlate."""
     rng = np.random.default_rng(seed)
     base = {name: builder(rng, rows) for name, builder in columns.items()}
     return pd.DataFrame(base)
 
 
 class TestCollinearityFilter:
-    """Filtro greedy de correlação pairwise, como cada paradigma o aplica.
+    """Greedy pairwise correlation filter, as each paradigm applies it.
 
-    Antes isto testava uma cópia local que recebia uma matriz de correlação
-    pronta e *não ordenava* as features. A produção ordena, então
-    `test_order_matters` afirmava uma propriedade que a produção não tem: era o
-    teste que estava errado, não o código.
+    This used to test a local copy that received a ready-made correlation
+    matrix and *did not sort* the features. Production sorts, so
+    `test_order_matters` asserted a property that production does not have: it
+    was the test that was wrong, not the code.
     """
 
     def test_uncorrelated_features_all_kept(self, architectures):
@@ -381,11 +383,12 @@ class TestCollinearityFilter:
             assert kept == [], name
 
     def test_the_result_does_not_depend_on_input_order(self, architectures):
-        """A produção ordena antes de percorrer; a cópia local não ordenava.
+        """Production sorts before walking; the local copy did not sort.
 
-        Sem ordenar, qual das duas features colineares sobrevive depende da
-        ordem em que a seleção por correlação as devolveu -- e essa ordem podia
-        diferir entre paradigmas, que é exatamente o que o Δ=0 não admite.
+        Without sorting, which of the two collinear features survives depends
+        on the order in which correlation-based selection returned them -- and
+        that order could differ between paradigms, which is exactly what Δ=0
+        does not allow.
         """
         rng = np.random.default_rng(42)
         x = rng.normal(size=100)
@@ -396,7 +399,7 @@ class TestCollinearityFilter:
             assert forward[name] == reversed_order[name] == ['a'], name
 
     def test_the_three_paradigms_keep_the_same_features(self, architectures):
-        """Cadeia a-b 0.9, b-c 0.9, a-c 0.3: mantém a e c, descarta b."""
+        """Chain a-b 0.9, b-c 0.9, a-c 0.3: keeps a and c, discards b."""
         rng = np.random.default_rng(7)
         a = rng.normal(size=200)
         c = 0.3 * a + np.sqrt(1 - 0.09) * rng.normal(size=200)
@@ -411,12 +414,13 @@ class TestCollinearityFilter:
             assert kept == ['a', 'c'], name
 
     def test_the_threshold_is_strict(self, architectures):
-        """No limiar exato a feature cai: a comparação é `<`, não `<=`.
+        """At the exact threshold the feature drops: the comparison is `<`, not
+        `<=`.
 
-        Uma cópia idêntica dá correlação exatamente 1.0 nos três motores, então
-        o limiar 1.0 é o único ponto em que os dois operadores discordam. Com
-        deslocamentos de 1e-12 em torno de uma correlação arbitrária, `<` e
-        `<=` decidem igual e o teste não distingue os dois.
+        An identical copy gives correlation exactly 1.0 in the three engines,
+        so the threshold 1.0 is the only point at which the two operators
+        disagree. With offsets of 1e-12 around an arbitrary correlation, `<`
+        and `<=` decide the same and the test does not tell the two apart.
         """
         rng = np.random.default_rng(11)
         a = rng.normal(size=200)
@@ -424,11 +428,11 @@ class TestCollinearityFilter:
         for name, kept in _filter_all(architectures, frame, ['a', 'b'],
                                       threshold=1.0).items():
             assert kept == ['a'], (
-                f'{name}: manteve uma cópia idêntica no limiar exato'
+                f'{name}: kept an identical copy at the exact threshold'
             )
 
     def test_below_the_threshold_the_feature_survives(self, architectures):
-        """Contraparte: sem ela, rejeitar sempre passaria no teste acima."""
+        """Counterpart: without it, always rejecting would pass the test above."""
         rng = np.random.default_rng(11)
         frame = pd.DataFrame({'a': rng.normal(size=200),
                               'b': rng.normal(size=200)})
@@ -437,10 +441,10 @@ class TestCollinearityFilter:
             assert kept == ['a', 'b'], name
 
 
-# 4. Validação da configuração científica
+# 4. Scientific configuration validation
 
 class TestScientificConfig:
-    """Testes para verificar que a configuração científica tem as chaves requeridas e valores válidos."""
+    """Tests verifying that the scientific configuration has the required keys and valid values."""
 
     @pytest.fixture
     def config(self):
@@ -482,10 +486,10 @@ class TestScientificConfig:
             assert config[key] > 0, f"{key} must be positive"
 
 
-# 5. Completude dos estratos de países
+# 5. Country strata completeness
 
 class TestCountryStrata:
-    """Testes para a configuração de estratificação geográfica."""
+    """Tests for the geographic stratification configuration."""
 
     @pytest.fixture(autouse=True)
     def _load_strata(self):
@@ -507,14 +511,14 @@ class TestCountryStrata:
                     f"Invalid ISO-2 code '{code}' in {stratum}"
 
 
-# 6. Validação de integridade temporal
+# 6. Temporal integrity validation
 
 class TestTemporalIntegrity:
-    """Validação temporal anti-leak, pelo TemporalValidator de produção.
+    """Anti-leak temporal validation, through the production TemporalValidator.
 
-    A cópia local devolvia um booleano e checava três condições. O validador de
-    produção devolve também a lista de erros, verifica campos obrigatórios, e
-    conhece o embargo -- nada disso era exercitado.
+    The local copy returned a boolean and checked three conditions. The
+    production validator also returns the list of errors, checks mandatory
+    fields, and knows about the embargo -- none of that was exercised.
     """
 
     @staticmethod
@@ -552,7 +556,7 @@ class TestTemporalIntegrity:
         valid, errors = self._validate((2000, 2010), (2010, 2011),
                                        (2014, 2015))
         assert not valid
-        assert any('Sobreposição train-val' in error for error in errors), errors
+        assert any('Train-val overlap' in error for error in errors), errors
 
     def test_reversed_order(self):
         valid, errors = self._validate((2014, 2015), (2010, 2011),
@@ -560,7 +564,7 @@ class TestTemporalIntegrity:
         assert not valid
 
     def test_a_missing_field_is_reported(self):
-        """A cópia local levantava KeyError; a produção nomeia o campo."""
+        """The local copy raised KeyError; production names the field."""
         from core.validation import TemporalValidator
         fold = self._fold((2000, 2007), (2010, 2011), (2014, 2015))
         del fold['val_start']
@@ -570,19 +574,20 @@ class TestTemporalIntegrity:
         assert any('val_start' in error for error in errors), errors
 
     def test_the_embargo_consumes_the_gap(self):
-        """Parâmetro que a cópia local não tinha.
+        """A parameter the local copy did not have.
 
-        Com gap 2 e embargo 3, o fold que passa sem embargo deixa de passar.
+        With gap 2 and embargo 3, the fold that passes without an embargo stops
+        passing.
         """
         assert self._validate((2000, 2007), (2010, 2011), (2014, 2015),
                               embargo=0)[0]
         valid, errors = self._validate((2000, 2007), (2010, 2011),
                                        (2014, 2015), embargo=3)
         assert not valid
-        assert any('Embargo' in error for error in errors), errors
+        assert any('embargo violated' in error for error in errors), errors
 
     def test_all_default_folds_valid(self):
-        """Os folds que a produção gera passam pelo validador da produção."""
+        """The folds production generates pass production's own validator."""
         folds = _generate_folds(2000, 2023, 8, 2, 2, 2)
         assert folds
         for fold in folds:
@@ -593,10 +598,10 @@ class TestTemporalIntegrity:
             assert valid, f"Fold {fold['fold_id']}: {errors}"
 
     def test_the_generator_and_the_validator_agree_on_the_gap(self):
-        """Gerar com gap 2 e validar com gap 3 tem de reprovar.
+        """Generating with gap 2 and validating with gap 3 has to fail.
 
-        Sem isto, os dois lados poderiam ler parâmetros diferentes e o teste
-        acima passaria por os dois estarem igualmente errados.
+        Without this, the two sides could read different parameters and the
+        test above would pass because both were equally wrong.
         """
         folds = _generate_folds(2000, 2023, 8, 2, 2, 2)
         results = [self._validate(
@@ -607,10 +612,10 @@ class TestTemporalIntegrity:
         assert not any(results)
 
 
-# 7. Testes de importação (via conftest.py PYTHONPATH)
+# 7. Import tests (via conftest.py PYTHONPATH)
 
 class TestImports:
-    """Verifica que os módulos core são importáveis via configuração de path do conftest.py."""
+    """Verifies that the core modules are importable via conftest.py's path configuration."""
 
     def test_import_scientific_config(self):
         from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
@@ -629,13 +634,13 @@ class TestImports:
         assert (root / "src" / "core").is_dir()
 
 
-# 8. Anti-leakage: P4 (escopo temporal) e P3 estendido (proxy detection)
+# 8. Anti-leakage: P4 (temporal scope) and extended P3 (proxy detection)
 
 class TestAntiLeakageP4:
-    """Valida que feature selection usa apenas dados do período de treino."""
+    """Validates that feature selection uses only data from the training period."""
 
     def test_first_fold_train_end_calculation(self):
-        """Verifica cálculo do train_end do primeiro fold a partir da config."""
+        """Checks the first fold's train_end computation from the config."""
         from core.scientific_config import SCIENTIFIC_CONFIG
         cfg = SCIENTIFIC_CONFIG
         start = cfg.get('temporal_range_start', 2000)
@@ -651,28 +656,29 @@ class TestAntiLeakageP4:
         assert expected_train_end == 2007
 
     def test_proxy_threshold_in_config(self):
-        """proxy_correlation_threshold deve existir na config científica."""
+        """proxy_correlation_threshold must exist in the scientific config."""
         from core.scientific_config import SCIENTIFIC_CONFIG
         threshold = SCIENTIFIC_CONFIG.get('proxy_correlation_threshold')
         assert threshold is not None
-        assert 0.5 < threshold <= 1.0, f"Threshold fora do range razoável: {threshold}"
+        assert 0.5 < threshold <= 1.0, f"Threshold outside the reasonable range: {threshold}"
 
 
 
-# 9. Anti-leakage: P5 (escopo de preprocessing) e HPO
+# 9. Anti-leakage: P5 (preprocessing scope) and HPO
 
 class TestPreprocessingIsolation:
-    """P5 (escopo de preprocessing) no código que roda, não em biblioteca.
+    """P5 (preprocessing scope) in the code that runs, not in a library.
 
-    Os três testes anteriores aqui exercitavam o StandardScaler do sklearn, o
-    .fillna() do pandas e o max() do Python sobre dicts literais. Passavam com o
-    framework inteiro deletado, porque nenhum deles o mencionava. Um deles
-    asseverava que max({1: 0.85, 10: 0.80}, key=...) == 1.
+    The three previous tests here exercised sklearn's StandardScaler, pandas'
+    .fillna() and Python's max() over literal dicts. They passed with the whole
+    framework deleted, because none of them mentioned it. One of them asserted
+    that max({1: 0.85, 10: 0.80}, key=...) == 1.
 
-    O contrato da imputação está coberto em test_imputation_scope.py, incluindo a
-    propriedade que importa -- alterar a janela de teste não move a estatística.
-    Aqui ficam as duas ligações que faltavam: o scaler e a seleção de
-    hiperparâmetros, verificadas no corpo de run_fold_analysis de cada paradigma.
+    The imputation contract is covered in test_imputation_scope.py, including
+    the property that matters -- changing the test window does not move the
+    statistic. What remains here are the two links that were missing: the
+    scaler and hyperparameter selection, verified in the body of each
+    paradigm's run_fold_analysis.
     """
 
     MODELS = sorted((Path(__file__).resolve().parents[1] / 'src'
@@ -683,7 +689,7 @@ class TestPreprocessingIsolation:
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_scaler_is_fitted_on_training_data_only(self, path):
-        """fit_transform no treino; transform em validação e teste."""
+        """fit_transform on training; transform on validation and test."""
         import ast as _ast
         tree = _ast.parse(path.read_text())
         fold = next(n for n in _ast.walk(tree)
@@ -694,8 +700,8 @@ class TestPreprocessingIsolation:
                      and getattr(n.func, 'attr', None) == 'fit_transform'
                      and n.args and hasattr(n.args[0], 'id')]
         assert fitted_on == ['X_train'], (
-            f'{path.parts[-3]}: scaler ajustado em {fitted_on}, e não apenas no '
-            f'treino'
+            f'{path.parts[-3]}: scaler fitted on {fitted_on}, and not only on '
+            f'the training set'
         )
         transformed = [n.args[0].id for n in _ast.walk(fold)
                        if isinstance(n, _ast.Call)
@@ -715,27 +721,28 @@ class TestPreprocessingIsolation:
                     getattr(call.func, 'attr', None) in ('fit', 'fit_transform'):
                 names = [a.id for a in call.args if hasattr(a, 'id')]
                 assert 'X_test' not in names and 'y_test' not in names, (
-                    f'{path.parts[-3]}: ajuste sobre a janela de teste'
+                    f'{path.parts[-3]}: fit over the test window'
                 )
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_hyperparameters_are_selected_on_validation(self, path):
-        """A busca compara r2 de validação; o teste é avaliado depois."""
+        """The search compares validation r2; the test set is evaluated later."""
         source = path.read_text()
         fold_start = source.index('def run_fold_analysis')
         body = source[fold_start:]
         selection = body.index('best_val_r2')
         assert 'X_val_scaled' in body[:selection + 2000], (
-            f'{path.parts[-3]}: a seleção não consulta a janela de validação'
+            f'{path.parts[-3]}: the selection does not consult the validation '
+            f'window'
         )
-        assert "best_val_r2 = -1e9" in body, 'sem inicialização da busca'
+        assert "best_val_r2 = -1e9" in body, 'no initialisation of the search'
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_the_selected_parameters_are_applied_to_the_test_window(self, path):
         source = path.read_text()
         body = source[source.index('def run_fold_analysis'):]
         assert 'best_shrink' in body and 'best_params' in body, (
-            f'{path.parts[-3]}: parâmetros escolhidos não reaproveitados'
+            f'{path.parts[-3]}: chosen parameters not reused'
         )
 
 
@@ -758,14 +765,15 @@ class TestTheEmbargoDocstringMatchesTheCode:
 
     def test_it_does_not_claim_observations_are_excluded(self):
         text = self._docstring()
-        assert 'são excluídas do treino' not in text, (
+        assert 'are excluded from training' not in text, (
             'the code excludes nothing; it verifies that the gap covers the '
             'embargo'
         )
 
     def test_it_says_what_the_check_actually_does(self):
         text = self._docstring()
-        assert 'verifica que o gap' in text or 'cobre o embargo' in text
+        assert ('checks that the declared gap' in text
+                or 'fails the fold when it does not' in text)
 
     def test_no_code_path_drops_rows_for_the_embargo(self):
         """Reproduced: the fold that passes with embargo 0 fails with embargo 3,
@@ -781,7 +789,7 @@ class TestTheEmbargoDocstringMatchesTheCode:
         valid_with, errors = TemporalValidator(
             min_gap_years=2, embargo_years=3).validate_fold_integrity(fold)
         assert valid_without and not valid_with
-        assert any('Embargo' in error for error in errors)
+        assert any('embargo violated' in error for error in errors)
         assert fold == before, 'the validator mutated the fold'
 
 
@@ -933,7 +941,7 @@ class TestTheBestBaselineIgnoresUndefinedScores:
         assert name == 'naive_with_lag'
 
     def test_all_undefined_halts(self):
-        with pytest.raises(ValueError, match='melhor baseline'):
+        with pytest.raises(ValueError, match='no best baseline to report'):
             self._select({'global_mean': float('nan'),
                           'linear_trend': float('nan')})
 

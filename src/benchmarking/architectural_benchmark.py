@@ -2,27 +2,27 @@
 """
 Architectural Benchmarking - Data Warehouse vs Data Lake
 
-Mede latências por fase do pipeline e throughput (registros/segundo) para
-comparação científica entre as arquiteturas. Implementa múltiplas execuções
-com warmup, gera relatório em CSV/JSON e figuras simples.
+Measures per-phase pipeline latencies and throughput (records/second) for a
+scientific comparison between the architectures. Implements multiple runs
+with warmup, generates a CSV/JSON report and simple figures.
 
-Fases suportadas:
-    - collection: Coleta bruta com imputação hierárquica
-    - processing: Processamento arquitetural (DL e DW)
-    - setup: Preparação de dados para ML (DL e DW)
+Supported phases:
+    - collection: Raw collection with hierarchical imputation
+    - processing: Architectural processing (DL and DW)
+    - setup: Data preparation for ML (DL and DW)
 
-    - baseline: Modelos baseline (DL e DW)
-    - hierarchical: Modelos hierárquicos (DL e DW)
+    - baseline: Baseline models (DL and DW)
+    - hierarchical: Hierarchical models (DL and DW)
 
-Saídas:
+Outputs:
     - outputs/benchmarks/architectural_benchmark_results.csv
     - outputs/benchmarks/architectural_benchmark_summary.json
     - outputs/benchmarks/fig_*.png
 
-Este benchmark não altera a lógica do pipeline. Quando possível, obtém o
-    número de registros processados a partir dos artefatos gerados para
-    computar throughput. Nos passos de ML, a contagem é inferida da
-    configuração de folds e dos datasets subjacentes (DW via SQL, DL via framework de processamento).
+This benchmark does not change the pipeline logic. When possible, it obtains the
+    number of processed records from the generated artifacts in order to
+    compute throughput. In the ML steps, the count is inferred from the
+    fold configuration and from the underlying datasets (DW via SQL, DL via the processing framework).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ import psutil
 
 
 # ---------------------------------------------------------------------------
-# Caminhos absolutos e utilitários
+# Absolute paths and utilities
 # ---------------------------------------------------------------------------
 def _project_root() -> str:
     current = os.path.abspath(os.path.dirname(__file__))
@@ -68,19 +68,19 @@ from core.paradigm_registry import COMPARABLE_PHASES, discover_paradigms
 
 
 def _import_modules():
-    """Importa dinamicamente todos os módulos de paradigma via registro do framework."""
+    """Dynamically import every paradigm module via the framework registry."""
     from core.paradigm_registry import discover_paradigms
     import importlib
 
     paradigms = discover_paradigms()
     modules = {}
 
-    # Coleta (compartilhado, não específico por paradigma)
+    # Collection (shared, not paradigm-specific)
     from collection.raw_data_collector import RawDataCollector
     modules["RawDataCollector"] = RawDataCollector
 
     for name, meta in paradigms.items():
-        # Módulo de setup (possui função main())
+        # Setup module (has a main() function)
         setup_mod_path = meta['setup_script'].replace('/', '.')
         if setup_mod_path.endswith('.py'):
             setup_mod_path = setup_mod_path[:-3]
@@ -88,7 +88,7 @@ def _import_modules():
             setup_mod_path = setup_mod_path[4:]
         modules[f"{name}_setup_module"] = importlib.import_module(setup_mod_path)
 
-        # Processador
+        # Processor
         proc_mod = importlib.import_module(meta['processor_module'])
         modules[f"{name}_processor_class"] = getattr(proc_mod, meta['processor_class'])
         modules[f"{name}_processor_run_method"] = meta['processor_run_method']
@@ -97,7 +97,7 @@ def _import_modules():
         bl_mod = importlib.import_module(meta['baseline_module'])
         modules[f"{name}_baseline_class"] = getattr(bl_mod, meta['baseline_class'])
 
-        # Hierárquico
+        # Hierarchical
         hier_mod = importlib.import_module(meta['hierarchical_module'])
         modules[f"{name}_hierarchical_class"] = getattr(hier_mod, meta['hierarchical_class'])
 
@@ -107,7 +107,7 @@ def _import_modules():
 
 
 # ---------------------------------------------------------------------------
-# Estruturas de medição
+# Measurement structures
 # ---------------------------------------------------------------------------
 @dataclass
 class PhaseResult:
@@ -142,11 +142,11 @@ class PhaseResult:
 
 class BenchmarkRunner:
     """
-    Orquestra execuções do benchmark por fase, medindo latências e throughput.
+    Orchestrates benchmark runs per phase, measuring latencies and throughput.
 
-    Parâmetros de execução:
-        - repetitions, warmup: obtidos de BENCHMARK_CONFIG ou CLI
-        - phases: subconjunto de fases para execução
+    Run parameters:
+        - repetitions, warmup: taken from BENCHMARK_CONFIG or the CLI
+        - phases: subset of phases to run
     """
 
     def __init__(
@@ -156,23 +156,23 @@ class BenchmarkRunner:
         phases: Optional[List[str]] = None,
         output_dir: Optional[str] = None,
     ):
-        # `or` trata 0 como ausente, o mesmo defeito já corrigido em warmup.
-        # Aqui zero não é um pedido válido -- não há o que medir -- então em
-        # vez de cair no default em silêncio, recusa.
+        # `or` treats 0 as absent, the same defect already fixed in warmup.
+        # Here zero is not a valid request -- there is nothing to measure -- so
+        # instead of silently falling back to the default, it refuses.
         self.repetitions = (int(BENCHMARK_CONFIG.get("repetitions", 10))
                             if repetitions is None else int(repetitions))
         if self.repetitions < 1:
             raise ValueError(
-                f"--repetitions={repetitions}: sem repetições não há medição. "
-                f"Omita o parâmetro para usar o valor de BENCHMARK_CONFIG."
+                f"--repetitions={repetitions}: without repetitions there is no "
+                f"measurement. Omit the parameter to use the BENCHMARK_CONFIG value."
             )
-        # `or` trata 0 como ausente, então --warmup 0 caía no default e o
-        # benchmark rodava aquecimentos que o operador pediu para não rodar.
+        # `or` treats 0 as absent, so --warmup 0 fell back to the default and the
+        # benchmark ran warmups the operator asked it not to run.
         self.warmup_runs = (int(BENCHMARK_CONFIG.get("warmup_runs", 1))
                             if warmup_runs is None else int(warmup_runs))
         if self.warmup_runs < 0:
-            raise ValueError(f"--warmup={warmup_runs}: não existe aquecimento "
-                             f"negativo.")
+            raise ValueError(f"--warmup={warmup_runs}: there is no negative "
+                             f"warmup.")
         self.phases = phases or [
             "collection",
             "processing",
@@ -187,12 +187,12 @@ class BenchmarkRunner:
             self.output_dir, "architectural_benchmark_resource_log.jsonl"
         )
 
-    # --------------------------- monitoramento de recursos -----------------
+    # --------------------------- resource monitoring -----------------------
     class _ResourceMonitor:
-        """Amostrador leve de recursos (CPU/Mem/IO) do processo e do sistema.
+        """Lightweight sampler of process and system resources (CPU/Mem/IO).
 
-        Coleta amostras em segundo plano durante a execução de uma fase.
-        Salva resumo agregado no arquivo JSONL do benchmark.
+        Collects samples in the background while a phase runs.
+        Saves an aggregated summary to the benchmark's JSONL file.
         """
 
         def __init__(
@@ -216,7 +216,7 @@ class BenchmarkRunner:
             self._stop = threading.Event()
             self._thread: Optional[threading.Thread] = None
             self._proc = psutil.Process(os.getpid())
-            self._samples = []  # lista de dicts com métricas por amostra
+            self._samples = []  # list of dicts with per-sample metrics
             self._io0 = None
             self._start_ts = None
             self._end_ts = None
@@ -227,8 +227,8 @@ class BenchmarkRunner:
                 self._proc.cpu_percent(interval=None)
                 psutil.cpu_percent(interval=None)
             except Exception:
-                pass  # Inicializa contadores de CPU; falha é inofensiva
-            # IO inicial
+                pass  # Initializes CPU counters; failure is harmless
+            # Initial IO
             try:
                 self._io0 = self._proc.io_counters()
             except Exception:
@@ -254,7 +254,7 @@ class BenchmarkRunner:
                     cpu_s = psutil.cpu_percent(interval=None)
                     rss_mb = self._proc.memory_info().rss / (1024**2)
                     mem_s = psutil.virtual_memory().percent
-                    # Agregar processos filhos (subprocessos, etc.)
+                    # Aggregate child processes (subprocesses, etc.)
                     child_cpu = 0.0
                     child_rss_mb = 0.0
                     try:
@@ -282,7 +282,7 @@ class BenchmarkRunner:
         def _write_summary(self):
             import json as _json
 
-            # Agregar amostras
+            # Aggregate samples
             def agg(key):
                 vals = [s.get(key) for s in self._samples if s.get(key) is not None]
                 if not vals:
@@ -303,7 +303,7 @@ class BenchmarkRunner:
             rss_peak = rss.get("max") or 0.0
             children_peak = rss_children.get("max") or 0.0
             self.peak_rss_mb = round(rss_peak + children_peak, 1)
-            # IO delta (processo)
+            # IO delta (process)
             try:
                 io1 = self._proc.io_counters()
                 if self._io0:
@@ -341,9 +341,9 @@ class BenchmarkRunner:
                 with open(self.log_path, "a") as f:
                     f.write(_json.dumps(rec) + "\n")
             except Exception as exc:
-                print(f"[WARN] Falha ao gravar log de recursos: {exc}")
+                print(f"[WARN] Failed to write the resource log: {exc}")
 
-    # --------------------------- utilitários de contagem -------------------
+    # --------------------------- counting utilities ------------------------
     def _count_rows_parquet(self, abs_path: str) -> Optional[int]:
         """Row count of a Parquet artifact, or None if it cannot be read.
 
@@ -362,7 +362,7 @@ class BenchmarkRunner:
             except Exception:
                 return None
 
-    # --------------------------- fases medidas -----------------------------
+    # --------------------------- measured phases ---------------------------
     def _phase_collection(self) -> Tuple[int, Optional[int]]:
         dataset_name = os.environ.get("DATASET_NAME", "worldbank")
         raw_subdir = "collection/inep_raw" if dataset_name == "inep_censo" else "collection/raw_data"
@@ -390,15 +390,15 @@ class BenchmarkRunner:
         t0 = time.perf_counter_ns()
         res = getattr(proc, run_method_name)()
         t1 = time.perf_counter_ns()
-        # Um estágio que falhou é rápido: sem esta checagem a repetição entra
-        # no CSV como uma latência curta e legítima, puxando a distribuição do
-        # paradigma para baixo. measure() foi escrito para abortar, mas o status
-        # de falha vem dentro do dict de retorno, não como exceção.
+        # A failed stage is fast: without this check the repetition enters
+        # the CSV as a short, legitimate latency, pulling the paradigm's
+        # distribution down. measure() was written to abort, but the failure
+        # status comes inside the returned dict, not as an exception.
         if not (isinstance(res, dict) and res.get("status") == "success"):
             status = res.get("status") if isinstance(res, dict) else type(res).__name__
             raise RuntimeError(
-                f"{paradigm_name}: {'processing'} retornou status {status!r}; "
-                f"a repetição não pode entrar na comparação de latência"
+                f"{paradigm_name}: {'processing'} returned status {status!r}; "
+                f"the repetition cannot enter the latency comparison"
             )
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
@@ -412,15 +412,15 @@ class BenchmarkRunner:
         t0 = time.perf_counter_ns()
         res = setup_module.main()
         t1 = time.perf_counter_ns()
-        # Um estágio que falhou é rápido: sem esta checagem a repetição entra
-        # no CSV como uma latência curta e legítima, puxando a distribuição do
-        # paradigma para baixo. measure() foi escrito para abortar, mas o status
-        # de falha vem dentro do dict de retorno, não como exceção.
+        # A failed stage is fast: without this check the repetition enters
+        # the CSV as a short, legitimate latency, pulling the paradigm's
+        # distribution down. measure() was written to abort, but the failure
+        # status comes inside the returned dict, not as an exception.
         if not (isinstance(res, dict) and res.get("status") == "success"):
             status = res.get("status") if isinstance(res, dict) else type(res).__name__
             raise RuntimeError(
-                f"{paradigm_name}: {'setup'} retornou status {status!r}; "
-                f"a repetição não pode entrar na comparação de latência"
+                f"{paradigm_name}: {'setup'} returned status {status!r}; "
+                f"the repetition cannot enter the latency comparison"
             )
         rows = None
         if isinstance(res, dict) and res.get("status") == "success":
@@ -457,25 +457,25 @@ class BenchmarkRunner:
         return end_ns - start_ns, records
 
     def _fold_years(self, paradigm_name: str) -> Optional[List[int]]:
-        """Anos presentes no artefato master do paradigma.
+        """Years present in the paradigm's master artifact.
 
-        A localização vem de PARADIGM_META, e não de um template: o engine SQL
-        mantém os dados no próprio banco e não grava parquet master, então o
-        template assumia um arquivo que nunca existiu para ele.
+        The location comes from PARADIGM_META, and not from a template: the SQL
+        engine keeps the data in its own database and writes no master parquet, so
+        the template assumed a file that never existed for it.
         """
         meta = discover_paradigms()[paradigm_name]
         artifact = meta.get('master_artifact')
         if artifact is None:
             raise KeyError(
-                f"{paradigm_name} não declara 'master_artifact' em "
-                f"PARADIGM_META, então seus registros não podem ser contados."
+                f"{paradigm_name} does not declare 'master_artifact' in "
+                f"PARADIGM_META, so its records cannot be counted."
             )
 
         kind = artifact['kind']
         if kind == 'parquet':
             path = get_absolute_output_path(artifact['path'])
             if not os.path.exists(path):
-                print(f"  [WARN] {paradigm_name}: master ausente em {path}")
+                print(f"  [WARN] {paradigm_name}: master missing at {path}")
                 return None
             import pyarrow.parquet as pq
             table = pq.read_table(path, columns=["year"])
@@ -488,7 +488,7 @@ class BenchmarkRunner:
             database = get_absolute_output_path(
                 artifact['database'].format(dataset=get_dataset_name()))
             if not os.path.exists(database):
-                print(f"  [WARN] {paradigm_name}: banco ausente em {database}")
+                print(f"  [WARN] {paradigm_name}: database missing at {database}")
                 return None
             import duckdb
             conn = duckdb.connect(database, read_only=True)
@@ -500,22 +500,22 @@ class BenchmarkRunner:
             return [r[0] for r in rows]
 
         raise ValueError(
-            f"{paradigm_name}: master_artifact de tipo desconhecido {kind!r}")
+            f"{paradigm_name}: master_artifact of unknown kind {kind!r}")
 
     def _count_fold_records(self, paradigm_name: str) -> Optional[int]:
-        """Total de registros somados sobre os folds de um paradigma.
+        """Total records summed over a paradigm's folds.
 
-        Sem `except Exception: return None`: aquele bloco devolvia None para
-        qualquer causa, e a ausência silenciosa deixou throughput sem medição nas
-        fases de ML de todos os paradigmas -- o que fez a tabela de percentis de
-        throughput nunca chegar a ser gerada.
+        No `except Exception: return None`: that block returned None for any
+        cause, and the silent absence left throughput unmeasured in the ML
+        phases of every paradigm -- which meant the throughput percentile table
+        was never generated at all.
         """
         folds_path = get_absolute_output_path(
             f"ml_pipeline/architectures/{paradigm_name}/prep/"
             f"temporal_folds_{paradigm_name}.json"
         )
         if not os.path.exists(folds_path):
-            print(f"  [WARN] {paradigm_name}: folds ausentes em {folds_path}")
+            print(f"  [WARN] {paradigm_name}: folds missing at {folds_path}")
             return None
         with open(folds_path, "r") as handler:
             folds_cfg = json.load(handler)["folds"]
@@ -532,22 +532,23 @@ class BenchmarkRunner:
                 records += sum(1 for y in years if fold[start] <= y <= fold[end])
         return records
 
-    # --------------------------- execução ----------------------------------
-    # Fases "upstream" (coleta + processamento) são infraestrutura compartilhada
-    # que produz os mesmos dados determinísticos em toda execução. Repetí-las
-    # N vezes apenas desperdiça tempo com chamadas HTTP e I/O sem adicionar
-    # informação estatística.
+    # --------------------------- execution ---------------------------------
+    # "Upstream" phases (collection + processing) are shared infrastructure
+    # that produces the same deterministic data on every run. Repeating them
+    # N times only wastes time on HTTP calls and I/O without adding
+    # statistical information.
     #
-    # Fases "downstream" (setup → baseline → hierarchical) contêm a lógica
-    # arquitetural que diferencia DW e DL e são o alvo real do benchmark.
+    # "Downstream" phases (setup → baseline → hierarchical) contain the
+    # architectural logic that differentiates DW and DL and are the benchmark's
+    # real target.
     #
-    # Estratégia:
-    #   1. Rodar coleta + processamento UMA vez (usando cache quando possível)
-    #   2. Registrar seus tempos como run_id=-1 para referência
-    #   3. Repetir apenas setup/baseline/hierarchical N vezes
+    # Strategy:
+    #   1. Run collection + processing ONCE (using cache when possible)
+    #   2. Record their times as run_id=-1 for reference
+    #   3. Repeat only setup/baseline/hierarchical N times
 
-    #: Uma definição só, em core.paradigm_registry: quatro arquivos
-    #: enumeravam a mesma política e um deles já divergia.
+    #: A single definition, in core.paradigm_registry: four files
+    #: enumerated the same policy and one of them had already diverged.
     _DOWNSTREAM_PHASES = frozenset(COMPARABLE_PHASES)
 
     def run(self) -> List[PhaseResult]:
@@ -557,7 +558,7 @@ class BenchmarkRunner:
             step_fn, phase: str, arch: str, step_name: str
         ) -> Optional[PhaseResult]:
             try:
-                # Monitorar recursos durante a execução da fase
+                # Monitor resources while the phase runs
                 mon = self._ResourceMonitor(
                     self.resource_log_path, run_id, phase, arch, step_name,
                     is_warmup=run_id < self.warmup_runs,
@@ -583,9 +584,9 @@ class BenchmarkRunner:
                     f"{phase}/{arch}/{step_name} on repetition {run_id}"
                 ) from exc
 
-        # --- Fase 1: upstream (coleta) - executa UMA vez -------------------------
+        # --- Phase 1: upstream (collection) - runs ONCE --------------------------
         run_id = -1
-        print("Upstream: coleta (execução única)")
+        print("Upstream: collection (single run)")
 
         if "collection" in self.phases:
             r = measure(
@@ -594,17 +595,17 @@ class BenchmarkRunner:
             if r:
                 results.append(r)
 
-        # --- Fase 2: downstream - repetida N vezes --------------------------------
+        # --- Phase 2: downstream - repeated N times -------------------------------
         downstream_phases = [p for p in self.phases if p in self._DOWNSTREAM_PHASES]
         if not downstream_phases:
             return results
 
-        # Seed determinístico para randomização da ordem de execução.
-        # Elimina viés sistemático de cache/page-fault ao permutar a
-        # ordem das 3 arquiteturas em cada iteração.
+        # Deterministic seed for randomizing the execution order.
+        # Eliminates systematic cache/page-fault bias by permuting the
+        # order of the 3 architectures in each iteration.
         order_rng = random.Random(42)
 
-        # Mapeamento dinâmico: phase → [(step_fn, arch, step_name), ...]
+        # Dynamic mapping: phase → [(step_fn, arch, step_name), ...]
         paradigm_names = self.modules["_paradigm_names"]
 
         phase_fns = {
@@ -626,9 +627,9 @@ class BenchmarkRunner:
             ],
         }
 
-        # Modo de append, e nada truncava: uma segunda execução do pipeline
-        # empilhava sobre a primeira, e a tabela de recursos passava a
-        # promediar execuções de versões diferentes do código.
+        # Append mode, and nothing truncated: a second run of the pipeline
+        # stacked on top of the first, and the resource table then averaged
+        # runs from different versions of the code.
         with open(self.resource_log_path, "w"):
             pass
 
@@ -660,18 +661,18 @@ class BenchmarkRunner:
 
     def save_reports(self, results: List[PhaseResult]) -> Tuple[str, str]:
         if not results:
-            raise RuntimeError("Sem resultados para salvar")
+            raise RuntimeError("No results to save")
 
-        # Registro de ambiente ao lado dos resultados. O orquestrador grava o
-        # seu, mas uma execução do benchmark isolada não produzia nenhum -- e uma
-        # latência sem o ambiente e o orçamento de núcleos que a produziram não é
-        # comparável a outra execução.
+        # Environment record alongside the results. The orchestrator writes its
+        # own, but an isolated benchmark run produced none -- and a latency
+        # without the environment and the core budget that produced it is not
+        # comparable to another run.
         snapshot = write_environment_snapshot(
             self.output_dir,
             extra={'measured_phases': sorted(self.phases),
                    'repetitions': self.repetitions,
                    'warmup_runs': self.warmup_runs})
-        print(f"  Ambiente registrado em {snapshot}")
+        print(f"  Environment recorded at {snapshot}")
 
         df = pd.DataFrame(
             [
@@ -709,10 +710,10 @@ class BenchmarkRunner:
         try:
             import matplotlib.pyplot as plt
 
-            # Cor por paradigma, derivada do ciclo de propriedades do matplotlib
-            # em ordem lexicográfica: estável entre execuções e independente da
-            # ordem de sort, e um quarto paradigma recebe cor sem que ninguém
-            # precise escolhê-la aqui.
+            # Color per paradigm, derived from matplotlib's property cycle
+            # in lexicographic order: stable across runs and independent of the
+            # sort order, and a fourth paradigm gets a color without anyone
+            # having to choose it here.
             cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
             arch_color_map = {
                 name: cycle[index % len(cycle)]
@@ -729,8 +730,8 @@ class BenchmarkRunner:
                 )
                 colors = [arch_color_map.get(a, "#999999") for a in plot.index]
                 plot.plot(kind="bar", ax=ax, color=colors)
-                ax.set_title(f"Tempo médio por arquitetura - {phase}")
-                ax.set_ylabel("segundos")
+                ax.set_title(f"Mean time per architecture - {phase}")
+                ax.set_ylabel("seconds")
                 ax.set_xlabel("")
                 plt.tight_layout()
                 fig_path = os.path.join(self.output_dir, f"fig_{phase}_duration.png")
@@ -743,24 +744,24 @@ class BenchmarkRunner:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Benchmark Arquitetural — comparação entre paradigmas")
+    p = argparse.ArgumentParser(description="Architectural Benchmark — comparison across paradigms")
     p.add_argument(
         "--repetitions",
         type=int,
         default=None,
-        help="Número de repetições (exclui warmup)",
+        help="Number of repetitions (excludes warmup)",
     )
     p.add_argument(
         "--warmup",
         type=int,
         default=None,
-        help="Execuções de aquecimento (não registradas)",
+        help="Warmup runs (not recorded)",
     )
     p.add_argument(
         "--phases",
         type=str,
         default=None,
-        help="Fases separadas por vírgula (collection,processing,setup,baseline,hierarchical)",
+        help="Comma-separated phases (collection,processing,setup,baseline,hierarchical)",
     )
     return p.parse_args()
 
@@ -775,12 +776,12 @@ if __name__ == "__main__":
     )
     results = runner.run()
     csv_path, summary_path = runner.save_reports(results)
-    print(f"Resultados salvos:\n- CSV: {csv_path}\n- Resumo: {summary_path}")
-    # Pós-processamento: significância + relatórios
+    print(f"Results saved:\n- CSV: {csv_path}\n- Summary: {summary_path}")
+    # Post-processing: significance + reports
     try:
         from subprocess import run as subprocess_run
 
-        # Significância e equivalência de baselines
+        # Significance and equivalence of baselines
         subprocess_run(
             [
                 sys.executable,
@@ -802,7 +803,7 @@ if __name__ == "__main__":
             ],
             check=True,
         )
-        # Tamanhos de efeito e correções de múltiplas comparações
+        # Effect sizes and multiple-comparison corrections
         subprocess_run(
             [
                 sys.executable,
@@ -812,7 +813,7 @@ if __name__ == "__main__":
             ],
             check=True,
         )
-        # Scorecard consolidado (gera outputs/statistics/architectural_scorecard.tex)
+        # Consolidated scorecard (generates outputs/statistics/architectural_scorecard.tex)
         ms = os.path.join(
             PROJECT_ROOT, "src", "statistical_validation", "make_scorecard.py"
         )

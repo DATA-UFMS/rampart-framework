@@ -77,7 +77,7 @@ class TestBudgetIsValidated:
         """Silently oversubscribing makes latency reflect contention."""
         monkeypatch.setitem(SCIENTIFIC_CONFIG, 'engine_threads',
                             multiprocessing.cpu_count() + 4)
-        with pytest.raises(RuntimeError, match='não cabe'):
+        with pytest.raises(RuntimeError, match='budget does not fit'):
             _validate_core_budget()
 
     def test_the_error_names_both_budgets(self, monkeypatch):
@@ -166,14 +166,14 @@ class TestBudgetReachesTheSnapshot:
 
 
 class TestStagesFourAndFiveGetItWithoutSetup:
-    """As Etapas 4 e 5 rodam como processos próprios e nunca chamam setup.
+    """Stages 4 and 5 run as processes of their own and never call setup.
 
-    O teste acima chama `setup_environment()` à mão, que é o que a Etapa 2 faz.
-    Nada disso alcança os modelos: eles são lançados por `pipeline.py` como
-    processos separados, e a única coisa que herdam é o ambiente. Se o
-    orçamento dependesse do setup, essas duas etapas mediriam com o número de
-    núcleos da máquina enquanto as outras mediriam com o orçamento -- e a
-    tabela de latência compararia as duas coisas.
+    The test above calls `setup_environment()` by hand, which is what Stage 2
+    does. None of that reaches the models: they are launched by `pipeline.py`
+    as separate processes, and the only thing they inherit is the environment.
+    If the budget depended on setup, those two stages would measure with the
+    machine's core count while the others measured with the budget -- and the
+    latency table would be comparing the two things.
     """
 
     @staticmethod
@@ -183,7 +183,9 @@ class TestStagesFourAndFiveGetItWithoutSetup:
                 for name, meta in sorted(discover_paradigms().items())}
 
     def test_no_model_script_configures_threads_itself(self):
-        """A dependência do ambiente é a única; torná-la explícita a protege."""
+        """The environment is the only dependency, and making it explicit
+        protects it.
+        """
         import ast as ast_module
 
         for name, scripts in self._paradigm_scripts().items():
@@ -202,14 +204,16 @@ class TestStagesFourAndFiveGetItWithoutSetup:
                     for setting in ('num_workers', 'POLARS_MAX_THREADS',
                                     'OMP_NUM_THREADS', 'SET threads'):
                         assert setting not in node.value, (
-                            f'{script}:{node.lineno} define {setting!r} por '
-                            f'conta própria, então o orçamento do pipeline '
-                            f'deixa de valer para esta etapa'
+                            f'{script}:{node.lineno} sets {setting!r} on its '
+                            f'own, so the pipeline budget stops applying to '
+                            f'this stage'
                         )
 
     @pytest.fixture(scope='class')
     def observed_without_setup(self):
-        """Mede os três motores num processo que nunca chama setup_environment."""
+        """Measures the three engines in a process that never calls
+        setup_environment.
+        """
         probe = '''
 import os, sys, tempfile
 sys.path.insert(0, "src")
@@ -243,18 +247,18 @@ print("BUDGET dask", dask.config.get("num_workers", -1))
     def test_the_engine_honours_it_from_the_environment_alone(
             self, observed_without_setup, engine):
         assert observed_without_setup[engine] == BUDGET, (
-            f'{engine} nas Etapas 4/5 roda com '
-            f'{observed_without_setup[engine]} contra um orçamento declarado '
-            f'de {BUDGET}'
+            f'{engine} in Stages 4/5 runs with '
+            f'{observed_without_setup[engine]} against a declared budget of '
+            f'{BUDGET}'
         )
 
     def test_the_budget_is_not_the_host_core_count(self):
-        """Se coincidirem, o teste acima passa com o orçamento ignorado."""
+        """If they coincide, the test above passes with the budget ignored."""
         available = os.cpu_count() or 1
         if available == BUDGET:
             pytest.skip(
-                f'a máquina tem {available} núcleos, igual ao orçamento: '
-                f'nesta máquina o teste não distingue os dois'
+                f'the machine has {available} cores, equal to the budget: on '
+                f'this machine the test cannot tell the two apart'
             )
         assert available != BUDGET
 
@@ -289,12 +293,13 @@ class TestTheProtocolFlagsAreHonoured:
 
     def test_zero_repetitions_is_refused_rather_than_replaced(self):
         from benchmarking.architectural_benchmark import BenchmarkRunner
-        with pytest.raises(ValueError, match='sem repetições'):
+        with pytest.raises(ValueError,
+                           match='without repetitions there is no measurement'):
             BenchmarkRunner(repetitions=0)
 
     def test_a_negative_warmup_is_refused(self):
         from benchmarking.architectural_benchmark import BenchmarkRunner
-        with pytest.raises(ValueError, match='aquecimento'):
+        with pytest.raises(ValueError, match='no negative warmup'):
             BenchmarkRunner(warmup_runs=-1)
 
     def test_the_configured_values_are_used_when_omitted(self):

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Módulo de auto-descoberta de paradigmas.
+Paradigm auto-discovery module.
 
-Percorre src/architectures_ml/*/ em busca de módulos setup.py contendo
-subclasses de BaseArchitectureML. A importação desses módulos dispara
-o auto-registro via __init_subclass__.
+Walks src/architectures_ml/*/ looking for setup.py modules containing
+subclasses of BaseArchitectureML. Importing those modules triggers
+auto-registration via __init_subclass__.
 
-Uso:
+Usage:
     from core.paradigm_registry import discover_paradigms
-    paradigmas = discover_paradigms()  # {nome: dict PARADIGM_META, ...}
+    paradigms = discover_paradigms()  # {name: PARADIGM_META dict, ...}
 """
 
 import importlib
@@ -20,11 +20,11 @@ _discovered = False
 
 def discover_paradigms(*, force: bool = False, strict: bool = True) -> dict:
     """
-    Percorre architectures_ml/*/ e importa cada módulo setup.
-    Retorna dicionário mapeando nome do paradigma -> dict PARADIGM_META.
+    Walks architectures_ml/*/ and imports each setup module.
+    Returns a dictionary mapping paradigm name -> PARADIGM_META dict.
 
     Args:
-        force: Se True, refaz a varredura mesmo se já descoberto (útil para testes).
+        force: If True, redoes the scan even if already discovered (useful for tests).
     """
     global _discovered
 
@@ -54,7 +54,7 @@ def discover_paradigms(*, force: bool = False, strict: bool = True) -> dict:
                                 f"Paradigm module {module_name} failed to "
                                 f"import: {e}"
                             ) from e
-                        print(f"[WARN] Não foi possível importar {module_name}: {e}")
+                        print(f"[WARN] Could not import {module_name}: {e}")
         _discovered = True
 
     return {
@@ -89,9 +89,9 @@ def comparable_rows(frame):
     unknown = sorted(set(frame["architecture"].unique()) - known)
     if unknown:
         raise ValueError(
-            f"O CSV de benchmark traz arquiteturas que o registro não conhece: "
-            f"{unknown}. Ou o registro está incompleto, ou o artefato veio de "
-            f"outra configuração."
+            f"The benchmark CSV carries architectures the registry does not "
+            f"know: {unknown}. Either the registry is incomplete, or the "
+            f"artifact came from another configuration."
         )
 
     restricted = frame[
@@ -100,8 +100,8 @@ def comparable_rows(frame):
     ].copy()
     if restricted.empty:
         raise ValueError(
-            f"Nenhuma linha comparável no CSV de benchmark. Fases presentes: "
-            f"{sorted(frame['phase'].unique())}; comparáveis: "
+            f"No comparable rows in the benchmark CSV. Phases present: "
+            f"{sorted(frame['phase'].unique())}; comparable: "
             f"{list(COMPARABLE_PHASES)}."
         )
     return restricted

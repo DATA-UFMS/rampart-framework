@@ -100,19 +100,19 @@ class TestSnapshotVerifier:
     def test_a_changed_byte_is_detected(self, snapshot):
         self._run('--snapshot', snapshot, '--dataset', 'worldbank', '--record')
         (snapshot / 'raw_data' / 'x.csv').write_text('a,b\n1,3\n')
-        with pytest.raises(ValueError, match='alterados'):
+        with pytest.raises(ValueError, match='changed='):
             self._run('--snapshot', snapshot, '--dataset', 'worldbank')
 
     def test_an_extra_file_is_detected(self, snapshot):
         self._run('--snapshot', snapshot, '--dataset', 'worldbank', '--record')
         (snapshot / 'raw_data' / 'y.csv').write_text('c\n9\n')
-        with pytest.raises(ValueError, match='extras'):
+        with pytest.raises(ValueError, match='extra='):
             self._run('--snapshot', snapshot, '--dataset', 'worldbank')
 
     def test_a_removed_file_is_detected(self, snapshot):
         self._run('--snapshot', snapshot, '--dataset', 'worldbank', '--record')
         (snapshot / 'raw_data' / 'meta.json').unlink()
-        with pytest.raises(ValueError, match='ausentes'):
+        with pytest.raises(ValueError, match='missing='):
             self._run('--snapshot', snapshot, '--dataset', 'worldbank')
 
     def test_a_renamed_file_is_detected(self):
@@ -126,11 +126,11 @@ class TestSnapshotVerifier:
 
     def test_the_wrong_dataset_is_refused(self, snapshot):
         self._run('--snapshot', snapshot, '--dataset', 'worldbank', '--record')
-        with pytest.raises(ValueError, match='não são intercambiáveis'):
+        with pytest.raises(ValueError, match='the panels are not interchangeable'):
             self._run('--snapshot', snapshot, '--dataset', 'inep_censo')
 
     def test_a_snapshot_without_a_manifest_is_refused(self, snapshot):
-        with pytest.raises(FileNotFoundError, match='sem manifesto'):
+        with pytest.raises(FileNotFoundError, match='Snapshot without a manifest'):
             self._run('--snapshot', snapshot, '--dataset', 'worldbank')
 
     def test_the_manifest_is_excluded_from_its_own_inventory(self, snapshot):
@@ -143,18 +143,18 @@ class TestSnapshotVerifier:
 
 
 class TestSnapshotSurvivesItsOwnAge:
-    """Um snapshot verificado é autoritativo, qualquer que seja sua idade.
+    """A verified snapshot is authoritative, whatever its age.
 
-    copytree preserva mtime, e o coletor invalidava cache por idade, então um
-    snapshot de trinta dias disparava chamada à API -- exatamente o que ele
-    existe para evitar. Estar velho é a característica dele.
+    copytree preserves mtime, and the collector invalidated the cache by age, so
+    a thirty-day-old snapshot triggered a call to the API -- exactly what it
+    exists to avoid. Being old is its defining characteristic.
     """
 
     def test_the_installer_leaves_the_manifest(self):
         source = VERIFIER.read_text()
         assert 'ignore_patterns(MANIFEST_NAME)' not in source, (
-            'sem o manifesto no destino o coletor não sabe que os dados vêm de '
-            'um snapshot verificado'
+            'without the manifest at the destination the collector does not '
+            'know the data comes from a verified snapshot'
         )
 
     def test_the_collector_gates_on_the_manifest(self):
@@ -166,7 +166,7 @@ class TestSnapshotSurvivesItsOwnAge:
         assert block.index('snapshot_manifest.json') < block.index('age_hours')
 
     def test_an_old_snapshot_is_still_accepted(self, tmp_path, monkeypatch):
-        """Reproduzido: arquivos com trinta dias, manifesto presente."""
+        """Reproduced: files thirty days old, manifest present."""
         import os
         import time
 
@@ -185,10 +185,12 @@ class TestSnapshotSurvivesItsOwnAge:
             path.write_text('{}')
             os.utime(path, (old, old))
 
-        assert not instance._cache_is_valid(), 'sem manifesto deveria expirar'
+        assert not instance._cache_is_valid(), (
+            'without a manifest it should expire'
+        )
         (tmp_path / 'snapshot_manifest.json').write_text('{}')
         assert instance._cache_is_valid(), (
-            'com manifesto o snapshot verificado deveria ser aceito'
+            'with a manifest the verified snapshot should be accepted'
         )
 
 
@@ -227,15 +229,15 @@ class TestDockerfile:
         )
 
     def test_the_dockerfile_is_in_the_image(self):
-        """A suíte roda na construção e inspeciona este arquivo.
+        """The suite runs during the build and inspects this file.
 
-        Sem copiá-lo, oito testes falham dentro do build e nenhuma imagem é
-        produzida -- então o caminho documentado no README não funcionava.
+        Without copying it, eight tests fail inside the build and no image is
+        produced -- so the path documented in the README did not work.
         """
         body = DOCKERFILE.read_text()
         copied = [line for line in body.splitlines()
                   if line.startswith('COPY') and 'Dockerfile' in line]
-        assert copied, 'a imagem não contém o próprio Dockerfile'
+        assert copied, 'the image does not contain the Dockerfile itself'
 
     def test_it_is_copied_before_the_suite_runs(self):
         body = DOCKERFILE.read_text()

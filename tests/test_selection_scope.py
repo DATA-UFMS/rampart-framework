@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
-"""P4: a seleção de features enxerga só a janela de treino do primeiro fold.
+"""P4: feature selection sees only the training window of the first fold.
 
-Escolher features pela concordância delas com valores futuros do alvo é
-look-ahead bias (Kapoor & Narayanan, 2023): a feature entra no modelo porque
-funciona no período em que o modelo será avaliado, e o desempenho reportado
-mede a escolha, não a capacidade preditiva.
+Choosing features by their agreement with future values of the target is
+look-ahead bias (Kapoor & Narayanan, 2023): the feature enters the model because
+it works in the period over which the model will be evaluated, and the reported
+performance measures the choice, not predictive capability.
 
-Nada testava isso. Quatro mutações em `run_feature_selection` -- passar o painel
-inteiro para as correlações, empurrar `_first_fold_train_end` cem anos à frente,
-tornar `_filter_by_year` inerte, e atribuir `data_train_only = data` --
-sobreviviam todas com a suíte verde. As quatro têm o mesmo efeito observável, e
-é esse efeito que os testes aqui detectam: uma feature que só correlaciona com o
-alvo *depois* da janela de treino não pode ser selecionada.
+Nothing tested this. Four mutations in `run_feature_selection` -- passing the
+whole panel to the correlations, pushing `_first_fold_train_end` a hundred years
+forward, making `_filter_by_year` inert, and assigning `data_train_only = data`
+-- all survived with the suite green. The four have the same observable effect,
+and it is that effect the tests here detect: a feature that only correlates with
+the target *after* the training window cannot be selected.
 
-O painel é construído para discriminar, e o próprio teste verifica isso antes de
-concluir qualquer coisa: se a correlação dentro da janela não fosse desprezível
-e a correlação sobre o painel inteiro não passasse do piso de seleção, passar
-não significaria nada.
+The panel is built to discriminate, and the test itself verifies that before
+concluding anything: if the correlation inside the window were not negligible
+and the correlation over the whole panel did not clear the selection floor,
+passing would mean nothing.
 
-A segunda metade do arquivo cobre os gates P3 que rodam depois da seleção --
-proxy sobre o painel inteiro, reconstrução conjunta ajustada na janela, coluna
-excluída na seleção final. Eles eram inalcançáveis nos testes existentes, cujo
-probe devolve correlações vazias: sem feature selecionada não há o que auditar.
+The second half of the file covers the P3 gates that run after selection --
+proxy over the whole panel, joint reconstruction fitted on the window, excluded
+column in the final selection. They were unreachable in the existing tests,
+whose probe returns empty correlations: with no feature selected there is
+nothing to audit.
 """
 
 import sys
@@ -44,9 +45,9 @@ YEARS = list(range(2000, 2016))
 ENTITIES = ['BRA', 'ARG', 'CHL', 'URY']
 TARGET = 'dropout_rate_sql_engine'
 
-# Derivado da config em _first_fold_train_end: start=2000, min_train=8,
-# val_len=2, gap=2 dão test_start=2014, val=[2010,2011], train_end=2007.
-# O teste abaixo confere contra a fórmula em vez de confiar neste número.
+# Derived from the config in _first_fold_train_end: start=2000, min_train=8,
+# val_len=2, gap=2 give test_start=2014, val=[2010,2011], train_end=2007.
+# The test below checks against the formula instead of trusting this number.
 TRAIN_END = 2007
 
 
@@ -63,14 +64,14 @@ class _Config:
 
 
 def _panel():
-    """Painel onde `future_only` só se acopla ao alvo depois de TRAIN_END.
+    """Panel where `future_only` only couples to the target after TRAIN_END.
 
-    Dentro da janela a correlação é zerada por construção, não por sorte da
-    semente: com 32 linhas o ruído independente ainda dá |r| perto de 0.27, o
-    bastante para a feature entrar pelo critério relaxado e o teste medir a
-    semente em vez de P4. Fora da janela o acoplamento é forte, mas fica abaixo
-    do teto de proxy sobre o painel inteiro -- senão a auditoria P3 abortaria
-    antes e mascararia o que P4 faz.
+    Inside the window the correlation is zeroed by construction, not by luck of
+    the seed: with 32 rows independent noise still gives |r| near 0.27, enough
+    for the feature to enter under the relaxed criterion and for the test to
+    measure the seed instead of P4. Outside the window the coupling is strong,
+    but stays below the proxy ceiling over the whole panel -- otherwise the P3
+    audit would abort earlier and mask what P4 does.
     """
     rng = np.random.default_rng(20260726)
     rows = []
@@ -97,7 +98,7 @@ def _panel():
 
 def _probe():
     class Probe(BaseArchitectureML):
-        """Correlações reais: um probe que devolve {} atravessa vacuamente."""
+        """Real correlations: a probe returning {} passes through vacuously."""
 
         def setup_environment(self): pass
         def load_data(self): pass
@@ -133,26 +134,27 @@ def panel():
 
 
 class TestThePanelDiscriminates:
-    """Sem isto, passar não distingue P4 de um painel sem sinal nenhum."""
+    """Without this, passing does not tell P4 apart from a panel with no
+    signal at all."""
 
     def test_the_late_feature_is_inert_inside_the_window(self, panel):
         window = panel[panel['year'] <= TRAIN_END]
         corr = abs(window['future_only'].corr(window[TARGET]))
         assert corr < 0.10, (
-            f'|corr| = {corr:.3f} dentro da janela: o piso de seleção '
-            f'relaxado é 0.1005, então a feature entraria mesmo sob P4 e o '
-            f'teste não estaria medindo P4'
+            f'|corr| = {corr:.3f} inside the window: the relaxed selection '
+            f'floor is 0.1005, so the feature would enter even under P4 and '
+            f'the test would not be measuring P4'
         )
 
     def test_the_late_feature_clears_the_floor_on_the_full_panel(self, panel):
         corr = panel['future_only'].corr(panel[TARGET])
         assert corr >= 0.15, (
-            f'corr = {corr:.3f} sobre o painel inteiro: abaixo do piso de '
-            f'seleção, então nem sem P4 a feature seria escolhida'
+            f'corr = {corr:.3f} over the whole panel: below the selection '
+            f'floor, so not even without P4 would the feature be chosen'
         )
 
     def test_the_late_feature_stays_below_the_proxy_ceiling(self, panel):
-        """Senão a auditoria P3 abortaria e mascararia o que P4 faz."""
+        """Otherwise the P3 audit would abort and mask what P4 does."""
         corr = abs(panel['future_only'].corr(panel[TARGET]))
         assert corr < 0.80, corr
 
@@ -164,7 +166,7 @@ class TestThePanelDiscriminates:
 class TestTheWindowIsTheFirstFoldTrainWindow:
 
     def test_it_matches_the_configured_folds(self, architecture):
-        """Fim do treino = início da validação menos o gap, menos um."""
+        """End of training = start of validation minus the gap, minus one."""
         cfg = architecture.config
         wf = _Config.walk_forward_config
         gap = int(cfg['temporal_gap_years'])
@@ -175,7 +177,7 @@ class TestTheWindowIsTheFirstFoldTrainWindow:
         assert architecture._first_fold_train_end() == val_start - gap - 1
 
     def test_the_gap_separates_it_from_validation(self, architecture):
-        """P2: entre treino e validação há anos que ninguém lê."""
+        """P2: between training and validation there are years nobody reads."""
         cfg = architecture.config
         gap = int(cfg['temporal_gap_years'])
         train_end = architecture._first_fold_train_end()
@@ -188,8 +190,8 @@ class TestTheWindowIsTheFirstFoldTrainWindow:
     def test_it_leaves_evaluation_years_outside(self, architecture, panel):
         train_end = architecture._first_fold_train_end()
         assert train_end < max(YEARS), (
-            'a janela cobre o painel inteiro, então filtrar por ela não '
-            'restringe nada'
+            'the window covers the whole panel, so filtering by it restricts '
+            'nothing'
         )
         kept = architecture._filter_by_year(panel, max_year=train_end)
         assert len(kept) < len(panel)
@@ -197,19 +199,19 @@ class TestTheWindowIsTheFirstFoldTrainWindow:
 
 
 class TestSelectionIsRestrictedToTheWindow:
-    """O invariante. Cada uma das quatro mutações reprovadas cai aqui."""
+    """The invariant. Each of the four rejected mutations fails here."""
 
     def test_a_feature_that_only_works_later_is_not_selected(
             self, architecture, panel):
         stats = architecture.run_feature_selection(panel)
         assert 'future_only' not in stats['selected_features'], (
-            'feature escolhida pela concordância com o alvo em anos que o '
-            'modelo ainda vai prever -- é a seleção que P4 existe para barrar'
+            'feature chosen by its agreement with the target in years the '
+            'model has yet to predict -- it is the selection P4 exists to block'
         )
 
     def test_a_feature_that_works_inside_the_window_is_selected(
             self, architecture, panel):
-        """Senão passar seria só a seleção não escolher nada."""
+        """Otherwise passing would just be the selection choosing nothing."""
         stats = architecture.run_feature_selection(panel)
         assert 'honest' in stats['selected_features']
 
@@ -220,8 +222,8 @@ class TestSelectionIsRestrictedToTheWindow:
         for feat, recorded in stats['target_correlations'].items():
             expected = float(window[feat].corr(window[TARGET]))
             assert recorded == pytest.approx(expected, abs=1e-9), (
-                f'{feat}: gravado {recorded:.4f}, janela {expected:.4f}, '
-                f'painel {panel[feat].corr(panel[TARGET]):.4f}'
+                f'{feat}: recorded {recorded:.4f}, window {expected:.4f}, '
+                f'panel {panel[feat].corr(panel[TARGET]):.4f}'
             )
 
     def test_the_recorded_scope_names_the_window(self, architecture, panel):
@@ -231,7 +233,8 @@ class TestSelectionIsRestrictedToTheWindow:
 
 
 class TestSelectionReadsOnlyWindowRows:
-    """Observa as chamadas: cobre a mutação que passa o painel e reordena."""
+    """Watches the calls: covers the mutation that passes the panel and
+    reorders."""
 
     @staticmethod
     def _record(architecture):
@@ -249,10 +252,11 @@ class TestSelectionReadsOnlyWindowRows:
             self, architecture, panel):
         seen = self._record(architecture)
         architecture.run_feature_selection(panel)
-        assert seen, 'a seleção não chegou a computar correlação nenhuma'
+        assert seen, 'the selection never computed a single correlation'
         train_end = architecture._first_fold_train_end()
         assert seen[0]['year'].max() <= train_end, (
-            f"a seleção leu até {seen[0]['year'].max()}, além de {train_end}"
+            f"the selection read up to {seen[0]['year'].max()}, beyond "
+            f"{train_end}"
         )
 
     def test_the_collinearity_filter_sees_the_same_rows(
@@ -270,28 +274,29 @@ class TestSelectionReadsOnlyWindowRows:
         assert seen[0]['year'].max() <= architecture._first_fold_train_end()
 
     def test_the_proxy_audit_reads_the_full_panel(self, architecture, panel):
-        """A auditoria é o oposto de P4, e por um motivo declarado no código.
+        """The audit is the opposite of P4, and for a reason declared in the
+        code.
 
-        Uma feature cuja correlação só passa do teto fora da janela de treino
-        continua sendo proxy; auditar dentro da janela foi o que deixou uma
-        passar.
+        A feature whose correlation only clears the ceiling outside the
+        training window is still a proxy; auditing inside the window is what
+        let one through.
         """
         seen = self._record(architecture)
         architecture.run_feature_selection(panel)
-        assert len(seen) >= 2, 'não houve auditoria depois da seleção'
+        assert len(seen) >= 2, 'there was no audit after the selection'
         assert seen[-1]['year'].max() == max(YEARS), (
-            'a auditoria de proxy também ficou restrita à janela'
+            'the proxy audit also ended up restricted to the window'
         )
 
 
 class TestTheLeakageGatesFire:
-    """Gates P3 que rodam depois da seleção, e nunca dispararam num teste.
+    """P3 gates that run after selection, and never fired in a test.
 
-    `TestPoolGate` cobre o gate do pool, que roda antes de qualquer correlação.
-    Os três seguintes -- coluna excluída na seleção final, proxy sobre o painel
-    inteiro, e reconstrução conjunta do alvo -- ficavam inalcançáveis porque
-    aquele probe devolve correlações vazias: sem feature selecionada, não há o
-    que auditar. Aqui as correlações são reais.
+    `TestPoolGate` covers the pool gate, which runs before any correlation. The
+    three that follow -- excluded column in the final selection, proxy over the
+    whole panel, and joint reconstruction of the target -- were unreachable
+    because that probe returns empty correlations: with no feature selected,
+    there is nothing to audit. Here the correlations are real.
     """
 
     @staticmethod
@@ -317,12 +322,12 @@ class TestTheLeakageGatesFire:
 
     def test_a_proxy_visible_in_the_window_never_reaches_the_audit(
             self, tmp_path):
-        """Defesa em profundidade, e a primeira linha é o teto da seleção.
+        """Defence in depth, and the first line is the selection ceiling.
 
-        |r| acima do teto na janela de treino faz a feature ser recusada antes
-        de qualquer auditoria. Antes ela era *selecionada* -- a comparação era
-        com sinal e a relaxação derrubava o teto -- e só a auditoria de proxy,
-        a jusante, a barrava.
+        |r| above the ceiling in the training window makes the feature be
+        refused before any audit. Before, it was *selected* -- the comparison
+        was signed and the relaxation brought the ceiling down -- and only the
+        proxy audit, downstream, blocked it.
         """
         def build(panel):
             panel['proxy'] = 0.98 * panel[TARGET] + 0.02 * panel['honest']
@@ -333,10 +338,12 @@ class TestTheLeakageGatesFire:
         assert 'honest' in stats['selected_features']
 
     def test_the_audit_remains_the_second_line(self, tmp_path):
-        """O teto vale sobre a janela; a auditoria, sobre o painel inteiro.
+        """The ceiling applies over the window; the audit, over the whole
+        panel.
 
-        As lags entram no conjunto depois da seleção e nunca passam pelo teto,
-        então a auditoria continua sendo a única coisa entre elas e o modelo.
+        The lags enter the set after selection and never go through the
+        ceiling, so the audit remains the only thing between them and the
+        model.
         """
         import numpy as np
         from core.scientific_config import SCIENTIFIC_CONFIG
@@ -348,11 +355,11 @@ class TestTheLeakageGatesFire:
             audit_panel(panel, ['honest', 'dropout_rate_lag_0'], TARGET)
 
     def test_a_proxy_only_outside_the_window_halts(self, tmp_path):
-        """Auditar dentro da janela de P4 foi o que deixou uma passar.
+        """Auditing inside the P4 window is what let one through.
 
-        Dentro da janela a correlação é moderada, então a feature é escolhida;
-        sobre o painel inteiro ela passa do teto. Auditoria restrita à janela
-        não veria nada.
+        Inside the window the correlation is moderate, so the feature is
+        chosen; over the whole panel it clears the ceiling. An audit restricted
+        to the window would see nothing.
         """
         def build(panel):
             late = panel['year'] > TRAIN_END
@@ -365,8 +372,8 @@ class TestTheLeakageGatesFire:
         build(panel)
         window = panel[panel['year'] <= TRAIN_END]
         assert abs(window['proxy'].corr(window[TARGET])) < 0.80, (
-            'dentro da janela já passa do teto, então o teste não distingue '
-            'auditoria de painel inteiro de auditoria de janela'
+            'inside the window it already clears the ceiling, so the test does '
+            'not distinguish a whole-panel audit from a window audit'
         )
         assert abs(panel['proxy'].corr(panel[TARGET])) > 0.80
 
@@ -374,16 +381,18 @@ class TestTheLeakageGatesFire:
             self._run(tmp_path, build)
 
     def test_a_negative_proxy_halts(self, tmp_path):
-        """Moderada e positiva na janela, forte e negativa fora dela.
+        """Moderate and positive in the window, strong and negative outside it.
 
-        A seleção a admite -- |r| na janela está dentro da banda -- e só então
-        a auditoria a vê. Sem o valor absoluto no gate, ela passa.
+        Selection admits it -- |r| in the window is inside the band -- and only
+        then does the audit see it. Without the absolute value in the gate, it
+        passes.
 
-        O teto é baixado para 0,50 nesta configuração porque a correlação
-        sobre o painel inteiro satura perto de -0,66: as linhas da janela têm
-        relação positiva com o alvo e puxam o coeficiente conjunto. O mesmo
-        parâmetro governa o teto da seleção, então a janela precisa ficar
-        abaixo dele -- o que este painel garante e o teste confere.
+        The ceiling is lowered to 0.50 in this configuration because the
+        correlation over the whole panel saturates near -0.66: the rows in the
+        window have a positive relation with the target and pull the joint
+        coefficient. The same parameter governs the selection ceiling, so the
+        window has to stay below it -- which this panel guarantees and the test
+        checks.
         """
         def build(panel):
             rng = np.random.default_rng(5)
@@ -399,15 +408,16 @@ class TestTheLeakageGatesFire:
         window = panel[panel['year'] <= TRAIN_END]
         in_window = window['proxy'].corr(window[TARGET])
         assert 0.15 <= abs(in_window) <= threshold, (
-            f'|r| = {abs(in_window):.3f} na janela: fora da banda a seleção a '
-            f'recusa e o teste não alcança a auditoria'
+            f'|r| = {abs(in_window):.3f} in the window: outside the band the '
+            f'selection refuses it and the test does not reach the audit'
         )
         full = panel['proxy'].corr(panel[TARGET])
         assert full < -threshold, (
-            f'corr = {full:.3f}: sem correlação negativa além do teto, o valor '
-            f'absoluto no gate é indiferente e o teste não o exercita'
+            f'corr = {full:.3f}: without a negative correlation beyond the '
+            f'ceiling, the absolute value in the gate makes no difference and '
+            f'the test does not exercise it'
         )
-        assert full <= threshold, 'com o sinal, o gate não dispararia'
+        assert full <= threshold, 'with the sign, the gate would not fire'
 
         with pytest.raises(AntiLeakageViolation,
                            match='P3 proxy detection') as exc:
@@ -416,18 +426,18 @@ class TestTheLeakageGatesFire:
         assert 'proxy' in str(exc.value)
 
     def test_features_that_reconstruct_the_target_halt(self, tmp_path):
-        """Identidade aditiva: cada parcela correlaciona fraco, juntas fecham.
+        """Additive identity: each part correlates weakly, together they close.
 
-        Correlação par a par não enxerga isso -- é exatamente por isso que o
-        gate de reconstrução existe.
+        Pairwise correlation does not see that -- which is exactly why the
+        reconstruction gate exists.
         """
         def build(panel):
             rng = np.random.default_rng(7)
             target = panel[TARGET].to_numpy()
             noise = 1.5 * rng.normal(size=len(panel))
-            # Ortogonalizado: com covariância amostral não-nula o ruído entra
-            # numa parcela e sai da outra, e as duas deixam de ter a mesma
-            # correlação -- uma delas cai abaixo do piso de seleção.
+            # Orthogonalised: with a non-zero sample covariance the noise
+            # enters one part and leaves the other, and the two stop having the
+            # same correlation -- one of them falls below the selection floor.
             noise -= (np.cov(target, noise, bias=True)[0, 1]
                       / target.var()) * target
             panel['half_a'] = 0.5 * target + noise
@@ -439,8 +449,9 @@ class TestTheLeakageGatesFire:
         for part in ('half_a', 'half_b'):
             corr = abs(panel[part].corr(panel[TARGET]))
             assert 0.15 <= corr < 0.80, (
-                f'{part}: |corr| = {corr:.3f}. Fora dessa faixa o gate de '
-                f'proxy dispara antes e o teste não alcança a reconstrução'
+                f'{part}: |corr| = {corr:.3f}. Outside that range the proxy '
+                f'gate fires first and the test does not reach the '
+                f'reconstruction'
             )
 
         with pytest.raises(AntiLeakageViolation,
@@ -448,11 +459,13 @@ class TestTheLeakageGatesFire:
             self._run(tmp_path, build)
 
     def test_the_reconstruction_is_fitted_on_the_window(self, tmp_path):
-        """Uma identidade exata é detectada sem consultar os anos de avaliação.
+        """An exact identity is detected without consulting the evaluation
+        years.
 
-        As parcelas somam o alvo exatamente dentro da janela e deixam de somar
-        depois dela. Ajustar sobre o painel inteiro dilui o R2 abaixo do teto e
-        a identidade passa -- que é o oposto do que o gate promete.
+        The parts sum to the target exactly inside the window and stop summing
+        after it. Fitting over the whole panel dilutes the R2 below the ceiling
+        and the identity passes -- which is the opposite of what the gate
+        promises.
         """
         def build(panel):
             rng = np.random.default_rng(7)
@@ -473,13 +486,14 @@ class TestTheLeakageGatesFire:
                    - window[TARGET]).max() < 1e-9
         assert abs(panel['half_a'] + panel['half_b']
                    - panel[TARGET]).max() > 1.0, (
-            'a identidade também vale fora da janela, então o teste não '
-            'distingue onde o ajuste é feito'
+            'the identity also holds outside the window, so the test does not '
+            'distinguish where the fit is done'
         )
         for part in ('half_a', 'half_b'):
             corr = window[part].corr(window[TARGET])
             assert corr >= 0.1005, (
-                f'{part}: corr {corr:.3f} na janela, não seria selecionada'
+                f'{part}: corr {corr:.3f} in the window, it would not be '
+                f'selected'
             )
 
         with pytest.raises(AntiLeakageViolation,
@@ -487,8 +501,8 @@ class TestTheLeakageGatesFire:
             self._run(tmp_path, build)
 
     def test_an_excluded_column_in_the_final_selection_halts(self, tmp_path):
-        """O filtro de colinearidade devolve a lista; nada garante que ela seja
-        um subconjunto do que entrou."""
+        """The collinearity filter returns the list; nothing guarantees it is a
+        subset of what went in."""
         def build(panel):
             return ['honest']
 
@@ -499,6 +513,7 @@ class TestTheLeakageGatesFire:
             self._run(tmp_path, build, apply_collinearity_filter=smuggle)
 
     def test_a_clean_panel_reaches_the_end(self, tmp_path):
-        """Base: sem isto, cada teste acima poderia estar falhando por outra razão."""
+        """Baseline: without this, each test above could be failing for another
+        reason."""
         stats = self._run(tmp_path, lambda panel: ['honest'])
         assert stats['selected_features'] == ['honest']

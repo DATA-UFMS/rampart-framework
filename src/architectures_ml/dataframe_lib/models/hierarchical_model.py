@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Modelo Hierárquico para Arquitetura Polars DataFrame.
+Hierarchical Model for the Polars DataFrame Architecture.
 
-Implementa modelos hierárquicos para arquitetura Polars DataFrame com leitura lazy
-e processamento eficiente de memória para predição de dropout escolar.
+Implements hierarchical models for the Polars DataFrame architecture with lazy
+reading and memory-efficient processing for school dropout prediction.
 
-Otimizado com computação seletiva para minimizar materializações desnecessárias.
+Optimized with selective computation to minimize unnecessary materializations.
 """
 
 import time
@@ -63,22 +63,22 @@ setup_reproducibility()
 
 class HierarchicalModelDataFrameLib:
     """
-    Modelo Hierárquico para Arquitetura Polars DataFrame.
+    Hierarchical Model for the Polars DataFrame Architecture.
 
-    Implementa modelos hierárquicos com leitura lazy Polars e processamento
-    eficiente de memória.
+    Implements hierarchical models with Polars lazy reading and
+    memory-efficient processing.
     """
 
     def __init__(self):
         """
-        Inicializa modelo hierárquico Polars DataFrame.
+        Initializes the Polars DataFrame hierarchical model.
         """
-        print("Inicializando Modelo Hierárquico Polars")
+        print("Initializing Polars Hierarchical Model")
         #: (fold_id, report) for each fold, written out at the end.
         #: The extent of the fold-scoped imputation appeared in no
         #: artifact: the reports were produced and discarded.
         self._imputation_reports = []
-        #: Relatório da auditoria P3 do conjunto final, escrito ao fim.
+        #: Report of the P3 audit of the final set, written out at the end.
         self._feature_audits = []
         self._cleared_by_selection = []
 
@@ -93,15 +93,15 @@ class HierarchicalModelDataFrameLib:
 
     def _setup_normal_mode(self):
         """
-        Setup para modo normal.
+        Setup for normal mode.
         """
         self.data_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/master_data_dataframe_lib.parquet")
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/temporal_folds_dataframe_lib.json")
 
         if not os.path.exists(self.data_path) or not os.path.exists(self.folds_path):
-            raise FileNotFoundError("Dados Polars DataFrame não encontrados")
+            raise FileNotFoundError("Polars DataFrame data not found")
 
-        print("   Carregando dados com LAZY EVALUATION...")
+        print("   Loading data with LAZY EVALUATION...")
         self.df_lazy = pl.scan_parquet(self.data_path)
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
@@ -109,7 +109,7 @@ class HierarchicalModelDataFrameLib:
 
     def _load_normal_summary(self):
         """
-        Carregar resumo dos dados normais.
+        Load the summary of the normal data.
         """
         stats_df = self.df_lazy.select([
             pl.col('year').min().alias('year_min'),
@@ -123,14 +123,14 @@ class HierarchicalModelDataFrameLib:
         n_records = stats['n_records']
         n_cols = len(self.df_lazy.collect_schema().names())
 
-        print(f"Dados carregados: {n_records} registros, {n_cols} variáveis, "
-              f"{stats['n_countries']} países")
-        print(f"Período: {stats['year_min']}-{stats['year_max']}")
+        print(f"Data loaded: {n_records} records, {n_cols} variables, "
+              f"{stats['n_countries']} countries")
+        print(f"Period: {stats['year_min']}-{stats['year_max']}")
         print(f"Target: {self.target_col}")
         print(f"Folds: {len(self.folds)}")
 
         if self.target_col not in self.df_lazy.collect_schema().names():
-            raise ValueError(f"Target {self.target_col} não encontrado nos dados")
+            raise ValueError(f"Target {self.target_col} not found in the data")
 
         selection_path = get_absolute_output_path("ml_pipeline/architectures/dataframe_lib/prep/feature_selection_dataframe_lib.json")
         if os.path.exists(selection_path):
@@ -146,41 +146,41 @@ class HierarchicalModelDataFrameLib:
                 # the proxy ceiling to these, over the full panel.
                 self._cleared_by_selection = list(selected)
 
-                # Incluir lag do target se existir
+                # Include the target lag if it exists
                 schema_names = self.df_lazy.collect_schema().names()
                 if 'dropout_rate_lag_2' in schema_names and 'dropout_rate_lag_2' not in selected:
                     selected.append('dropout_rate_lag_2')
                 if 'dropout_rate_lag_3' in schema_names and 'dropout_rate_lag_3' not in selected:
                     selected.append('dropout_rate_lag_3')
 
-                # Filtrar por existência
+                # Filter by existence
                 existing = [c for c in selected if c in schema_names]
                 self.available_features = existing
-                print(f"Features disponíveis (seleção científica): {len(self.available_features)}")
+                print(f"Features available (scientific selection): {len(self.available_features)}")
             except Exception as e:
-                print(f"Falha ao carregar seleção de features: {e}")
+                print(f"Failed to load the feature selection: {e}")
                 raise
         else:
-            raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
+            raise FileNotFoundError(f"Feature selection not found: {selection_path}. Run setup.py first.")
 
     def _prepare_data(self, data_lazy):
         """
-        Materializar um fold com computação seletiva.
+        Materialize a fold with selective computation.
 
-        Materialização apenas. Toda estatística -- a mediana que preenche
-        ausentes -- vive em core.validation.impute_from_training_window, ajustada
-        na janela de treino do fold. Três implementações de uma estatística são
-        três chances de os paradigmas calcularem coisas diferentes, e a afirmação
-        de equivalência assume que eles diferem apenas em como movem dados.
+        Materialization only. Every statistic -- the median that fills missing
+        values -- lives in core.validation.impute_from_training_window, fitted
+        on the fold's training window. Three implementations of one statistic
+        are three chances for the paradigms to compute different things, and the
+        equivalence claim assumes they differ only in how they move data.
 
-        Sem parâmetro de referência: materializar não precisa da janela de
-        treino, só ajustar estatística precisa.
+        No reference parameter: materializing does not need the training window,
+        only fitting a statistic does.
         """
         data_filtered = data_lazy.filter(pl.col(self.target_col).is_not_null()).sort(['country_code', 'year'])
 
         X_lazy = data_filtered.select(self.available_features)
 
-        # Materializar para operações pandas
+        # Materialize for pandas operations
         X_df = X_lazy.collect().to_pandas()
         y_series = data_filtered.select(pl.col(self.target_col)).collect().to_pandas().iloc[:, 0]
         countries_series = data_filtered.select(pl.col('country_code')).collect().to_pandas().iloc[:, 0]
@@ -193,10 +193,10 @@ class HierarchicalModelDataFrameLib:
                                  X_test: pd.DataFrame, y_test: pd.Series,
                                  countries_train: pd.Series, countries_test: pd.Series,
                                  residual_shrinkage: float = 0.8) -> Dict:
-        """Delega à implementação compartilhada (core.models.hierarchical).
+        """Delegates to the shared implementation (core.models.hierarchical).
 
-        Os três paradigmas computavam isto de forma idêntica -- verificado por
-        AST e por igualdade bitwise das predições sobre a mesma entrada.
+        The three paradigms computed this identically -- verified by AST and by
+        bitwise equality of the predictions over the same input.
         """
         return shared_simple_hierarchical_model(
             X_train, y_train, X_test, y_test, countries_train, countries_test,
@@ -207,7 +207,7 @@ class HierarchicalModelDataFrameLib:
                                  countries_train: pd.Series, countries_test: pd.Series,
                                  max_depth: int = 6, min_samples_leaf: int = 8) -> Dict:
         """
-        Random Forest hierárquico com country effects como features.
+        Hierarchical Random Forest with country effects as features.
         """
         country_means = {}
         global_mean = y_train.mean()
@@ -240,7 +240,7 @@ class HierarchicalModelDataFrameLib:
         rf_model.fit(X_train_augmented, y_train)
         predictions = rf_model.predict(X_test_augmented)
 
-        print(f"      Random Forest: {X_train_augmented.shape[1]} features totais "
+        print(f"      Random Forest: {X_train_augmented.shape[1]} total features "
               f"({X_train_augmented.shape[1]-1} base + 1 country_effect) × {X_train_augmented.shape[0]} samples")
 
         mse = mean_squared_error(y_test, predictions)
@@ -261,7 +261,7 @@ class HierarchicalModelDataFrameLib:
             'feature_importance': {k: float(v) for k, v in feature_importance.items()},
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
             'regularization_applied': (
-                f"Regularizado: n_est={_hm['rf_n_estimators']}, "
+                f"Regularized: n_est={_hm['rf_n_estimators']}, "
                 f"depth={max_depth}, split={_hm['rf_min_samples_split']}, "
                 f"leaf={min_samples_leaf}"),
             'rf_params': {'n_estimators': 200, 'max_depth': int(max_depth), 'min_samples_split': 15, 'min_samples_leaf': int(min_samples_leaf)},
@@ -271,17 +271,17 @@ class HierarchicalModelDataFrameLib:
 
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
         """
-        Executar análise hierárquica completa para um fold específico.
+        Run the complete hierarchical analysis for a specific fold.
         """
-        # Latência decomposta: o carregamento do fold é do engine,
-        # o ajuste é comum aos três paradigmas, que materializam em
-        # pandas antes do scikit-learn. Medir o estágio inteiro
-        # atribuía ao paradigma uma parcela que ele não controla.
+        # Decomposed latency: loading the fold belongs to the engine, the
+        # fitting is common to the three paradigms, which materialize in
+        # pandas before scikit-learn. Measuring the whole stage attributed
+        # to the paradigm a share it does not control.
         _load_t0 = time.perf_counter()
         fold_id = fold_info['fold_id']
-        print(f"\nAnalisando Fold {fold_id} Polars (NORMAL)...")
+        print(f"\nAnalyzing Fold {fold_id} Polars (NORMAL)...")
 
-        # Exclusão de gap years
+        # Exclusion of gap years
         train_lazy = self.df_lazy.filter(
             (pl.col('year') >= fold_info['train_start']) &
             (pl.col('year') <= fold_info['train_end'])
@@ -301,12 +301,12 @@ class HierarchicalModelDataFrameLib:
               (pl.col('year') <= fold_info['val_gap_end']))
         )
 
-        # Contar registros
+        # Count records
         n_train = train_lazy.select(pl.len()).collect().item()
         n_val = val_lazy.select(pl.len()).collect().item()
         n_test = test_lazy.select(pl.len()).collect().item()
 
-        print(f"Dados Normais: Train={n_train}, Val={n_val}, Test={n_test}")
+        print(f"Normal Data: Train={n_train}, Val={n_val}, Test={n_test}")
 
         X_train, y_train, countries_train = self._prepare_data(train_lazy)
         X_val, y_val, countries_val = self._prepare_data(val_lazy)
@@ -329,14 +329,14 @@ class HierarchicalModelDataFrameLib:
             config=SCIENTIFIC_CONFIG)))
         _fit_t0 = time.perf_counter()
 
-        # P5: imputação e scaler ajustados exclusivamente no treino
-        # (Kaufman et al. 2012). A imputação vem antes porque o scaler não
-        # aceita ausentes, e ambas as estatísticas saem da mesma janela.
+        # P5: imputation and scaler fitted exclusively on the training window
+        # (Kaufman et al. 2012). Imputation comes first because the scaler does
+        # not accept missing values, and both statistics come from the same window.
         (X_train, X_val, X_test), imputation_report = \
             impute_from_training_window(X_train, X_val, X_test)
         self._imputation_reports.append((fold_id, imputation_report))
         if imputation_report['columns_without_training_observation']:
-            print(f"   [WARN] Sem observação no treino, deixadas ausentes: "
+            print(f"   [WARN] No observation in the training window, left missing: "
                   f"{imputation_report['columns_without_training_observation']}")
 
         scaler = StandardScaler()
@@ -345,15 +345,15 @@ class HierarchicalModelDataFrameLib:
         X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
 
         print(f"   {len(self.available_features)} features, Train={X_train_scaled.shape}, Val={X_val_scaled.shape}, Test={X_test_scaled.shape}")
-        print(f"   Países: Train={countries_train.nunique()}, Val={countries_val.nunique()}, Test={countries_test.nunique()}")
+        print(f"   Countries: Train={countries_train.nunique()}, Val={countries_val.nunique()}, Test={countries_test.nunique()}")
 
-        # Modelos hierárquicos
-        # HPO: seleção de hiperparâmetros via grid search no conjunto de
-        # validação. Modelo final retreinado no treino completo para avaliação
-        # no teste. Previne leakage (Kapoor & Narayanan, 2023).
+        # Hierarchical models
+        # HPO: hyperparameter selection via grid search on the validation set.
+        # Final model retrained on the full training set for evaluation on the
+        # test set. Prevents leakage (Kapoor & Narayanan, 2023).
         models = {}
 
-        # 1. Simple Hierarchical (tuning de residual_shrinkage por validação)
+        # 1. Simple Hierarchical (residual_shrinkage tuning on validation)
         best_shrink = 0.8
         best_val_r2 = -1e9
         for rs in SCIENTIFIC_CONFIG['hierarchical_model']['residual_shrinkage_grid']:
@@ -365,7 +365,7 @@ class HierarchicalModelDataFrameLib:
         test_simple = self.simple_hierarchical_model(X_train_scaled, y_train, X_test_scaled, y_test, countries_train, countries_test, residual_shrinkage=best_shrink)
         models['simple_hierarchical'] = {'val': val_simple, 'test': test_simple}
 
-        # 2. Random Forest Hierarchical (tuning leve por validação)
+        # 2. Random Forest Hierarchical (light tuning on validation)
         best_params = (6, 8)
         best_val_r2 = -1e9
         _hm = SCIENTIFIC_CONFIG['hierarchical_model']
@@ -379,8 +379,8 @@ class HierarchicalModelDataFrameLib:
         test_rf = self.random_forest_hierarchical(X_train_scaled, y_train, X_test_scaled, y_test, countries_train, countries_test, max_depth=best_params[0], min_samples_leaf=best_params[1])
         models['random_forest_hierarchical'] = {'val': val_rf, 'test': test_rf}
 
-        # Análise dos gaps
-        print(f"\n   Resultados hierárquicos (Val -> Test):")
+        # Gap analysis
+        print(f"\n   Hierarchical results (Val -> Test):")
         simple_gap = val_simple['r2'] - test_simple['r2']
         rf_gap = val_rf['r2'] - test_rf['r2']
         rf_country_imp = val_rf.get('country_effect_importance', 0)
@@ -389,20 +389,20 @@ class HierarchicalModelDataFrameLib:
         print(f"      Random Forest:       Val R²={val_rf['r2']:.3f}, Test R²={test_rf['r2']:.3f}, Gap={rf_gap:+.3f}")
         print(f"         Country Effect: {rf_country_imp:.3f} (Target: 0.2-0.4)")
 
-        # Interpretação dos gaps
+        # Gap interpretation
         if abs(simple_gap) <= 0.15:
-            print(f"      Simple: Gap corrigido - dentro da meta científica")
+            print(f"      Simple: gap corrected - within the scientific target")
         elif abs(simple_gap) <= 0.2:
-            print(f"      Simple: Gap moderado - aceitável para dados educacionais")
+            print(f"      Simple: moderate gap - acceptable for educational data")
         else:
-            print(f"      Simple: Gap ainda elevado - necessita regularização adicional")
+            print(f"      Simple: gap still high - requires additional regularization")
 
         if abs(rf_gap) <= 0.15:
-            print(f"      RF: Gap corrigido - excelente regularização aplicada")
+            print(f"      RF: gap corrected - excellent regularization applied")
         elif abs(rf_gap) <= 0.2:
-            print(f"      RF: Gap moderado - regularização adequada")
+            print(f"      RF: moderate gap - adequate regularization")
         else:
-            print(f"      RF: Gap ainda elevado - considerar regularização adicional")
+            print(f"      RF: gap still high - consider additional regularization")
 
         _fit_predict_s = time.perf_counter() - _fit_t0
 
@@ -417,7 +417,7 @@ class HierarchicalModelDataFrameLib:
         }
 
     def _write_prediction_artifact(self, all_results: Dict) -> None:
-        """Delega à implementação compartilhada."""
+        """Delegates to the shared implementation."""
         shared_write_prediction_artifact(all_results, architecture=PARADIGM)
         shared_write_imputation_report(
             self._imputation_reports, architecture=PARADIGM)
@@ -426,10 +426,10 @@ class HierarchicalModelDataFrameLib:
 
     def run_hierarchical_analysis(self):
         """
-        Executar análise hierárquica completa para arquitetura Polars DataFrame.
+        Run the complete hierarchical analysis for the Polars DataFrame architecture.
         """
-        print("Análise hierárquica Polars")
-        print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
+        print("Polars hierarchical analysis")
+        print("   RidgeCV (Hoerl & Kennard 1970), James-Stein shrinkage (Efron & Morris 1975)")
 
         _meta = SCIENTIFIC_CONFIG['hierarchical_model']
         all_results = {
@@ -440,12 +440,12 @@ class HierarchicalModelDataFrameLib:
             'total_features': len(self.available_features),
             'corrections_applied': {
                 'simple_hierarchical': (
-                    f"RidgeCV com alphas logspace("
+                    f"RidgeCV with alphas logspace("
                     f"{_meta['ridge_alpha_log10_start']}, "
                     f"{_meta['ridge_alpha_log10_stop']}, "
                     f"{_meta['ridge_alpha_count']}) + Shrinkage James-Stein"),
                 'random_forest': (
-                    f"Regularizado: n_est={_meta['rf_n_estimators']}, "
+                    f"Regularized: n_est={_meta['rf_n_estimators']}, "
                     f"depth in {tuple(_meta['rf_max_depth_grid'])}, "
                     f"split={_meta['rf_min_samples_split']}, "
                     f"leaf in {tuple(_meta['rf_min_samples_leaf_grid'])}"),
@@ -463,7 +463,7 @@ class HierarchicalModelDataFrameLib:
                 all_results['folds'].append(fold_results)
                 valid_folds += 1
 
-                # Log dos resultados
+                # Result log
                 fold_id = fold_info['fold_id']
                 for model_name, model_results in fold_results['models'].items():
                     val_r2 = model_results['val']['r2']
@@ -472,11 +472,11 @@ class HierarchicalModelDataFrameLib:
                     print(f"   {model_name}: Val R²={val_r2:.3f}, Test R²={test_r2:.3f}, Gap={gap:+.3f}")
 
         if valid_folds == 0:
-            print("Nenhum fold válido processado!")
+            print("No valid fold processed!")
             return all_results
 
-        # Performance agregada
-        print("Performance agregada LAZY EVALUATION:")
+        # Aggregate performance
+        print("Aggregate performance LAZY EVALUATION:")
 
         for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
             val_r2s = [fold['models'][model_name]['val']['r2'] for fold in all_results['folds']
@@ -495,14 +495,14 @@ class HierarchicalModelDataFrameLib:
                 print(f"      Test: R² = {test_mean:.3f} ± {test_std:.3f}")
                 print(f"      Gap:  {gap_mean:+.3f}")
 
-                # Análise do gap
+                # Gap analysis
                 abs_gap = abs(gap_mean)
                 if abs_gap <= 0.15:
-                    print(f"      Regularização efetiva - Gap dentro da meta científica")
+                    print(f"      Effective regularization - gap within the scientific target")
                 elif abs_gap <= 0.2:
-                    print(f"      Gap aceitável")
+                    print(f"      Acceptable gap")
                 else:
-                    print(f"      Necessita regularização adicional")
+                    print(f"      Requires additional regularization")
 
                 all_results[f'{model_name}_summary'] = {
                     'val_mean_r2': float(val_mean),
@@ -511,19 +511,19 @@ class HierarchicalModelDataFrameLib:
                     'generalization_gap': float(gap_mean)
                 }
 
-        print("Resumo hierárquico LAZY EVALUATION")
+        print("Hierarchical summary LAZY EVALUATION")
 
-        # Melhor modelo
+        # Best model
         if 'simple_hierarchical_summary' in all_results and 'random_forest_hierarchical_summary' in all_results:
             simple_test = all_results['simple_hierarchical_summary']['test_mean_r2']
             rf_test = all_results['random_forest_hierarchical_summary']['test_mean_r2']
 
             if rf_test > simple_test:
-                print(f"   Melhor modelo: Random Forest Hierárquico")
-                print(f"   R² Teste: {rf_test:.3f}")
+                print(f"   Best model: Hierarchical Random Forest")
+                print(f"   R² Test: {rf_test:.3f}")
             else:
-                print(f"   Melhor modelo: Simple Hierarchical")
-                print(f"   R² Teste: {simple_test:.3f}")
+                print(f"   Best model: Simple Hierarchical")
+                print(f"   R² Test: {simple_test:.3f}")
 
         self._write_prediction_artifact(all_results)
 
@@ -531,18 +531,18 @@ class HierarchicalModelDataFrameLib:
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
 
-        print(f"\nResultados Polars (NORMAL) salvos: {results_file}")
+        print(f"\nPolars results (NORMAL) saved: {results_file}")
 
         return all_results
 
 
 if __name__ == "__main__":
-    # Sem status de saída a falha chega ao pipeline como sucesso: subprocess
-    # check=True lê apenas o código de retorno.
+    # Without an exit status the failure reaches the pipeline as a success:
+    # subprocess check=True reads only the return code.
     try:
         model = HierarchicalModelDataFrameLib()
         results = model.run_hierarchical_analysis()
-        print("\nAnálise hierárquica Polars concluída!")
+        print("\nPolars hierarchical analysis completed!")
     except Exception as exc:
         print(f"\n[ERROR] {exc}")
         sys.exit(1)

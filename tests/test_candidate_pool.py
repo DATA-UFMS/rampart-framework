@@ -77,9 +77,9 @@ def _probe(name, schema=SCHEMA):
         def _validate_temporal_folds(self, data, folds): pass
         def save_folds(self, data, folds): pass
         def compute_feature_correlations(self, data, features):
-            # Correlação real: um probe que devolve {} não seleciona nada, e
-            # a seleção agora recusa um conjunto vazio -- que é o que tornava
-            # este probe vácuo, e era a crítica que ele recebeu.
+            # A real correlation: a probe that returns {} selects nothing, and
+            # selection now refuses an empty set -- which is what made this
+            # probe vacuous, and was the criticism it received.
             frame = self._materialise_pandas(
                 data, list(features) + [self.target_column])
             return {feature: float(frame[feature].corr(frame[self.target_column]))
@@ -125,7 +125,8 @@ class TestPoolPolicy:
         """
         arch = _probe('sql_engine')('sql_engine', str(tmp_path),
                                     dataset_config=_Config())
-        with pytest.raises(ValueError, match='metadado da coleta'):
+        with pytest.raises(ValueError,
+                           match='collection metadata columns survived'):
             arch.get_numeric_features(None)
 
     def test_the_real_configurations_are_complete(self, tmp_path):
@@ -296,12 +297,12 @@ class TestSelectionByCorrelation:
     BAND = {'a': 0.20, 'b': 0.35, 'c': 0.50, 'd': 0.65, 'e': 0.75, 'f': 0.79}
 
     def test_the_ceiling_follows_the_proxy_parameter(self):
-        """Uma pergunta, um número.
+        """One question, one number.
 
-        Teto da seleção e limiar de proxy respondem a mesma coisa -- que |r|
-        faz suspeitar que a feature é o alvo com outro nome -- sobre janelas
-        diferentes. Eram dois valores iguais por coincidência, e fixar 0,8 no
-        código passava despercebido justamente por isso.
+        The selection ceiling and the proxy threshold answer the same thing --
+        which |r| makes a feature suspect of being the target under another
+        name -- over different windows. They were two equal values by
+        coincidence, and hardcoding 0.8 went unnoticed for exactly that reason.
         """
         correlations = {**self.BAND, 'borderline': 0.70}
         assert 'borderline' in self._select(correlations)
@@ -324,7 +325,8 @@ class TestSelectionByCorrelation:
             config={'feature_selection_relaxed_min_abs_correlation': 0.15})
 
     def test_the_target_count_follows_its_parameter(self):
-        """Com o alvo em 1, o piso estrito basta e a relaxação não dispara."""
+        """With the target at 1, the strict floor is enough and the relaxation
+        does not fire."""
         correlations = {'a': 0.20, 'weak': 0.12}
         assert self._select(
             correlations, config={'feature_selection_min_features': 1}) == ['a']
@@ -358,18 +360,19 @@ class TestSelectionByCorrelation:
         assert 'below' not in selected and 'above' not in selected
 
     def test_negative_associations_are_selected(self):
-        """O sinal não entra: nem RidgeCV nem RandomForest o enxergam.
+        """The sign does not enter: neither RidgeCV nor RandomForest sees it.
 
-        A comparação era com sinal, então toda feature negativamente associada
-        era descartada -- e neste domínio são os fatores protetivos (PIB per
-        capita, taxa de conclusão, matrícula) contra evasão. O conjunto saía
-        enviesado para um único sinal de associação, sem que nada justificasse.
+        The comparison used to be signed, so every negatively associated
+        feature was discarded -- and in this domain those are the protective
+        factors (GDP per capita, completion rate, enrolment) against dropout.
+        The set came out biased towards a single sign of association, with
+        nothing justifying it.
         """
         selected = self._select({**self.BAND, 'protective': -0.55})
         assert 'protective' in selected
 
     def test_a_negative_proxy_is_still_refused(self):
-        """O teto passa a valer nos dois sentidos, que é o que |r| significa."""
+        """The ceiling now holds in both directions, which is what |r| means."""
         selected = self._select({**self.BAND, 'mirror': -0.99})
         assert 'mirror' not in selected
 
@@ -385,25 +388,26 @@ class TestSelectionByCorrelation:
         )
 
     def test_the_relaxation_never_drops_the_ceiling(self):
-        """O buraco que existia: o teto some junto com o piso.
+        """The hole that existed: the ceiling goes away together with the floor.
 
-        Abaixo do mínimo a regra antiga trocava a banda por um piso solto, e
-        uma feature com |r| = 0,99 entrava. Como o pool real é pequeno, esse
-        era o ramo que as execuções tomavam. O que a barrava era a auditoria
-        de proxy, a jusante -- depender dela é depender da segunda linha
-        porque a primeira foi removida.
+        Below the minimum the old rule swapped the band for a loose floor, and
+        a feature with |r| = 0.99 got in. Since the real pool is small, that
+        was the branch the runs took. What barred it was the proxy audit,
+        downstream -- relying on it is relying on the second line because the
+        first was removed.
         """
         selected = self._select({'a': 0.20, 'proxy': 0.99})
         assert 'proxy' not in selected
         assert selected == ['a']
 
     def test_the_relaxation_lowers_only_the_floor(self):
-        """E o conjunto relaxado contém o estrito, por construção."""
+        """And the relaxed set contains the strict one, by construction."""
         correlations = {'strict': 0.20, 'weak': 0.12, 'proxy': 0.99}
         assert self._select(correlations) == ['strict', 'weak']
 
     def test_below_the_target_count_it_proceeds_and_says_so(self):
-        """Não alcançar o mínimo é registrado, não corrigido afrouxando o teto."""
+        """Falling short of the minimum is recorded, not corrected by
+        loosening the ceiling."""
         selected = self._select({'a': 0.20, 'proxy': 0.95, 'other': 0.99})
         assert selected == ['a']
 
@@ -428,12 +432,13 @@ class TestSelectionByCorrelation:
                 audit_panel(panel, ['proxy'], 'target')
 
     def test_an_empty_input_is_refused(self):
-        """Sem features não há modelo; prosseguir produziria artefato vazio."""
-        with pytest.raises(ValueError, match='Nenhuma candidata'):
+        """Without features there is no model; proceeding would produce an
+        empty artifact."""
+        with pytest.raises(ValueError, match='No candidate with'):
             self._select({})
 
     def test_everything_above_the_ceiling_is_refused(self):
-        with pytest.raises(ValueError, match='Nenhuma candidata'):
+        with pytest.raises(ValueError, match='No candidate with'):
             self._select({'a': 0.99, 'b': -0.97})
 
 

@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-"""Em que janela o modelo avaliado no teste é ajustado.
+"""Which window the model evaluated on the test set is fitted on.
 
-Decisão registrada, e não default: o modelo avaliado no teste é ajustado apenas na
-janela de treino, e a validação serve exclusivamente para selecionar
-hiperparâmetros.
+A recorded decision, and not a default: the model evaluated on the test set is
+fitted on the training window alone, and validation serves exclusively to select
+hyperparameters.
 
-A alternativa -- reajustar em treino+validação com os hiperparâmetros escolhidos --
-é prática padrão e foi verificada como compatível com P2: o gap de val_end ao
-teste é exatamente os 2 anos exigidos. Usaria 25% mais anos por entidade e moveria
-a origem 4 anos para mais perto do teste.
+The alternative -- refitting on train+validation with the chosen hyperparameters
+-- is standard practice and was verified as compatible with P2: the gap from
+val_end to the test is exactly the 2 years required. It would use 25% more years
+per entity and move the origin 4 years closer to the test.
 
-Não foi adotada por uma assimetria. O que compraria é eficiência estatística num
-dispositivo cuja acurácia preditiva não é o objeto de estudo -- o paper afirma
-equivalência entre paradigmas e latência. O que custaria é margem na garantia
-anti-leakage, que É o objeto: a separação efetiva entre o último dado de ajuste e
-o primeiro de avaliação cairia de 6 anos para o mínimo declarado de 2. E exigiria
-um segundo ajuste de imputação e scaler dentro dos três run_fold_analysis, que têm
-implementações distintas por engine -- a configuração que produz divergência entre
-paradigmas, quando equivalência bitwise é a afirmação central.
+It was not adopted because of an asymmetry. What it would buy is statistical
+efficiency in a device whose predictive accuracy is not the object of study -- the
+paper claims equivalence between paradigms and latency. What it would cost is
+margin in the anti-leakage guarantee, which IS the object: the effective
+separation between the last fitting datum and the first evaluation datum would
+fall from 6 years to the declared minimum of 2. And it would require a second fit
+of imputation and scaler inside the three run_fold_analysis, which have distinct
+implementations per engine -- the configuration that produces divergence between
+paradigms, when bitwise equivalence is the central claim.
 
-Estes testes existem para que uma mudança dessa escolha seja deliberada.
+These tests exist so that a change to that choice is deliberate.
 """
 
 import ast
@@ -46,7 +47,7 @@ def _fold_analysis(path):
 
 
 def _calls_evaluating_test(path):
-    """Chamadas de modelo cujo conjunto de avaliação é a janela de teste."""
+    """Model calls whose evaluation set is the test window."""
     found = []
     for call in ast.walk(_fold_analysis(path)):
         if not (isinstance(call, ast.Call)
@@ -66,33 +67,33 @@ class TestTheFinalModelFitsOnTrainOnly:
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_both_models_are_evaluated_on_the_test_window(self, path):
         assert len(_calls_evaluating_test(path)) == len(FINAL_FITS), (
-            f'{path.parts[-3]}: esperado um ajuste final por modelo'
+            f'{path.parts[-3]}: expected one final fit per model'
         )
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_the_fit_arguments_are_the_training_window(self, path):
-        """Os dois primeiros argumentos são X e y de ajuste."""
+        """The first two arguments are the X and y of the fit."""
         for call, names in _calls_evaluating_test(path):
             assert names[0] == 'X_train_scaled', (
-                f'{path.parts[-3]}:{call.lineno} ajusta em {names[0]}'
+                f'{path.parts[-3]}:{call.lineno} fits on {names[0]}'
             )
             assert names[1] == 'y_train', (
-                f'{path.parts[-3]}:{call.lineno} ajusta em {names[1]}'
+                f'{path.parts[-3]}:{call.lineno} fits on {names[1]}'
             )
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_the_validation_window_is_not_concatenated_into_the_fit(self, path):
-        """Um concat de treino com validação é a mudança que isto guarda."""
+        """A concat of train with validation is the change this guards against."""
         for call, _ in _calls_evaluating_test(path):
             for argument in call.args[:2]:
                 assert not isinstance(argument, ast.Call), (
-                    f'{path.parts[-3]}:{call.lineno} passa uma expressão como '
-                    f'dado de ajuste, e não a janela de treino'
+                    f'{path.parts[-3]}:{call.lineno} passes an expression as '
+                    f'fitting data, and not the training window'
                 )
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_the_validation_window_is_used_for_selection(self, path):
-        """A validação tem de servir para algo, senão é desperdício puro."""
+        """Validation must serve some purpose, otherwise it is pure waste."""
         calls = []
         for call in ast.walk(_fold_analysis(path)):
             if isinstance(call, ast.Call) and \
@@ -101,7 +102,7 @@ class TestTheFinalModelFitsOnTrainOnly:
                 if any(n and 'val' in n for n in names):
                     calls.append(call)
         assert len(calls) == len(FINAL_FITS), (
-            f'{path.parts[-3]}: a validação não é avaliada na seleção'
+            f'{path.parts[-3]}: validation is not evaluated in the selection'
         )
 
 
@@ -124,27 +125,28 @@ class TestTheEffectiveSeparationIsRecorded:
         assert "'fit_window': 'train_only'" in source
 
     def test_the_separation_exceeds_the_declared_minimum(self):
-        """É por isso que a escolha compra algo: 6 anos contra 2."""
+        """This is why the choice buys something: 6 years against 2."""
         gap = SCIENTIFIC_CONFIG['temporal_gap_years']
         fold = self._fold(gap)
         assert fold['fit_to_test_gap'] > gap, (
-            'a separação efetiva não excede o mínimo declarado, então a escolha '
-            'de não reajustar deixaria de comprar margem'
+            'the effective separation does not exceed the declared minimum, so '
+            'the choice not to refit would stop buying margin'
         )
 
     def test_refitting_would_reduce_it_to_the_minimum(self):
-        """A verificação que sustenta a decisão, não uma afirmação solta."""
+        """The check that supports the decision, not a loose claim."""
         gap = SCIENTIFIC_CONFIG['temporal_gap_years']
         fold = self._fold(gap)
         would_be = fold['test_start'] - fold['val_end'] - 1
         assert would_be == gap, (
-            f'reajustar em treino+validação daria separação {would_be}, e a '
-            f'decisão foi tomada supondo que cairia ao mínimo {gap}'
+            f'refitting on train+validation would give separation {would_be}, '
+            f'and the decision was taken assuming it would fall to the '
+            f'minimum {gap}'
         )
         assert would_be < fold['fit_to_test_gap']
 
     def test_p2_would_still_hold_under_the_alternative(self):
-        """A alternativa foi recusada por margem, não por violar P2."""
+        """The alternative was refused over margin, not for violating P2."""
         gap = SCIENTIFIC_CONFIG['temporal_gap_years']
         fold = self._fold(gap)
         assert fold['test_start'] - fold['val_end'] - 1 >= gap

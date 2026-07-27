@@ -129,9 +129,9 @@ class TestTheComparison:
         point estimate alone would report an advantage the folds do not
         support, which is the reporting K&N found across the field.
         """
-        # Vence na maioria dos folds e perde em dois, que é a forma real de
-        # uma vantagem pequena. Um ganho uniforme entre folds dá variância
-        # quase nula e IC estreito, e não distingue as duas leituras.
+        # Wins in most folds and loses in two, which is the real shape of a
+        # small advantage. A uniform gain across folds gives almost zero
+        # variance and a narrow CI, and does not tell the two readings apart.
         _write(tmp_path, monkeypatch, model_error=0.85, baseline_error=1.0,
                model_error_by_fold={2: 1.3})
         report = bc.compare(PARADIGMS[0], bootstrap_iters=800)
@@ -214,7 +214,8 @@ class TestCrossParadigmAgreement:
         _write(tmp_path, monkeypatch, model_error=0.2, baseline_error=1.0,
                per_paradigm_error={PARADIGMS[0]: 0.9})
         monkeypatch.setattr(bc, 'RESULTS_DIR', str(tmp_path / 'stats'))
-        with pytest.raises(ValueError, match='discordam'):
+        with pytest.raises(ValueError,
+                           match='paradigms disagree about the difference'):
             bc.main()
 
     def test_agreement_needs_two_paradigms(self, tmp_path, monkeypatch):

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Tamanhos de Efeito e Comparações Múltiplas para Benchmark Arquitetural
+Effect Sizes and Multiple Comparisons for the Architectural Benchmark
 
-Calcula tamanhos de efeito e correções de múltiplas comparações para as
-diferenças pareadas 3-way (DL vs DW, DL vs PL, DW vs PL), por fase e total.
+Computes effect sizes and multiple-comparison corrections for the 3-way paired
+differences (DL vs DW, DL vs PL, DW vs PL), per phase and total.
 
-Métricas:
+Metrics:
   - Cohen's d (paired; d_z = mean(diff)/sd(diff))
-  - Hedges' g (correção small-sample) opcional
-  - Eta squared (para t pareado: eta2 = t^2 / (t^2 + df))
-  - Wilcoxon signed-rank pareado, ao lado do t pareado
-  - Correções: Bonferroni e FDR (Benjamini-Hochberg), por família de teste
-  - Power observada via Monte Carlo no alpha corrigido (Hoenig & Heisey, 2001)
+  - Hedges' g (small-sample correction), optional
+  - Eta squared (for the paired t: eta2 = t^2 / (t^2 + df))
+  - Paired Wilcoxon signed-rank, alongside the paired t
+  - Corrections: Bonferroni and FDR (Benjamini-Hochberg), per test family
+  - Observed power via Monte Carlo at the corrected alpha (Hoenig & Heisey, 2001)
 
-Saídas:
+Outputs:
   - outputs/statistics/effect_sizes_summary.json
   - outputs/statistics/effect_sizes_summary.csv
 """
@@ -129,7 +129,7 @@ def hedges_g(d: float, n: int) -> float:
 
 def _effect_size_ci(diff: np.ndarray, n_boot: int = DEFAULT_BOOTSTRAP_ITERS,
                     seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, float]:
-    """IC bootstrap percentil para Cohen's d_z."""
+    """Percentile bootstrap CI for Cohen's d_z."""
     rng = np.random.default_rng(seed)
     ds = []
     for _ in range(n_boot):
@@ -144,7 +144,7 @@ def _effect_size_ci(diff: np.ndarray, n_boot: int = DEFAULT_BOOTSTRAP_ITERS,
 
 
 def eta_squared_from_t(t_stat: float, n: int) -> float:
-    # t pareado: df = n-1
+    # paired t: df = n-1
     if not math.isfinite(t_stat) or n <= 1:
         return float("nan")
     df = n - 1
@@ -232,20 +232,20 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
               if p in COMPARABLE_PHASES]
     results = {}
 
-    # Por par
+    # Per pair
     for arch_a, arch_b in ALL_PAIRS:
         la, lb = arch_a, arch_b
         pair_key = f"{la}_vs_{lb}"
         res: Dict[str, Dict[str, float]] = {}
 
-        # Por fase
+        # Per phase
         for p in phases:
             x, y = paired_vectors_for_phase(df, p, arch_a, arch_b)
             diff = x - y
             n = len(diff)
             if n < 2:
                 continue
-            # t-test pareado (one-sample em diff)
+            # paired t-test (one-sample on diff)
             t_stat, t_p = stats.ttest_rel(x, y)
             w_stat, w_p = _signed_rank(diff)
             d = cohens_dz(diff)
@@ -266,7 +266,7 @@ def analyze(csv_path: str) -> Dict[str, Dict[str, Dict[str, float]]]:
             )
             res[p] = rec
 
-        # Total sobre as fases comparáveis; a lista vem do registro.
+        # Total over the comparable phases; the list comes from the registry.
         x, y = paired_vectors_total(df, arch_a=arch_a, arch_b=arch_b)
         diff = x - y
         n = len(diff)
@@ -363,17 +363,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Effect sizes 3-way pairwise")
     parser.add_argument("--csv", default=get_absolute_output_path(
                             'outputs/benchmarks/architectural_benchmark_results.csv'),
-                        help="Caminho para o CSV do benchmark")
+                        help="Path to the benchmark CSV")
     args = parser.parse_args()
     csv_path = args.csv
     results = analyze(csv_path)
     write_outputs(results)
     print(json.dumps(results, indent=2))
 
-    # Gera resumo interpretativo mínimo em Markdown
+    # Generates a minimal interpretive summary in Markdown
     md_path = os.path.join(STATS_DIR, 'effect_sizes_interpretation.md')
     lines = [
-        "# Interpretação de Tamanhos de Efeito (comparações pareadas 3-way)",
+        "# Effect Size Interpretation (3-way paired comparisons)",
         "",
     ]
     for pair_key, pair_results in results.items():

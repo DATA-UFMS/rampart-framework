@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Modelo Hierárquico para Arquitetura Data Warehouse.
+Hierarchical Model for the Data Warehouse architecture.
 
-Implementa modelos hierárquicos para arquitetura Data Warehouse com ML Consumer pattern,
-utilizando views DuckDB para queries diretas e connection pooling para performance.
+Implements hierarchical models for the Data Warehouse architecture with the ML Consumer pattern,
+using DuckDB views for direct queries and connection pooling for performance.
 """
 
 import time
@@ -70,29 +70,29 @@ except ImportError:
     try:
         from connection_manager import DuckDBConnectionManager, SQLProcessingError
     except ImportError as e:
-        raise ImportError(f"Não foi possível importar DuckDBConnectionManager: {e}")
+        raise ImportError(f"Could not import DuckDBConnectionManager: {e}")
 
 class HierarchicalModelSQLFirst:
     """
-    Modelo Hierárquico para Arquitetura Data Warehouse.
+    Hierarchical Model for the Data Warehouse architecture.
 
-    Implementa ML Data Warehouse Consumer pattern com queries diretas às views,
-    utilizando 13 features científicas selecionadas.
+    Implements the ML Data Warehouse Consumer pattern with direct queries to the
+    views, using 13 selected scientific features.
     """
     
     def __init__(self):
-        print("Inicializando Modelo Hierárquico DuckDB")
+        print("Initialising DuckDB Hierarchical Model")
 
         self.target_col = 'dropout_rate_sql_engine'
         #: (fold_id, report) for each fold, written out at the end.
         #: The extent of the fold-scoped imputation appeared in no
         #: artifact: the reports were produced and discarded.
         self._imputation_reports = []
-        #: Relatório da auditoria P3 do conjunto final, escrito ao fim.
+        #: P3 audit report for the final feature set, written at the end.
         self._feature_audits = []
         self._cleared_by_selection = []
 
-        print("   Pattern: ML Consumer com views")
+        print("   Pattern: ML Consumer with views")
         
         dataset_name = os.environ.get('DATASET_NAME', 'worldbank')
         self.folds_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/prep/temporal_folds_sql_engine.json")
@@ -102,9 +102,9 @@ class HierarchicalModelSQLFirst:
         os.makedirs(self.results_path, exist_ok=True)
         
         if not os.path.exists(self.folds_path):
-            raise FileNotFoundError(f"Folds Data Warehouse não encontrados: {self.folds_path}")
+            raise FileNotFoundError(f"Data Warehouse folds not found: {self.folds_path}")
         if not os.path.exists(self.db_path):
-            raise FileNotFoundError(f"DuckDB Data Warehouse não encontrado: {self.db_path}")
+            raise FileNotFoundError(f"DuckDB Data Warehouse not found: {self.db_path}")
         
         try:
             self.conn_manager = DuckDBConnectionManager(
@@ -114,7 +114,7 @@ class HierarchicalModelSQLFirst:
             )
             print(f"   Connection Manager: {self.db_path}")
         except Exception as e:
-            raise RuntimeError(f"Falha ao inicializar Connection Manager: {e}")
+            raise RuntimeError(f"Failed to initialise Connection Manager: {e}")
         with open(self.folds_path, 'r') as f:
             self.folds_config = json.load(f)
             self.folds = self.folds_config['folds']
@@ -123,21 +123,21 @@ class HierarchicalModelSQLFirst:
         self._load_data_summary()
     
     def _verify_views(self):
-        """Verificar se views necessárias existem no Data Warehouse."""
-        print("   Verificando views...")
+        """Check that the required views exist in the Data Warehouse."""
+        print("   Checking views...")
 
         try:
             count = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
             if count > 0:
-                print(f"   Views verificadas: {count} registros")
+                print(f"   Views checked: {count} records")
             else:
-                raise RuntimeError("Views do setup vazias")
+                raise RuntimeError("Setup views are empty")
         except SQLProcessingError as e:
-            raise RuntimeError(f"Erro ao verificar views do setup: {e}")
+            raise RuntimeError(f"Error checking the setup views: {e}")
     
     def _load_data_summary(self):
-        """Carregar resumo dos dados via queries diretas às views."""
-        print("   Carregando resumo dos dados...")
+        """Load the data summary via direct queries to the views."""
+        print("   Loading data summary...")
         
         try:
             total_records = self.conn_manager.execute_scalar("SELECT COUNT(*) FROM analytics_wide")
@@ -145,9 +145,9 @@ class HierarchicalModelSQLFirst:
             max_year = self.conn_manager.execute_scalar("SELECT MAX(year) FROM analytics_wide")
             total_countries = self.conn_manager.execute_scalar("SELECT COUNT(DISTINCT country_code) FROM analytics_wide")
             
-            print(f"   Dados: {total_records} observações")
-            print(f"   Período: {min_year}-{max_year}")
-            print(f"   Países: {total_countries}")
+            print(f"   Data: {total_records} observations")
+            print(f"   Period: {min_year}-{max_year}")
+            print(f"   Countries: {total_countries}")
             print(f"   Target: {self.target_col}")
             print(f"   Folds: {len(self.folds)}")
             
@@ -159,7 +159,7 @@ class HierarchicalModelSQLFirst:
             """)
             
             if not target_exists:
-                raise ValueError(f"Target {self.target_col} não encontrado na tabela analytics_wide")
+                raise ValueError(f"Target {self.target_col} not found in the analytics_wide table")
             
             target_mean = self.conn_manager.execute_scalar(f"SELECT AVG({self.target_col}) FROM analytics_wide WHERE {self.target_col} IS NOT NULL")
             target_std = self.conn_manager.execute_scalar(f"SELECT STDDEV({self.target_col}) FROM analytics_wide WHERE {self.target_col} IS NOT NULL")
@@ -170,10 +170,10 @@ class HierarchicalModelSQLFirst:
             print(f"   Target range: [{target_min:.2f}%, {target_max:.2f}%]")
                 
         except SQLProcessingError as e:
-            raise RuntimeError(f"Erro ao carregar resumo via views: {e}")
+            raise RuntimeError(f"Error loading the summary via views: {e}")
     
     def _load_ml_fold_data(self, fold_id: int, split: str) -> pd.DataFrame:
-        """Carregar dados do fold via queries diretas às views."""
+        """Load the fold data via direct queries to the views."""
         view_name = f"vw_fold_{fold_id}_{split}"
 
         try:
@@ -192,24 +192,24 @@ class HierarchicalModelSQLFirst:
             return df
             
         except SQLProcessingError as e:
-            raise RuntimeError(f"Erro ao carregar dados do fold {fold_id} split {split}: {e}")
+            raise RuntimeError(f"Error loading data for fold {fold_id} split {split}: {e}")
     
     def _prepare_features(self, train_clean):
-        """Preparar lista de features baseado no modo."""
+        """Prepare the feature list based on the mode."""
         selection_path = get_absolute_output_path("ml_pipeline/architectures/sql_engine/prep/feature_selection_sql_engine.json")
 
         if os.path.exists(selection_path):
-            # Modo Normal: carregar features selecionadas
+            # Normal mode: load the selected features
             with open(selection_path, 'r') as f:
                 selection_data = json.load(f)
             available_features = selection_data['selected_features']
             # What the P3 re-audit may skip: selection already applied the
             # proxy ceiling to these, over the full panel, and aborts there.
             self._cleared_by_selection = list(available_features)
-            print(f"   {len(available_features)} features do feature selection")
-            print(f"   Método: {selection_data.get('selection_method', 'N/A')}")
+            print(f"   {len(available_features)} features from feature selection")
+            print(f"   Method: {selection_data.get('selection_method', 'N/A')}")
         else:
-            raise FileNotFoundError(f"Seleção de features não encontrada: {selection_path}. Execute setup.py antes.")
+            raise FileNotFoundError(f"Feature selection not found: {selection_path}. Run setup.py first.")
 
         if 'dropout_rate_lag_2' in train_clean.columns and 'dropout_rate_lag_2' not in available_features:
             available_features.append('dropout_rate_lag_2')
@@ -224,20 +224,20 @@ class HierarchicalModelSQLFirst:
     
     def _prepare_data(self, data, available_features):
         """
-        Materializar um fold já carregado do banco.
+        Materialise a fold already loaded from the database.
 
-        Materialização apenas. Toda estatística -- a mediana que preenche
-        ausentes -- vive em core.validation.impute_from_training_window, ajustada
-        na janela de treino do fold. Três implementações de uma estatística são
-        três chances de os paradigmas calcularem coisas diferentes, e a afirmação
-        de equivalência assume que eles diferem apenas em como movem dados.
+        Materialisation only. Every statistic -- the median that fills missing
+        values -- lives in core.validation.impute_from_training_window, fitted on
+        the fold's training window. Three implementations of one statistic are
+        three chances for the paradigms to compute different things, and the
+        equivalence claim assumes they differ only in how they move data.
 
-        Sem parâmetro de referência: materializar não precisa da janela de
-        treino, só ajustar estatística precisa.
+        No reference parameter: materialising does not need the training
+        window, only fitting a statistic does.
 
-        A view do fold já aplica WHERE target IS NOT NULL e ORDER BY
-        country_code, year -- o mesmo recorte e a mesma ordem que os outros
-        paradigmas produzem em Python.
+        The fold's view already applies WHERE target IS NOT NULL and ORDER BY
+        country_code, year -- the same subset and the same order the other
+        paradigms produce in Python.
         """
         return canonical_fold(data[available_features], data[self.target_col],
                               data['country_code'], data['year'],
@@ -247,10 +247,10 @@ class HierarchicalModelSQLFirst:
                                  X_test: pd.DataFrame, y_test: pd.Series,
                                  countries_train: pd.Series, countries_test: pd.Series,
                                  residual_shrinkage: float = 0.8) -> Dict:
-        """Delega à implementação compartilhada (core.models.hierarchical).
+        """Delegates to the shared implementation (core.models.hierarchical).
 
-        Os três paradigmas computavam isto de forma idêntica -- verificado por
-        AST e por igualdade bitwise das predições sobre a mesma entrada.
+        The three paradigms computed this identically -- verified by AST and by
+        bitwise equality of the predictions on the same input.
         """
         return shared_simple_hierarchical_model(
             X_train, y_train, X_test, y_test, countries_train, countries_test,
@@ -261,7 +261,7 @@ class HierarchicalModelSQLFirst:
                                  countries_train: pd.Series, countries_test: pd.Series,
                                  max_depth: int = 6, min_samples_leaf: int = 8) -> Dict:
         """
-        Random Forest hierárquico com country effects como features.
+        Hierarchical Random Forest with country effects as features.
         """
         country_means = {}
         global_mean = y_train.mean()
@@ -280,7 +280,7 @@ class HierarchicalModelSQLFirst:
         X_train_augmented['country_effect'] = train_country_effects
         X_test_augmented['country_effect'] = test_country_effects
         
-        # Mesmos hiperparâmetros do Data Lake para comparação justa
+        # Same hyperparameters as the Data Lake for a fair comparison
         _hm = SCIENTIFIC_CONFIG['hierarchical_model']
         rf_model = RandomForestRegressor(
             n_estimators=_hm['rf_n_estimators'],
@@ -313,7 +313,7 @@ class HierarchicalModelSQLFirst:
             'feature_importance': {k: float(v) for k, v in feature_importance.items()},
             'country_effects': {str(k): float(v) for k, v in country_means.items()},
             'regularization_applied': (
-                f"Regularizado: n_est={_hm['rf_n_estimators']}, "
+                f"Regularised: n_est={_hm['rf_n_estimators']}, "
                 f"depth={max_depth}, split={_hm['rf_min_samples_split']}, "
                 f"leaf={min_samples_leaf}"),
             'country_effect_importance': feature_importance.get('country_effect', 0),
@@ -322,11 +322,11 @@ class HierarchicalModelSQLFirst:
         }
     
     def run_fold_analysis(self, fold_info: Dict) -> Dict:
-        """Executar análise completa para um fold via ML Data Warehouse Consumer pattern."""
-        # Latência decomposta: o carregamento do fold é do engine,
-        # o ajuste é comum aos três paradigmas, que materializam em
-        # pandas antes do scikit-learn. Medir o estágio inteiro
-        # atribuía ao paradigma uma parcela que ele não controla.
+        """Run the full analysis for a fold via the ML Data Warehouse Consumer pattern."""
+        # Decomposed latency: loading the fold belongs to the engine,
+        # the fit is common to the three paradigms, which materialise in
+        # pandas before scikit-learn. Measuring the whole stage
+        # charged the paradigm a share it does not control.
         _load_t0 = time.perf_counter()
         fold_id = fold_info['fold_id']
         print(f"\nFold {fold_id}: Train({fold_info['train_start']}-{fold_info['train_end']}) -> Val({fold_info['val_start']}-{fold_info['val_end']}) -> Test({fold_info['test_start']}-{fold_info['test_end']})")
@@ -336,15 +336,15 @@ class HierarchicalModelSQLFirst:
             val_data = self._load_ml_fold_data(fold_id, 'val')
             test_data = self._load_ml_fold_data(fold_id, 'test')
             
-            print(f"   Dados: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
+            print(f"   Data: Train={len(train_data)}, Val={len(val_data)}, Test={len(test_data)}")
             print(f"   Gaps: Train-Val={fold_info['val_start']-fold_info['train_end']-1}yr, Val-Test={fold_info['test_start']-fold_info['val_end']-1}yr")
 
         except Exception as e:
-            print(f"   Erro ao carregar dados do fold {fold_id}: {e}")
+            print(f"   Error loading data for fold {fold_id}: {e}")
             return {}
         
         if len(train_data) == 0 or len(test_data) == 0:
-            print(f"   Fold {fold_id}: Dados insuficientes")
+            print(f"   Fold {fold_id}: Insufficient data")
             return {}
         
         available_features = self._prepare_features(train_data)
@@ -371,14 +371,14 @@ class HierarchicalModelSQLFirst:
             config=SCIENTIFIC_CONFIG)))
         _fit_t0 = time.perf_counter()
 
-        # P5: imputação e scaler ajustados exclusivamente no treino
-        # (Kaufman et al. 2012). A imputação vem antes porque o scaler não
-        # aceita ausentes, e ambas as estatísticas saem da mesma janela.
+        # P5: imputation and scaler fitted exclusively on the training data
+        # (Kaufman et al. 2012). Imputation comes first because the scaler does
+        # not accept missing values, and both statistics come from the same window.
         (X_train, X_val, X_test), imputation_report = \
             impute_from_training_window(X_train, X_val, X_test)
         self._imputation_reports.append((fold_id, imputation_report))
         if imputation_report['columns_without_training_observation']:
-            print(f"   [WARN] Sem observação no treino, deixadas ausentes: "
+            print(f"   [WARN] No observation in the training window, left missing: "
                   f"{imputation_report['columns_without_training_observation']}")
 
         scaler = StandardScaler()
@@ -386,15 +386,15 @@ class HierarchicalModelSQLFirst:
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
         X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
         
-        print(f"   Executando modelos hierárquicos:")
-        
-        # Modelos hierárquicos
-        # HPO: seleção de hiperparâmetros via grid search no conjunto de
-        # validação. Modelo final retreinado no treino completo para avaliação
-        # no teste. Previne leakage (Kapoor & Narayanan, 2023).
+        print(f"   Running hierarchical models:")
+
+        # Hierarchical models
+        # HPO: hyperparameter selection via grid search on the validation
+        # set. Final model retrained on the full training set for evaluation
+        # on the test set. Prevents leakage (Kapoor & Narayanan, 2023).
         models = {}
 
-        # 1. Simple Hierarchical (tuning de residual_shrinkage)
+        # 1. Simple Hierarchical (tuning of residual_shrinkage)
         best_shrink = 0.8
         best_val_r2 = -1e9
         for rs in SCIENTIFIC_CONFIG['hierarchical_model']['residual_shrinkage_grid']:
@@ -412,7 +412,7 @@ class HierarchicalModelSQLFirst:
         )
         models['simple_hierarchical'] = {'val': val_simple, 'test': test_simple}
 
-        # 2. Random Forest Hierarchical (tuning leve)
+        # 2. Random Forest Hierarchical (light tuning)
         best_params = (6, 8)
         best_val_r2 = -1e9
         _hm = SCIENTIFIC_CONFIG['hierarchical_model']
@@ -434,8 +434,8 @@ class HierarchicalModelSQLFirst:
         )
         models['random_forest_hierarchical'] = {'val': val_rf, 'test': test_rf}
         
-        # Análise dos gaps
-        print(f"   Resultados hierárquicos (Val -> Test):")
+        # Gap analysis
+        print(f"   Hierarchical results (Val -> Test):")
         simple_gap = val_simple['r2'] - test_simple['r2']
         rf_gap = val_rf['r2'] - test_rf['r2']
         rf_country_imp = val_rf.get('country_effect_importance', 0)
@@ -444,20 +444,20 @@ class HierarchicalModelSQLFirst:
         print(f"      Random Forest:       Val R²={val_rf['r2']:.3f}, Test R²={test_rf['r2']:.3f}, Gap={rf_gap:+.3f}")
         print(f"         Country Effect: {rf_country_imp:.3f} (Target: 0.2-0.4)")
         
-        # Interpretação dos gaps
+        # Gap interpretation
         if abs(simple_gap) <= 0.15:
-            print(f"      Simple: Gap dentro da meta")
+            print(f"      Simple: Gap within target")
         elif abs(simple_gap) <= 0.2:
-            print(f"      Simple: Gap moderado")
+            print(f"      Simple: Moderate gap")
         else:
-            print(f"      Simple: Gap elevado")
+            print(f"      Simple: High gap")
 
         if abs(rf_gap) <= 0.15:
-            print(f"      RF: Gap dentro da meta")
+            print(f"      RF: Gap within target")
         elif abs(rf_gap) <= 0.2:
-            print(f"      RF: Gap moderado")
+            print(f"      RF: Moderate gap")
         else:
-            print(f"      RF: Gap elevado")
+            print(f"      RF: High gap")
         
         _fit_predict_s = time.perf_counter() - _fit_t0
 
@@ -471,7 +471,7 @@ class HierarchicalModelSQLFirst:
         }
     
     def _write_prediction_artifact(self, all_results: Dict) -> None:
-        """Delega à implementação compartilhada."""
+        """Delegates to the shared implementation."""
         shared_write_prediction_artifact(all_results, architecture=PARADIGM)
         shared_write_imputation_report(
             self._imputation_reports, architecture=PARADIGM)
@@ -479,9 +479,9 @@ class HierarchicalModelSQLFirst:
             self._feature_audits, architecture=PARADIGM)
 
     def run_hierarchical_analysis(self):
-        """Executar análise hierárquica completa via ML Data Warehouse Consumer."""
-        print("Análise hierárquica DuckDB")
-        print("   RidgeCV (Hoerl & Kennard 1970), Shrinkage James-Stein (Efron & Morris 1975)")
+        """Run the full hierarchical analysis via the ML Data Warehouse Consumer."""
+        print("DuckDB hierarchical analysis")
+        print("   RidgeCV (Hoerl & Kennard 1970), James-Stein shrinkage (Efron & Morris 1975)")
         
         try:
             _meta = SCIENTIFIC_CONFIG['hierarchical_model']
@@ -492,12 +492,12 @@ class HierarchicalModelSQLFirst:
                 'mode': 'normal',
                 'corrections_applied': {
                     'simple_hierarchical': (
-                    f"RidgeCV com alphas logspace("
+                    f"RidgeCV with alphas logspace("
                     f"{_meta['ridge_alpha_log10_start']}, "
                     f"{_meta['ridge_alpha_log10_stop']}, "
-                    f"{_meta['ridge_alpha_count']}) + Shrinkage James-Stein"),
+                    f"{_meta['ridge_alpha_count']}) + James-Stein shrinkage"),
                     'random_forest': (
-                    f"Regularizado: n_est={_meta['rf_n_estimators']}, "
+                    f"Regularised: n_est={_meta['rf_n_estimators']}, "
                     f"depth in {tuple(_meta['rf_max_depth_grid'])}, "
                     f"split={_meta['rf_min_samples_split']}, "
                     f"leaf in {tuple(_meta['rf_min_samples_leaf_grid'])}"),
@@ -513,7 +513,7 @@ class HierarchicalModelSQLFirst:
                     fold_results['fold_duration_s'] = time.perf_counter() - _fold_t0
                     all_results['folds'].append(fold_results)
                     
-                    # Log dos resultados
+                    # Log the results
                     fold_id = fold_info['fold_id']
                     if 'models' in fold_results:
                         for model_name, model_results in fold_results['models'].items():
@@ -522,9 +522,9 @@ class HierarchicalModelSQLFirst:
                             gap = val_r2 - test_r2
                             print(f"   {model_name}: Val R²={val_r2:.3f}, Test R²={test_r2:.3f}, Gap={gap:+.3f}")
             
-            # Performance agregada
+            # Aggregate performance
             if all_results['folds']:
-                print(f"\nPerformance agregada DuckDB:")
+                print(f"\nDuckDB aggregate performance:")
                 
                 for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
                     val_r2s = []
@@ -546,16 +546,16 @@ class HierarchicalModelSQLFirst:
                         print(f"      Test: R² = {test_mean:.3f} ± {test_std:.3f}")
                         print(f"      Gap:  {gap_mean:+.3f}")
                         
-                        # Análise do gap
+                        # Gap analysis
                         abs_gap = abs(gap_mean)
                         if abs_gap <= 0.15:
-                            print(f"      Regularização efetiva - gap dentro da meta")
+                            print(f"      Effective regularisation - gap within target")
                         elif abs_gap <= 0.2:
-                            print(f"      Gap aceitável")
+                            print(f"      Acceptable gap")
                         else:
-                            print(f"      Necessita regularização adicional")
-                
-                print(f"\nResumo hierárquico DuckDB")
+                            print(f"      Additional regularisation required")
+
+                print(f"\nDuckDB hierarchical summary")
             
             self._write_prediction_artifact(all_results)
 
@@ -563,25 +563,25 @@ class HierarchicalModelSQLFirst:
             with open(results_file, 'w') as f:
                 json.dump(all_results, f, indent=2)
             
-            print(f"\nResultados salvos: {results_file}")
+            print(f"\nResults saved: {results_file}")
             
             return all_results
             
         except Exception as e:
-            # Re-levanta: devolver um dicionário com 'folds': [] fazia o
-            # orquestrador e o benchmark tratarem a falha como uma execução
-            # rápida e bem-sucedida, e o gate de equivalência não vê um
-            # paradigma que não escreveu vetor nenhum.
-            print(f"Erro na análise hierárquica: {e}")
+            # Re-raises: returning a dictionary with 'folds': [] made the
+            # orchestrator and the benchmark treat the failure as a fast and
+            # successful run, and the equivalence gate does not see a
+            # paradigm that wrote no vector at all.
+            print(f"Error in the hierarchical analysis: {e}")
             raise
         finally:
             # Cleanup connection
             if hasattr(self, 'conn_manager') and self.conn_manager:
                 try:
                     self.conn_manager.close_connection()
-                    print("   Connection Manager fechado")
+                    print("   Connection Manager closed")
                 except Exception as e:
-                    print(f"   Erro ao fechar Connection Manager: {e}")
+                    print(f"   Error closing Connection Manager: {e}")
 
 if __name__ == "__main__":
     import argparse
@@ -592,7 +592,7 @@ if __name__ == "__main__":
     try:
         model = HierarchicalModelSQLFirst()
         results = model.run_hierarchical_analysis()
-        print(f"\nAnálise hierárquica DuckDB concluída!")
+        print(f"\nDuckDB hierarchical analysis completed!")
     except Exception as e:
         print(f"\n[ERROR] {e}")
         sys.exit(1)

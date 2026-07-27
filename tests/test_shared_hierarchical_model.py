@@ -200,17 +200,18 @@ class TestWhatWasNotExtracted:
 
 
 class TestInnerCrossValidationIsDeliberate:
-    """A partição da seleção de alpha, explícita em vez de acidental.
+    """The partition of the alpha selection, explicit rather than accidental.
 
-    cv=<int> faz o RidgeCV usar KFold sem shuffle. Como os resíduos são
-    concatenados por entidade, os blocos contíguos eram blocos de entidade: a
-    seleção de alpha fazia leave-some-entities-out sem que ninguém a tivesse
-    escolhido, e mudaria em silêncio se a ordem das linhas mudasse.
+    cv=<int> makes RidgeCV use KFold without shuffle. Since the residuals are
+    concatenated by entity, the contiguous blocks were entity blocks: the alpha
+    selection was doing leave-some-entities-out without anyone having chosen
+    it, and it would change silently if the row order changed.
 
-    Não é leakage em nenhuma das duas formas -- todos os resíduos vêm da janela
-    de treino. O que a mudança compra é determinismo, e é isso que este teste
-    fixa: comportamento idêntico sob permutação das linhas. Um teste de saída
-    não distinguiria as duas versões, porque a partição resultante é a mesma.
+    It is not leakage in either of the two forms -- every residual comes from
+    the training window. What the change buys is determinism, and that is what
+    this test pins down: identical behaviour under a permutation of the rows.
+    An output test would not distinguish the two versions, because the
+    resulting partition is the same.
     """
 
     @staticmethod
@@ -228,12 +229,12 @@ class TestInnerCrossValidationIsDeliberate:
                                y.iloc[order].reset_index(drop=True),
                                entities.iloc[order].reset_index(drop=True))
         assert original == permuted, (
-            f'alpha mudou com a ordem das linhas: {original} != {permuted}, '
-            f'o que significa que a partição da CV interna é implícita'
+            f'alpha changed with the row order: {original} != {permuted}, '
+            f'which means the partition of the inner CV is implicit'
         )
 
     def test_the_splitter_is_declared_not_an_integer(self):
-        """cv=<int> delega a escolha da partição ao sklearn."""
+        """cv=<int> delegates the choice of the partition to sklearn."""
         source = SHARED.read_text()
         assert 'GroupKFold' in source
         tree = ast.parse(source)
@@ -243,8 +244,8 @@ class TestInnerCrossValidationIsDeliberate:
                 for keyword in call.keywords:
                     if keyword.arg == 'cv':
                         assert not isinstance(keyword.value, ast.Constant), (
-                            'cv passado como literal reintroduz a partição '
-                            'implícita'
+                            'cv passed as a literal reintroduces the implicit '
+                            'partition'
                         )
 
     def test_the_groups_follow_the_entities(self):
@@ -253,7 +254,7 @@ class TestInnerCrossValidationIsDeliberate:
         assert 'residual_groups.extend(' in source
 
     def test_alpha_still_varies_with_the_data(self):
-        """Sem isto, a estabilidade acima poderia ser um valor constante."""
+        """Without this, the stability above could be a constant value."""
         X, y, entities = _panel()
         other = _panel(seed=99)
         assert self._alpha(X, y, entities) != self._alpha(*other)

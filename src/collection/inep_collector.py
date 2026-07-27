@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Coletor de Indicadores Educacionais INEP — Taxas de Rendimento Escolar.
+INEP Educational Indicators collector — School Performance Rates.
 
-Baixa planilhas XLSX do portal INEP com taxas de aprovação, reprovação
-e abandono por município/ano, e produz um Parquet no schema do framework
-(country_code/year/features) para consumo direto pelos processadores.
+Downloads XLSX spreadsheets from the INEP portal with pass, fail
+and dropout rates by municipality/year, and produces a Parquet in the framework
+schema (country_code/year/features) for direct consumption by the processors.
 
-Fonte: https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/indicadores-educacionais
-Citação: BRASIL. Instituto Nacional de Estudos e Pesquisas Educacionais
-         Anísio Teixeira (Inep). Indicadores Educacionais. Brasília: Inep.
+Source: https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/indicadores-educacionais
+Citation: BRASIL. Instituto Nacional de Estudos e Pesquisas Educacionais
+          Anísio Teixeira (Inep). Indicadores Educacionais. Brasília: Inep.
 
-Uso:
+Usage:
     python src/collection/inep_collector.py [--years 2019 2020] [--output-dir DIR]
 """
 
@@ -34,7 +34,7 @@ if PROJECT_ROOT not in sys.path:
 DEFAULT_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "outputs", "collection", "inep_raw")
 
 # ============================================================================
-# URLs de download — variam por ano (mapeado manualmente do portal INEP)
+# Download URLs — vary by year (mapped manually from the INEP portal)
 # ============================================================================
 INEP_URLS = {
     2007: "https://download.inep.gov.br/informacoes_estatisticas/2011/indicadores_educacionais/taxa_rendimento/2007/tx_rendimento_municipios_2007.zip",
@@ -57,21 +57,21 @@ INEP_URLS = {
     2024: "https://download.inep.gov.br/informacoes_estatisticas/indicadores_educacionais/2024/tx_rend_municipios_2024.zip",
 }
 
-# Nomes de colunas posicionais (61 colunas no XLSX pós-2013)
+# Positional column names (61 columns in the post-2013 XLSX)
 COL_NAMES = [
     'ano', 'regiao', 'uf', 'cod_municipio', 'nome_municipio',
     'localizacao', 'dependencia',
-    # Aprovação (18 cols)
+    # Pass rate (18 cols)
     'aprov_ef', 'aprov_ef_ai', 'aprov_ef_af',
     'aprov_ef_1', 'aprov_ef_2', 'aprov_ef_3', 'aprov_ef_4', 'aprov_ef_5',
     'aprov_ef_6', 'aprov_ef_7', 'aprov_ef_8', 'aprov_ef_9',
     'aprov_em', 'aprov_em_1', 'aprov_em_2', 'aprov_em_3', 'aprov_em_4', 'aprov_em_ns',
-    # Reprovação (18 cols)
+    # Fail rate (18 cols)
     'reprov_ef', 'reprov_ef_ai', 'reprov_ef_af',
     'reprov_ef_1', 'reprov_ef_2', 'reprov_ef_3', 'reprov_ef_4', 'reprov_ef_5',
     'reprov_ef_6', 'reprov_ef_7', 'reprov_ef_8', 'reprov_ef_9',
     'reprov_em', 'reprov_em_1', 'reprov_em_2', 'reprov_em_3', 'reprov_em_4', 'reprov_em_ns',
-    # Abandono (18 cols)
+    # Dropout rate (18 cols)
     'abandono_ef', 'abandono_ef_ai', 'abandono_ef_af',
     'abandono_ef_1', 'abandono_ef_2', 'abandono_ef_3', 'abandono_ef_4', 'abandono_ef_5',
     'abandono_ef_6', 'abandono_ef_7', 'abandono_ef_8', 'abandono_ef_9',
@@ -99,12 +99,12 @@ FEATURE_COLS = [
 
 
 # ============================================================================
-# Download e parsing
+# Download and parsing
 # ============================================================================
 def download_year(year: int, cache_dir: str) -> str:
-    """Baixa ZIP do INEP. Usa cache se já existe."""
+    """Downloads the INEP ZIP. Uses the cache if it already exists."""
     if year not in INEP_URLS:
-        raise ValueError(f"URL não mapeada para ano {year}")
+        raise ValueError(f"URL not mapped for year {year}")
 
     url = INEP_URLS[year]
     zip_path = os.path.join(cache_dir, f"tx_rend_mun_{year}.zip")
@@ -114,7 +114,7 @@ def download_year(year: int, cache_dir: str) -> str:
         return zip_path
 
     os.makedirs(cache_dir, exist_ok=True)
-    print(f"   Baixando {url} ...")
+    print(f"   Downloading {url} ...")
     r = requests.get(url, stream=True, timeout=300, verify=False)
     r.raise_for_status()
 
@@ -127,28 +127,28 @@ def download_year(year: int, cache_dir: str) -> str:
 
 def parse_year(zip_path: str, year: int) -> pd.DataFrame:
     """
-    Extrai e parseia o XLSX de taxas de rendimento de um ano.
+    Extracts and parses the XLSX of performance rates for one year.
 
-    Retorna 1 linha por município (filtro: localizacao=Total, dependencia=Total).
+    Returns 1 row per municipality (filter: localizacao=Total, dependencia=Total).
     """
-    # Extrair planilha do ZIP (XLSX para 2012+, XLS para 2007-2011)
+    # Extract the spreadsheet from the ZIP (XLSX for 2012+, XLS for 2007-2011)
     with zipfile.ZipFile(zip_path, 'r') as zf:
         excel_files = [n for n in zf.namelist()
                        if (n.lower().endswith('.xlsx') or n.lower().endswith('.xls'))
                        and not n.startswith('__') and not n.startswith('~')]
         if not excel_files:
-            raise FileNotFoundError(f"Nenhuma planilha Excel encontrada no ZIP para {year}")
+            raise FileNotFoundError(f"No Excel spreadsheet found in the ZIP for {year}")
         excel_name = excel_files[0]
         zf.extract(excel_name, os.path.dirname(zip_path))
         xlsx_path = os.path.join(os.path.dirname(zip_path), excel_name)
 
-    # Ler XLSX — pular header multi-linha (varia entre anos: 8-10 linhas)
+    # Read the XLSX — skip the multi-line header (varies across years: 8-10 lines)
     for skiprows in [9, 8, 10, 7]:
         try:
             ncols = len(COL_NAMES)
             df = pd.read_excel(xlsx_path, skiprows=skiprows, header=None,
                                usecols=range(min(ncols, 61)))
-            # Verificar se primeira coluna parece ano
+            # Check whether the first column looks like a year
             first_val = df.iloc[0, 0]
             if pd.notna(first_val) and str(first_val).strip().isdigit():
                 val = int(str(first_val).strip())
@@ -157,16 +157,16 @@ def parse_year(zip_path: str, year: int) -> pd.DataFrame:
         except Exception:
             continue
     else:
-        raise ValueError(f"Não foi possível detectar header para {year}")
+        raise ValueError(f"Could not detect the header for {year}")
 
-    # Nomear colunas (ajustar se arquivo tem menos)
+    # Name the columns (adjust if the file has fewer)
     actual_cols = min(len(df.columns), len(COL_NAMES))
     df.columns = COL_NAMES[:actual_cols]
 
-    # Filtrar: Total/Total (1 linha por município)
+    # Filter: Total/Total (1 row per municipality)
     total = df[(df['localizacao'] == 'Total') & (df['dependencia'] == 'Total')].copy()
 
-    # Converter numéricas (-- -> NaN)
+    # Convert numeric columns (-- -> NaN)
     num_cols = [c for c in total.columns if c not in
                 ['regiao', 'uf', 'nome_municipio', 'localizacao', 'dependencia']]
     for col in num_cols:
@@ -178,37 +178,37 @@ def parse_year(zip_path: str, year: int) -> pd.DataFrame:
 
 def adapt_to_framework_schema(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Mapeia colunas INEP -> schema do framework (country_code/year/etc.).
+    Maps INEP columns -> framework schema (country_code/year/etc.).
 
-    O framework calcula dropout_rate = 100 - lower_secondary_completion_rate.
-    Portanto: lower_secondary_completion_rate = 100 - abandono_em.
+    The framework computes dropout_rate = 100 - lower_secondary_completion_rate.
+    Therefore: lower_secondary_completion_rate = 100 - abandono_em.
     """
     adapted = df.copy()
 
-    # Renomear entidade
+    # Rename the entity
     adapted = adapted.rename(columns={
         'cod_municipio': 'country_code',
         'nome_municipio': 'country_name',
     })
 
-    # Criar country_stratum a partir da UF
+    # Create country_stratum from the UF (state)
     adapted['country_stratum'] = adapted['uf']
 
-    # Target: inverter abandono EM -> completion rate
+    # Target: invert abandono EM -> completion rate
     adapted['lower_secondary_completion_rate'] = 100 - adapted['abandono_em']
 
-    # Selecionar colunas finais
+    # Select the final columns
     keep_cols = ['country_code', 'country_name', 'country_stratum', 'year']
     keep_cols += [c for c in FEATURE_COLS if c in adapted.columns]
     keep_cols += ['lower_secondary_completion_rate']
 
-    # Remover duplicatas
+    # Remove duplicates
     keep_cols = list(dict.fromkeys(keep_cols))
 
     adapted = adapted.rename(columns={'ano': 'year'})
     result = adapted[[c for c in keep_cols if c in adapted.columns]].copy()
 
-    # country_code como string
+    # country_code as a string
     result['country_code'] = result['country_code'].astype(float).astype(int).astype(str)
     result['year'] = result['year'].astype(int)
 
@@ -216,14 +216,14 @@ def adapt_to_framework_schema(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================================
-# Pipeline principal
+# Main pipeline
 # ============================================================================
 def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
                       cache_dir: Optional[str] = None) -> Dict:
     """
-    Pipeline completo de coleta INEP Indicadores Educacionais.
+    Complete collection pipeline for INEP Educational Indicators.
 
-    Baixa, parseia e adapta ao schema do framework.
+    Downloads, parses and adapts to the framework schema.
     """
     if years is None:
         years = sorted(INEP_URLS.keys())
@@ -233,7 +233,7 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
 
     os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Coleta INEP - Taxas de Rendimento, {years[0]}-{years[-1]} ({len(years)} anos)")
+    print(f"INEP collection - Performance Rates, {years[0]}-{years[-1]} ({len(years)} years)")
     print(f"Output: {output_dir}")
 
     all_years = []
@@ -251,7 +251,7 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
             zip_path = download_year(year, cache_dir)
             df = parse_year(zip_path, year)
             elapsed = time.time() - t0
-            print(f"   {len(df)} municípios, abandono EM médio: "
+            print(f"   {len(df)} municipalities, mean abandono EM: "
                   f"{df['abandono_em'].mean():.1f}% ({elapsed:.1f}s)")
             all_years.append(df)
             metadata['years'][str(year)] = {
@@ -260,30 +260,30 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
                 'elapsed_s': round(elapsed, 1),
             }
         except Exception as e:
-            print(f"   ERRO: {e}")
+            print(f"   ERROR: {e}")
             metadata['years'][str(year)] = {'status': 'error', 'error': str(e)}
 
     if not all_years:
-        print("\nNenhum dado coletado!")
+        print("\nNo data collected!")
         return metadata
 
-    # Concatenar e adaptar
+    # Concatenate and adapt
     complete = pd.concat(all_years, ignore_index=True)
     adapted = adapt_to_framework_schema(complete)
 
-    # Filtrar municípios sem dados de EM (NaN no target)
+    # Filter out municipalities without EM data (NaN in the target)
     before = len(adapted)
     adapted = adapted.dropna(subset=['lower_secondary_completion_rate'])
     dropped = before - len(adapted)
     if dropped > 0:
-        print(f"   Filtrados {dropped} registros sem dados de EM (NaN no target)")
+        print(f"   Filtered out {dropped} records without EM data (NaN in the target)")
 
-    # NaN em features numéricas preservado intencionalmente:
-    # municípios sem 3ª série EM têm aprov_em_3=NaN (ausência legítima,
-    # não taxa zero). Imputação por mediana do treino ocorre nos modelos
-    # (P5: preprocessing scope restrito ao treino).
+    # NaN in numeric features preserved on purpose:
+    # municipalities without a 3rd year of EM have aprov_em_3=NaN (a legitimate
+    # absence, not a rate of zero). Imputation by the training median happens in
+    # the models (P5: preprocessing scope restricted to the training set).
 
-    # Salvar
+    # Save
     parquet_path = os.path.join(output_dir, "complete_data.parquet")
     adapted.to_parquet(parquet_path, index=False)
 
@@ -306,8 +306,8 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
     with open(meta_path, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\nColeta concluida: {len(adapted):,} obs "
-          f"({n_mun} municipios x {n_years} anos)")
+    print(f"\nCollection complete: {len(adapted):,} obs "
+          f"({n_mun} municipalities x {n_years} years)")
     print(f"Parquet: {parquet_path}")
     print(f"SHA-256: {sha256}")
 
@@ -315,7 +315,7 @@ def collect_inep_data(output_dir: str, years: Optional[List[int]] = None,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Coleta INEP Indicadores Educacionais')
+    parser = argparse.ArgumentParser(description='INEP Educational Indicators collection')
     parser.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)
     parser.add_argument('--years', nargs='+', type=int, default=None)
     parser.add_argument('--cache-dir', default=None)

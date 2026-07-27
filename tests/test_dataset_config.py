@@ -1,8 +1,8 @@
 """
-Testes para o sistema de configuração de datasets.
+Tests for the dataset configuration system.
 
-Verifica que o DatasetConfig Protocol funciona, que ambos datasets
-estão registrados, e que o adapter INEP→framework é correto.
+Verifies that the DatasetConfig Protocol works, that both datasets are
+registered, and that the INEP→framework adapter is correct.
 """
 
 import sys
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
 class TestDatasetRegistry:
-    """Testes do registry e Protocol de datasets."""
+    """Tests of the dataset registry and Protocol."""
 
     def test_both_datasets_registered(self):
         import datasets  # noqa: F401
@@ -39,7 +39,7 @@ class TestDatasetRegistry:
 
     def test_get_nonexistent_raises(self):
         from core.dataset_config import get_dataset
-        with pytest.raises(KeyError, match="não registrado"):
+        with pytest.raises(KeyError, match="not registered"):
             get_dataset('nonexistent_dataset')
 
     def test_protocol_compliance(self):
@@ -69,7 +69,7 @@ class TestDatasetRegistry:
                 assert len(entities) > 0
 
     def test_excluded_columns_include_entity(self):
-        """Excluded columns devem incluir a entity column (evita usar como feature)."""
+        """Excluded columns must include the entity column (keeps it from being used as a feature)."""
         from core.dataset_config import get_dataset
         for name in ['worldbank', 'inep_censo']:
             cfg = get_dataset(name)
@@ -77,11 +77,11 @@ class TestDatasetRegistry:
 
 
 class TestInepAdapter:
-    """Testes do adapter INEP → schema do framework."""
+    """Tests of the INEP → framework schema adapter."""
 
     @staticmethod
     def _make_inep_df(**extra):
-        """DataFrame no formato que parse_year() produz."""
+        """DataFrame in the format parse_year() produces."""
         base = {
             'ano': [2019], 'regiao': ['Sudeste'], 'uf': ['SP'],
             'cod_municipio': [3550308.0], 'nome_municipio': ['São Paulo'],
@@ -136,7 +136,7 @@ class TestInepAdapter:
 
 
 class TestBaseArchitectureDatasetConfig:
-    """Testa que BaseArchitectureML respeita DatasetConfig."""
+    """Tests that BaseArchitectureML respects DatasetConfig."""
 
     def test_default_is_worldbank(self):
         from core.base_architecture import BaseArchitectureML
@@ -147,11 +147,11 @@ class TestBaseArchitectureDatasetConfig:
         assert default is None  # None = default worldbank
 
     def test_excluded_features_from_config(self):
-        """get_excluded_features deve usar dataset_config.excluded_columns."""
+        """get_excluded_features must use dataset_config.excluded_columns."""
         from core.base_architecture import BaseArchitectureML
         from core.dataset_config import get_dataset
 
-        # Criar mock mínimo para testar
+        # Build a minimal mock for the test
         class MockArch(BaseArchitectureML):
             PARADIGM_META = {
                 'name': '_test_dataset_excl',

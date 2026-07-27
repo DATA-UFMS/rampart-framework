@@ -1,9 +1,9 @@
 """
-Configuração do dataset World Bank para o framework de benchmarking.
+World Bank dataset configuration for the benchmarking framework.
 
-Encapsula indicadores, range temporal, estratificação geográfica e
-parâmetros de walk-forward para os dados do Banco Mundial (LATAM,
-2000-2023, nível país×ano).
+Encapsulates indicators, temporal range, geographic stratification and
+walk-forward parameters for the World Bank data (LATAM,
+2000-2023, country×year level).
 """
 
 from core.dataset_config import register_dataset
@@ -14,9 +14,9 @@ from core.config import COUNTRY_STRATA
 
 
 class WorldBankDatasetConfig:
-    """Configuração do dataset World Bank (país × ano, LATAM)."""
+    """World Bank dataset configuration (country × year, LATAM)."""
 
-    # Identificação
+    # Identification
     name = "worldbank"
     label = "World Bank - LATAM Education Indicators"
 
@@ -24,7 +24,7 @@ class WorldBankDatasetConfig:
     temporal_range = (2000, 2023)
     year_column = "year"
 
-    # Entidade geográfica
+    # Geographic entity
     entity_column = "country_code"
     entity_name_column = "country_name"
     stratification_column = "country_stratum"
@@ -36,12 +36,12 @@ class WorldBankDatasetConfig:
     min_valid_count = 500
 
     # Features
-    # O catálogo coletado, não o pool de candidatas. excluded_columns o
-    # estreita: duas das declaradas aqui saem por decisão L2 -- a coluna-fonte
-    # do alvo, e a taxa de matrícula, que é mecanicamente ligada à evasão
-    # (evasão reduz matrícula, então prever uma pela outra é medir o mesmo
-    # fenômeno duas vezes). O pool efetivo é a diferença, e sai no artefato de
-    # seleção como total_features_analyzed.
+    # The collected catalog, not the candidate pool. excluded_columns narrows it:
+    # two of those declared here are dropped by an L2 decision -- the target's
+    # source column, and the enrollment rate, which is mechanically tied to
+    # dropout (dropout reduces enrollment, so predicting one from the other
+    # measures the same phenomenon twice). The effective pool is the difference,
+    # and it appears in the selection artifact as total_features_analyzed.
     feature_columns = list(ALL_INDICATORS.values())
     excluded_columns = [
         "country_code", "country_name", "year", "country_stratum",

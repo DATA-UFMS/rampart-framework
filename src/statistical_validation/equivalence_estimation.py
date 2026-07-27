@@ -1,61 +1,61 @@
 #!/usr/bin/env python3
 """
-Equivalência por Estimativa (SESOI + IC) com robustez (Wilcoxon + Hodges-Lehmann)
+Equivalence by Estimation (SESOI + CI) with robustness (Wilcoxon + Hodges-Lehmann)
 
-Substitui o TOST formal e é adequada a n pequeno entre folds:
-- Define delta (SESOI) por métrica
-- Estima efeito pareado DL vs DW com bootstrap (IC95%)
-- Decide equivalência ou qual lado excede o outro, e inconclusivo
-- Aplica Wilcoxon pareado e Hodges-Lehmann como robustez
+Replaces the formal TOST and is suited to the small n across folds:
+- Defines delta (SESOI) per metric
+- Estimates the paired DL vs DW effect with bootstrap (95% CI)
+- Decides equivalence, or which side exceeds the other, or inconclusive
+- Applies paired Wilcoxon and Hodges-Lehmann as robustness checks
 
-Por que não há TOST explícito:
-  Dois testes unilaterais a alpha=0.05 são idênticos a verificar se o
-  IC de 90% (1-2*alpha) cai inteiramente dentro de +-delta. A decisão
-  aqui usa IC de 95%, que é mais largo e portanto mais difícil de
-  conter em +-delta: concluir equivalência por este critério é
-  estritamente mais conservador do que pelo TOST a alpha=0.05, e o
-  intervalo informa a magnitude, que o valor-p do TOST não informa
+Why there is no explicit TOST:
+  Two one-sided tests at alpha=0.05 are identical to checking whether the
+  90% CI (1-2*alpha) falls entirely within +-delta. The decision
+  here uses a 95% CI, which is wider and therefore harder to
+  contain within +-delta: concluding equivalence by this criterion is
+  strictly more conservative than by TOST at alpha=0.05, and the
+  interval reports the magnitude, which the TOST p-value does not
   (Lakens, Scheel & Isager, 2018).
 
-Limiares SESOI definidos a priori (ver scientific_config.py):
-  R2=0.01  — metade do efeito pequeno de Cohen (1988, f2=0.02)
-  MASE=0.05 — 5% relativo ao baseline naive (Hyndman & Koehler 2006)
-  WAPE=0.05 — 5pp de erro ponderado
+SESOI thresholds defined a priori (see scientific_config.py):
+  R2=0.01  — half of Cohen's small effect (1988, f2=0.02)
+  MASE=0.05 — 5% relative to the naive baseline (Hyndman & Koehler 2006)
+  WAPE=0.05 — 5pp of weighted error
 
-Abordagem hibrida distribution-based + anchor-based
-conforme Lakens, Scheel & Isager (2018).
+Hybrid distribution-based + anchor-based approach
+following Lakens, Scheel & Isager (2018).
 
-Nota sobre poder estatístico:
-  O walk-forward com gaps de 2 anos produz n=9 folds (máximo sem
-  comprometer anti-leakage). Wilcoxon pareado com n=9 tem poder
-  ~30% para efeitos médios (d~0.5), insuficiente como teste primário.
-  Por isso a decisão principal usa bootstrap CI: não depende de
-  premissas assintóticas e fornece intervalo diretamente interpretável.
-  Wilcoxon e Hodges-Lehmann são complementos de robustez.
+Note on statistical power:
+  Walk-forward with 2-year gaps yields n=9 folds (the maximum without
+  compromising anti-leakage). Paired Wilcoxon with n=9 has
+  ~30% power for medium effects (d~0.5), insufficient as a primary test.
+  The main decision therefore uses the bootstrap CI: it does not depend on
+  asymptotic assumptions and provides a directly interpretable interval.
+  Wilcoxon and Hodges-Lehmann are robustness complements.
 
-  Interpretação dos desfechos com n pequeno:
-    - "equivalent": forte — difícil de atingir com pouca precisão
-    - "inconclusive": esperado — reflete a precisão disponível, não
-      falha metodológica (Lakens et al. 2018)
-    - "a_exceeds_b"/"b_exceeds_a": requer corroboração pela sensibilidade
+  Interpreting the outcomes with small n:
+    - "equivalent": strong — hard to reach with little precision
+    - "inconclusive": expected — reflects the available precision, not a
+      methodological failure (Lakens et al. 2018)
+    - "a_exceeds_b"/"b_exceeds_a": requires corroboration by the sensitivity analysis
 
-  A análise de sensibilidade (bootstrap_sensitivity.py) varia SESOI
-  (0.5x, 1.0x, 1.5x) e iterações (1000, 3000, 10000, 15000) para
-  verificar estabilidade das decisões.
+  The sensitivity analysis (bootstrap_sensitivity.py) varies SESOI
+  (0.5x, 1.0x, 1.5x) and iterations (1000, 3000, 10000, 15000) to
+  check the stability of the decisions.
 
-A decisão é direcional, não meritória: o efeito é medido como A-B
-(ou log(A/B)), e se um efeito positivo favorece A depende da métrica
-— favorece para R2, não favorece para latência, MASE e WAPE. O campo
-'advantage' nomeia o lado favorecido, já considerando essa direção.
+The decision is directional, not meritorious: the effect is measured as A-B
+(or log(A/B)), and whether a positive effect favours A depends on the metric
+— it does for R2, it does not for latency, MASE and WAPE. The field
+'advantage' names the favoured side, already accounting for that direction.
 
-O método que produziu cada IC é registrado em 'ci95_method': BCa,
-fallback percentil (com a razão) ou degenerado por variância zero.
-Os três não são intercambiáveis, e um IC sem essa informação não
-permite ao leitor distinguir entre eles.
+The method that produced each CI is recorded in 'ci95_method': BCa,
+percentile fallback (with the reason) or degenerate from zero variance.
+The three are not interchangeable, and a CI without that information does
+not let the reader tell them apart.
 
-Saidas:
+Outputs:
 - JSON: outputs/statistics/equivalence_estimation.json
-- LaTeX (opcional): outputs/statistics/equivalence_estimation.tex
+- LaTeX (optional): outputs/statistics/equivalence_estimation.tex
 """
 
 import os
@@ -85,9 +85,9 @@ DEFAULT_SESOI_R2 = float(SCIENTIFIC_CONFIG['sesoi_r2'])
 DEFAULT_SESOI_MASE = float(SCIENTIFIC_CONFIG['sesoi_mase'])
 DEFAULT_SESOI_WAPE = float(SCIENTIFIC_CONFIG['sesoi_wape'])
 
-# Comparações par-a-par, derivadas do registro. As abreviações dl/dw/pl
-# codificavam os nomes anteriores ao rename (data_lake, data_warehouse, polars)
-# e deixaram de nomear qualquer coisa depois dele.
+# Pairwise comparisons, derived from the registry. The dl/dw/pl abbreviations
+# encoded the pre-rename names (data_lake, data_warehouse, polars)
+# and stopped naming anything after it.
 PREDICTIVE_PAIRS = paradigm_pairs()
 LATENCY_PAIRS = paradigm_pairs()
 
@@ -104,7 +104,7 @@ def _median_hodges_lehmann(deltas: np.ndarray) -> float:
 
 
 def bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, Tuple[float, float], str]:
-    """IC bootstrap (BCa com fallback percentil).
+    """Bootstrap CI (BCa with percentile fallback).
 
     Returns the point estimate, the interval, and which method produced it.
     Three methods can produce an interval here and they are not interchangeable,
@@ -197,17 +197,17 @@ def _load_json(path: str) -> Optional[Dict]:
 
 
 def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
-    """Extrai métricas de teste por fold do JSON de resultados de baseline.
+    """Extracts per-fold test metrics from the baseline results JSON.
 
-    Usa o modelo 'best_baseline' quando disponível, recorrendo a 'naive_with_lag'.
-    Extrai test_r2, test_mase, test_wape explicitamente por nome de chave.
+    Uses the 'best_baseline' model when available, falling back to 'naive_with_lag'.
+    Extracts test_r2, test_mase, test_wape explicitly by key name.
 
-    Compatível com ambas as estruturas de JSON:
+    Compatible with both JSON structures:
       - DW/DL (v2+): baseline_model_results -> fold_X -> {best_baseline, naive_with_lag, ...}
       - PL (v1 legacy): baseline_models -> fold_X -> {naive_with_lag, cross_country_average, ...}
     """
     out: Dict[int, Dict[str, float]] = {}
-    # Folds ficam em 'baseline_model_results', 'baseline_models', ou diretamente no dict
+    # Folds live under 'baseline_model_results', 'baseline_models', or directly in the dict
     folds_container = d.get('baseline_model_results') or d.get('baseline_models') or d
     if not isinstance(folds_container, dict):
         return out
@@ -218,7 +218,7 @@ def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
             fid = int(k.split('_')[1])
         except Exception:
             continue
-        # Usa best_baseline se disponível, senão recorre a naive_with_lag
+        # Uses best_baseline if available, otherwise falls back to naive_with_lag
         best = v.get('best_baseline', {})
         best_name = best.get('model', '') if isinstance(best, dict) else ''
         model = v.get(best_name) if best_name else None
@@ -244,7 +244,7 @@ def _extract_fold_metrics(d: Dict) -> Dict[int, Dict[str, float]]:
 
 
 def _load_baseline_pairs() -> Dict[str, Dict[int, Dict[str, float]]]:
-    # Declarados em PARADIGM_META: os paradigmas gravam em layouts distintos.
+    # Declared in PARADIGM_META: the paradigms write to distinct layouts.
     paths = baseline_results_paths()
     out = {}
     for arch, p in paths.items():
@@ -262,10 +262,10 @@ def _paired_deltas_for_metric(pairs: Dict[str, Dict[int, Dict[str, float]]], met
         va = a[fid].get(metric)
         vb = b[fid].get(metric)
         if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
-            # A menos B, como o resto do módulo: a docstring, _decision_equivalence
-            # e paradigm_pairs assumem essa ordem, e a via de latência já usa
-            # log(A/B). Com B-A o campo 'advantage' nomeava o paradigma pior em
-            # todas as métricas preditivas.
+            # A minus B, like the rest of the module: the docstring,
+            # _decision_equivalence and paradigm_pairs assume that order, and the
+            # latency path already uses log(A/B). With B-A the 'advantage' field
+            # named the worse paradigm on every predictive metric.
             deltas.append(va - vb)
     return np.array(deltas, dtype=float)
 
@@ -318,9 +318,9 @@ def _parse_latency_profile(s: Optional[str], default_total: float) -> Dict[str, 
     profile = {'setup': 0.15, 'processing': 0.10, 'baseline': 0.10, 'hierarchical': 0.05, 'total': default_total}
     if not s:
         return profile
-    # Um item malformado era descartado em silêncio, e a execução seguia com
-    # um SESOI diferente do que o operador pediu -- o que muda os vereditos de
-    # equivalência sem deixar rastro.
+    # A malformed item used to be dropped silently, and the run went on with
+    # a SESOI different from the one the operator asked for -- which changes the
+    # equivalence verdicts without leaving a trace.
     for part in s.split(','):
         if not part.strip():
             continue
@@ -329,10 +329,10 @@ def _parse_latency_profile(s: Optional[str], default_total: float) -> Dict[str, 
             profile[key.strip().lower()] = float(value.strip())
         except ValueError as exc:
             raise ValueError(
-                f"Perfil SESOI malformado em {part.strip()!r}: esperado "
-                f"'metrica:valor' separado por vírgulas. Ignorar o item faria "
-                f"a execução decidir equivalência com um limiar que ninguém "
-                f"pediu."
+                f"Malformed SESOI profile at {part.strip()!r}: expected "
+                f"'metric:value' separated by commas. Ignoring the item would "
+                f"make the run decide equivalence with a threshold nobody "
+                f"asked for."
             ) from exc
     return profile
 
@@ -402,13 +402,13 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
         json.dump(obj, f, indent=2)
     if write_tex:
         lines = [
-            '% Equivalência por Estimativa (SESOI + IC) — Gerado automaticamente',
+            '% Equivalence by Estimation (SESOI + CI) — Automatically generated',
             '\\begin{table}[htb]',
             '\\centering',
-            '\\caption{Equivalência prática por estimativa — predição (3-way pairwise)}',
+            '\\caption{Practical equivalence by estimation — prediction (3-way pairwise)}',
             '\\begin{tabular}{llrrrrll}',
             '\\toprule',
-            'Par & Métrica & n & Estim. & IC95\\% & $\\delta$ & Decisão & Vantagem \\\\ ',
+            'Pair & Metric & n & Est. & 95\\% CI & $\\delta$ & Decision & Advantage \\\\ ',
             '\\midrule',
         ]
         pred = obj.get('predictive', {})
@@ -435,10 +435,10 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
             '',
             '\\begin{table}[htb]',
             '\\centering',
-            '\\caption{Equivalência prática por estimativa — latência (log‑ratio, 3-way pairwise)}',
+            '\\caption{Practical equivalence by estimation — latency (log‑ratio, 3-way pairwise)}',
             '\\begin{tabular}{llrrrrll}',
             '\\toprule',
-            'Fase & Par & n & Estim. (LR) & IC95\\% & $\\delta$(\\%) & Decisão & Vantagem \\\\ ',
+            'Phase & Pair & n & Est. (LR) & 95\\% CI & $\\delta$(\\%) & Decision & Advantage \\\\ ',
             '\\midrule',
         ]
         lat = obj.get('latency', {})
@@ -470,7 +470,7 @@ def _save_outputs(obj: Dict, write_tex: bool = False) -> None:
 def run(args: argparse.Namespace) -> int:
     predictive = _analyze_predictive_metrics(args)
     latency = _analyze_latency(args)
-    # Extrair n_pairs para nota de poder (máximo entre todos os pares preditivos)
+    # Extract n_pairs for the power note (maximum across all predictive pairs)
     n_pairs = max(
         (r.get('n_pairs', 0) for pair_data in predictive.values()
          if isinstance(pair_data, dict)
@@ -497,16 +497,16 @@ def run(args: argparse.Namespace) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description='Equivalência por Estimativa (SESOI + IC) para baselines e latência.')
-    p.add_argument('--bootstrap', type=int, default=DEFAULT_BOOTSTRAP_ITERS, help=f'Iterações de bootstrap (default: {DEFAULT_BOOTSTRAP_ITERS})')
+    p = argparse.ArgumentParser(description='Equivalence by Estimation (SESOI + CI) for baselines and latency.')
+    p.add_argument('--bootstrap', type=int, default=DEFAULT_BOOTSTRAP_ITERS, help=f'Bootstrap iterations (default: {DEFAULT_BOOTSTRAP_ITERS})')
     p.add_argument('--seed', type=int, default=DEFAULT_SEED, help='Seed (default: 42)')
-    p.add_argument('--r2-delta', type=float, default=DEFAULT_SESOI_R2, help=f'SESOI δ para R² (default: {DEFAULT_SESOI_R2})')
-    p.add_argument('--mase-delta', type=float, default=DEFAULT_SESOI_MASE, help=f'SESOI δ para MASE (default: {DEFAULT_SESOI_MASE})')
-    p.add_argument('--wape-delta', type=float, default=DEFAULT_SESOI_WAPE, help=f'SESOI δ para WAPE (default: {DEFAULT_SESOI_WAPE})')
-    p.add_argument('--latency-delta', type=float, default=0.10, help='SESOI δ para latência TOTAL (default: 0.10)')
+    p.add_argument('--r2-delta', type=float, default=DEFAULT_SESOI_R2, help=f'SESOI δ for R² (default: {DEFAULT_SESOI_R2})')
+    p.add_argument('--mase-delta', type=float, default=DEFAULT_SESOI_MASE, help=f'SESOI δ for MASE (default: {DEFAULT_SESOI_MASE})')
+    p.add_argument('--wape-delta', type=float, default=DEFAULT_SESOI_WAPE, help=f'SESOI δ for WAPE (default: {DEFAULT_SESOI_WAPE})')
+    p.add_argument('--latency-delta', type=float, default=0.10, help='SESOI δ for TOTAL latency (default: 0.10)')
     p.add_argument('--latency-delta-profile', type=str, default='setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10',
-                   help='Perfil de δ por fase (ex.: setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10)')
-    p.add_argument('--latex', action='store_true', help='Gerar também tabelas LaTeX')
+                   help='Per-phase δ profile (e.g.: setup:0.15,processing:0.10,baseline:0.10,hierarchical:0.05,total:0.10)')
+    p.add_argument('--latex', action='store_true', help='Also generate LaTeX tables')
     return p.parse_args()
 
 
@@ -534,13 +534,13 @@ def power_note(n_pairs: int, pairs: List[str]) -> str:
     pairs, which no longer exist in the artifacts the note accompanies.
     """
     if n_pairs <= 0:
-        return 'Sem dados para analise de poder.'
+        return 'No data for power analysis.'
     return (
-        f'n={n_pairs} folds (maximo sem comprometer anti-leakage temporal). '
-        f'Analise pairwise: {", ".join(pairs)}. '
-        f'Wilcoxon pareado com n={n_pairs} tem poder limitado (~30% para '
-        f'd=0.5); decisao principal via bootstrap CI. Resultado '
-        f'"inconclusive" e esperado e reflete precisao disponivel '
+        f'n={n_pairs} folds (maximum without compromising temporal anti-leakage). '
+        f'Pairwise analysis: {", ".join(pairs)}. '
+        f'Paired Wilcoxon with n={n_pairs} has limited power (~30% for '
+        f'd=0.5); main decision via bootstrap CI. An '
+        f'"inconclusive" result is expected and reflects the available precision '
         f'(Lakens et al. 2018).'
     )
 

@@ -362,10 +362,10 @@ class TestTheLagColumnsAreNotOptional:
     @pytest.mark.parametrize('paradigm', ['task_graph', 'dataframe_lib'])
     def test_no_paradigm_swallows_a_lag_failure(self, paradigm):
         source = (_SRC / 'architectures_ml' / paradigm / 'setup.py').read_text()
-        assert '[WARN] Falha ao criar dropout_rate_lag_2' not in source, (
+        assert '[WARN] Failed to create dropout_rate_lag_2' not in source, (
             f'{paradigm} still continues past a failed lag join'
         )
-        assert 'falha ao criar as defasagens do alvo' in source
+        assert 'failed to create the target lags' in source
 
     @pytest.mark.parametrize('paradigm', ['task_graph', 'dataframe_lib'])
     def test_each_paradigm_checks_afterwards(self, paradigm):

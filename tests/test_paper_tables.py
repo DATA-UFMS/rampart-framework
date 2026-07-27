@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""A tabela de latência é derivada dos artefatos, não transcrita.
+"""The latency table is derived from the artifacts, not transcribed.
 
-Transcrever célula a célula é o mecanismo pelo qual uma tabela publicada deixa de
-corresponder aos dados sem que nada acuse. O gerador lê o benchmark, a
-significância e a procedência de cada painel, computa o vencedor por estágio e
-carrega na legenda o commit, o instante e o orçamento de núcleos -- toda latência
-é condicional a eles.
+Transcribing cell by cell is the mechanism by which a published table stops
+matching the data without anything flagging it. The generator reads the
+benchmark, the significance and the provenance of each panel, computes the winner
+per stage and carries in the caption the commit, the instant and the core budget
+-- every latency is conditional on them.
 
-Duas decisões que a transcrição escondia ficam pinadas aqui:
+Two decisions that transcription hid are pinned down here:
 
-  * O p reportado é o **maior** entre os pares. A afirmação de um estágio é "os
-    paradigmas diferem aqui", e ela exige que todos os pares difiram.
-  * Um p acima do limiar de Bonferroni é marcado (n.s.) em vez de omitido, e o
-    negrito da célula não passa a sugerir o que o p não sustenta.
+  * The reported p is the **largest** among the pairs. A stage's claim is "the
+    paradigms differ here", and it requires that all pairs differ.
+  * A p above the Bonferroni threshold is marked (n.s.) instead of omitted, and
+    the cell's bold face does not come to suggest what the p does not support.
 """
 
 import json
@@ -37,17 +37,17 @@ STAGES = ['processing', 'setup', 'baseline', 'hierarchical']
 
 @pytest.fixture
 def tables(tmp_path, monkeypatch):
-    """Dois painéis, com o vencedor invertendo entre eles."""
+    """Two panels, with the winner flipping between them."""
     import derive_paper_tables as module
     monkeypatch.setattr(module, '_ROOT', tmp_path)
 
     paradigms = sorted(discover_paradigms())
     fast_small, fast_large = paradigms[0], paradigms[-1]
     layouts = {
-        # No painel pequeno o primeiro paradigma ganha em tudo.
+        # In the small panel the first paradigm wins everything.
         'worldbank': {s: {p: (0.1 if p == fast_small else 1.0 + i)
                           for i, p in enumerate(paradigms)} for s in STAGES},
-        # No grande o último ganha nos estágios de ML: é o crossover.
+        # In the large one the last wins in the ML stages: that is the crossover.
         'inep_censo': {
             s: {p: ((0.1 if p == fast_small else 1.0 + i)
                     if s in ('processing', 'setup')
@@ -66,8 +66,9 @@ def tables(tmp_path, monkeypatch):
             root / 'benchmarks' / 'architectural_benchmark_results.csv',
             index=False)
         pd.DataFrame([
-            # n_nonzero_diffs, não n: o signed-rank descarta empates e é esse
-            # n que fixa o piso. Iguais aqui, sem empate no painel sintético.
+            # n_nonzero_diffs, not n: the signed-rank discards ties and it is
+            # that n which fixes the floor. Equal here, no tie in the synthetic
+            # panel.
             {'pair': f'{a}_vs_{b}', 'phase': stage, 'n': 10,
              'n_nonzero_diffs': 10, 'wilcoxon_p': 0.00195}
             for stage in STAGES
@@ -96,7 +97,7 @@ class TestDerivedFromArtifacts:
         large = {r['stage']: r['winner']
                  for r in report['datasets']['inep_censo']['stages']}
         assert set(small.values()) == {fast_small}
-        assert large['baseline'] == fast_large, 'o crossover não aparece'
+        assert large['baseline'] == fast_large, 'the crossover does not show up'
         assert large['processing'] == fast_small
 
     def test_every_stage_has_a_cell_per_paradigm(self, tables):
@@ -106,7 +107,7 @@ class TestDerivedFromArtifacts:
             assert set(row['cells']) == set(discover_paradigms())
 
     def test_a_panel_without_provenance_is_refused(self, tables, tmp_path):
-        """Latência sem o commit e o orçamento não é comparável a nada."""
+        """A latency without the commit and the budget is comparable to nothing."""
         module, *_ = tables
         (tmp_path / 'outputs' / 'worldbank'
          / 'scientific_config_snapshot.json').unlink()
@@ -114,7 +115,9 @@ class TestDerivedFromArtifacts:
 
     @pytest.mark.parametrize('field', ['git_commit', 'timestamp'])
     def test_an_incomplete_snapshot_is_refused(self, tables, tmp_path, field):
-        """Presente mas sem o campo: uma legenda com commit '?' é pior que nada."""
+        """Present but without the field: a caption with commit '?' is worse
+        than nothing.
+        """
         module, *_ = tables
         snapshot = (tmp_path / 'outputs' / 'worldbank'
                     / 'scientific_config_snapshot.json')
@@ -137,7 +140,7 @@ class TestDerivedFromArtifacts:
             module.build(['worldbank'])
 
     def test_mismatched_core_budgets_are_refused(self, tables, tmp_path):
-        """Painéis medidos com orçamentos distintos não vão na mesma tabela."""
+        """Panels measured with different budgets do not go in the same table."""
         module, *_ = tables
         snapshot = (tmp_path / 'outputs' / 'inep_censo'
                     / 'scientific_config_snapshot.json')
@@ -145,7 +148,8 @@ class TestDerivedFromArtifacts:
         payload['scientific_config']['engine_threads'] = 4
         snapshot.write_text(json.dumps(payload))
         report = module.build(['worldbank', 'inep_censo'])
-        with pytest.raises(ValueError, match='orçamentos'):
+        with pytest.raises(ValueError,
+                           match='measured with different core budgets'):
             module.to_latex(report)
 
 
@@ -162,7 +166,7 @@ class TestSignificanceReporting:
         row = next(r for r in module.build(['worldbank'])['datasets']
                    ['worldbank']['stages'] if r['stage'] == 'baseline')
         assert row['worst_pair_p'] == pytest.approx(0.04), (
-            'reportar o menor p descreveria o par mais favorável'
+            'reporting the smallest p would describe the most favourable pair'
         )
 
     def test_a_p_above_the_threshold_is_marked_not_significant(self, tables,
@@ -189,37 +193,37 @@ class TestSignificanceReporting:
         assert row['threshold'] == pytest.approx(0.05 / row['family_size'])
 
     def test_the_wilcoxon_floor_is_reported_as_such(self, tables):
-        """0,00195 com n=10 é o piso do teste, não uma medida de precisão."""
+        """0.00195 with n=10 is the test's floor, not a measure of precision."""
         module, *_ = tables
         report = module.build(['worldbank'])
         row = report['datasets']['worldbank']['stages'][0]
         assert row['wilcoxon_floor'] == pytest.approx(2 / 2 ** 10)
-        assert 'piso' in module.to_latex(report)
+        assert '(floor, $n$=' in module.to_latex(report)
 
 
 class TestTheDesignMustBeAbleToResolve:
-    """Piso do teste contra limiar corrigido.
+    """The test's floor against the corrected threshold.
 
-    Os dois são independentes: o piso vem das repetições (2/2^n para o Wilcoxon
-    bilateral), o limiar vem do tamanho da família, que cresce com o número de
-    paradigmas. Com um quarto paradigma a família passa de 15 para 30 e o
-    limiar cai para 0,00167, abaixo do piso de 0,00195 -- nenhum estágio pode
-    ser significativo, qualquer que seja o dado. A tabela saía normalmente, com
-    todos os estágios marcados (n.s.).
+    The two are independent: the floor comes from the repetitions (2/2^n for the
+    two-sided Wilcoxon), the threshold comes from the family size, which grows
+    with the number of paradigms. With a fourth paradigm the family goes from 15
+    to 30 and the threshold falls to 0.00167, below the floor of 0.00195 -- no
+    stage can be significant, whatever the data. The table came out normally,
+    with every stage marked (n.s.).
     """
 
     def test_the_current_design_resolves(self, tables):
-        """Base: 15 testes dão 0,00333, acima do piso de 0,00195."""
+        """Baseline: 15 tests give 0.00333, above the floor of 0.00195."""
         module, *_ = tables
         row = module.build(['worldbank'])['datasets']['worldbank']['stages'][0]
         assert row['threshold'] > row['wilcoxon_floor']
 
     @staticmethod
     def _inflate_family(path):
-        """Menor família que não resolve com n=10: alpha/m < 2/2^10 => m >= 26.
+        """Smallest family that does not resolve at n=10: alpha/m < 2/2^10 => m >= 26.
 
-        Um quarto paradigma leva 3 pares a 6, e a família de 4 estágios mais o
-        total passa de 15 para 30 -- acima desse limite.
+        A fourth paradigm takes 3 pairs to 6, and the family of 4 stages plus
+        the total goes from 15 to 30 -- above that limit.
         """
         frame = pd.read_csv(path)
         floor = 2 / 2 ** 10
@@ -238,12 +242,13 @@ class TestTheDesignMustBeAbleToResolve:
         path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
                 / 'significance_summary.csv')
         self._inflate_family(path)
-        with pytest.raises(ValueError, match='piso do Wilcoxon'):
+        with pytest.raises(ValueError,
+                           match='floor of the two-sided Wilcoxon'):
             module.build(['worldbank'])
 
     def test_the_message_says_how_many_repetitions_would_do(self, tables,
                                                             tmp_path):
-        """Sem isso o operador sabe que parou, não o que mudar."""
+        """Without it the operator knows that it stopped, not what to change."""
         module, *_ = tables
         path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
                 / 'significance_summary.csv')
@@ -254,7 +259,7 @@ class TestTheDesignMustBeAbleToResolve:
         required = math.ceil(math.log2(2.0 / (0.05 / size)))
         assert str(required) in message, message
         assert 2 / 2 ** required <= 0.05 / size, (
-            'o número sugerido não resolveria de fato'
+            'the suggested number would not actually resolve'
         )
 
 
@@ -274,17 +279,17 @@ class TestLatexIsCompilable:
         caption = next(l for l in table.splitlines() if '\\caption' in l)
         assert 'abc1234567' in caption
         assert '2026-07-26' in caption
-        assert 'núcleos por engine' in caption
+        assert 'cores per engine' in caption
 
     def test_the_column_count_matches_the_paradigms(self, tables):
         module, *_ = tables
         table = module.to_latex(module.build(['worldbank']))
         line = next(l for l in table.splitlines() if 'begin{tabular}' in l)
-        # Só a especificação entre chaves: a palavra "tabular" contém um r.
+        # Only the specification between braces: the word "tabular" has an r.
         spec = re.search(r'begin\{tabular\}\{([^}]*)\}', line).group(1)
         assert spec.count('r') == len(discover_paradigms()), spec
-        assert spec.startswith('ll'), 'painel e estágio'
-        assert spec.endswith('l'), 'coluna de p'
+        assert spec.startswith('ll'), 'panel and stage'
+        assert spec.endswith('l'), 'p column'
 
     def test_the_winner_is_the_only_bold_cell_per_row(self, tables):
         module, *_ = tables
@@ -315,7 +320,7 @@ class TestProvenanceIsRequired:
         payload = json.loads(path.read_text())
         payload['git_commit'] = 'unavailable'
         path.write_text(json.dumps(payload))
-        with pytest.raises(ValueError, match='não registra o commit'):
+        with pytest.raises(ValueError, match='does not record the commit'):
             module.build(['worldbank'])
 
     def test_an_empty_commit_halts(self, tables, tmp_path):
@@ -325,7 +330,7 @@ class TestProvenanceIsRequired:
         payload = json.loads(path.read_text())
         payload['git_commit'] = ''
         path.write_text(json.dumps(payload))
-        with pytest.raises(ValueError, match='não registra o commit'):
+        with pytest.raises(ValueError, match='does not record the commit'):
             module.build(['worldbank'])
 
     def test_a_real_commit_passes(self, tables):
@@ -343,7 +348,7 @@ class TestProvenanceIsRequired:
         path.write_text(json.dumps(payload))
         with pytest.raises(ValueError) as exc:
             module.build(['worldbank'])
-        assert 'clone git' in str(exc.value)
+        assert 'git clone with a clean tree' in str(exc.value)
 
 
 class TestTheReadmeMatchesTheBudgetCheck:
@@ -393,8 +398,8 @@ class TestTheFloorUsesTheTestsOwnN:
         module, *_ = tables
         path = (tmp_path / 'outputs' / 'worldbank' / 'statistics'
                 / 'significance_summary.csv')
-        # 9, não menos: abaixo disso o piso passa do limiar corrigido e o
-        # guard de resolução interrompe antes de a linha ser montada.
+        # 9, not less: below that the floor passes the corrected threshold and
+        # the resolution guard halts before the row is assembled.
         self._with_ties(path, 9)
         row = module.build(['worldbank'])['datasets']['worldbank']['stages'][0]
         assert row['wilcoxon_floor'] == pytest.approx(2 / 2 ** 9)
@@ -423,7 +428,8 @@ class TestTheFloorUsesTheTestsOwnN:
             'this many ties still resolves, so the test proves nothing'
         )
         self._with_ties(path, nonzero)
-        with pytest.raises(ValueError, match='piso do Wilcoxon'):
+        with pytest.raises(ValueError,
+                           match='floor of the two-sided Wilcoxon'):
             module.build(['worldbank'])
 
     def test_an_artifact_without_the_column_halts(self, tables, tmp_path):
@@ -538,7 +544,7 @@ class TestTheArtifactsComeFromTheSameRun:
         drop = frame[(frame['phase'] == 'baseline')
                      & (frame['architecture'] == paradigms[0])].index[:1]
         frame.drop(index=drop).to_csv(path, index=False)
-        with pytest.raises(ValueError, match='números diferentes de'):
+        with pytest.raises(ValueError, match='different repetition counts'):
             module.build(['worldbank'])
 
     def test_a_missing_duration_counts_as_a_missing_repetition(self, tables,
@@ -552,7 +558,7 @@ class TestTheArtifactsComeFromTheSameRun:
                        & (frame['architecture'] == paradigms[0])].index[0]
         frame.loc[target, 'duration_s'] = float('nan')
         frame.to_csv(path, index=False)
-        with pytest.raises(ValueError, match='números diferentes de'):
+        with pytest.raises(ValueError, match='different repetition counts'):
             module.build(['worldbank'])
 
     def test_artifacts_from_different_runs_halt(self, tables, tmp_path):
@@ -561,7 +567,8 @@ class TestTheArtifactsComeFromTheSameRun:
         frame = pd.read_csv(path)
         frame['n'] = frame['n'] + 1
         frame.to_csv(path, index=False)
-        with pytest.raises(ValueError, match='mesma execução'):
+        with pytest.raises(ValueError,
+                           match='do not come from the same run'):
             module.build(['worldbank'])
 
     def test_the_repetition_count_reaches_the_row(self, tables, tmp_path):

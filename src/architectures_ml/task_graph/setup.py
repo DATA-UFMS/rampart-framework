@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Setup reprodutível do pipeline ML para a arquitetura Data Lake.
+"""Reproducible setup of the ML pipeline for the Data Lake architecture.
 
-O módulo executa as etapas do protocolo metodológico (QP1–QP3) no paradigma
-schema-on-read: carregamento via Dask, criação de folds temporais com gaps
-anti-leak, alinhamento de features com a arquitetura Data Warehouse e geração de
-artefatos em `outputs/ml_pipeline/`. Mantemos o conjunto mínimo necessário de
-transformações para garantir simetria com o Data Warehouse e permitir análise
-exploratória distribuída sem caches ou otimizações ocultas."""
+The module runs the stages of the methodological protocol (QP1–QP3) in the
+schema-on-read paradigm: loading via Dask, creation of temporal folds with
+anti-leak gaps, feature alignment with the Data Warehouse architecture, and
+artifact generation in `outputs/ml_pipeline/`. We keep the minimum necessary set
+of transformations to guarantee symmetry with the Data Warehouse and to allow
+distributed exploratory analysis without hidden caches or optimizations."""
 
 import os
 import sys
@@ -27,14 +27,14 @@ from core.logging_config import get_logger, log_ml_pipeline
 
 
 class TaskGraphArchitectureML(BaseArchitectureML):
-    """Implementação do pipeline ML para a arquitetura Data Lake.
+    """ML pipeline implementation for the Data Lake architecture.
 
-    A classe mantém simetria metodológica com a versão Data Warehouse: usa os
-    mesmos folds temporais (QP1), garante equivalência de features e validações
-    (QP2) e registra todos os artefatos necessários para o benchmark (QP3).
-    O processamento é realizado com Dask em modo lazy, sem camadas de cache
-    adicionais, para evidenciar características intrínsecas do paradigma
-    schema-on-read."""
+    The class keeps methodological symmetry with the Data Warehouse version: it
+    uses the same temporal folds (QP1), guarantees equivalence of features and
+    validations (QP2) and records every artifact required by the benchmark (QP3).
+    Processing is done with Dask in lazy mode, without additional cache layers,
+    so that the intrinsic characteristics of the schema-on-read paradigm show
+    through."""
 
     PARADIGM_META = {
         'name': 'task_graph',
@@ -50,9 +50,9 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         'processor_script': 'src/collection/task_graph/processor.py',
         'baseline_script': 'src/architectures_ml/task_graph/models/baseline_analysis.py',
         'hierarchical_script': 'src/architectures_ml/task_graph/models/hierarchical_model.py',
-        # Declarado aqui porque os três paradigmas gravam em layouts
-        # distintos; sem isso um módulo de análise precisa conhecer o
-        # layout de cada paradigma para encontrar seus resultados.
+        # Declared here because the three paradigms write to distinct
+        # layouts; without it an analysis module would need to know the
+        # layout of every paradigm in order to find its results.
         'master_artifact': {'kind': 'parquet',
                             'path': 'ml_pipeline/architectures/task_graph/prep/'
                                     'master_data_task_graph.parquet'},
@@ -61,23 +61,23 @@ class TaskGraphArchitectureML(BaseArchitectureML):
 
     def _safe_write_parquet_file(self, df: pd.DataFrame, file_path: str) -> None:
         """
-        Escreve arquivo Parquet com limpeza defensiva de conflitos.
-        
-        Args:
-            df: DataFrame pandas para persistência
-            file_path: Caminho de destino para arquivo Parquet
-            
-        Raises:
-            Exception: Propagada da operação de escrita subjacente
-            
-        Tratamento de conflitos:
-            - Criação de diretórios pai se ausentes
-            - Remoção de arquivos/diretórios conflitantes pré-existentes
-            - Escrita atomica via pandas.to_parquet com index=False
+        Write a Parquet file with defensive cleanup of conflicts.
 
-        Data Lakes frequentemente têm conflitos de naming entre arquivos e
-            diretórios devido à natureza schema-on-read. Esta função garante
-            escrita bem-sucedida independente do estado do filesystem.
+        Args:
+            df: pandas DataFrame to persist
+            file_path: Destination path for the Parquet file
+
+        Raises:
+            Exception: Propagated from the underlying write operation
+
+        Conflict handling:
+            - Creation of parent directories if absent
+            - Removal of pre-existing conflicting files/directories
+            - Atomic write via pandas.to_parquet with index=False
+
+        Data Lakes frequently have naming conflicts between files and
+            directories because of the schema-on-read nature. This function
+            guarantees a successful write regardless of the filesystem state.
         """
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         if os.path.exists(file_path):
@@ -88,138 +88,138 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         df.to_parquet(file_path, index=False)
     
     def __init__(self):
-        """Inicializa paths, validadores e logging para o pipeline Data Lake."""
-        # Inicialização da arquitetura base
+        """Initialize paths, validators and logging for the Data Lake pipeline."""
+        # Base architecture initialization
         output_base = get_absolute_output_path('ml_pipeline/architectures/task_graph')
         super().__init__(architecture_name='task_graph', output_base_path=output_base)
         
         self.logger = get_logger(__name__, with_ml_context=True)
         self.logger.set_context(architecture='task_graph', module='setup')
         
-        print("Inicializando Pipeline ML Dask")
-        print("Schema-on-read com processamento distribuido lazy")
-        
-        # Configurações de paths Data Lake
+        print("Initializing Dask ML Pipeline")
+        print("Schema-on-read with lazy distributed processing")
+
+        # Data Lake path settings
         self.task_graph_path = get_absolute_output_path('collection/task_graph/processed/final_results.parquet')
         self.fallback_path = get_absolute_output_path('collection/task_graph/raw')
         
         self.temporal_validator = TemporalValidator(min_gap_years=2)
         self.data_validator = DataIntegrityValidator()
         
-        print(f"  Diretorio base: {self.output_base}")
-        print(f"  Dados primarios: {self.task_graph_path}")
-        print(f"  Dados raw (fallback): {self.fallback_path}")
-        print("  Lazy evaluation sem camadas de cache adicionais")
+        print(f"  Base directory: {self.output_base}")
+        print(f"  Primary data: {self.task_graph_path}")
+        print(f"  Raw data (fallback): {self.fallback_path}")
+        print("  Lazy evaluation without additional cache layers")
     
     def setup_environment(self) -> None:
         """
-        Configura ambiente Dask com otimizações para ML temporal.
-        
-        Configurações aplicadas:
-            1. Query planning: Habilitado para otimização automática de operações
-            2. Memory management: Thresholds conservadores para estabilidade
-            3. Random seeds: Determinismo em operações estocásticas
-            4. Worker limits: Prevenção de OOM em datasets grandes
-            
-        Justificativa dos parâmetros:
-            - memory.target=0.8: 80% RAM antes de spill (melhores práticas Dask)
-            - memory.spill=0.9: 90% RAM antes de kill worker (failsafe)
-            - query-planning=True: Otimização de graphs para datasets >1GB
-            
-        Seeds configurados:
-            - NumPy: Controla amostragem e transformações estatísticas
-            - Dask: Garante determinismo em operações array distribuídas
-            
+        Configure the Dask environment with optimizations for temporal ML.
+
+        Settings applied:
+            1. Query planning: Enabled for automatic optimization of operations
+            2. Memory management: Conservative thresholds for stability
+            3. Random seeds: Determinism in stochastic operations
+            4. Worker limits: Prevention of OOM on large datasets
+
+        Rationale for the parameters:
+            - memory.target=0.8: 80% RAM before spill (Dask best practices)
+            - memory.spill=0.9: 90% RAM before killing the worker (failsafe)
+            - query-planning=True: Graph optimization for datasets >1GB
+
+        Seeds configured:
+            - NumPy: Controls sampling and statistical transformations
+            - Dask: Guarantees determinism in distributed array operations
+
         """
-        print("Configurando Dask")
-        
-        dask.config.set({'dataframe.query-planning': True})      # Otimização de queries
-        # Orçamento explícito de núcleos, igual ao dos outros paradigmas.
-        # Sem isto o scheduler dimensiona o pool pela máquina, e a
-        # comparação passa a depender de onde foi executada.
+        print("Configuring Dask")
+
+        dask.config.set({'dataframe.query-planning': True})      # Query optimization
+        # Explicit core budget, the same as the other paradigms. Without it
+        # the scheduler sizes the pool from the machine, and the comparison
+        # starts to depend on where it was run.
         dask.config.set(
             {'num_workers': int(SCIENTIFIC_CONFIG['engine_threads'])})
         dask.config.set({'distributed.worker.memory.target': 0.8})  # 80% RAM target
         dask.config.set({'distributed.worker.memory.spill': 0.9})   # 90% RAM spill
         
         print("  Memory management: conservative thresholds")
-        print("  Query optimization: habilitado para datasets >1GB")
+        print("  Query optimization: enabled for datasets >1GB")
 
-        # Dask não possui config nativa de seed global.
-        # A reprodutibilidade é garantida pela seed do numpy.
-        # Sem semear o RNG global aqui. BaseArchitectureML.__init__ chama
-        # setup_reproducibility, que já o faz para os três -- isto era uma
-        # repetição presente em dois paradigmas e ausente no terceiro, numa
-        # comparação que assume que eles diferem apenas em como movem dados.
+        # Dask has no native global seed config.
+        # Reproducibility is guaranteed by the numpy seed.
+        # No seeding of the global RNG here. BaseArchitectureML.__init__ calls
+        # setup_reproducibility, which already does it for all three -- this was
+        # a repetition present in two paradigms and absent in the third, in a
+        # comparison that assumes they differ only in how they move data.
         #
-        # E é indiferente ao resultado: nada consome o RNG global do numpy.
-        # Todo estimador recebe random_state explícito e todo sorteio usa um
-        # default_rng local. É por isso que a ordem embaralhada em que o
-        # benchmark executa os paradigmas não altera nada -- um invariante que
-        # agora tem teste, em vez de valer por acaso.
+        # And it makes no difference to the result: nothing consumes numpy's
+        # global RNG. Every estimator receives an explicit random_state and
+        # every draw uses a local default_rng. That is why the shuffled order in
+        # which the benchmark runs the paradigms changes nothing -- an invariant
+        # that now has a test, instead of holding by accident.
     
     def load_data(self) -> dd.DataFrame:
         """
-        Carrega dados educacionais com paradigma Schema-on-Read distribuído.
-        
+        Load educational data with the distributed Schema-on-Read paradigm.
+
         Returns:
-            dd.DataFrame: Dask DataFrame com lazy evaluation preservado para
-                         otimização de memória em datasets >10GB
-                         
+            dd.DataFrame: Dask DataFrame with lazy evaluation preserved for
+                         memory optimization on datasets >10GB
+
         Raises:
-            FileNotFoundError: Quando nem dados processados nem raw estão disponíveis
-            
-        Estratégia de carregamento hierárquica:
-            1. Processed data: Dados pós-pipeline Data Lake (formato otimizado)
-            2. Raw partitioned: Fallback para dados brutos particionados
-            3. Error handling: Logging detalhado para debugging
-            
-        Vantagens Schema-on-Read:
-            - Flexibilidade: Schema inferido dinamicamente durante carregamento
-            - Performance: PyArrow engine otimizado para formatos colunares
-            - Escalabilidade: Partições Dask permitem processamento >RAM disponível
-            
-        Leitura lazy -- materialização sob demanda.
+            FileNotFoundError: When neither processed nor raw data are available
+
+        Hierarchical loading strategy:
+            1. Processed data: Post-Data-Lake-pipeline data (optimized format)
+            2. Raw partitioned: Fallback to partitioned raw data
+            3. Error handling: Detailed logging for debugging
+
+        Schema-on-Read advantages:
+            - Flexibility: Schema inferred dynamically during loading
+            - Performance: PyArrow engine optimized for columnar formats
+            - Scalability: Dask partitions allow processing >available RAM
+
+        Lazy reading -- materialization on demand.
         """
-        self.logger.info("Iniciando carregamento Dask com schema-on-read")
-        print("\nCarregando dados (schema-on-read)")
-        
+        self.logger.info("Starting Dask loading with schema-on-read")
+        print("\nLoading data (schema-on-read)")
+
         ddf = None
         data_source = None
-        
-        # Estratégia 1: Dados processados (otimizados)
+
+        # Strategy 1: Processed data (optimized)
         if os.path.exists(self.task_graph_path):
             try:
                 ddf = dd.read_parquet(self.task_graph_path, engine='pyarrow').persist()
                 data_source = "processed"
                 ncols = len(ddf.columns)
-                print(f"  Carregado: {ddf.npartitions} particoes x {ncols} variaveis")
+                print(f"  Loaded: {ddf.npartitions} partitions x {ncols} variables")
             except Exception as e:
-                self.logger.warning(f"Erro ao carregar dados processados: {e}")
-                print(f"  [ERROR] Dados processados: {e}")
-        
-        # Estratégia 2: Dados raw particionados (fallback)
+                self.logger.warning(f"Error loading processed data: {e}")
+                print(f"  [ERROR] Processed data: {e}")
+
+        # Strategy 2: Partitioned raw data (fallback)
         if ddf is None and os.path.exists(self.fallback_path):
             try:
-                print("  Fallback para dados raw particionados...")
+                print("  Falling back to partitioned raw data...")
                 ddf = self._load_from_partitioned_raw_distributed()
                 data_source = "raw_partitioned"
-                print("  Carregamento raw ok")
+                print("  Raw loading ok")
             except Exception as e:
-                self.logger.error(f"Erro ao carregar dados raw: {e}")
-                print(f"  [ERROR] Dados raw: {e}")
-        
-        # Validação de carregamento
+                self.logger.error(f"Error loading raw data: {e}")
+                print(f"  [ERROR] Raw data: {e}")
+
+        # Loading validation
         if ddf is None:
             raise FileNotFoundError(
-                "Dados Data Lake não encontrados em nenhuma fonte.\n"
-                f"Verificar: {self.task_graph_path} ou {self.fallback_path}\n"
-                "Execute 'task_graph/processor.py' para gerar dados processados."
+                "Data Lake data not found in any source.\n"
+                f"Check: {self.task_graph_path} or {self.fallback_path}\n"
+                "Run 'task_graph/processor.py' to generate processed data."
             )
-    
-        # Análise de adequação
-        
-        # Computação em lote para eficiência (única chamada Dask compute)
+
+        # Adequacy analysis
+
+        # Batch computation for efficiency (a single Dask compute call)
         stats_to_compute = {
             'year_min': ddf['year'].min(),
             'year_max': ddf['year'].max(),
@@ -231,62 +231,62 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         years_span = computed_stats['year_max'] - computed_stats['year_min'] + 1
         avg_obs_per_country = computed_stats['total_rows'] / computed_stats['n_countries']
 
-        print(f"  {computed_stats['year_min']}-{computed_stats['year_max']} ({years_span} anos)")
-        print(f"  {computed_stats['n_countries']} paises ({avg_obs_per_country:.1f} obs/pais)")
-        print(f"  {computed_stats['total_rows']:,} observacoes totais")
-        print(f"  Fonte: {data_source}")
+        print(f"  {computed_stats['year_min']}-{computed_stats['year_max']} ({years_span} years)")
+        print(f"  {computed_stats['n_countries']} countries ({avg_obs_per_country:.1f} obs/country)")
+        print(f"  {computed_stats['total_rows']:,} total observations")
+        print(f"  Source: {data_source}")
 
         if years_span < 10:
-            print("  [WARN] Serie temporal curta pode limitar validacao walk-forward")
+            print("  [WARN] Short time series may limit walk-forward validation")
 
         if computed_stats['n_countries'] < 15:
-            print("  [WARN] Poucos paises podem afetar generalizacao geografica")
-        
-        self.logger.info(f"Dados carregados com sucesso via {data_source}")
+            print("  [WARN] Few countries may affect geographic generalization")
+
+        self.logger.info(f"Data loaded successfully via {data_source}")
         
         return ddf
     
     @log_ml_pipeline('validation')
     def validate_data(self, ddf: dd.DataFrame) -> None:
         """
-        Executa validação distribuída com amostragem estratégica.
-        
-        Args:
-            ddf: DataFrame Dask com dados educacionais carregados
-            
-        Metodologia de validação:
-            1. Amostragem adaptativa: min(1000, total_rows) para eficiência
-            2. DataIntegrityValidator: Validador centralizado para consistência
-            3. Schema validation: Verificação de colunas obrigatórias
-            4. Range validation: Detecção de valores impossíveis
-            5. Fallback inteligente: Busca automática de variáveis alternativas
-            
-        Paradigma Schema-on-Read:
-            Validação executada após carregamento, permitindo flexibilidade
-            na estrutura dos dados mas garantindo qualidade mínima para ML.
-            
-        Critérios:
-            - Target coverage >50%: Poder estatístico adequado para ML
-            - Range [0,100]: Consistência com definições educacionais
-            - Schema compliance: Presença de identificadores temporais/geográficos
-            
-        Amostragem:
-            Para eficiência, amostra de min(1000, total_rows) observações.
-        """
-        print("Validando dados")
-        
-        # Amostragem adaptativa para validação eficiente
-        total_rows = int(ddf.index.size.compute())
-        sample_size = min(1000, total_rows)  # Balanceia precisão vs eficiência
-        
-        print(f"  Amostragem: {sample_size:,}/{total_rows:,} ({sample_size/total_rows:.1%})")
+        Run distributed validation with strategic sampling.
 
-        # Criação de amostra preservando distribuição
+        Args:
+            ddf: Dask DataFrame with the loaded educational data
+
+        Validation methodology:
+            1. Adaptive sampling: min(1000, total_rows) for efficiency
+            2. DataIntegrityValidator: Centralized validator for consistency
+            3. Schema validation: Check for mandatory columns
+            4. Range validation: Detection of impossible values
+            5. Smart fallback: Automatic search for alternative variables
+
+        Schema-on-Read paradigm:
+            Validation run after loading, allowing flexibility in the structure
+            of the data while guaranteeing minimum quality for ML.
+
+        Criteria:
+            - Target coverage >50%: Adequate statistical power for ML
+            - Range [0,100]: Consistency with educational definitions
+            - Schema compliance: Presence of temporal/geographic identifiers
+
+        Sampling:
+            For efficiency, a sample of min(1000, total_rows) observations.
+        """
+        print("Validating data")
+
+        # Adaptive sampling for efficient validation
+        total_rows = int(ddf.index.size.compute())
+        sample_size = min(1000, total_rows)  # Balances precision vs efficiency
+
+        print(f"  Sampling: {sample_size:,}/{total_rows:,} ({sample_size/total_rows:.1%})")
+
+        # Sample creation preserving the distribution
         sample_df = ddf.head(sample_size, npartitions=ddf.npartitions)
         if hasattr(sample_df, 'compute'):
             sample_df = sample_df.compute()
         
-        # Validação centralizada com DataIntegrityValidator
+        # Centralized validation with DataIntegrityValidator
         is_valid, validation_report = self.data_validator.validate_dataframe(
             sample_df,
             target_col=self.source_column,
@@ -295,7 +295,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         
         if not is_valid:
             warnings = validation_report.get('warnings', [])
-            self.logger.warning(f"Problemas de integridade detectados: {len(warnings)} warnings")
+            self.logger.warning(f"Integrity problems detected: {len(warnings)} warnings")
             for warning in warnings[:3]:
                 print(f"  [WARN] {warning}")
 
@@ -309,9 +309,9 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                 f"processed data. Available columns: {sorted(ddf.columns)}"
             )
         
-        # Análise de qualidade distribuída
-        
-        # Computação em lote otimizada (única chamada Dask)
+        # Distributed quality analysis
+
+        # Optimized batch computation (a single Dask call)
         validation_stats = {
             'target_data': (~ddf[self.source_column].isna()).sum(),
             'target_min': ddf[self.source_column].min(),
@@ -326,68 +326,68 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         total_rows = computed['total_rows']
         target_coverage = (computed['target_data'] / total_rows) * 100
 
-        print(f"  Cobertura: {computed['target_data']:,}/{total_rows:,} validos ({target_coverage:.1f}%)")
+        print(f"  Coverage: {computed['target_data']:,}/{total_rows:,} valid ({target_coverage:.1f}%)")
         print(f"  Range: [{computed['target_min']:.1f}%, {computed['target_max']:.1f}%]")
-        print(f"  Media: {computed['target_mean']:.1f}%")
+        print(f"  Mean: {computed['target_mean']:.1f}%")
 
         if target_coverage < 50:
-            print("  [WARN] Baixa cobertura de target (<50%) pode comprometer ML")
+            print("  [WARN] Low target coverage (<50%) may compromise ML")
 
         if computed['over_100_count'] > 0:
-            print(f"  [WARN] {computed['over_100_count']} valores >100% (dados invalidos)")
+            print(f"  [WARN] {computed['over_100_count']} values >100% (invalid data)")
 
         if computed['under_0_count'] > 0:
-            print(f"  [WARN] {computed['under_0_count']} valores <0% (dados invalidos)")
-        
-        # Validação de schema obrigatório
+            print(f"  [WARN] {computed['under_0_count']} values <0% (invalid data)")
+
+        # Mandatory schema validation
         required_cols = ['country_code', 'year']
         missing_cols = [col for col in required_cols if col not in ddf.columns]
         if missing_cols:
             raise ValueError(
-                f"Schema incompleto para ML temporal: colunas ausentes {missing_cols}.\n"
-                "Identificadores país-ano são obrigatórios para validação walk-forward."
+                f"Incomplete schema for temporal ML: missing columns {missing_cols}.\n"
+                "Country-year identifiers are mandatory for walk-forward validation."
             )
-        
-        print("  Validacao concluida")
+
+        print("  Validation complete")
     
     def create_target_implementation(self, ddf: dd.DataFrame) -> dd.DataFrame:
         """
-        Constrói variável target via transformação Dask distribuída.
-        
-        Args:
-            ddf: DataFrame Dask com dados educacionais
-            
-        Returns:
-            DataFrame Dask enriquecido com variável target dropout_rate_task_graph
-            
-        Transformação:
-            Dropout Rate = 100 - Completion Rate
-            
-        Justificativa educacional:
-            Seguindo UNESCO (2018) e World Bank Education Statistics,
-            dropout rate oferece interpretabilidade direta para políticas:
-            - Valores altos = necessidade de intervenção urgente
-            - Comparabilidade internacional padronizada
-            - Comparabilidade internacional padronizada
+        Build the target variable via a distributed Dask transformation.
 
-        Paradigma Dask:
-            Transformação aplicada lazily via .apply() com meta specification
-            para preservar tipos e otimizar grafo computacional.
+        Args:
+            ddf: Dask DataFrame with educational data
+
+        Returns:
+            Dask DataFrame enriched with the target variable dropout_rate_task_graph
+
+        Transformation:
+            Dropout Rate = 100 - Completion Rate
+
+        Educational rationale:
+            Following UNESCO (2018) and World Bank Education Statistics,
+            dropout rate offers direct interpretability for policy:
+            - High values = need for urgent intervention
+            - Standardized international comparability
+            - Standardized international comparability
+
+        Dask paradigm:
+            Transformation applied lazily via .apply() with a meta specification
+            to preserve types and optimize the computational graph.
         """
-        print("Construindo variavel target")
-        
+        print("Building target variable")
+
         def create_dropout_rate(completion_rate):
             """
-            Funcao pura para transformacao completion -> dropout rate.
+            Pure function for the completion -> dropout rate transformation.
 
             Args:
-                completion_rate: Taxa de conclusão (0-100%)
+                completion_rate: Completion rate (0-100%)
 
             Returns:
-                Taxa de abandono (0-100%), ou NaN se fora do range válido.
+                Dropout rate (0-100%), or NaN if outside the valid range.
 
-            Preserva NaN para missing values (não imputa artificialmente).
-            Valida range [0,100].
+            Preserves NaN for missing values (does not impute artificially).
+            Validates the range [0,100].
             """
             if pd.isna(completion_rate) or completion_rate < 0 or completion_rate > 100:
                 return float('nan')
@@ -396,15 +396,15 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         print(f"  {self.source_column} -> {self.target_column}")
         print("  Dropout Rate = 100 - Completion Rate")
         
-        # Transformação Dask distribuída com meta specification
+        # Distributed Dask transformation with a meta specification
         ddf_with_target = ddf.assign(
             **{self.target_column: ddf[self.source_column].apply(
                 create_dropout_rate,
-                meta=(self.target_column, 'f8')  # Especificação de tipo Float64
+                meta=(self.target_column, 'f8')  # Float64 type specification
             )}
         )
-        
-        print("  Target criado via Dask lazy evaluation")
+
+        print("  Target created via Dask lazy evaluation")
         try:
             base = ddf_with_target[['country_code', 'year', self.target_column]].rename(
                 columns={self.target_column: 'dropout_rate_t'}
@@ -412,15 +412,15 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             prev = base.assign(year=base['year'] + 2).rename(columns={'dropout_rate_t': 'dropout_rate_lag_2'})
             merged = dd.merge(ddf_with_target, prev[['country_code', 'year', 'dropout_rate_lag_2']],
                               on=['country_code', 'year'], how='left')
-            # Lag 3 anos
+            # Lag of 3 years
             prev3 = base.assign(year=base['year'] + 3).rename(columns={'dropout_rate_t': 'dropout_rate_lag_3'})
             merged = dd.merge(merged, prev3[['country_code', 'year', 'dropout_rate_lag_3']],
                               on=['country_code', 'year'], how='left')
             ddf_with_target = merged
-            print("  dropout_rate_lag_2 e dropout_rate_lag_3 criados (join country/year-k)")
+            print("  dropout_rate_lag_2 and dropout_rate_lag_3 created (join country/year-k)")
         except Exception as exc:
             raise ValueError(
-                f"task_graph: falha ao criar as defasagens do alvo: {exc}"
+                f"task_graph: failed to create the target lags: {exc}"
             ) from exc
 
         assert_lag_columns(ddf_with_target.columns, 'task_graph',
@@ -430,24 +430,24 @@ class TaskGraphArchitectureML(BaseArchitectureML):
     
     def _compute_target_statistics(self, ddf: dd.DataFrame) -> Dict[str, float]:
         """
-        Computa estatísticas descritivas da variável target via Dask distribuído.
-        
+        Compute descriptive statistics of the target variable via distributed Dask.
+
         Args:
-            ddf: DataFrame Dask com variável target criada
-            
+            ddf: Dask DataFrame with the target variable created
+
         Returns:
-            Dicionário com estatísticas float64 para análise
-            
-        Estatísticas computadas:
-            - Momentos: média, desvio padrão (não enviesado)
-            - Range: mínimo, máximo para detecção de outliers
-            - Completude: contagem válida vs missing para análise de qualidade
-            
-        Otimização distribuída:
-            Única chamada dask.compute() para minimizar materialização do
-            grafo computacional.
+            Dictionary with float64 statistics for analysis
+
+        Statistics computed:
+            - Moments: mean, standard deviation (unbiased)
+            - Range: minimum, maximum for outlier detection
+            - Completeness: valid vs missing count for quality analysis
+
+        Distributed optimization:
+            A single dask.compute() call to minimize materialization of the
+            computational graph.
         """
-        # Computação em lote otimizada para eficiência distribuída
+        # Optimized batch computation for distributed efficiency
         stats_batch = {
             'mean': ddf[self.target_column].mean(),
             'std': ddf[self.target_column].std(),
@@ -457,29 +457,29 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             'valid_count': (~ddf[self.target_column].isna()).sum()
         }
         
-        # Única chamada compute para máxima eficiência
+        # A single compute call for maximum efficiency
         computed = dask.compute(stats_batch)[0]
-        
-        # Conversão para float64 para consistência
+
+        # Conversion to float64 for consistency
         return {key: self.reported_statistic(value)
                 for key, value in computed.items()}
     
     def _validate_temporal_folds(self, ddf: dd.DataFrame, folds: List[Dict]) -> None:
-        """Validação temporal  com TemporalValidator."""
-        print("Validando folds temporais")
+        """Temporal validation with TemporalValidator."""
+        print("Validating temporal folds")
 
-        # Validação via TemporalValidator centralizado
+        # Validation via the centralized TemporalValidator
         for fold in folds:
-            # Validar integridade temporal usando anos
+            # Validate temporal integrity using years
             train_years = (fold['train_start'], fold['train_end'])
             val_years = (fold['val_start'], fold['val_end'])
             test_years = (fold['test_start'], fold['test_end'])
             
             is_valid = self.validate_temporal_integrity_years(train_years, val_years, test_years)
             if not is_valid:
-                self.logger.warning(f"Fold {fold['fold_id']}: Problema de integridade temporal")
-            
-            # Validar gaps usando validador centralizado
+                self.logger.warning(f"Fold {fold['fold_id']}: Temporal integrity problem")
+
+            # Validate gaps using the centralized validator
             is_valid, errors = self.temporal_validator.validate_fold_integrity(fold)
             if not is_valid:
                 for error in errors:
@@ -499,7 +499,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                   (ddf['year'] <= fold['val_gap_end']))
             )
             
-            # Contar dados por fold
+            # Count data per fold
             fold_stats = {
                 'train_count': train_filter.sum(),
                 'val_count': val_filter.sum(),
@@ -512,57 +512,57 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             fold.update(computed_fold)
             
             print(f"\n  Fold {fold['fold_id']}:")
-            print(f"    Train: {fold['train_count']} obs, {fold['train_countries']} paises")
-            print(f"    Val: {fold['val_count']} obs, {fold['val_countries']} paises")
-            print(f"    Test: {fold['test_count']} obs, {fold['test_countries']} paises")
+            print(f"    Train: {fold['train_count']} obs, {fold['train_countries']} countries")
+            print(f"    Val: {fold['val_count']} obs, {fold['val_countries']} countries")
+            print(f"    Test: {fold['test_count']} obs, {fold['test_countries']} countries")
     
     def discover_numeric_columns(self, ddf: dd.DataFrame) -> List[str]:
         """
-        Identifica colunas numéricas via type inference sobre o schema inferido.
+        Identify numeric columns via type inference over the inferred schema.
 
         Args:
-            ddf: DataFrame Dask com dados educacionais
+            ddf: Dask DataFrame with educational data
 
         Returns:
-            Lista de nomes de colunas numéricas
+            List of numeric column names
 
-        Metodologia Schema-on-Read:
-            Utiliza Pandas.select_dtypes() sobre schema inferido dinamicamente,
-            permitindo flexibilidade na estrutura de entrada típica de Data Lakes.
+        Schema-on-Read methodology:
+            Uses Pandas.select_dtypes() over a dynamically inferred schema,
+            allowing flexibility in the input structure typical of Data Lakes.
 
-        Limitações:
-            - Não detecta variáveis categóricas numéricas (códigos, IDs)
-            - Ignora features derivadas não materializadas no DataFrame
-            - Schema inference pode ser custoso para DataFrames muito largos
+        Limitations:
+            - Does not detect numeric categorical variables (codes, IDs)
+            - Ignores derived features not materialized in the DataFrame
+            - Schema inference can be costly for very wide DataFrames
         """
         return ddf.select_dtypes(include=[np.number]).columns.tolist()
     
     def compute_feature_correlations(self, ddf: dd.DataFrame,
                                     features: List[str]) -> Dict[str, float]:
         """
-        Computa correlações de Pearson feature-target sobre dados completos.
+        Compute feature-target Pearson correlations over the complete data.
 
         Args:
-            ddf: DataFrame Dask com dados educacionais completos
-            features: Lista de features candidatas para análise de correlação
+            ddf: Dask DataFrame with the complete educational data
+            features: List of candidate features for correlation analysis
 
         Returns:
-            Dicionário {feature_name: absolute_correlation} para ranking
+            Dictionary {feature_name: absolute_correlation} for ranking
 
-        Metodologia:
-            Materializa o conjunto completo de treino e calcula correlação
-            pairwise Pearson entre cada feature e o target. Para datasets
-            na escala deste benchmark (~22K linhas), a materialização
-            completa é viável e elimina variância de amostragem.
+        Methodology:
+            Materializes the complete training set and computes the pairwise
+            Pearson correlation between each feature and the target. For
+            datasets at the scale of this benchmark (~22K rows), complete
+            materialization is feasible and removes sampling variance.
         """
-        print("Analisando correlacoes feature-target")
+        print("Analyzing feature-target correlations")
 
         target_col = self.target_column
         correlations = {}
 
         sample_df = ddf[features + [target_col]].compute().dropna(subset=[target_col])
 
-        print(f"  Dados materializados: {len(sample_df):,} obs, {len(features)} features")
+        print(f"  Materialized data: {len(sample_df):,} obs, {len(features)} features")
         
         successful_correlations = 0
         failed_features = []
@@ -582,20 +582,20 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                     successful_correlations += 1
                     
             except Exception as e:
-                self.logger.warning(f"Erro correlação {feat}: {e}")
+                self.logger.warning(f"Correlation error {feat}: {e}")
                 correlations[feat] = 0.0
                 failed_features.append(feat)
-        
-        print(f"  {successful_correlations}/{len(features)} correlacoes calculadas")
+
+        print(f"  {successful_correlations}/{len(features)} correlations computed")
 
         if failed_features:
-            print(f"  [WARN] {len(failed_features)} features com erro: {failed_features[:3]}")
+            print(f"  [WARN] {len(failed_features)} features with errors: {failed_features[:3]}")
 
         valid_correlations = [r for r in correlations.values() if r > 0]
         if valid_correlations:
             avg_corr = sum(valid_correlations) / len(valid_correlations)
             max_corr = max(valid_correlations)
-            print(f"  Correlacao media: {avg_corr:.3f}, maxima: {max_corr:.3f}")
+            print(f"  Mean correlation: {avg_corr:.3f}, maximum: {max_corr:.3f}")
         
         return correlations
     
@@ -603,34 +603,34 @@ class TaskGraphArchitectureML(BaseArchitectureML):
     def apply_collinearity_filter(self, ddf: dd.DataFrame, features: List[str],
                                    threshold: float = 0.8) -> List[str]:
         """
-        Remove multicolinearidade via filtragem greedy de correlação pairwise.
+        Remove multicollinearity via greedy pairwise correlation filtering.
 
-        Para cada feature candidata, calcula a correlação absoluta máxima com
-        as features já selecionadas e rejeita se max |r| >= threshold.
+        For each candidate feature, computes the maximum absolute correlation
+        with the features already selected and rejects it if max |r| >= threshold.
 
         Args:
-            ddf: DataFrame Dask com features candidatas
-            features: Lista de features para análise de multicolinearidade
-            threshold: Limiar de correlação pairwise (padrão 0.8)
+            ddf: Dask DataFrame with candidate features
+            features: List of features for multicollinearity analysis
+            threshold: Pairwise correlation threshold (default 0.8)
 
         Returns:
-            Lista filtrada de features com multicolinearidade reduzida
+            Filtered list of features with reduced multicollinearity
 
-        Algoritmo greedy:
-            1. Primeira feature sempre aceita (baseline)
-            2. Features subsequentes aceitas se max |r| < threshold
-            3. Ordem determinística (features sorted)
+        Greedy algorithm:
+            1. The first feature is always accepted (baseline)
+            2. Subsequent features are accepted if max |r| < threshold
+            3. Deterministic order (features sorted)
         """
         if len(features) <= 1:
-            print("  Menos de 2 features - colinearidade desnecessaria")
+            print("  Fewer than 2 features - collinearity check unnecessary")
             return features
 
-        print(f"Filtrando colinearidade: {len(features)} features")
+        print(f"Filtering collinearity: {len(features)} features")
 
         try:
             corr_data = ddf[features].compute().dropna()
 
-            print(f"  {len(corr_data):,} observacoes validas pos-dropna")
+            print(f"  {len(corr_data):,} valid observations after dropna")
 
             if len(corr_data) > 10:
                 corr_matrix = corr_data.corr().abs()
@@ -661,80 +661,80 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                         else:
                             rejected_count += 1
                             if rejected_count <= 3:
-                                print(f"    Rejeitado {feature}: r={max_corr:.3f} com {worst_pair}")
+                                print(f"    Rejected {feature}: r={max_corr:.3f} with {worst_pair}")
 
                 reduction_rate = ((len(features) - len(selected)) / len(features)) * 100
-                print(f"  Originais: {len(features)}, selecionadas: {len(selected)}, "
-                      f"removidas: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
+                print(f"  Original: {len(features)}, selected: {len(selected)}, "
+                      f"removed: {len(features) - len(selected)} ({reduction_rate:.1f}%)")
 
                 return selected
 
             else:
-                print(f"  Dados insuficientes ({len(corr_data)}<=10) - fallback top-10")
+                print(f"  Insufficient data ({len(corr_data)}<=10) - top-10 fallback")
                 return features[:10]
 
         except Exception as e:
-            self.logger.error(f"Erro na filtragem de colinearidade: {e}")
-            print(f"[ERROR] Filtragem de colinearidade falhou: {e}")
-            print("  Fallback: retornando top-10 features")
+            self.logger.error(f"Error in collinearity filtering: {e}")
+            print(f"[ERROR] Collinearity filtering failed: {e}")
+            print("  Fallback: returning top-10 features")
             return features[:10]
     
     @log_ml_pipeline('feature_engineering')
     def prepare_features(self, ddf: dd.DataFrame, selected_features: List[str]) -> dd.DataFrame:
         """
-        Executa feature engineering com symmetric log transform distribuída.
-        
-        Args:
-            ddf: DataFrame Dask com features selecionadas via filtragem de colinearidade
-            selected_features: Features pós-seleção para transformação
-            
-        Returns:
-            DataFrame Dask enriquecido com features originais + transformadas
-            
-        Engenharia de Features Científica:
-            Aplica symmetric log transform: T(x) = sign(x) * ln(|x| + 1)
-            às top-5 features para normalização de distribuições assimétricas comuns
-            em dados socioeconômicos.
+        Run feature engineering with a distributed symmetric log transform.
 
-        Justificativas metodológicas:
-            1. Top-5 limite: Baseado em curse of dimensionality (Bellman, 1961)
-               e overfitting em pequenas amostras educacionais
-            2. Symmetric log: Trata zeros e negativos naturalmente, adequada para
-               indicadores educacionais com déficits/declínios
-            3. Lazy evaluation: Transformações aplicadas via .apply() Dask
-               para otimização de memória
-               
-        Estrutura final:
-            - Metadados: country_code, year, target (essenciais ML temporal)
-            - Features originais: selected_features (pós-filtragem de colinearidade)
-            - Features transformadas: {feature}_log_transform (top-5)
-            
-        Equivalência arquitetural:
-            Implementa mesmas transformações que Data Warehouse via SQL,
-            garantindo comparabilidade para benchmarking.
-            
+        Args:
+            ddf: Dask DataFrame with features selected via collinearity filtering
+            selected_features: Post-selection features for transformation
+
+        Returns:
+            Dask DataFrame enriched with original + transformed features
+
+        Scientific feature engineering:
+            Applies the symmetric log transform: T(x) = sign(x) * ln(|x| + 1)
+            to the top-5 features to normalize the skewed distributions common
+            in socioeconomic data.
+
+        Methodological rationale:
+            1. Top-5 limit: Based on the curse of dimensionality (Bellman, 1961)
+               and overfitting on small educational samples
+            2. Symmetric log: Handles zeros and negatives naturally, suitable for
+               educational indicators with deficits/declines
+            3. Lazy evaluation: Transformations applied via Dask .apply()
+               for memory optimization
+
+        Final structure:
+            - Metadata: country_code, year, target (essential for temporal ML)
+            - Original features: selected_features (post collinearity filtering)
+            - Transformed features: {feature}_log_transform (top-5)
+
+        Architectural equivalence:
+            Implements the same transformations as the Data Warehouse via SQL,
+            guaranteeing comparability for benchmarking.
+
         Logging:
-            Captura métricas de qualidade (missing%, dimensionalidade) para
-            auditoria e reprodutibilidade do pipeline ML.
-            
+            Captures quality metrics (missing%, dimensionality) for auditing and
+            reproducibility of the ML pipeline.
+
         """
         print("\nFeature engineering")
 
-        # Cópia para preservar DataFrame original
+        # Copy to preserve the original DataFrame
         ddf_work = ddf.copy()
 
-        # Transformação log simétrico: T(x) = sign(x) * ln(|x| + 1)
-        
-        # Critério: Limitar escopo por curse of dimensionality
+        # Symmetric log transform: T(x) = sign(x) * ln(|x| + 1)
+
+        # Criterion: Limit scope because of the curse of dimensionality
         features_to_transform = selected_features[:5] if len(selected_features) > 5 else selected_features
         transformed_count = 0
-        
-        print(f"  Transformando {len(features_to_transform)} features (symmetric log):")
-        
-        # Aplicação de transformação feature por feature
+
+        print(f"  Transforming {len(features_to_transform)} features (symmetric log):")
+
+        # Transformation applied feature by feature
         for feat in features_to_transform:
             if feat not in ddf_work.columns:
-                print(f"    {feat}: AUSENTE (ignorado)")
+                print(f"    {feat}: ABSENT (skipped)")
                 continue
 
             transform_col = f"{feat}_log_transform"
@@ -743,83 +743,83 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             
             ddf_work[transform_col] = ddf_work[feat].apply(
                 lambda x: np.sign(x) * np.log(np.abs(x) + 1) if pd.notna(x) else np.nan,
-                meta=(transform_col, 'f8')  # Metadados Float64 para Dask
+                meta=(transform_col, 'f8')  # Float64 metadata for Dask
             )
             transformed_count += 1
-        
-        print(f"  {transformed_count} log transforms aplicadas")
 
-        # Construção de dataset ML final
-        
-        # Metadados essenciais para ML temporal
+        print(f"  {transformed_count} log transforms applied")
+
+        # Construction of the final ML dataset
+
+        # Metadata essential for temporal ML
         ml_features = ['country_code', 'year', self.target_column]
-        
-        # Features originais pós-filtragem de colinearidade
+
+        # Original features after collinearity filtering
         ml_features.extend(selected_features)
-        
-        # Features transformadas (apenas as que foram criadas)
+
+        # Transformed features (only the ones that were created)
         transformed_cols = [f"{feat}_log_transform" for feat in features_to_transform
                           if f"{feat}_log_transform" in ddf_work.columns]
         ml_features.extend(transformed_cols)
-        
-        # Incluir lags do target no dataset salvo, mesmo que não selecionados
+
+        # Include the target lags in the saved dataset, even if not selected
         for lag_col in ['dropout_rate_lag_2', 'dropout_rate_lag_3']:
             if lag_col in ddf_work.columns and lag_col not in ml_features:
                 ml_features.append(lag_col)
-        
-        # Remover duplicatas preservando ordem
+
+        # Remove duplicates preserving order
         ml_features = list(dict.fromkeys(ml_features))
-        
-        # Filtrar apenas colunas que existem no DataFrame
+
+        # Keep only columns that exist in the DataFrame
         ml_features = [col for col in ml_features if col in ddf_work.columns]
-        
-        print(f"  Dataset ML final: {len(ml_features)} variaveis "
-              f"({len(selected_features)} originais, {len(transformed_cols)} transformadas)")
-        
-        # Seleção final
+
+        print(f"  Final ML dataset: {len(ml_features)} variables "
+              f"({len(selected_features)} original, {len(transformed_cols)} transformed)")
+
+        # Final selection
         result_ddf = ddf_work[ml_features]
-        
-        # Logging para auditoria
+
+        # Logging for auditing
         try:
             total_rows = int(ddf.index.size.compute())
             sample_size = min(100, total_rows)
-            
-            # Cálculo de estatísticas de qualidade
+
+            # Computation of quality statistics
             if hasattr(result_ddf, 'compute'):
                 sample_stats = result_ddf.head(sample_size, npartitions=result_ddf.npartitions)
             else:
                 sample_stats = result_ddf.head(sample_size)
-            
-            # Proporção de valores faltantes
+
+            # Proportion of missing values
             missing_pct = float(sample_stats.isna().mean().mean() * 100)
-            
-            # Log estruturado para reprodutibilidade
+
+            # Structured log for reproducibility
             self.logger.log_data_info(
                 "ml_ready_data",
                 shape=(total_rows, len(ml_features)),
                 missing_pct=missing_pct
             )
             
-            print(f"  {missing_pct:.1f}% valores faltantes (amostra n={sample_size})")
-            
+            print(f"  {missing_pct:.1f}% missing values (sample n={sample_size})")
+
         except Exception as e:
-            self.logger.warning(f"Erro ao computar estatísticas de qualidade: {e}")
-            print(f"  [WARN] Estatisticas de qualidade indisponiveis: {e}")
-        
-        print("  Feature engineering concluido")
+            self.logger.warning(f"Error computing quality statistics: {e}")
+            print(f"  [WARN] Quality statistics unavailable: {e}")
+
+        print("  Feature engineering complete")
         
         return result_ddf
     
     def save_folds(self, ddf: dd.DataFrame, folds: List[Dict]) -> None:
-        """Salva folds"""
-        print("\nSalvando folds")
-        
+        """Save folds"""
+        print("\nSaving folds")
+
         for fold in folds:
             fold_id = fold['fold_id']
             fold_dir = f"{self.prep_dir}/folds/fold_{fold_id}"
             os.makedirs(fold_dir, exist_ok=True)
             
-            print(f"  Processando fold {fold_id}...")
+            print(f"  Processing fold {fold_id}...")
             
             train_filter = (
                 (ddf['year'] >= fold['train_start']) &
@@ -842,7 +842,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             val_ddf = ddf[val_filter]
             test_ddf = ddf[test_filter]
             
-            # Converter para Pandas e salvar
+            # Convert to Pandas and save
             try:
                 train_df = train_ddf.compute()
                 val_df = val_ddf.compute()
@@ -858,7 +858,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
                 print(f"    Fold {fold_id}: {len(train_df)} train, {len(val_df)} val, {len(test_df)} test")
                 
             except Exception as e:
-                print(f"    [ERROR] Salvamento fold {fold_id}: {e}")
+                print(f"    [ERROR] Saving fold {fold_id}: {e}")
                 raise
             
             fold_metadata = {
@@ -869,18 +869,18 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             self.save_fold_metadata(fold_metadata, fold_dir)
         
         # Master data
-        print("\n  Salvando master data...")
+        print("\n  Saving master data...")
         try:
             master_path = f"{self.prep_dir}/master_data_task_graph.parquet"
             master_df = ddf.compute().reset_index(drop=True)
             self._safe_write_parquet_file(master_df, master_path)
-            print(f"    Master data: {len(master_df)} registros")
-            
+            print(f"    Master data: {len(master_df)} records")
+
         except Exception as e:
-            print(f"    [ERROR] Salvamento master data: {e}")
+            print(f"    [ERROR] Saving master data: {e}")
             raise
-        
-        # Configuração master 
+
+        # Master configuration
         total_obs = len(master_df)
         total_countries = master_df['country_code'].nunique()
         year_min = int(master_df['year'].min())
@@ -888,28 +888,28 @@ class TaskGraphArchitectureML(BaseArchitectureML):
         
         self.save_master_config(folds, total_obs, total_countries, (year_min, year_max))
         
-        print(f"  Dask: folds salvos")
+        print(f"  Dask: folds saved")
     
     
     def _load_from_partitioned_raw_distributed(self) -> dd.DataFrame:
-        """Carrega dados particionados com Schema-on-Read."""
+        """Load partitioned data with Schema-on-Read."""
         parquet_files = glob.glob(f"{self.fallback_path}/**/*.parquet", recursive=True)
-        
+
         if not parquet_files:
-            raise FileNotFoundError("Nenhum arquivo parquet encontrado")
-        
+            raise FileNotFoundError("No parquet file found")
+
         ddf = dd.read_parquet(self.fallback_path, engine='pyarrow').persist()
 
-        # Conversão para formato wide se necessário
+        # Conversion to wide format if necessary
         if 'indicator_name' in ddf.columns:
             ddf = self._convert_to_wide_format_distributed(ddf)
         
         return ddf
     
     def _convert_to_wide_format_distributed(self, ddf: dd.DataFrame) -> dd.DataFrame:
-        """Conversão wide format - Usa Pandas quando necessário."""
+        """Wide format conversion - uses Pandas when necessary."""
         try:
-            print("    Aplicando pivotagem para formato wide...")
+            print("    Applying pivot to wide format...")
             
             df = ddf.compute()
             
@@ -917,7 +917,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             if 'country_stratum' in df.columns:
                 index_cols.append('country_stratum')
             
-            # Pivotear dados
+            # Pivot the data
             df_wide = df.pivot_table(
                 index=index_cols,
                 columns='indicator_name',
@@ -929,15 +929,15 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             
             ddf_wide = dd.from_pandas(df_wide, npartitions=max(1, len(df_wide) // 10000))
             
-            print(f"    Conversao concluida: {len(ddf_wide.columns)} colunas")
+            print(f"    Conversion complete: {len(ddf_wide.columns)} columns")
             return ddf_wide
-            
+
         except Exception as e:
-            print(f"    [ERROR] Conversao wide: {e}")
+            print(f"    [ERROR] Wide conversion: {e}")
             return ddf
-    
+
     def run_setup_with_monitoring(self) -> Dict[str, Any]:
-        """Executa setup  com monitoramento."""
+        """Run setup with monitoring."""
         with self.logger.timer("complete_setup_pipeline"):
             results = self.run_setup()
             
@@ -946,7 +946,7 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             results['version'] = 'no_cache'
 
             self.logger.info(
-                "Setup Data Lake concluído",
+                "Data Lake setup complete",
                 total_time=results.get('processing_time'),
             )
 
@@ -954,9 +954,9 @@ class TaskGraphArchitectureML(BaseArchitectureML):
 
 
 def main():
-    """Executa o pipeline Data Lake end-to-end para validação local."""
+    """Run the Data Lake pipeline end-to-end for local validation."""
     print("=" * 80)
-    print("Pipeline ML Dask")
+    print("Dask ML Pipeline")
     print("=" * 80)
 
     setup = None
@@ -966,16 +966,16 @@ def main():
         
         if results.get('status') == 'success':
             print("Pipeline ok")
-            print(f"  Paradigma: {results.get('paradigm', 'N/A')}")
-            print(f"  Features selecionadas: {results.get('features_selected', 'N/A')}")
-            print(f"  Folds temporais: {results.get('folds_created', 'N/A')}")
-            print(f"  Processamento: {results.get('processing_time', 'N/A')}s")
+            print(f"  Paradigm: {results.get('paradigm', 'N/A')}")
+            print(f"  Features selected: {results.get('features_selected', 'N/A')}")
+            print(f"  Temporal folds: {results.get('folds_created', 'N/A')}")
+            print(f"  Processing: {results.get('processing_time', 'N/A')}s")
         else:
-            print("[ERROR] Pipeline Dask falhou")
+            print("[ERROR] Dask pipeline failed")
             if 'error' in results:
-                print(f"  Erro: {results['error']}")
+                print(f"  Error: {results['error']}")
 
-        print(f"\nResultados:")
+        print(f"\nResults:")
         for key, value in results.items():
             if key not in ['status', 'error']:
                 print(f"  {key}: {value}")
@@ -983,14 +983,14 @@ def main():
         return results
 
     except Exception as e:
-        print(f"\n[ERROR] Pipeline Dask falhou: {e}")
-        print("  Verificar se dados foram processados pelo task_graph/processor.py")
+        print(f"\n[ERROR] Dask pipeline failed: {e}")
+        print("  Check whether the data was processed by task_graph/processor.py")
         return {'status': 'failed', 'error': str(e)}
 
     finally:
-        # Simétrico entre paradigmas: o benchmark reexecuta cada fase
-        # doze vezes no mesmo processo, e um recurso que sobrevive à
-        # repetição é medido pela seguinte.
+        # Symmetric across paradigms: the benchmark re-runs each phase twelve
+        # times in the same process, and a resource that survives one
+        # repetition is measured by the next.
         if setup is not None:
             setup.release_resources()
     

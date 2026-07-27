@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""O gate de equivalência exige TODOS os paradigmas registrados.
+"""The equivalence gate requires ALL registered paradigms.
 
-A afirmação é que os três predizem o mesmo. Violações nasciam apenas dentro de
-itertools.combinations sobre os paradigmas que escreveram vetores, então um
-paradigma que não escreveu nada nunca entrava em uma combinação e nunca gerava
-violação: com 2 de 3 o gate declarava 'equivalent' e saía 0.
+The claim is that the three predict the same thing. Violations were only born
+inside itertools.combinations over the paradigms that wrote vectors, so a
+paradigm that wrote nothing never entered a combination and never produced a
+violation: with 2 of 3 the gate declared 'equivalent' and exited 0.
 
-A assimetria era absurda -- faltar um vetor de um fold produzia violação
-'disjoint' e saída 1; faltar todos os vetores de um paradigma inteiro passava.
+The asymmetry was absurd -- a missing vector for one fold produced a 'disjoint'
+violation and exit 1; missing every vector of an entire paradigm passed.
 
-E era alcançável: o sql_engine era o único paradigma cujos dois modelos saíam 0
-ao falhar, então ele podia não escrever em nenhum dos dois estágios enquanto o
-pipeline seguia.
+And it was reachable: the sql_engine was the only paradigm whose two models
+exited 0 on failure, so it could write nothing in either of the two stages while
+the pipeline carried on.
 """
 
 import json
@@ -32,7 +32,7 @@ from core.paradigm_registry import discover_paradigms
 
 def _write_predictions(root: Path, paradigm: str, *, seed: int = 4,
                        stage: str = 'hierarchical') -> None:
-    """Vetores idênticos entre paradigmas, como um Delta=0 verdadeiro."""
+    """Vectors identical across paradigms, as a true Delta=0."""
     rng = np.random.default_rng(seed)
     n = 12
     frame = pd.DataFrame({
@@ -43,8 +43,9 @@ def _write_predictions(root: Path, paradigm: str, *, seed: int = 4,
         'y_true': rng.normal(size=n).round(6),
         'y_pred': rng.normal(size=n).round(6),
     })
-    # Caminho pela função canônica: reconstruí-lo à mão foi como este fixture
-    # gravou onde o carregador não procura, e o teste passou a medir nada.
+    # Go through the canonical function: rebuilding it by hand was how this
+    # fixture wrote where the loader does not look, and the test came to measure
+    # nothing.
     from core.prediction_store import predictions_path
 
     target = Path(predictions_path(paradigm, stage))
@@ -73,14 +74,14 @@ class TestEveryParadigmMustContribute:
         assert report['status'] == 'equivalent', report.get('detail')
 
     def test_one_paradigm_missing_is_not_equivalent(self, gate):
-        """O caso que passava: 2 de 3 declarava equivalência."""
+        """The case that used to pass: 2 of 3 declared equivalence."""
         module, root = gate
         paradigms = sorted(discover_paradigms())
         for paradigm in paradigms[:-1]:
             _write_predictions(root, paradigm)
         report = module.verify()
         assert report['status'] != 'equivalent', (
-            'equivalência declarada sem um dos paradigmas'
+            'equivalence declared without one of the paradigms'
         )
         assert report['status'] == 'insufficient_data'
         assert paradigms[-1] in report['detail']
@@ -98,12 +99,12 @@ class TestEveryParadigmMustContribute:
         assert module.verify()['status'] != 'equivalent'
 
     def test_a_divergence_is_still_caught_when_all_are_present(self, gate):
-        """A correção não pode ter desligado a detecção que já funcionava."""
+        """The fix must not have switched off detection that already worked."""
         module, root = gate
         paradigms = sorted(discover_paradigms())
         for paradigm in paradigms:
             _write_predictions(root, paradigm)
-        # Uma única predição alterada em um paradigma.
+        # A single altered prediction in one paradigm.
         from core.prediction_store import predictions_path
         path = Path(predictions_path(paradigms[0], 'hierarchical'))
         frame = pd.read_parquet(path)
@@ -131,7 +132,7 @@ class TestExitStatus:
         assert module.run() != 0
 
     def test_the_escape_hatch_is_explicit(self, gate, monkeypatch):
-        """--allow-missing existe, e precisa ser pedido."""
+        """--allow-missing exists, and has to be asked for."""
         module, root = gate
         for paradigm in sorted(discover_paradigms())[:-1]:
             _write_predictions(root, paradigm)
@@ -150,7 +151,7 @@ class TestExitStatus:
 class TestTheReportIsUsable:
 
     def test_the_absent_list_drives_the_decision(self):
-        """Antes era só impresso; grep confirmava que ninguém o lia."""
+        """It used to be only printed; grep confirmed nobody read it."""
         source = (_SRC / 'statistical_validation'
                   / 'prediction_equivalence.py').read_text()
         index = source.index("if missing:")
@@ -207,14 +208,16 @@ class TestTheGateCoversWhatIsPublished:
         before = pipeline._prediction_digests()
         target = next(iter(written.values()))
         target.write_bytes(b'a different repetition')
-        with pytest.raises(ValueError, match='diferentes das'):
+        with pytest.raises(ValueError,
+                           match='produced predictions different from the'):
             pipeline._assert_benchmark_left_predictions_intact(before)
 
     def test_a_removed_artifact_halts(self, harness):
         pipeline, written = harness
         before = pipeline._prediction_digests()
         next(iter(written.values())).unlink()
-        with pytest.raises(ValueError, match='removeu'):
+        with pytest.raises(ValueError,
+                           match='removed prediction artifacts that the gate'):
             pipeline._assert_benchmark_left_predictions_intact(before)
 
     def test_an_artifact_that_appears_afterwards_halts(self, harness):
@@ -225,7 +228,8 @@ class TestTheGateCoversWhatIsPublished:
         before = pipeline._prediction_digests()
         assert str(target) not in before
         target.write_bytes(b'late arrival')
-        with pytest.raises(ValueError, match='nao viu'):
+        with pytest.raises(ValueError,
+                           match='created prediction artifacts that the gate'):
             pipeline._assert_benchmark_left_predictions_intact(before)
 
     def test_the_digest_is_content_based(self, harness):
@@ -236,7 +240,8 @@ class TestTheGateCoversWhatIsPublished:
         before = pipeline._prediction_digests()
         target.write_bytes(bytes(len(original)))
         assert len(target.read_bytes()) == len(original)
-        with pytest.raises(ValueError, match='diferentes das'):
+        with pytest.raises(ValueError,
+                           match='produced predictions different from the'):
             pipeline._assert_benchmark_left_predictions_intact(before)
 
     def test_the_pipeline_records_before_and_checks_after(self):
@@ -253,4 +258,4 @@ class TestTheGateCoversWhatIsPublished:
     def test_an_absent_artifact_before_the_benchmark_halts(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'pipeline.py').read_text()
-        assert 'Nenhum artefato de predicao antes do benchmark' in source
+        assert 'No prediction artifact before the benchmark' in source

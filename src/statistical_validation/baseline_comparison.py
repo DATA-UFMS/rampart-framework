@@ -1,35 +1,38 @@
 #!/usr/bin/env python3
-"""O modelo hierárquico bate a baseline ingênua?
+"""Does the hierarchical model beat the naive baseline?
 
-É o método do estudo de caso de Kapoor & Narayanan (2023). Eles pegaram quatro
-papers que afirmavam superioridade de ML complexo sobre regressão logística,
-corrigiram o vazamento, e mediram de novo: sem os erros, os modelos complexos
-não superavam a LR de décadas atrás em nenhum caso.
+It is the method of the Kapoor & Narayanan (2023) case study. They took four
+papers claiming the superiority of complex ML over logistic regression,
+corrected the leakage, and measured again: without the errors, the complex
+models did not beat the decades-old LR in any case.
 
-Esta é a mesma medida, e ela responde a pergunta que L2 deixa aberta. K&N
-recusam subdividir L2 porque legitimidade exige julgamento de domínio, e
-apontam duas maneiras de uma feature ser ilegítima: ser proxy do desfecho, e
-tornar a predição trivial por já estar disponível no instante da predição. O
-rastreio automático pega a primeira. Esta comparação é o que mede a segunda.
+This is the same measurement, and it answers the question L2 leaves open. K&N
+refuse to subdivide L2 because legitimacy requires domain judgement, and they
+point out two ways for a feature to be illegitimate: being a proxy of the
+outcome, and making the prediction trivial by already being available at the
+instant of prediction. The automatic screening catches the first. This
+comparison is what measures the second.
 
-A diferença é informativa nos dois sentidos, e nenhum é bom sem qualificação:
+The difference is informative in both directions, and neither is good without
+qualification:
 
-  diferença ≈ 0   o ML não acrescenta nada sobre repetir o último valor
-                  observado. O banco de provas continua válido para comparar
-                  paradigmas, mas o conteúdo de aprendizado é decorativo.
-  diferença alta  vale conferir se alguma feature está fazendo o trabalho
-                  trivialmente. Qual baseline venceu diz muito: se a ingênua
-                  com defasagem é a melhor, o alvo é sobretudo autocorrelato.
+  difference ≈ 0   ML adds nothing over repeating the last observed value. The
+                   testbed remains valid for comparing paradigms, but the
+                   learning content is decorative.
+  large difference it is worth checking whether some feature is doing the work
+                   trivially. Which baseline won says a lot: if the naive one
+                   with a lag is the best, the target is above all
+                   autocorrelated.
 
-Lê os vetores de predição, não as métricas agregadas de cada paradigma. Três
-razões: é uma fonte só com um esquema só, contra três layouts diferentes de
-JSON de baseline; a métrica passa a ser calculada aqui, do mesmo jeito para os
-dois estágios; e são exatamente os vetores sobre os quais a equivalência
-bitwise é afirmada, então a comparação herda essa garantia.
+Reads the prediction vectors, not each paradigm's aggregate metrics. Three
+reasons: it is a single source with a single schema, against three different
+layouts of baseline JSON; the metric comes to be computed here, in the same way
+for both stages; and they are exactly the vectors over which bitwise
+equivalence is asserted, so the comparison inherits that guarantee.
 
-Do que um framework de uma implementação não precisa: com Δ=0, os três
-paradigmas predizem o mesmo, logo a diferença tem de ser idêntica nos três.
-Divergência aqui é divergência na afirmação central, e sai reportada.
+What a single-implementation framework does not need: with Δ=0, the three
+paradigms predict the same, hence the difference has to be identical in all
+three. Divergence here is divergence in the central claim, and gets reported.
 """
 
 from __future__ import annotations
@@ -54,14 +57,14 @@ from statistical_validation.equivalence_estimation import (  # noqa: E402
 
 RESULTS_DIR = get_absolute_output_path('statistics')
 
-#: Abaixo disto os três paradigmas não estão predizendo o mesmo, e a
-#: comparação deixa de ser entre engines. É a tolerância do Δ=0, não uma
-#: escolha de modelagem: predições idênticas dão R2 idêntico.
+#: Below this the three paradigms are not predicting the same, and the
+#: comparison stops being between engines. It is the tolerance of Δ=0, not a
+#: modelling choice: identical predictions give identical R2.
 PARADIGM_AGREEMENT_TOLERANCE = 1e-9
 
 
 def _r_squared(y_true: np.ndarray, y_pred: np.ndarray) -> Optional[float]:
-    """R2 fora da amostra. None quando o alvo não varia no fold."""
+    """Out-of-sample R2. None when the target does not vary within the fold."""
     finite = np.isfinite(y_true) & np.isfinite(y_pred)
     if finite.sum() < 2:
         return None
@@ -74,11 +77,11 @@ def _r_squared(y_true: np.ndarray, y_pred: np.ndarray) -> Optional[float]:
 
 
 def _stage_scores(paradigm: str, stage: str) -> Dict[int, Dict[str, float]]:
-    """{fold: {modelo: R2}} para um estágio de um paradigma.
+    """{fold: {model: R2}} for one stage of one paradigm.
 
-    O estágio vem do caminho e não do quadro: load_predictions concatena os
-    dois arquivos e perde essa distinção, que é justamente a que separa a
-    baseline do modelo.
+    The stage comes from the path and not from the frame: load_predictions
+    concatenates the two files and loses that distinction, which is exactly the
+    one that separates the baseline from the model.
     """
     path = predictions_path(paradigm, stage)
     if not os.path.exists(path):
@@ -95,7 +98,7 @@ def _stage_scores(paradigm: str, stage: str) -> Dict[int, Dict[str, float]]:
 
 
 def compare(paradigm: str, bootstrap_iters: int) -> Optional[Dict]:
-    """Modelo contra a melhor baseline, fold a fold."""
+    """Model against the best baseline, fold by fold."""
     baselines = _stage_scores(paradigm, 'baseline')
     models = _stage_scores(paradigm, 'hierarchical')
     shared = sorted(set(baselines) & set(models))
@@ -106,9 +109,9 @@ def compare(paradigm: str, bootstrap_iters: int) -> Optional[Dict]:
     for fold in shared:
         best_name, best_score = max(baselines[fold].items(),
                                     key=lambda pair: pair[1])
-        # O melhor modelo do estágio hierárquico, pelo mesmo critério com que
-        # a melhor baseline é escolhida -- comparar o melhor de um contra a
-        # média do outro seria comparar coisas diferentes.
+        # The best model of the hierarchical stage, by the same criterion with
+        # which the best baseline is chosen -- comparing the best of one against
+        # the mean of the other would be comparing different things.
         model_name, model_score = max(models[fold].items(),
                                       key=lambda pair: pair[1])
         per_fold.append({
@@ -135,9 +138,9 @@ def compare(paradigm: str, bootstrap_iters: int) -> Optional[Dict]:
         'mean_gap': point,
         'gap_ci95': [low, high],
         'gap_ci95_method': method,
-        # Um intervalo que cobre zero diz que o modelo não foi mostrado
-        # superior à baseline -- que é o achado de K&N, não um defeito deste
-        # pipeline.
+        # An interval that covers zero says the model has not been shown
+        # superior to the baseline -- which is K&N's finding, not a defect of
+        # this pipeline.
         'beats_baseline': bool(low > 0.0),
         'baseline_wins': winners,
         'folds_where_baseline_wins': int((gaps < 0).sum()),
@@ -145,13 +148,13 @@ def compare(paradigm: str, bootstrap_iters: int) -> Optional[Dict]:
 
 
 def _agreement(results: Dict[str, Dict]) -> Dict:
-    """Com Δ=0 a diferença é a mesma nos três; se não for, o Δ=0 não vale."""
+    """With Δ=0 the difference is the same in all three; if it is not, Δ=0 does not hold."""
     means = {paradigm: entry['mean_gap']
              for paradigm, entry in results.items()
              if entry and np.isfinite(entry['mean_gap'])}
     if len(means) < 2:
         return {'checked': False,
-                'reason': 'menos de dois paradigmas com resultado'}
+                'reason': 'fewer than two paradigms with a result'}
     spread = max(means.values()) - min(means.values())
     return {
         'checked': True,
@@ -181,15 +184,15 @@ def to_latex(report: Dict) -> str:
         return str(text).replace('_', r'\_').replace('%', r'\%')
 
     lines = [
-        '% Modelo hierárquico contra a melhor baseline por fold',
+        '% Hierarchical model against the best baseline per fold',
         '\\begin{table}[htb]',
         '\\centering',
-        '\\caption{Diferença de $R^2$ fora da amostra entre o modelo '
-        'hierárquico e a melhor baseline por fold. Um intervalo que cobre '
-        'zero indica que a superioridade do modelo não foi estabelecida.}',
+        '\\caption{Out-of-sample $R^2$ difference between the hierarchical '
+        'model and the best baseline per fold. An interval that covers '
+        'zero indicates that the model\'s superiority has not been established.}',
         '\\begin{tabular}{lrrrl}',
         '\\toprule',
-        'Paradigma & Folds & $\\Delta R^2$ & IC95 & Baseline vencedora \\\\',
+        'Paradigm & Folds & $\\Delta R^2$ & 95\\% CI & Winning baseline \\\\',
         '\\midrule',
     ]
     for paradigm, entry in sorted(report['by_paradigm'].items()):
@@ -220,16 +223,16 @@ def write_outputs(report: Dict) -> Tuple[str, str]:
 def main() -> int:
     report = analyze()
     if not report['by_paradigm']:
-        print('  Nenhum par de predicoes baseline/hierarquico; nada a comparar.')
+        print('  No baseline/hierarchical prediction pair; nothing to compare.')
         return 0
 
     json_path, tex_path = write_outputs(report)
     agreement = report['cross_paradigm_agreement']
     if agreement.get('checked') and not agreement['consistent']:
         raise ValueError(
-            f"Os paradigmas discordam sobre a diferença contra a baseline "
-            f"({agreement['mean_gap_by_paradigm']}). Com predições idênticas "
-            f"o R2 é idêntico, então isto contradiz a equivalência bitwise."
+            f"The paradigms disagree about the difference against the baseline "
+            f"({agreement['mean_gap_by_paradigm']}). With identical predictions "
+            f"the R2 is identical, so this contradicts bitwise equivalence."
         )
 
     print(json.dumps({'status': 'ok', 'json': json_path, 'tex': tex_path,
