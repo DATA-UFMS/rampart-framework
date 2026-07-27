@@ -411,3 +411,54 @@ class TestTheImageCarriesWhatTheSuiteReads:
             f'the suite reads {missing} from the repository root and the '
             f'Dockerfile does not copy them, so `docker build` fails at test '
             f'collection')
+
+
+class TestOneDeclaredInterpreter:
+    """Every file that names a Python version names the same one.
+
+    The suite anchors a prediction digest, and the same lockfile produces a
+    different digest on 3.10 than on 3.12 -- the three paradigms still agree
+    with each other within a version, so what moved is the arithmetic under all
+    of them. The package used to declare >=3.10 while the container pinned a
+    3.12 image and the published numbers came from 3.12, which is a claim of
+    support that does not reproduce.
+
+    Six places name the version. Pinned together because they drifted apart
+    once already, and the CI is the only one that fails loudly when they do.
+    """
+
+    EXPECTED = '3.12'
+
+    def test_the_package_declares_it(self):
+        text = (_ROOT / 'pyproject.toml').read_text()
+        assert f'requires-python = ">={self.EXPECTED}"' in text
+
+    def test_the_ci_tests_it_and_nothing_else(self):
+        text = (_ROOT / '.github' / 'workflows' / 'ci.yml').read_text()
+        matrix = re.search(r'python-version:\s*\[([^\]]*)\]', text)
+        assert matrix, 'the CI no longer declares a version matrix'
+        versions = [v.strip().strip('"\'') for v in matrix.group(1).split(',')]
+        assert versions == [self.EXPECTED], (
+            f'CI tests {versions}; the digest only holds on {self.EXPECTED}')
+
+    def test_the_container_pins_it(self):
+        text = (_ROOT / 'Dockerfile').read_text()
+        assert f'FROM python:{self.EXPECTED}-slim@sha256:' in text, (
+            'the image is not pinned to the declared version by digest')
+
+    def test_the_reproduction_script_asserts_it(self):
+        text = (_ROOT / 'scripts' / 'reproduce.sh').read_text()
+        major, minor = self.EXPECTED.split('.')
+        assert f'({major}, {minor})' in text
+
+    @pytest.mark.parametrize('document', ['README.md', 'USAGE_GUIDE.md'])
+    def test_the_documents_state_it(self, document):
+        text = (_ROOT / document).read_text()
+        assert f'Python {self.EXPECTED}' in text
+        assert f'Python {self.EXPECTED}+' not in text, (
+            'the "+" claims a range again; a later interpreter is untested')
+
+    def test_the_limit_of_the_guarantee_is_written_down(self):
+        """A reader must not take bitwise equivalence for portable numbers."""
+        text = (_ROOT / 'README.md').read_text()
+        assert 'the numbers themselves do not' in text

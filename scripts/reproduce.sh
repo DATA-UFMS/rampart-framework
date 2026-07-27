@@ -35,7 +35,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 echo "== Ambiente"
-python3 -c 'import sys; assert sys.version_info >= (3, 10), sys.version'
+python3 -c 'import sys; assert sys.version_info >= (3, 12), sys.version'
 python3 -m pip install --quiet --requirement requirements-lock.txt
 python3 -m pip install --quiet --editable .
 

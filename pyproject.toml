@@ -7,7 +7,10 @@ name = "rampart"
 version = "1.0.0"
 description = "Reproducible benchmarking of data processing paradigms with automated anti-leakage verification"
 readme = "README.md"
-requires-python = ">=3.10"
+# 3.12, matching the digest the Dockerfile pins and the interpreter the
+# published numbers were produced on. Declaring >=3.10 claimed a support that
+# does not reproduce the same predictions.
+requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dynamic = ["dependencies"]
 
