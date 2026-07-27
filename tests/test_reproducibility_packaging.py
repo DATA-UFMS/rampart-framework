@@ -166,29 +166,45 @@ class TestSnapshotSurvivesItsOwnAge:
         assert block.index('snapshot_manifest.json') < block.index('age_hours')
 
     def test_an_old_snapshot_is_still_accepted(self, tmp_path, monkeypatch):
-        """Reproduced: files thirty days old, manifest present."""
+        """Reproduced: files thirty days old, manifest present.
+
+        The manifest goes at the root of collection/, which is where the
+        installer puts it. This test used to drop it beside the data files in
+        output_dir and pass, which is how the two halves stayed out of step:
+        the fixture agreed with the collector, and neither agreed with the
+        installer.
+        """
         import os
         import time
 
+        monkeypatch.setenv('DATASET_NAME', 'worldbank')
+        monkeypatch.setattr('core.config.get_outputs_root',
+                            lambda: str(tmp_path / 'worldbank'))
+
         import collection.raw_data_collector as collector
+        from core.config import get_absolute_output_path
+
+        raw = Path(get_absolute_output_path('collection/raw_data'))
+        raw.mkdir(parents=True)
 
         instance = object.__new__(
             next(getattr(collector, name) for name in dir(collector)
                  if isinstance(getattr(collector, name), type)
                  and hasattr(getattr(collector, name), '_cache_is_valid')))
-        instance.output_dir = str(tmp_path)
+        instance.output_dir = str(raw)
         old = time.time() - 30 * 24 * 3600
         for name in ('complete_data.parquet', 'raw_data_long.parquet',
                      'scientific_collection_metadata.json',
                      'scientific_imputation_log.json'):
-            path = tmp_path / name
+            path = raw / name
             path.write_text('{}')
             os.utime(path, (old, old))
 
         assert not instance._cache_is_valid(), (
             'without a manifest it should expire'
         )
-        (tmp_path / 'snapshot_manifest.json').write_text('{}')
+        (Path(get_absolute_output_path('collection'))
+         / 'snapshot_manifest.json').write_text('{}')
         assert instance._cache_is_valid(), (
             'with a manifest the verified snapshot should be accepted'
         )
@@ -256,3 +272,142 @@ class TestDockerfile:
         """The two differ by roughly twenty times in cost."""
         body = DOCKERFILE.read_text()
         assert '--dataset inep_censo' not in body
+
+
+class TestTheSnapshotSeamHolds:
+    """The installer's directory and the collector's directory are the same one.
+
+    Both halves were tested and both passed. `install` was checked for leaving
+    the manifest behind; `_cache_is_valid` was checked by pointing output_dir at
+    a tmp_path and writing a manifest into it. Neither asked whether the path
+    one writes is the path the other reads, and it was not: the installer put
+    the manifest at the root of `collection/`, the collector looked for it in
+    `collection/raw_data/`.
+
+    The consequence is the failure the collector's own comment describes and
+    claims to have fixed -- a snapshot older than a day looking like an expired
+    cache and reaching for the network. An offline, hash-verified run silently
+    became an online one.
+    """
+
+    def test_the_installer_writes_where_the_collector_reads(self, tmp_path,
+                                                             monkeypatch):
+        import importlib
+        import json as _json
+
+        monkeypatch.setenv('DATASET_NAME', 'worldbank')
+        outputs = tmp_path / 'outputs'
+        monkeypatch.setattr('core.config.get_outputs_root',
+                            lambda: str(outputs / 'worldbank'))
+
+        # A snapshot shaped as the installer expects: the collection tree, with
+        # the manifest at its root.
+        snapshot = tmp_path / 'snap'
+        (snapshot / 'raw_data').mkdir(parents=True)
+        for name in ('complete_data.parquet', 'raw_data_long.parquet',
+                     'scientific_collection_metadata.json',
+                     'scientific_imputation_log.json'):
+            (snapshot / 'raw_data' / name).write_text('{}')
+        (snapshot / 'snapshot_manifest.json').write_text(_json.dumps({}))
+
+        verifier = importlib.import_module('verify_data_snapshot')
+        destination = verifier.install(snapshot, 'worldbank')
+
+        from core.config import get_absolute_output_path
+        collector_looks_at = Path(
+            get_absolute_output_path('collection')) / 'snapshot_manifest.json'
+        assert collector_looks_at.exists(), (
+            f'installed at {destination}, collector reads '
+            f'{collector_looks_at}')
+
+    def test_an_old_snapshot_is_still_authoritative(self, tmp_path,
+                                                     monkeypatch):
+        """Being old is a snapshot's characteristic, not a defect."""
+        import importlib
+        import os
+        import time
+
+        monkeypatch.setenv('DATASET_NAME', 'worldbank')
+        outputs = tmp_path / 'outputs'
+        monkeypatch.setattr('core.config.get_outputs_root',
+                            lambda: str(outputs / 'worldbank'))
+
+        from core.config import get_absolute_output_path
+        raw = Path(get_absolute_output_path('collection/raw_data'))
+        raw.mkdir(parents=True)
+        for name in ('complete_data.parquet', 'raw_data_long.parquet',
+                     'scientific_collection_metadata.json',
+                     'scientific_imputation_log.json'):
+            path = raw / name
+            path.write_text('{}')
+            ancient = time.time() - 40 * 24 * 3600
+            os.utime(path, (ancient, ancient))
+        (Path(get_absolute_output_path('collection'))
+         / 'snapshot_manifest.json').write_text('{}')
+
+        module = importlib.import_module('collection.raw_data_collector')
+        cls = next(getattr(module, n) for n in dir(module)
+                   if isinstance(getattr(module, n), type)
+                   and hasattr(getattr(module, n), '_cache_is_valid'))
+        instance = cls.__new__(cls)
+        instance.output_dir = str(raw)
+        assert instance._cache_is_valid(), (
+            'a forty-day-old verified snapshot triggered a re-download')
+
+
+class TestTheImageCarriesWhatTheSuiteReads:
+    """The build runs the suite, so a file the suite reads is a build input.
+
+    `USAGE_GUIDE.md` was not among the copied files while three tests read it at
+    collection time. The result was not an image missing its documentation: the
+    build's `RUN pytest` failed at collection and no image was produced at all,
+    so the containerised reproduction the README documents could not run.
+
+    Pinned as a rule rather than as one filename, because the next file added to
+    the repository root and read by a test would land in the same hole.
+    """
+
+    DOCKERFILE = (_ROOT / 'Dockerfile').read_text()
+
+    @staticmethod
+    def _root_files_the_suite_reads() -> set:
+        """Root-level files referenced as `_ROOT / 'name'` anywhere in tests/."""
+        pattern = re.compile(
+            r"(?:_ROOT|_SRC\.parent|parents\[1\])\s*/\s*'([^'/]+\.[a-z]+)'")
+        found = set()
+        for path in (_ROOT / 'tests').glob('*.py'):
+            found.update(pattern.findall(path.read_text()))
+        # Two exclusions, and neither may use git: this test has to hold
+        # inside the build context, which carries no .git -- a guard that
+        # cannot run where the failure happens is not a guard.
+        #
+        # Dotfiles are the probes several tests write into the root and read
+        # back; a file that does not exist is not a file the image is missing.
+        return {name for name in found
+                if not name.startswith('.') and (_ROOT / name).exists()}
+
+    def _copied_root_files(self) -> set:
+        copied = set()
+        for line in self.DOCKERFILE.splitlines():
+            if not line.startswith('COPY '):
+                continue
+            parts = line.split()[1:]
+            # The last token is the destination; a trailing / marks a directory.
+            for token in parts[:-1]:
+                if not token.endswith('/'):
+                    copied.add(token)
+        return copied
+
+    def test_the_build_runs_the_suite(self):
+        """If it stops doing that, this whole class is checking nothing."""
+        assert 'pytest' in self.DOCKERFILE, (
+            'the build no longer runs the suite; the guarantee below is void')
+
+    def test_every_root_file_the_suite_reads_is_copied(self):
+        read = self._root_files_the_suite_reads()
+        assert read, 'the detector found nothing; it has stopped working'
+        missing = sorted(read - self._copied_root_files())
+        assert not missing, (
+            f'the suite reads {missing} from the repository root and the '
+            f'Dockerfile does not copy them, so `docker build` fails at test '
+            f'collection')

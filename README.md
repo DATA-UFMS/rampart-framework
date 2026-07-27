@@ -191,7 +191,7 @@ src/
 │   └── dataframe_lib/
 ├── benchmarking/               # Instrumentation and latency metrics
 └── statistical_validation/     # Equivalence, bootstrap, effect sizes
-tests/                          # 1553 tests (unit, discovery, anti-leakage)
+tests/                          # 1560 tests (unit, discovery, anti-leakage)
 pipeline.py                     # Orchestrates the full pipeline
 ```
 
@@ -284,7 +284,7 @@ Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON �
 - Seeds centralized in `scientific_config.py`, `n_jobs=1`
 - Environment snapshot: packages, hardware, git commit
 - `requirements-lock.txt` with exact versions
-- 1553 automated tests (`pytest tests/`)
+- 1560 automated tests (`pytest tests/`)
 
 For operational details, see [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

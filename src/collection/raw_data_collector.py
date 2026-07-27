@@ -1307,7 +1307,15 @@ class RawDataCollector:
         # copytree preserves mtime, so a thirty-day-old snapshot looked like an
         # expired cache and triggered an API call -- exactly what it exists
         # to avoid. Being old is its characteristic, not a defect.
-        manifest = os.path.join(self.output_dir, 'snapshot_manifest.json')
+        # At the root of collection/, which is where the installer puts it:
+        # a snapshot spans every raw subdirectory a dataset uses, so the
+        # manifest describes the tree rather than one folder inside it. Read
+        # from self.output_dir it was never found, and the age rule below took
+        # over -- so a snapshot older than a day reached for the network, which
+        # is the one thing it exists to prevent. Both halves had tests; the
+        # seam between them did not.
+        manifest = os.path.join(get_absolute_output_path('collection'),
+                                'snapshot_manifest.json')
         if os.path.exists(manifest):
             print("  Cache: verified snapshot installed; age does not apply")
             return True

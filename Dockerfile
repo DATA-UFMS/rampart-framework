@@ -33,7 +33,10 @@ RUN python -m pip install --requirement requirements-lock.txt
 
 # O Dockerfile entra na imagem porque a suíte que roda na construção o
 # inspeciona; sem ele oito testes falham e nenhuma imagem é produzida.
-COPY pyproject.toml README.md Dockerfile ./
+# USAGE_GUIDE.md is here because the suite reads it at collection time,
+# and the suite runs during the build below. Leaving it out did not
+# produce an image without documentation -- it produced no image.
+COPY pyproject.toml README.md USAGE_GUIDE.md Dockerfile ./
 COPY src/ src/
 COPY tests/ tests/
 COPY scripts/ scripts/

@@ -133,8 +133,16 @@ def _discover():
     return paradigms
 
 
-def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
-    """Validates the temporal integrity of every fold before moving on to the benchmark."""
+def _validate_anti_leakage_gate(root: str) -> None:
+    """Validates the temporal integrity of every fold before the benchmark.
+
+    Integrity only. Whether the folds belong to this run is settled just above,
+    by the provenance gate, and by nonce rather than by clock. This function
+    used to answer that question too, comparing creation_timestamp against the
+    run's start -- the weaker of the two tests, since a leftover file with a
+    newer stamp passes it, and the one no test covered. Two places answering
+    one question is how they come to disagree.
+    """
     # Indexed, not .get with a default: a silent default here would let the gate
     # validate a gap different from the configured one.
     gap = int(SCIENTIFIC_CONFIG['temporal_gap_years'])
@@ -152,22 +160,6 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
 
         with open(folds_path, 'r') as f:
             folds_config = json.load(f)
-
-        # Folds left by an earlier run would be validated in place of the ones
-        # the models are about to consume, so the gate would attest to
-        # artifacts that no longer exist.
-        created = folds_config.get('creation_timestamp')
-        if created is None:
-            raise ValueError(
-                f"{arch}: fold configuration carries no creation_timestamp, so "
-                f"it cannot be shown to belong to this run: {folds_path}"
-            )
-        if datetime.fromisoformat(created) < started_at:
-            raise ValueError(
-                f"{arch}: fold configuration predates this run "
-                f"(created {created}, run started {started_at.isoformat()}). "
-                f"Stale folds must not be validated in place of current ones."
-            )
 
         folds = folds_config.get('folds', [])
         validator.enforce_walk_forward(folds)
@@ -411,7 +403,6 @@ def main() -> None:
     os.environ['RAMPART_RUN_ID'] = run_id
     root = os.path.abspath(os.path.dirname(__file__))
     py = sys.executable
-    started_at = datetime.now()
 
     _validate_core_budget()
     print(f"\nPipeline started (dataset: {dataset_name})")
@@ -452,7 +443,7 @@ def main() -> None:
     _log("feature_selection and temporal_folds belong to this run")
 
     print("\nAnti-leakage gate")
-    _validate_anti_leakage_gate(root, started_at)
+    _validate_anti_leakage_gate(root)
     _log("All folds passed temporal validation")
 
     for i, (arch, info) in enumerate(paradigms.items(), 1):

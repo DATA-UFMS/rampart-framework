@@ -593,22 +593,21 @@ class TestTheParadigmsShareTheirFolds:
         monkeypatch.setattr(
             pipeline, 'get_absolute_output_path',
             lambda relative: str(outputs / relative.replace('outputs/', '')))
-        started = datetime.now() - timedelta(seconds=5)
-        return pipeline, outputs, started, datetime.now()
+        return pipeline, outputs, datetime.now()
 
     #: Two folds that satisfy the gap of two years.
     SHARED = [(2000, 2007, 2010, 2011, 2014, 2015),
               (2000, 2008, 2011, 2012, 2015, 2016)]
 
     def test_identical_folds_pass(self, gate):
-        pipeline, outputs, started, created = gate
+        pipeline, outputs, created = gate
         paradigms = sorted(discover_paradigms())
         self._write(outputs, {p: self.SHARED for p in paradigms}, created)
-        pipeline._validate_anti_leakage_gate(str(outputs), started)
+        pipeline._validate_anti_leakage_gate(str(outputs))
 
     def test_a_shifted_window_halts(self, gate):
         """Same count, same gaps, different years: counting folds misses it."""
-        pipeline, outputs, started, created = gate
+        pipeline, outputs, created = gate
         paradigms = sorted(discover_paradigms())
         windows = {p: self.SHARED for p in paradigms}
         windows[paradigms[0]] = [(2000, 2007, 2010, 2011, 2014, 2015),
@@ -617,26 +616,26 @@ class TestTheParadigmsShareTheirFolds:
         self._write(outputs, windows, created)
         with pytest.raises(ValueError,
                            match='do not share the same temporal folds'):
-            pipeline._validate_anti_leakage_gate(str(outputs), started)
+            pipeline._validate_anti_leakage_gate(str(outputs))
 
     def test_a_missing_fold_halts(self, gate):
-        pipeline, outputs, started, created = gate
+        pipeline, outputs, created = gate
         paradigms = sorted(discover_paradigms())
         windows = {p: self.SHARED for p in paradigms}
         windows[paradigms[-1]] = self.SHARED[:1]
         self._write(outputs, windows, created)
         with pytest.raises(ValueError,
                            match='do not share the same temporal folds'):
-            pipeline._validate_anti_leakage_gate(str(outputs), started)
+            pipeline._validate_anti_leakage_gate(str(outputs))
 
     def test_an_empty_configuration_halts_before_the_comparison(self, gate):
         """Three empty lists agree with each other, and agreement is not integrity."""
         from core.validation import AntiLeakageViolation
-        pipeline, outputs, started, created = gate
+        pipeline, outputs, created = gate
         paradigms = sorted(discover_paradigms())
         self._write(outputs, {p: [] for p in paradigms}, created)
         with pytest.raises(AntiLeakageViolation, match='empty'):
-            pipeline._validate_anti_leakage_gate(str(outputs), started)
+            pipeline._validate_anti_leakage_gate(str(outputs))
 
 
 class TestCreateTemporalFoldsEnforces:

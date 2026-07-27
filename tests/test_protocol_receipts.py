@@ -479,7 +479,7 @@ class TestSetupStampsItsArtifacts:
         """Provenance first: whose the folds are, then whether they are sound."""
         source = (_ROOT / 'pipeline.py').read_text()
         assert (source.index('_validate_setup_provenance(run_id)')
-                < source.index('_validate_anti_leakage_gate(root, started_at)'))
+                < source.index('_validate_anti_leakage_gate(root)'))
 
 
 class TestTheFeatureListIsNotOptional:
@@ -528,3 +528,59 @@ class TestTheFeatureListIsNotOptional:
         assert not any(defaulted), (
             f'{paradigm} reads selected_features with a default; an absent key '
             f'would train it on the target lags alone')
+
+
+class TestProvenanceIsAskedOnce:
+    """One question, one place. This file is where it came apart.
+
+    The provenance gate was added while the temporal gate still compared
+    `creation_timestamp` against the run's start -- both asking whether
+    `temporal_folds_<p>.json` belonged to this run, of the same file, one gate
+    apart. The clock comparison was the weaker of the two (a leftover file with
+    a newer stamp passes it), the one exposed to a backward NTP step, and the
+    one no test covered.
+
+    Pinned because the repository keeps rediscovering this shape: the same
+    policy implemented twice has always already diverged.
+    """
+
+    SOURCE = (_ROOT / 'pipeline.py').read_text()
+
+    @staticmethod
+    def _code_of(function_name: str) -> str:
+        """The function's code with its docstring dropped.
+
+        Read as text, this class kept failing on its own explanation: the
+        docstring that says why the clock comparison was removed contains the
+        words it forbids.
+        """
+        import ast
+
+        tree = ast.parse(TestProvenanceIsAskedOnce.SOURCE)
+        node = next(n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef)
+                    and n.name == function_name)
+        body = list(node.body)
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            body = body[1:]
+        return '\n'.join(ast.unparse(statement) for statement in body)
+
+    def test_the_temporal_gate_does_not_judge_provenance(self):
+        code = self._code_of('_validate_anti_leakage_gate')
+        assert 'creation_timestamp' not in code, (
+            'the temporal gate is answering provenance again')
+        assert 'started_at' not in code, (
+            'the temporal gate takes the run start again')
+
+    def test_provenance_is_settled_by_nonce(self):
+        code = self._code_of('_validate_setup_provenance')
+        assert "get('run_id')" in code
+        assert 'datetime' not in code, (
+            'provenance went back to comparing clocks')
+
+    def test_the_fold_artifact_is_covered_exactly_once(self):
+        """It is named in the provenance list and nowhere else as a run check."""
+        assert "'temporal_folds'" in self.SOURCE
+        assert self.SOURCE.count("_SETUP_ARTIFACTS = ") == 1
