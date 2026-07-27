@@ -392,7 +392,8 @@ class DataFrameLibArchitectureML(BaseArchitectureML):
         print("  Target criado via Polars expressions")
 
         assert_lag_columns(df_with_target.collect_schema().names(),
-                           'dataframe_lib', self.TARGET_LAG_ORDERS)
+                           'dataframe_lib', self.TARGET_LAG_ORDERS,
+                           target_stem=self.TARGET_STEM)
         return df_with_target
 
     def _compute_target_statistics(self, df: pl.DataFrame) -> Dict[str, float]:

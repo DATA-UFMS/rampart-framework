@@ -218,7 +218,8 @@ def canonical_fold(X, y, entities, years, *, paradigm: str):
 
 
 
-def assert_lag_columns(present, paradigm: str, lag_orders) -> None:
+def assert_lag_columns(present, paradigm: str, lag_orders, *,
+                       target_stem: str) -> None:
     """The autoregressive columns exist, in every paradigm.
 
     Two of the three built them inside a try/except that printed a warning and
@@ -231,8 +232,13 @@ def assert_lag_columns(present, paradigm: str, lag_orders) -> None:
     Lags are not optional. Where the entity's past target was never observed
     the join yields NULL, which is the honest value and is handled downstream;
     a missing *column* is a different thing entirely.
+
+    The stem is a required keyword rather than a default: this module holds the
+    checks that are meant to outlive the study they were written for, and the
+    name of one study's dependent variable was hardcoded here. A default would
+    have kept it, one import away.
     """
-    expected = {f'dropout_rate_lag_{order}' for order in lag_orders}
+    expected = {f'{target_stem}_lag_{order}' for order in lag_orders}
     missing = sorted(expected - set(present))
     if missing:
         raise ValueError(

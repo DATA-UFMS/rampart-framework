@@ -324,7 +324,8 @@ class TestTheLagColumnsAreNotOptional:
         with pytest.raises(ValueError, match='dropout_rate_lag_3'):
             assert_lag_columns(['country_code', 'year',
                                 'dropout_rate_lag_2'], 'task_graph',
-                               BaseArchitectureML.TARGET_LAG_ORDERS)
+                               BaseArchitectureML.TARGET_LAG_ORDERS,
+                               target_stem=BaseArchitectureML.TARGET_STEM)
 
     def test_a_complete_set_passes(self):
         from core.base_architecture import BaseArchitectureML
@@ -334,14 +335,29 @@ class TestTheLagColumnsAreNotOptional:
             f'dropout_rate_lag_{order}'
             for order in BaseArchitectureML.TARGET_LAG_ORDERS]
         assert_lag_columns(columns, 'sql_engine',
-                           BaseArchitectureML.TARGET_LAG_ORDERS)
+                           BaseArchitectureML.TARGET_LAG_ORDERS,
+                           target_stem=BaseArchitectureML.TARGET_STEM)
 
     def test_it_names_the_paradigm(self):
         from core.base_architecture import BaseArchitectureML
         from core.validation import assert_lag_columns
         with pytest.raises(ValueError, match='dataframe_lib'):
             assert_lag_columns([], 'dataframe_lib',
-                               BaseArchitectureML.TARGET_LAG_ORDERS)
+                               BaseArchitectureML.TARGET_LAG_ORDERS,
+                               target_stem=BaseArchitectureML.TARGET_STEM)
+
+    def test_the_stem_is_not_the_study_s_own(self):
+        """The check outlives the variable it was written for.
+
+        Pinned because the stem was a literal inside this function: a study
+        with a different dependent variable got the wrong column names from a
+        module whose whole purpose is to be reused.
+        """
+        from core.validation import assert_lag_columns
+
+        with pytest.raises(ValueError, match='evasao_lag_2'):
+            assert_lag_columns(['municipio', 'year'], 'task_graph', (2,),
+                               target_stem='evasao')
 
     @pytest.mark.parametrize('paradigm', ['task_graph', 'dataframe_lib'])
     def test_no_paradigm_swallows_a_lag_failure(self, paradigm):

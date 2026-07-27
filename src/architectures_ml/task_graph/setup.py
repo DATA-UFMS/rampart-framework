@@ -424,7 +424,8 @@ class TaskGraphArchitectureML(BaseArchitectureML):
             ) from exc
 
         assert_lag_columns(ddf_with_target.columns, 'task_graph',
-                           self.TARGET_LAG_ORDERS)
+                           self.TARGET_LAG_ORDERS,
+                           target_stem=self.TARGET_STEM)
         return ddf_with_target
     
     def _compute_target_statistics(self, ddf: dd.DataFrame) -> Dict[str, float]:
