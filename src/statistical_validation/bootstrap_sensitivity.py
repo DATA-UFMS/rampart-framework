@@ -30,7 +30,7 @@ from core.config import get_absolute_output_path
 from core.paradigm_registry import paradigm_pairs
 from statistical_validation.equivalence_estimation import (
     _advantage,
-    _bootstrap_ci,
+    bootstrap_ci,
     _decision_equivalence,
     _load_baseline_pairs,
     _paired_deltas_for_metric,
@@ -85,7 +85,7 @@ def _sensitivity_grid(
             continue
         for scale, iters in product(delta_scales, bootstrap_iters):
             sesoi = base_deltas[base_metric]["delta"] * scale
-            point, (ci_lo, ci_hi), ci_method = _bootstrap_ci(
+            point, (ci_lo, ci_hi), ci_method = bootstrap_ci(
                 deltas, iters=iters, seed=seed)
             decision = _decision_equivalence(ci_lo, ci_hi, sesoi)
             advantage = _advantage(decision, base_metric, arch_a, arch_b)

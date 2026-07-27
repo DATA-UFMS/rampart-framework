@@ -103,7 +103,7 @@ def _median_hodges_lehmann(deltas: np.ndarray) -> float:
     return float(np.median(walsh))
 
 
-def _bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, Tuple[float, float], str]:
+def bootstrap_ci(values: np.ndarray, iters: int = DEFAULT_BOOTSTRAP_ITERS, seed: int = DEFAULT_SEED, ci: float = 0.95) -> Tuple[float, Tuple[float, float], str]:
     """IC bootstrap (BCa com fallback percentil).
 
     Returns the point estimate, the interval, and which method produced it.
@@ -279,7 +279,7 @@ def _analyze_predictive_metrics(args) -> Dict:
         pair_results = {}
         for metric, delta in cfg.items():
             deltas = _paired_deltas_for_metric(pairs, metric, arch_a, arch_b)
-            point, (lo, hi), ci_method = _bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
+            point, (lo, hi), ci_method = bootstrap_ci(deltas, iters=args.bootstrap, seed=args.seed, ci=0.95)
             decision = _decision_equivalence(lo, hi, delta)
             advantage = _advantage(decision, metric, arch_a, arch_b)
             wilcoxon_p = None
@@ -365,7 +365,7 @@ def _analyze_latency(args) -> Dict:
             if lr.size == 0:
                 phase_results[pair_key] = {'status': 'insufficient_data'}
                 continue
-            point, (lo, hi), ci_method = _bootstrap_ci(lr, iters=args.bootstrap, seed=args.seed, ci=0.95)
+            point, (lo, hi), ci_method = bootstrap_ci(lr, iters=args.bootstrap, seed=args.seed, ci=0.95)
             delta_pct = profile.get(str(phase).lower(), profile['total'])
             delta_lr = math.log(1.0 + delta_pct)
             decision = _decision_equivalence(lo, hi, delta_lr)

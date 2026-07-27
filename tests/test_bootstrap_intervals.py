@@ -27,26 +27,26 @@ class TestMethodIsRecorded:
 
     def test_zero_variance_is_reported_as_degenerate(self):
         """The Delta = 0 case the paper reports as [0, 0]."""
-        point, (lo, hi), method = ee._bootstrap_ci(np.zeros(9), iters=500)
+        point, (lo, hi), method = ee.bootstrap_ci(np.zeros(9), iters=500)
         assert method == 'degenerate_zero_variance'
         assert (point, lo, hi) == (0.0, 0.0, 0.0)
 
     def test_degenerate_interval_is_exact_not_approximate(self):
         """Every resample of a constant sample has the same mean."""
         values = np.full(9, 0.37)
-        point, (lo, hi), _ = ee._bootstrap_ci(values, iters=500)
+        point, (lo, hi), _ = ee.bootstrap_ci(values, iters=500)
         assert lo == hi == point == pytest.approx(0.37)
 
     def test_ordinary_sample_uses_bca(self):
         rng = np.random.default_rng(11)
         values = rng.normal(0.02, 0.01, 9)
-        point, (lo, hi), method = ee._bootstrap_ci(values, iters=2000)
+        point, (lo, hi), method = ee.bootstrap_ci(values, iters=2000)
         assert method == 'bca'
         assert lo < point < hi
 
     @pytest.mark.parametrize('values', [np.array([]), np.full(5, np.nan)])
     def test_absent_data_is_reported_as_insufficient(self, values):
-        point, (lo, hi), method = ee._bootstrap_ci(values, iters=500)
+        point, (lo, hi), method = ee.bootstrap_ci(values, iters=500)
         assert method == 'insufficient_data'
         assert np.isnan(point) and np.isnan(lo) and np.isnan(hi)
 
@@ -59,7 +59,7 @@ class TestMethodIsRecorded:
         monkeypatch.setattr(scipy.stats, 'bootstrap', explode)
         rng = np.random.default_rng(3)
         values = rng.normal(0.02, 0.01, 9)
-        point, (lo, hi), method = ee._bootstrap_ci(values, iters=2000)
+        point, (lo, hi), method = ee.bootstrap_ci(values, iters=2000)
         assert method == 'percentile_fallback:RuntimeError'
         assert lo < point < hi
 
@@ -75,13 +75,13 @@ class TestMethodIsRecorded:
                             lambda *a, **k: _Result())
         rng = np.random.default_rng(5)
         values = rng.normal(0.02, 0.01, 9)
-        _, (lo, hi), method = ee._bootstrap_ci(values, iters=2000)
+        _, (lo, hi), method = ee.bootstrap_ci(values, iters=2000)
         assert method.startswith('percentile_fallback:')
         assert np.isfinite(lo) and np.isfinite(hi)
 
 
 class TestSensitivityGridConsumesTheInterval:
-    """The sensitivity grid unpacks whatever _bootstrap_ci returns.
+    """The sensitivity grid unpacks whatever bootstrap_ci returns.
 
     It went unnoticed that the grid still unpacked two values after the method
     was added as a third: without baseline results on disk the metric dictionary

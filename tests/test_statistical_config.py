@@ -66,13 +66,29 @@ def test_protocol_parameters_do_not_default_to_literals(path):
         pairs += [(a, d) for a, d in zip(args.kwonlyargs, args.kw_defaults)
                   if d is not None]
 
+        body = ast.unparse(node)
         for arg, default in pairs:
             if arg.arg not in _OWNED_PARAMETERS:
                 continue
-            assert not isinstance(default, ast.Constant), (
+            if not isinstance(default, ast.Constant):
+                continue
+            # None is the sentinel for "read the configuration", and it is the
+            # pattern the rest of the repository uses -- `x or default` treats
+            # a legitimate zero as absent, so the explicit None check replaced
+            # it in warmup_runs and repetitions. Allowing it here would hollow
+            # the guard out unless the function demonstrably does read the
+            # configuration, so that is what is required.
+            if default.value is None:
+                assert 'SCIENTIFIC_CONFIG' in body or 'BENCHMARK_CONFIG' in body, (
+                    f"{path.name}:{node.lineno} {node.name}() takes "
+                    f"{arg.arg}=None as the sentinel for the configured value "
+                    f"and never reads a configuration"
+                )
+                continue
+            raise AssertionError(
                 f"{path.name}:{node.lineno} {node.name}() defaults "
-                f"{arg.arg}={getattr(default, 'value', '?')!r} to a literal, so "
-                f"it can run with a value other than the configured one"
+                f"{arg.arg}={default.value!r} to a literal, so it can run "
+                f"with a value other than the configured one"
             )
 
 

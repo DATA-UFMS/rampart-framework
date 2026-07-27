@@ -26,7 +26,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from statistical_validation.equivalence_estimation import (
-    HIGHER_IS_BETTER, _advantage, _bootstrap_ci, _decision_equivalence,
+    HIGHER_IS_BETTER, _advantage, bootstrap_ci, _decision_equivalence,
     _paired_deltas_for_metric)
 
 # A é melhor nas três: r2 maior, mase e wape menores.
@@ -42,7 +42,7 @@ def _pairs(a_values, b_values, n=9):
 
 def _decide(metric, pairs, arch_a='archA', arch_b='archB'):
     deltas = _paired_deltas_for_metric(pairs, metric, arch_a, arch_b)
-    _, (low, high), _ = _bootstrap_ci(deltas, iters=400)
+    _, (low, high), _ = bootstrap_ci(deltas, iters=400)
     decision = _decision_equivalence(low, high, SESOI[metric])
     return decision, _advantage(decision, metric, arch_a, arch_b)
 

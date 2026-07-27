@@ -355,6 +355,10 @@ def main() -> None:
          'src/statistical_validation/effect_analysis.py', []),
         ('d', 'Sensibilidade ao numero de resamples',
          'src/statistical_validation/bootstrap_sensitivity.py', []),
+        # Depois de (a)-(c) porque lê os vetores de predição, e antes das
+        # tabelas porque o resultado dele entra na info sheet.
+        ('d2', 'Modelo contra a melhor baseline',
+         'src/statistical_validation/baseline_comparison.py', []),
         ('e', 'Percentis de latencia',
          'src/benchmarking/derive_latency_percentiles.py', []),
         ('f', 'Percentis de throughput',
