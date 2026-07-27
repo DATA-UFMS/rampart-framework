@@ -229,7 +229,7 @@ scripts/
 ├── derive_paper_tables.py      # Paper tables, spanning both datasets
 ├── derive_model_info_sheet.py  # Kapoor & Narayanan model info sheet
 └── validation/                 # Leakage-injection negative control
-tests/                          # 1560 tests (unit, discovery, anti-leakage)
+tests/                          # 1561 tests (unit, discovery, anti-leakage)
 pipeline.py                     # Orchestrates the full pipeline
 ```
 
@@ -354,7 +354,7 @@ Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON �
 - Seeds centralized in `scientific_config.py`, `n_jobs=1`
 - Environment snapshot: packages, hardware, git commit
 - `requirements-lock.txt` with exact versions
-- 1560 automated tests (`pytest tests/`)
+- 1561 automated tests (`pytest tests/`)
 
 For operational details, see [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

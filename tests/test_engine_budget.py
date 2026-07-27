@@ -70,7 +70,35 @@ class TestBudgetIsDeclared:
 
 class TestBudgetIsValidated:
 
-    def test_a_fitting_budget_passes(self):
+    def test_a_fitting_budget_passes(self, monkeypatch):
+        """A budget within the machine is accepted.
+
+        The budget is monkeypatched rather than read from the config: this used
+        to call the check against the production values, which asserts that
+        whatever machine runs the suite has eight cores. It passed on the
+        development machine (12) and failed on the CI runner (4), turning a
+        property of the runner into a test failure. What the check owes us is
+        that it accepts a fitting budget and refuses an oversubscribed one --
+        both now stated against the cores actually present.
+        """
+        available = multiprocessing.cpu_count()
+        monkeypatch.setitem(SCIENTIFIC_CONFIG, 'engine_threads', available)
+        monkeypatch.setitem(SCIENTIFIC_CONFIG, 'blas_threads', 1)
+        _validate_core_budget()
+
+    def test_the_production_budget_is_reported_against_this_machine(self):
+        """Not a failure when it does not fit -- the pipeline refuses by design.
+
+        Recorded so the reason a run is impossible here is visible in the suite
+        output rather than discovered hours in.
+        """
+        available = multiprocessing.cpu_count()
+        needed = (int(SCIENTIFIC_CONFIG['engine_threads'])
+                  + int(SCIENTIFIC_CONFIG['blas_threads']) - 1)
+        if needed > available:
+            pytest.skip(
+                f'the production budget needs {needed} cores and this machine '
+                f'has {available}; the pipeline will refuse to run here')
         _validate_core_budget()
 
     def test_oversubscription_is_refused(self, monkeypatch):
