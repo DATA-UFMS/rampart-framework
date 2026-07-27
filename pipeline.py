@@ -35,7 +35,7 @@ if _SRC_DIR not in sys.path:
 from core.config import (get_absolute_output_path, get_dataset_name,
                          write_environment_snapshot)
 from core.scientific_config import SCIENTIFIC_CONFIG
-from core.validation import TemporalValidator
+from core.validation import AntiLeakageViolation, TemporalValidator
 
 def _log(msg: str) -> None:
     print(f"  {msg}")
@@ -184,6 +184,77 @@ def _validate_anti_leakage_gate(root: str, started_at: datetime) -> None:
 
 
 
+#: Receipts each paradigm must leave to show it ran the two protocols the base
+#: class cannot impose on it. Each entry names the artifact stem, the protocol,
+#: and the field whose emptiness means the protocol did not actually run --
+#: presence of the file is not enough, since one of the two writers runs
+#: unconditionally and would happily record that nothing was imputed.
+_PROTOCOL_RECEIPTS = (
+    ('fold_imputation', 'P5', 'folds'),
+    ('feature_audit', 'P3', 'features_audited'),
+)
+
+
+def _validate_protocol_receipts(started_at: datetime) -> None:
+    """Every paradigm left evidence that it ran P5 and P3's post-lag re-audit.
+
+    P1, P2 and P4 are enforced by the base class: they live inside concrete
+    methods that the setup skeleton calls, so a paradigm cannot reach the
+    models without passing through them. The other two are not. P5 and the
+    re-audit of the feature set the models actually train on both run inside
+    each paradigm's model code, because they need the materialised fold -- the
+    one thing the paradigms exist to build differently. What the core can
+    guarantee about them today is that their author remembered to call them.
+
+    Moving the calls into the core would mean the core materialising the fold
+    itself, which erases the difference the experiment measures. So the gap is
+    closed from the other side: each call leaves a receipt, and this refuses to
+    let the run continue when a receipt is missing, empty, or older than the
+    run that is supposed to have produced it.
+
+    A fourth paradigm that omits either call now halts the pipeline instead of
+    silently reporting results under a protocol it never followed.
+    """
+    prep_root = get_absolute_output_path('outputs/ml_pipeline/architectures')
+
+    for arch in _discover():
+        for stem, protocol, evidence_field in _PROTOCOL_RECEIPTS:
+            path = os.path.join(prep_root, arch, 'prep', f'{stem}_{arch}.json')
+            if not os.path.exists(path):
+                raise AntiLeakageViolation(
+                    f"{arch}: {protocol} deixou nenhum recibo em {path}. O "
+                    f"protocolo roda no código do paradigma, e sua ausência "
+                    f"aqui é indistinguível de não ter rodado."
+                )
+
+            with open(path, 'r') as handle:
+                receipt = json.load(handle)
+
+            created = receipt.get('creation_timestamp')
+            if created is None:
+                raise AntiLeakageViolation(
+                    f"{arch}: o recibo de {protocol} não traz "
+                    f"creation_timestamp, então não se pode mostrar que "
+                    f"pertence a esta corrida: {path}"
+                )
+            if datetime.fromisoformat(created) < started_at:
+                raise AntiLeakageViolation(
+                    f"{arch}: o recibo de {protocol} é anterior a esta corrida "
+                    f"(criado {created}, corrida iniciada "
+                    f"{started_at.isoformat()}). Um recibo de outra execução "
+                    f"atestaria um protocolo que esta não seguiu."
+                )
+
+            if not receipt.get(evidence_field):
+                raise AntiLeakageViolation(
+                    f"{arch}: o recibo de {protocol} existe mas seu campo "
+                    f"'{evidence_field}' está vazio, o que é o registro de que "
+                    f"o protocolo não foi aplicado a nenhum fold: {path}"
+                )
+
+        _log(f"  {arch}: recibos de P3 e P5 presentes e desta corrida")
+
+
 def _prediction_digests() -> dict:
     """SHA-256 of every paradigm's prediction artifacts, keyed by path."""
     import hashlib
@@ -304,6 +375,13 @@ def main() -> None:
     for arch, info in paradigms.items():
         run([py, os.path.join(root, info["hierarchical_script"])])
     _log(f"Etapa 5 concluida ({n_paradigms} paradigmas)")
+
+    # Aqui e nao junto do gate anti-leakage: os recibos de P3 e P5 sao escritos
+    # pelos modelos, na etapa acima. Conferi-los antes seria conferir arquivos
+    # que ainda nao existem.
+    print("\nGate de recibos dos protocolos")
+    _validate_protocol_receipts(started_at)
+    _log("P3 e P5 comprovados em todos os paradigmas")
 
     # Precedes the benchmark: a latency comparison between paradigms is only
     # meaningful once they are established to predict the same values for the

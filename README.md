@@ -108,9 +108,22 @@ O pipeline aplica 5 verificações automáticas em todos os paradigmas:
 |-----------|------------|-------------|------|
 | P1 | Ordenação temporal dos splits | `AntiLeakageViolation` em runtime | `TemporalValidator.enforce_walk_forward` |
 | P2 | Gap mínimo de 2 anos entre splits | `AntiLeakageViolation` em runtime | `TemporalValidator.enforce_walk_forward` |
-| P3 | Separação de features, proxy e reconstrução conjunta | `AntiLeakageViolation` em runtime | `audit_feature_set`, `run_feature_selection` |
+| P3 | Separação de features, proxy e reconstrução conjunta | `AntiLeakageViolation` em runtime; a reauditoria pós-defasagem, por recibo | `run_feature_selection`, `audit_feature_set` |
 | P4 | Feature selection restrita à janela de treino do primeiro fold | `AntiLeakageViolation` em runtime | `BaseArchitectureML._first_fold_train_end` |
-| P5 | Scaling e imputação ajustados só no treino | `ValueError` em runtime + contrato | `impute_from_training_window`, `canonical_fold` |
+| P5 | Scaling e imputação ajustados só no treino | `AntiLeakageViolation` por recibo, ao fim da etapa hierárquica | `impute_from_training_window`, `canonical_fold` |
+
+P1, P2 e P4 são impostos pela classe base: vivem dentro de métodos concretos que
+o esqueleto de setup chama, então um paradigma não alcança os modelos sem passar
+por eles. P5 e a reauditoria de P3 não podem ser — precisam do fold
+materializado, que é justamente o que cada paradigma constrói de um jeito
+diferente. Rodam no código do modelo, e o que o núcleo garantia sobre eles era
+que o autor tinha lembrado de chamá-los.
+
+O gate de recibos fecha isso do outro lado: cada chamada deixa um artefato, e
+`_validate_protocol_receipts` interrompe a execução quando o recibo falta, está
+vazio, ou é anterior à corrida que deveria tê-lo produzido. Um paradigma novo
+que omita qualquer das duas chamadas para o pipeline em vez de reportar
+resultados sob um protocolo que não seguiu.
 
 Um conjunto de folds vazio, folds que diferem entre paradigmas, e uma coluna sem
 nenhuma observação na janela de treino também interrompem — cada um foi, em
@@ -171,7 +184,7 @@ src/
 │   └── dataframe_lib/
 ├── benchmarking/               # Instrumentação e métricas de latência
 └── statistical_validation/     # Equivalência, bootstrap, effect sizes
-tests/                          # 1490 testes (unitários, discovery, anti-leakage)
+tests/                          # 1516 testes (unitários, discovery, anti-leakage)
 pipeline.py                     # Orquestra o pipeline completo
 ```
 
@@ -189,7 +202,9 @@ outputs/
 
 ### Novo paradigma
 
-Crie uma subclasse de `BaseArchitectureML` com `PARADIGM_META` definido. O framework descobre automaticamente via `__init_subclass__` — nenhum arquivo existente precisa ser editado. As verificações anti-leakage são herdadas.
+Crie uma subclasse de `BaseArchitectureML` com `PARADIGM_META` definido. A descoberta é automática via `__init_subclass__`: nenhum módulo de orquestração, análise ou estatística precisa ser editado — todos derivam do registro.
+
+P1, P2 e P4 são herdados da classe base. P5 e a reauditoria de P3 não são: rodam sobre o fold materializado, que é o que o paradigma implementa, então cabe ao modelo do paradigma chamá-los. Esquecer não passa em silêncio — o gate de recibos exige a evidência de ambos ao fim da etapa hierárquica e interrompe sem ela.
 
 ```python
 # src/architectures_ml/meu_paradigma/setup.py
@@ -262,7 +277,7 @@ Estenda `src/benchmarking/` ou `src/statistical_validation/` seguindo o padrão 
 - Seeds centralizadas em `scientific_config.py`, `n_jobs=1`
 - Snapshot de ambiente: packages, hardware, git commit
 - `requirements-lock.txt` com versões exatas
-- 1490 testes automatizados (`pytest tests/`)
+- 1516 testes automatizados (`pytest tests/`)
 
 Para detalhes operacionais, veja o [`USAGE_GUIDE.md`](USAGE_GUIDE.md).
 

@@ -192,6 +192,7 @@ def write_imputation_report(reports, *, architecture: str) -> str:
     """
     import json
     import os
+    from datetime import datetime
 
     from core.config import get_absolute_output_path
 
@@ -214,6 +215,11 @@ def write_imputation_report(reports, *, architecture: str) -> str:
 
     with open(path, 'w') as handle:
         json.dump({'architecture': architecture,
+                   # The receipt gate distinguishes this run's evidence from a
+                   # previous run's leftovers, so it needs a stamp of its own:
+                   # the file's mtime is a property of the filesystem, not of
+                   # the artifact, and does not survive being copied.
+                   'creation_timestamp': datetime.now().isoformat(),
                    'folds': per_fold,
                    'across_folds': totals}, handle, indent=2)
     print(f"   Imputacao por fold -> {path}")
@@ -233,6 +239,7 @@ def write_feature_audit(report, *, architecture: str) -> str:
     """
     import json
     import os
+    from datetime import datetime
 
     from core.config import get_absolute_output_path
 
@@ -241,7 +248,9 @@ def write_feature_audit(report, *, architecture: str) -> str:
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, f'feature_audit_{architecture}.json')
     with open(path, 'w') as handle:
-        json.dump({'architecture': architecture, **report}, handle, indent=2)
+        json.dump({'architecture': architecture,
+                   'creation_timestamp': datetime.now().isoformat(),
+                   **report}, handle, indent=2)
     print(f"   Auditoria de features -> {path}")
     return path
 
