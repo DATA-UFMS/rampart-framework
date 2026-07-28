@@ -108,7 +108,7 @@ def _tabpfn_regressor():
                 if os.environ.get('RAMPART_ICL_ROBUSTNESS', '').strip()
                 else _ic['tabpfn_n_estimators'])
     return TabPFNRegressor(n_estimators=ensemble,
-                           random_state=RANDOM_SEED, device=_ic['device'])
+                           random_state=RANDOM_SEED, device=resolve_device())
 
 
 def _tabicl_regressor():
@@ -120,7 +120,7 @@ def _tabicl_regressor():
             "pip install 'rampart[icl]'") from exc
 
     _ic = SCIENTIFIC_CONFIG['in_context_models']
-    return TabICLRegressor(random_state=RANDOM_SEED, device=_ic['device'])
+    return TabICLRegressor(random_state=RANDOM_SEED, device=resolve_device())
 
 
 @dataclass(frozen=True)
@@ -139,6 +139,24 @@ FAMILIES: Tuple[ICLModel, ...] = (
 )
 
 MODELS: Dict[str, ICLModel] = {family.name: family for family in FAMILIES}
+
+
+def resolve_device() -> str:
+    """The device the adapters will actually use, named rather than implied.
+
+    `auto` is what the wrappers accept, but `auto` in a receipt says nothing.
+    Resolving here means the artifact records `cuda` or `cpu`, which is the
+    difference between a one-hour run and an eleven-hour one and belongs in the
+    record of what was measured.
+    """
+    configured = SCIENTIFIC_CONFIG['in_context_models']['device']
+    if configured != 'auto':
+        return configured
+    try:
+        import torch
+        return 'cuda' if torch.cuda.is_available() else 'cpu'
+    except ImportError:
+        return 'cpu'
 
 
 def _package_version(package: str) -> str:
@@ -245,6 +263,7 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
                         else 'tabicl default checkpoint'),
             'ensemble_robustness': bool(
                 os.environ.get('RAMPART_ICL_ROBUSTNESS', '').strip()),
+            'device': resolve_device(),
         },
         'regularization_applied': 'none; in-context, no parameters fitted',
         'absorption': absorption,

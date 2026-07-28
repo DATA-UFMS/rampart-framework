@@ -245,7 +245,12 @@ SCIENTIFIC_CONFIG = {
         # and seed. Bitwise equality is not available for these models, so the
         # equivalence they can be held to is this tolerance.
         'determinism_tolerance_relative': 1e-4,
-        'device': 'cpu',
+        # 'auto' resolves to cuda when a GPU is present and to cpu otherwise,
+        # and the resolved value goes into the receipt. It was fixed at 'cpu',
+        # which is right on this laptop and silently wrong on a GPU machine: the
+        # run would finish, the numbers would be correct, and it would take
+        # eleven hours instead of one with nothing saying why.
+        'device': 'auto',
         # Evaluation rows appended together to read the absorption coefficient.
         # They go in as one batch and cost one refit, so the count does not buy
         # cost -- it buys stability, because the reading is a ratio of summed
