@@ -248,9 +248,52 @@ def main(dataset='worldbank'):
         print(f"{arm:>9} {distances.get(arm, float('nan')):>9.1f} " +
               ' '.join(f"{v:>+10.4f}" for v in values) + f"{share:>9.3f}")
 
-    print("\n  How far a leak has to be before it stops mattering is the number a")
-    print("  buffer width should be chosen against, and this is the first")
-    print("  measurement of it in this repository.")
+    print("\n" + "=" * 78)
+    print("IS THE DECAY SHAPE THE SAME FOR EVERY MODEL?")
+    print("  each model's channel divided by its own leak value, at 30% dose.")
+    print("  If the shape is model-invariant, a buffer width can be recommended")
+    print("  without knowing which model will be fitted.")
+    curve_arms = [a for a in ('RESERVE', 'GAP1', 'VAL', 'GAP2')
+                  if a in distances]
+    print(f"\n{'model':>26} " + ' '.join(f"{a:>9}" for a in curve_arms))
+    normalised = {a: [] for a in curve_arms}
+    for rung in STABLE:
+        own = point(rung.name, 'LEAK', DOSES[-1])
+        if not np.isfinite(own) or abs(own) < 1e-6:
+            continue
+        row = []
+        for arm in curve_arms:
+            share = point(rung.name, arm, DOSES[-1]) / own
+            normalised[arm].append(share)
+            row.append(share)
+        print(f"{rung.name:>26} " + ' '.join(f"{v:>9.3f}" for v in row))
+    print(f"\n{'spread':>26} " +
+          ' '.join(f"{np.ptp(normalised[a]):>9.3f}" for a in curve_arms))
+    print("  spread is max minus min across models; small means the shape "
+          "transfers")
+
+    print("\n" + "=" * 78)
+    print("WHAT BUFFER WOULD IT TAKE? interpolating the normalised curve")
+    points = sorted(((distances[a], float(np.mean(normalised[a])))
+                     for a in curve_arms), key=lambda t: t[0])
+    for target in (0.50, 0.25, 0.10):
+        needed = None
+        for (d0, s0), (d1, s1) in zip(points, points[1:]):
+            if s0 >= target >= s1 and s0 != s1:
+                needed = d0 + (s0 - target) / (s0 - s1) * (d1 - d0)
+                break
+        if needed is None:
+            beyond = points[-1][0] if points[-1][1] > target else None
+            print(f"  to hold the channel under {target:.0%}: "
+                  + (f"more than {beyond:.1f} years, beyond what this panel "
+                     f"measures" if beyond else
+                     f"already under it at {points[0][0]:.1f} years"))
+        else:
+            print(f"  to hold the channel under {target:.0%}: "
+                  f"buffer of about {needed:.1f} years")
+    print(f"\n  The protocol currently uses {gap} years. A width chosen against")
+    print("  residual dependence and a width chosen against this channel are")
+    print("  different numbers, and a paper should say which one it used.")
     return 0
 
 
