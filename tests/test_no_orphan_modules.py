@@ -45,6 +45,10 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
+    'scripts/validation/probe_global_routes.py':
+        'measures how the generalisation channel decays with the temporal '
+        'distance of the leaked rows, which is the number a buffer width should '
+        'be chosen against; six arms, one switch each',
     'scripts/validation/probe_regime.py':
         'runs the channel decomposition on both panels to test whether the '
         'aggregate measure misleads everywhere or only at small n; the second '

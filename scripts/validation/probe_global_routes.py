@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Where does the generalisation channel come from?
+
+The channel decomposition splits leakage severity into memorisation, on rows the
+model was handed, and a generalisation shift, on rows it was not. The
+memorisation half is accounted for: a cheap probe predicts it at r = 0.99 on both
+panels. The other half is large on both panels and unexplained. The sample-size
+control rules out one route -- duplicating rows already in the training frame does
+essentially nothing -- but it does not identify what is left, because the
+duplicated rows carry no new information at all.
+
+Six arms, one switch each, all adding the same number of rows to a clean arm that
+has had one interior year withheld. What varies is only where the added rows come
+from, and therefore how far that period sits from the evaluation window:
+
+    ECHO      copies of rows already in the frame     nothing new at all
+    RESERVE   a withheld year inside the training     uncovered, but surrounded
+              window                                 by years the model has
+    GAP1      the first buffer, train to validation   uncovered, far
+    VAL       the validation window                   uncovered, middle
+    GAP2      the second buffer, validation to test   uncovered, adjacent
+    LEAK      the evaluation window                   distance zero
+
+Every source but the interior year is already excluded from training by the
+protocol, so using them here does not contaminate the clean arm further.
+
+The question the curve answers is not whether the buffer protects but **how far a
+leak has to be before it stops mattering** -- which is the quantity a buffer width
+should be chosen against, and which nothing in this repository had measured.
+Predictions registered in `PRE_ESPECIFICACAO_amplificacao.md` §4.2i.
+"""
+
+import sys
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings('ignore')
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import numpy as np
+import pandas as pd
+
+from probe_harness import DOSES, fold_rng, folds, panel, prepared
+
+from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
+from statistical_validation.dependent_bootstrap import (  # noqa: E402
+    fold_dependence_span)
+from statistical_validation.leakage_channels import (  # noqa: E402
+    decompose_fold, summarise)
+
+#: Source periods for the added rows, ordered by how far they sit from the
+#: evaluation window. The fold layout is
+#:
+#:     train .. T | gap T+1,T+2 | val T+3,T+4 | gap T+5,T+6 | test T+7,T+8
+#:
+#: so a leak can come from five places at four different distances, and all but
+#: the interior year are already excluded from training by the protocol.
+#:
+#: A first version of this probe used only the *first* gap and called it the
+#: adjacency test. It is five to seven years from the evaluation window, so it
+#: tested nothing of the kind. The fix is not a better single contrast but the
+#: whole curve: how does the channel decay with the temporal distance of the
+#: leaked rows? That is the quantity a buffer has to be chosen against.
+ARMS = ('ECHO', 'RESERVE', 'GAP1', 'VAL', 'GAP2', 'LEAK')
+
+#: The unbounded decision tree is excluded from the generalisation summaries. It
+#: is the instrument's absorption anchor -- it reads exactly 1.0000 -- and it is
+#: useless for this measurement: adding *any* rows moves its held-out fit by
+#: several tenths, including exact duplicates of rows it already has, so its
+#: generalisation channel is instability rather than information. Its clean R^2 on
+#: this panel is negative, which is the same fact stated another way.
+STABLE = tuple(r for r in LADDER if r.name != 'ladder_decision_tree')
+
+
+def block_of(df, columns, years, entity_column='entity_id'):
+    """Rows of the panel in the given years, imputed nowhere and ready to append.
+
+    Returned as raw columns; the caller imputes and augments with the same
+    statistics the clean arm used, so the only thing that varies between arms is
+    which rows were added.
+    """
+    frame = df[df['year'].isin(years)]
+    keep = frame[columns].notna().all(axis=1) & frame['target'].notna()
+    frame = frame[keep]
+    return (frame[columns].reset_index(drop=True),
+            frame['target'].reset_index(drop=True),
+            frame['entity_id'].reset_index(drop=True))
+
+
+def main(dataset='worldbank'):
+    df, columns, cfg = panel(dataset)
+    windows = folds(cfg)
+    gap = int(cfg.walk_forward_config['gap'])
+    block = fold_dependence_span(cfg.walk_forward_config)
+    print(f"{dataset}: {len(df)} rows, {len(windows)} folds, gap {gap} years, "
+          f"block {block}\n")
+
+    channels = {}
+    sizes = {arm: [] for arm in ARMS}
+    distance_log = []
+
+    for fold, (train_start, train_end, test_start, test_end) in enumerate(windows):
+        # The withheld year: the middle of the training window, so it is
+        # surrounded on both sides by years the clean arm keeps.
+        reserved = (train_start + train_end) // 2
+        val_len = int(cfg.walk_forward_config['val_len'])
+        periods = {
+            'GAP1': list(range(train_end + 1, train_end + 1 + gap)),
+            'VAL': list(range(train_end + 1 + gap,
+                              train_end + 1 + gap + val_len)),
+            'GAP2': list(range(train_end + 1 + gap + val_len,
+                               train_end + 1 + 2 * gap + val_len)),
+            'RESERVE': [reserved],
+        }
+        distances = {arm: test_start - max(years)
+                     for arm, years in periods.items()}
+        distances['LEAK'] = 0
+        distances['ECHO'] = test_start - train_end
+
+        clean_years = [y for y in range(train_start, train_end + 1)
+                       if y != reserved]
+        held = df[df['year'].isin(clean_years)]
+        evaluation = df[(df['year'] >= test_start) & (df['year'] <= test_end)]
+
+        fill = held[columns].median()
+        X_train = held[columns].fillna(fill)
+        keep = X_train.notna().all(axis=1) & held['target'].notna()
+        X_test = evaluation[columns].fillna(fill)
+        valid = X_test.notna().all(axis=1) & evaluation['target'].notna()
+        if keep.sum() < 20 or valid.sum() < 3:
+            continue
+
+        X_train = X_train[keep].reset_index(drop=True)
+        y_train = held['target'][keep].reset_index(drop=True)
+        e_train = held['entity_id'][keep].reset_index(drop=True)
+        X_test = X_test[valid].reset_index(drop=True)
+        y_test = evaluation['target'][valid].reset_index(drop=True)
+        e_test = evaluation['entity_id'][valid].reset_index(drop=True)
+        truth = np.asarray(y_test, dtype=float)
+
+        filled = df.assign(**{c: df[c].fillna(fill[c]) for c in columns})
+        pools = {arm: block_of(filled, columns, years)
+                 for arm, years in periods.items()}
+
+        fit_frame, eval_frame, _m, _g = entity_effect_frames(
+            X_train, X_test, y_train, e_train, e_test)
+        clean = {}
+        for rung in LADDER:
+            model = rung.make()
+            model.fit(fit_frame, y_train)
+            clean[rung.name] = np.asarray(model.predict(eval_frame), dtype=float)
+
+        for dose in DOSES:
+            rng = fold_rng(fold, dose)
+            count = max(1, int(round(dose * len(X_test))))
+            handed = np.sort(rng.choice(len(X_test), size=count, replace=False))
+            mask = np.zeros(len(X_test), dtype=bool)
+            mask[handed] = True
+
+            added = {}
+            echo = np.sort(rng.choice(len(X_train), size=count, replace=True))
+            added['ECHO'] = (X_train.iloc[echo], y_train.iloc[echo],
+                             e_train.iloc[echo])
+            added['LEAK'] = (X_test.iloc[handed], y_test.iloc[handed],
+                             e_test.iloc[handed])
+            for arm in periods:
+                pool_X, pool_y, pool_e = pools[arm]
+                if not len(pool_X):
+                    continue
+                picked = np.sort(rng.choice(len(pool_X), size=count,
+                                            replace=len(pool_X) < count))
+                added[arm] = (pool_X.iloc[picked], pool_y.iloc[picked],
+                              pool_e.iloc[picked])
+
+            for arm, (Xa, ya, ea) in added.items():
+                sizes[arm].append(len(Xa))
+                widened = entity_effect_frames(
+                    pd.concat([X_train, Xa], ignore_index=True), X_test,
+                    pd.concat([y_train, ya], ignore_index=True),
+                    pd.concat([e_train, ea], ignore_index=True), e_test)
+                widened_y = pd.concat([y_train, ya], ignore_index=True)
+                for rung in LADDER:
+                    model = rung.make()
+                    model.fit(widened[0], widened_y)
+                    predicted = np.asarray(model.predict(widened[1]),
+                                           dtype=float)
+                    channels.setdefault((rung.name, arm, dose), []).append(
+                        decompose_fold(truth, clean[rung.name], predicted,
+                                       mask=mask))
+        distance_log.append(distances)
+        print(f"  fold {fold}: reserved {reserved}, "
+              f"distances {[(a, distances[a]) for a in ARMS]}", flush=True)
+
+    def point(rung, arm, dose, channel='global_uncontrolled'):
+        key = (rung, arm, dose)
+        if key not in channels:
+            return float('nan')
+        return summarise(channels[key], block=block,
+                         iters=2000)[channel]['point']
+
+    for dose in DOSES:
+        print("\n" + "=" * 78)
+        print(f"dose {dose:.0%} -- generalisation channel, on rows NOT handed")
+        print(f"{'model':>26} " + ' '.join(f"{arm:>10}" for arm in ARMS))
+        for rung in LADDER:
+            print(f"{rung.name:>26} " +
+                  ' '.join(f"{point(rung.name, arm, dose):>+10.4f}"
+                           for arm in ARMS))
+
+    print("\n" + "=" * 78)
+    print("G1 -- ECHO near zero? (copies of rows already present)")
+    worst = max(abs(point(r.name, 'ECHO', d)) for r in LADDER for d in DOSES)
+    print(f"  max |global| under ECHO: {worst:.4f}  -> "
+          f"{'HOLDS' if worst < 0.05 else 'FAILS'}")
+
+    print("\nG2 -- RESERVE small? (a withheld interior year, predicted < 0.05)")
+    worst = max(abs(point(r.name, 'RESERVE', d)) for r in LADDER for d in DOSES)
+    print(f"  max |global| under RESERVE: {worst:.4f}  -> "
+          f"{'HOLDS' if worst < 0.05 else 'FAILS'}")
+
+    print("\nG3 -- is the adjacent buffer substantial? (GAP2, predicted > 0.10 "
+          "for at least half the models at 30%)")
+    above = sum(1 for r in LADDER if point(r.name, 'GAP2', DOSES[-1]) > 0.10)
+    print(f"  models above 0.10: {above}/{len(LADDER)}  -> "
+          f"{'HOLDS' if above >= len(LADDER) / 2 else 'FAILS'}")
+
+    print("\nG4 -- is LEAK the largest?")
+    for dose in DOSES:
+        means = {a: np.nanmean([point(r.name, a, dose) for r in STABLE])
+                 for a in ARMS}
+        order = sorted(ARMS, key=lambda a: -means[a])
+        print(f"  dose {dose:>4.0%}: " +
+              '  >  '.join(f"{a} {means[a]:+.4f}" for a in order))
+
+    print("\n" + "=" * 78)
+    print("THE DECAY CURVE -- generalisation channel by temporal distance")
+    print("  averaged over the four stable models; the unbounded tree is excluded")
+    print("  because any added rows destabilise it, including exact duplicates")
+    distances = {arm: float(np.mean([d[arm] for d in distance_log]))
+                 for arm in ARMS if all(arm in d for d in distance_log)}
+    print(f"\n{'arm':>9} {'distance':>9} " +
+          ' '.join(f"{f'{d:.0%}':>10}" for d in DOSES) + f"{'/LEAK':>9}")
+    leak30 = np.nanmean([point(r.name, 'LEAK', DOSES[-1]) for r in STABLE])
+    for arm in sorted(ARMS, key=lambda a: -distances.get(a, 0)):
+        values = [np.nanmean([point(r.name, arm, d) for r in STABLE])
+                  for d in DOSES]
+        share = values[-1] / leak30 if abs(leak30) > 1e-9 else float('nan')
+        print(f"{arm:>9} {distances.get(arm, float('nan')):>9.1f} " +
+              ' '.join(f"{v:>+10.4f}" for v in values) + f"{share:>9.3f}")
+
+    print("\n  How far a leak has to be before it stops mattering is the number a")
+    print("  buffer width should be chosen against, and this is the first")
+    print("  measurement of it in this repository.")
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(*sys.argv[1:]))
