@@ -227,7 +227,7 @@ def canonical_fold(X, y, entities, years, *, paradigm: str,
 
 
 
-def assert_splits_disjoint(splits, *, paradigm: str) -> None:
+def assert_splits_disjoint(splits, *, paradigm: str, injection=None) -> Dict:
     """No row of an evaluation split may also be a row of the training split.
 
     P1 and P2 impose discipline on the *windows*: the test period comes after
@@ -253,6 +253,16 @@ def assert_splits_disjoint(splits, *, paradigm: str) -> None:
             training split must be present under the key 'train'.
         paradigm: named in the diagnostic, because the three materialise folds
             independently and a defect in one is not a defect in the others.
+        injection: the declared violation for this arm, when there is one. An
+            experiment that commits this violation on purpose has to be able to
+            run; what it must not do is run indistinguishably from a clean one.
+            So the waiver is passed in by the caller rather than read from the
+            environment here, and the overlap it lets through comes back in the
+            return value, bound for the receipt.
+
+    Returns:
+        A record of what was checked and what was waived. Empty of waivers on
+        every production path, which is what makes a waived arm visible.
     """
     if 'train' not in splits:
         raise ValueError(
@@ -265,18 +275,26 @@ def assert_splits_disjoint(splits, *, paradigm: str) -> None:
                        (int(y) for y in pd.Series(years))))
 
     training = keys(splits['train'])
+    waived = []
     for name, pair in splits.items():
         if name == 'train':
             continue
         shared = training & keys(pair)
-        if shared:
-            sample = sorted(shared)[:5]
-            raise AntiLeakageViolation(
-                f"Anti-leakage violation (L1.1 evaluation independence): "
-                f"{paradigm} has {len(shared)} row(s) present in both the "
-                f"training split and '{name}'. The model would be scored on "
-                f"rows it was fitted on. First few (entity, year): {sample}"
-            )
+        if not shared:
+            continue
+        if injection is not None and injection.waives('L1.1'):
+            waived.append({'split': name, 'overlapping_rows': len(shared),
+                           'declared_by': injection.as_record()})
+            continue
+        sample = sorted(shared)[:5]
+        raise AntiLeakageViolation(
+            f"Anti-leakage violation (L1.1 evaluation independence): "
+            f"{paradigm} has {len(shared)} row(s) present in both the "
+            f"training split and '{name}'. The model would be scored on "
+            f"rows it was fitted on. First few (entity, year): {sample}"
+        )
+
+    return {'gate': 'L1.1', 'splits_checked': sorted(splits), 'waived': waived}
 
 
 def assert_lag_columns(present, paradigm: str, lag_orders, *,
@@ -1007,6 +1025,14 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
     report = {
         'strategy': strategy,
         'fitted_on_rows': int(len(train)),
+        # What the statistics were fitted over, and not merely how many rows.
+        # The receipt attests that the imputation ran; without the span it
+        # cannot attest that it ran on the training window, which is the whole
+        # of P5. A frame widened past the split shows up here as a range that
+        # reaches into the evaluation years.
+        'fitted_on_year_range': (
+            [int(train['year'].min()), int(train['year'].max())]
+            if 'year' in getattr(train, 'columns', []) else None),
         'filled_cells': filled_cells,
         'values': fitted,
         # Kept, always empty: the condition raises above. The key remains so

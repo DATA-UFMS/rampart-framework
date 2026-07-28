@@ -138,7 +138,157 @@ class TestEveryParadigmCallsIt:
     def test_all_three_splits_are_checked(self, paradigm):
         source = (_SRC / 'architectures_ml' / paradigm / 'models'
                   / 'hierarchical_model.py').read_text()
-        block = source[source.index('assert_splits_disjoint('):]
-        block = block[:block.index('paradigm=PARADIGM)')]
+        # From the call to the end of its statement, found by matching the
+        # parentheses rather than by looking for a closing string -- the call
+        # gained an argument once already, and a literal terminator would have
+        # silently started slicing the wrong region.
+        start = source.index('assert_splits_disjoint(')
+        depth, end = 0, start
+        for index in range(start, len(source)):
+            if source[index] == '(':
+                depth += 1
+            elif source[index] == ')':
+                depth -= 1
+                if depth == 0:
+                    end = index
+                    break
+        block = source[start:end]
         for split in ("'train'", "'val'", "'test'"):
             assert split in block, f'{paradigm} does not check {split}'
+
+
+class TestTheInjectionSpec:
+    """Declared before the run, refused when malformed, silent when absent."""
+
+    def test_no_variable_means_no_injection(self, monkeypatch):
+        from core.injection import active
+        monkeypatch.delenv('RAMPART_INJECTION', raising=False)
+        assert active() is None
+
+    def test_unparseable_stops_the_run(self, monkeypatch):
+        """Treating a broken spec as absent would label a clean arm experimental."""
+        from core.injection import active
+        monkeypatch.setenv('RAMPART_INJECTION', '{not json')
+        with pytest.raises(ValueError, match='not valid JSON'):
+            active()
+
+    @pytest.mark.parametrize('payload,message', [
+        ({'class': 'C9', 'dose': 0.1}, 'unknown injection class'),
+        ({'class': 'C3', 'dose': 0.0}, 'dose must be in'),
+        ({'class': 'C3', 'dose': 1.5}, 'dose must be in'),
+        ({'class': 'C3', 'dose': 0.1, 'waived_gates': ['L9.9']}, 'unknown gate'),
+    ])
+    def test_a_malformed_spec_is_refused(self, monkeypatch, payload, message):
+        import json as _json
+        from core.injection import active
+        monkeypatch.setenv('RAMPART_INJECTION', _json.dumps(payload))
+        with pytest.raises(ValueError, match=message):
+            active()
+
+    def test_a_typo_in_a_gate_name_is_not_a_silent_non_waiver(self, monkeypatch):
+        """Otherwise the arm aborts hours in, over the violation it was built
+        to commit."""
+        import json as _json
+        from core.injection import active
+        monkeypatch.setenv('RAMPART_INJECTION',
+                           _json.dumps({'class': 'C3', 'dose': 0.1,
+                                        'waived_gates': ['L11']}))
+        with pytest.raises(ValueError, match='unknown gate'):
+            active()
+
+    def test_one_switch_per_spec(self):
+        """Two at once and the inflation is attributable to neither."""
+        import inspect
+        from core.injection import InjectionSpec
+        klass = inspect.signature(InjectionSpec).parameters['klass']
+        assert klass.annotation in (str, 'str'), (
+            'the class became a collection; a spec must carry exactly one')
+
+
+class TestTheWaiverIsVisible:
+    """An arm that waived a gate must not look like a clean run."""
+
+    TRAIN = (['A', 'A', 'B'], [2000, 2001, 2000])
+    TEST = (['A', 'B'], [2014, 2014])
+    DIRTY = (['A', 'A', 'B', 'A'], [2000, 2001, 2000, 2014])
+
+    def test_a_clean_run_records_no_waiver(self):
+        record = assert_splits_disjoint({'train': self.TRAIN, 'test': self.TEST},
+                                        paradigm='probe')
+        assert record['waived'] == []
+
+    def test_the_waiver_needs_the_spec_at_the_call_site(self):
+        """Not read from the environment: a gate that softens itself behind the
+        caller is a gate nobody can audit by reading the call."""
+        import os
+        os.environ['RAMPART_INJECTION'] = (
+            '{"class": "C3", "dose": 0.5, "waived_gates": ["L1.1"]}')
+        try:
+            with pytest.raises(AntiLeakageViolation):
+                assert_splits_disjoint({'train': self.DIRTY, 'test': self.TEST},
+                                       paradigm='probe')
+        finally:
+            del os.environ['RAMPART_INJECTION']
+
+    def test_a_waived_overlap_is_recorded_with_what_declared_it(self):
+        from core.injection import InjectionSpec
+
+        spec = InjectionSpec(klass='C3', dose=0.5, waived=('L1.1',))
+        record = assert_splits_disjoint({'train': self.DIRTY, 'test': self.TEST},
+                                        paradigm='probe', injection=spec)
+        assert len(record['waived']) == 1
+        waived = record['waived'][0]
+        assert waived['overlapping_rows'] == 1
+        assert waived['declared_by']['class'] == 'C3'
+        assert waived['declared_by']['dose'] == 0.5
+
+    def test_a_spec_that_does_not_name_the_gate_does_not_waive_it(self):
+        from core.injection import InjectionSpec
+
+        spec = InjectionSpec(klass='C1', dose=0.5)
+        with pytest.raises(AntiLeakageViolation):
+            assert_splits_disjoint({'train': self.DIRTY, 'test': self.TEST},
+                                   paradigm='probe', injection=spec)
+
+
+class TestTheInjectionIsReproducible:
+
+    @staticmethod
+    def _splits(rows=20):
+        X = pd.DataFrame({'f': [float(i) for i in range(rows)]})
+        y = pd.Series([float(i) for i in range(rows)])
+        entities = pd.Series(['A' if i % 2 else 'B' for i in range(rows)])
+        years = pd.Series([2000 + i for i in range(rows)])
+        return X, y, entities, years
+
+    def _run(self, seed, fold_id, dose=0.30):
+        from core.injection import InjectionSpec, duplicate_evaluation_rows
+
+        Xtr, ytr, etr, yrtr = self._splits(20)
+        Xte, yte, ete, yrte = self._splits(10)
+        spec = InjectionSpec(klass='C3', dose=dose, waived=('L1.1',), seed=seed)
+        _, record = duplicate_evaluation_rows(Xtr, ytr, etr, yrtr,
+                                              Xte, yte, ete, yrte,
+                                              spec=spec, fold_id=fold_id)
+        return record
+
+    def test_the_same_seed_and_fold_move_the_same_rows(self):
+        assert self._run(42, 0)['keys_moved'] == self._run(42, 0)['keys_moved']
+
+    def test_different_folds_move_different_rows(self):
+        """One generator for the whole run would make a fold's sample depend on
+        how many folds preceded it, and a single-fold rerun would not replay."""
+        moved = [tuple(map(tuple, self._run(42, f)['keys_moved']))
+                 for f in range(6)]
+        assert len(set(moved)) > 1, 'every fold drew the same rows'
+
+    def test_the_dose_sets_how_many_rows_move(self):
+        assert self._run(42, 0, dose=0.30)['rows_moved'] == 3
+        assert self._run(42, 0, dose=0.10)['rows_moved'] == 1
+
+    def test_the_moved_rows_are_named_not_just_counted(self):
+        """A count says an arm was contaminated; the keys say how, and let the
+        contamination be reconstructed from the artifact alone."""
+        record = self._run(42, 0)
+        assert len(record['keys_moved']) == record['rows_moved']
+        assert all(len(k) == 2 for k in record['keys_moved'])

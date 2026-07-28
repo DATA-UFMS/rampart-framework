@@ -30,6 +30,8 @@ _actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '
 if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
 
+from core.injection import active as injection_active
+from core.injection import duplicate_evaluation_rows
 from core.validation import (assert_splits_disjoint, audit_feature_set,
                              canonical_fold)
 
@@ -92,6 +94,8 @@ class HierarchicalModelSQLFirst:
         #: P3 audit report for the final feature set, written at the end.
         self._feature_audits = []
         self._cleared_by_selection = []
+        self._injection_records = []
+        self._disjointness_records = []
 
         print("   Pattern: ML Consumer with views")
         
@@ -362,11 +366,24 @@ class HierarchicalModelSQLFirst:
         # L1.1 at row granularity. P1 and P2 keep the windows apart; nothing
         # kept a row of the test window out of the training frame, and pasting
         # one there passed every check this framework had.
-        assert_splits_disjoint(
+        # The arm's declared violation, if this run is an arm at all. Read once
+        # and passed explicitly to everything that has to know: a gate that
+        # consulted the environment on its own would soften without the call
+        # site saying so.
+        _injection = injection_active()
+        if _injection is not None and _injection.klass == 'C3':
+            (X_train, y_train, countries_train, years_train), _c3 = \
+                duplicate_evaluation_rows(
+                    X_train, y_train, countries_train, years_train,
+                    X_test, y_test, countries_test, years_test,
+                    spec=_injection, fold_id=fold_id)
+            self._injection_records.append((fold_id, _c3))
+
+        self._disjointness_records.append((fold_id, assert_splits_disjoint(
             {'train': (countries_train, years_train),
              'val': (countries_val, years_val),
              'test': (countries_test, years_test)},
-            paradigm=PARADIGM)
+            paradigm=PARADIGM, injection=_injection)))
         
         _fold_load_s = time.perf_counter() - _load_t0
 
