@@ -87,8 +87,26 @@ def block_of(df, columns, years, entity_column='entity_id'):
             frame['entity_id'].reset_index(drop=True))
 
 
-def main(dataset='worldbank'):
+def main(dataset='worldbank', entity_cap=None):
+    """Run the curve on one panel, optionally on a subsample of its entities.
+
+    Subsampling entities is offered because the full INEP panel does not finish
+    locally -- 94,283 rows over eight folds and six arms exceeded a two-hour
+    budget on the last fold, which has the widest training window. The curve is a
+    statement about *temporal* distance, and dropping entities leaves every year
+    and every distance intact while cutting the row count proportionally. It
+    changes the levels, since absorption depends on n, so the transferable
+    quantity is the normalised shape rather than the raw channel.
+
+    Declared rather than hidden: a subsampled replication is weaker than a full
+    one, and the full one is cloud work.
+    """
     df, columns, cfg = panel(dataset)
+    if entity_cap is not None:
+        keep = sorted(df['entity_id'].unique())[:int(entity_cap)]
+        df = df[df['entity_id'].isin(keep)].reset_index(drop=True)
+        print(f"subsampled to {len(keep)} entities, {len(df)} rows -- "
+              f"levels will differ, the normalised shape is what transfers")
     windows = folds(cfg)
     gap = int(cfg.walk_forward_config['gap'])
     block = fold_dependence_span(cfg.walk_forward_config)
