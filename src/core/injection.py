@@ -65,11 +65,29 @@ class InjectionSpec:
     dose: float
     waived: Tuple[str, ...] = field(default_factory=tuple)
     seed: int = 42
+    #: Commit the sample-size change and not the violation.
+    #:
+    #: Inflation on rows the model was *not* handed conflates two things: leakage
+    #: helping the fit generally, and the extra rows helping it as extra rows do.
+    #: Separating them needs an arm where the training frame grows by the same
+    #: number of rows with nothing leaked, and the only honest source for those
+    #: rows is inside the training window itself.
+    #:
+    #: A flag rather than a sixth class, because it is not a violation and a
+    #: taxonomy of violations should not have to list one. The record says
+    #: `control` so no reader can mistake the arm for a contaminated one.
+    control: bool = False
 
     def __post_init__(self):
         if self.klass not in CLASSES:
             raise ValueError(
                 f"unknown injection class {self.klass!r}; known: {list(CLASSES)}")
+        if self.control and self.klass != 'C3':
+            raise ValueError(
+                f"a sample-size control is defined against C3, which is the "
+                f"class that changes the row count; {self.klass} changes which "
+                f"window a statistic is fitted over and adds no rows, so there "
+                f"is no size effect to control for")
         if not 0.0 < self.dose <= 1.0:
             raise ValueError(
                 f"dose must be in (0, 1] and is {self.dose!r}. A dose of zero "
@@ -86,7 +104,8 @@ class InjectionSpec:
     def as_record(self) -> Dict:
         """The form that goes into receipts and the reproducibility snapshot."""
         return {'class': self.klass, 'dose': self.dose,
-                'waived_gates': list(self.waived), 'seed': self.seed}
+                'waived_gates': list(self.waived), 'seed': self.seed,
+                'control': self.control}
 
 
 def active() -> Optional[InjectionSpec]:
@@ -111,6 +130,7 @@ def active() -> Optional[InjectionSpec]:
         dose=float(payload['dose']),
         waived=tuple(payload.get('waived_gates', ())),
         seed=int(payload.get('seed', 42)),
+        control=bool(payload.get('control', False)),
     )
 
 
@@ -148,27 +168,50 @@ def duplicate_evaluation_rows(
     count = max(1, int(round(spec.dose * len(X_eval))))
     count = min(count, len(X_eval))
     rng = _fold_rng(spec, fold_id)
+
+    # Which evaluation rows the violation *would* move. Drawn in the control arm
+    # too, from the same generator and before anything else consumes it, so the
+    # two arms name the same rows: the decomposition compares them on an
+    # identical partition of the evaluation window, and a partition that shifted
+    # between arms would make the comparison meaningless.
     picked = np.sort(rng.choice(len(X_eval), size=count, replace=False))
 
+    if spec.control:
+        # The same number of rows, duplicated from inside the training window.
+        # The frame grows exactly as much and nothing crosses the split.
+        echoed = np.sort(rng.choice(len(X_train), size=count, replace=True))
+        source_X, source_y = X_train.iloc[echoed], pd.Series(y_train).iloc[echoed]
+        source_entities = pd.Series(entities_train).iloc[echoed]
+        source_years = pd.Series(years_train).iloc[echoed]
+    else:
+        source_X, source_y = X_eval.iloc[picked], pd.Series(y_eval).iloc[picked]
+        source_entities = pd.Series(entities_eval).iloc[picked]
+        source_years = pd.Series(years_eval).iloc[picked]
+
     widened = (
-        pd.concat([X_train, X_eval.iloc[picked]], ignore_index=True),
-        pd.concat([pd.Series(y_train), pd.Series(y_eval).iloc[picked]],
+        pd.concat([X_train, source_X], ignore_index=True),
+        pd.concat([pd.Series(y_train), source_y], ignore_index=True),
+        pd.concat([pd.Series(entities_train), source_entities],
                   ignore_index=True),
-        pd.concat([pd.Series(entities_train), pd.Series(entities_eval).iloc[picked]],
-                  ignore_index=True),
-        pd.concat([pd.Series(years_train), pd.Series(years_eval).iloc[picked]],
-                  ignore_index=True),
+        pd.concat([pd.Series(years_train), source_years], ignore_index=True),
     )
     record = {
         'class': 'C3',
+        'control': spec.control,
         'dose': spec.dose,
         'rows_moved': int(count),
         'evaluation_rows': int(len(X_eval)),
         'training_rows_before': int(len(X_train)),
         'training_rows_after': int(len(widened[0])),
+        # The evaluation rows the leak arm moves, recorded in both arms. This is
+        # what the channel decomposition partitions the evaluation window on:
+        # improvement here is memorisation, improvement elsewhere is a change in
+        # generalisation.
         'keys_moved': [[str(e), int(y)] for e, y in zip(
             pd.Series(entities_eval).iloc[picked],
             pd.Series(years_eval).iloc[picked])],
+        'keys_added': [[str(e), int(y)] for e, y in zip(
+            source_entities, source_years)],
     }
     return widened, record
 

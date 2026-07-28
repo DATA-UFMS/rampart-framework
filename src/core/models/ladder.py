@@ -62,8 +62,8 @@ class Rung:
 
     name: str
     make: Callable[[], object]
-    #: Roth's class III effect size at 10% duplication. Ordering only -- see
-    #: the module docstring for why it is not a scale.
+    #: Roth's class III effect size at 10% duplication. Recorded, not used: it
+    #: did not transfer, and the module docstring says how it was checked.
     roth_severity: float
     #: The classifier Roth measured, whose regression analogue this is. Recorded
     #: because the analogy is a judgement and belongs in the artifact.
@@ -113,8 +113,11 @@ def _decision_tree():
         random_state=RANDOM_SEED)
 
 
-#: Ordered by the capacity available for memorising the training frame, which is
-#: the ordering Roth measures. Declared as a tuple so the order is part of the
+#: Declared in the order Roth's severities put them, which is *not* the order
+#: their absorption puts them: measured, it runs ridge 0.29, kNN 0.37, forest
+#: 0.39, boosting 0.99, tree 1.00, so boosting and the forest swap. The tuple
+#: order is kept as the record of what was tried and is never read as a scale --
+#: `core.models.absorption` supplies the axis. A tuple so the order is part of the
 #: artifact rather than an accident of iteration.
 LADDER: Tuple[Rung, ...] = (
     Rung('ladder_ridge', _ridge, 0.44, 'logistic regression'),

@@ -45,9 +45,11 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
-    'scripts/validation/measure_absorption.py':
-        'measures the axis the ladder is read along, in-context models '
-        'included; needs the optional extra, so it cannot be a pipeline stage',
+    'scripts/validation/probe_leakage_channels.py':
+        'splits injected severity into memorisation and a shift in '
+        'generalisation, measures the axis both are read along, and calibrates '
+        'it against a closed form; needs the optional extra for the in-context '
+        'rows, so it cannot be a pipeline stage',
 }
 
 

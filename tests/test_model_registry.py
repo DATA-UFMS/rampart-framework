@@ -139,11 +139,17 @@ class TestTheLadderFits:
             for key in ('mse', 'rmse', 'mae', 'entities', 'features_count'):
                 assert key in result, f'{name} is missing {key}'
 
-    def test_the_rungs_are_ordered_by_the_severity_they_are_ordered_by(self):
+    def test_the_declared_order_still_matches_the_severities_it_records(self):
+        """A bookkeeping check, not a claim about capacity.
+
+        The severities are ascending as Roth reports them, and the tuple records
+        that. Measured absorption puts boosting above the forest, so this order is
+        no longer read as a scale -- see core.models.absorption. Kept because a
+        rung whose recorded severity disagrees with its position is a typo, and a
+        typo in the record of a failed transfer is still a typo.
+        """
         severities = [rung.roth_severity for rung in LADDER]
-        assert severities == sorted(severities), (
-            'the ladder is declared in capacity order; a rung out of place '
-            'would be read as a trend reversal rather than as a typo')
+        assert severities == sorted(severities)
 
     def test_the_entity_effect_is_fitted_on_training_rows_only(self):
         """P5, for the one column the ladder adds itself.

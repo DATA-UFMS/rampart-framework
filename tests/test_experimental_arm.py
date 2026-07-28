@@ -352,3 +352,95 @@ class TestEveryParadigmAppliesBothClasses:
         assert source.count('_injection_records.append(') == 2, (
             f'{paradigm} records {source.count("_injection_records.append(")} '
             f'of the two classes')
+
+
+class TestTheSampleSizeControl:
+    """An arm that grows the training frame by the same amount and leaks nothing.
+
+    Without it, improvement on rows the model was not handed conflates leakage
+    helping the fit generally with extra rows helping it as extra rows do. The
+    control is what makes the second channel attributable.
+    """
+
+    def _frames(self, train_rows=60, eval_rows=20):
+        import numpy as np
+        rng = np.random.default_rng(0)
+        def block(n, year0, tag):
+            X = pd.DataFrame(rng.normal(size=(n, 3)), columns=['a', 'b', 'c'])
+            y = pd.Series(rng.normal(size=n))
+            entities = pd.Series([f'{tag}{i % 5}' for i in range(n)])
+            years = pd.Series([year0 + i // 5 for i in range(n)])
+            return X, y, entities, years
+        return block(train_rows, 2000, 'T'), block(eval_rows, 2100, 'V')
+
+    def _run(self, control):
+        from core.injection import InjectionSpec, duplicate_evaluation_rows
+        (Xt, yt, et, yrt), (Xe, ye, ee, yre) = self._frames()
+        spec = InjectionSpec(klass='C3', dose=0.5, control=control,
+                             waived=() if control else ('L1.1',))
+        widened, record = duplicate_evaluation_rows(
+            Xt, yt, et, yrt, Xe, ye, ee, yre, spec=spec, fold_id=0)
+        return widened, record, (et, yrt), (ee, yre)
+
+    def test_it_grows_the_frame_by_the_same_number_of_rows(self):
+        _w, leak, _tr, _ev = self._run(control=False)
+        _w, ctrl, _tr, _ev = self._run(control=True)
+        assert leak['rows_moved'] == ctrl['rows_moved']
+        assert leak['training_rows_after'] == ctrl['training_rows_after']
+
+    def test_no_evaluation_row_crosses_in_the_control_arm(self):
+        _widened, record, (_et, _yrt), (entities_eval, years_eval) = \
+            self._run(control=True)
+        evaluation_keys = {(str(e), int(y))
+                           for e, y in zip(entities_eval, years_eval)}
+        added = {(e, y) for e, y in record['keys_added']}
+        assert not (added & evaluation_keys), (
+            'the control arm added a row from the evaluation window')
+
+    def test_the_leak_arm_adds_exactly_the_rows_it_names(self):
+        _widened, record, _tr, _ev = self._run(control=False)
+        assert sorted(record['keys_added']) == sorted(record['keys_moved'])
+
+    def test_both_arms_name_the_same_partition(self):
+        """The decomposition compares the two on one partition of the evaluation
+        window. A partition that shifted between arms would compare nothing."""
+        _w, leak, _tr, _ev = self._run(control=False)
+        _w, ctrl, _tr, _ev = self._run(control=True)
+        assert sorted(leak['keys_moved']) == sorted(ctrl['keys_moved'])
+
+    def test_the_control_arm_is_recorded_as_a_control(self):
+        _w, record, _tr, _ev = self._run(control=True)
+        assert record['control'] is True
+        _w, record, _tr, _ev = self._run(control=False)
+        assert record['control'] is False
+
+    def test_the_control_arm_needs_no_waiver_because_it_violates_nothing(self):
+        """The gate must stay silent: the row count changed, the split did not."""
+        from core.injection import InjectionSpec, duplicate_evaluation_rows
+        (Xt, yt, et, yrt), (Xe, ye, ee, yre) = self._frames()
+        spec = InjectionSpec(klass='C3', dose=0.5, control=True)
+        (_X, _y, entities, years), _record = duplicate_evaluation_rows(
+            Xt, yt, et, yrt, Xe, ye, ee, yre, spec=spec, fold_id=0)
+        # No waiver passed, and no violation raised.
+        report = assert_splits_disjoint(
+            {'train': (entities, years), 'test': (ee, yre)},
+            paradigm='dataframe_lib', injection=spec)
+        assert report is not None
+
+    def test_a_control_against_c1_is_refused(self):
+        """C1 changes which window a statistic is fitted over and adds no rows,
+        so there is no size effect to control for."""
+        from core.injection import InjectionSpec
+        with pytest.raises(ValueError, match='no size effect to control'):
+            InjectionSpec(klass='C1', dose=0.3, control=True)
+
+    def test_the_flag_survives_the_environment_round_trip(self):
+        import json
+        import os
+        from core.injection import ENV_VAR, InjectionSpec, active
+        spec = InjectionSpec(klass='C3', dose=0.2, control=True)
+        os.environ[ENV_VAR] = json.dumps(spec.as_record())
+        try:
+            assert active().control is True
+        finally:
+            del os.environ[ENV_VAR]

@@ -8,13 +8,22 @@ the literature says is there?
 
 Roth reports, for Class III (memorisation), that severity scales with model
 capacity -- d_z from 0.37 (naive Bayes) to 1.11 (decision tree) at 10%
-duplication, measured across 2,047 datasets. Our design proposes to use the
-Ridge-to-RandomForest step as the internal calibration for "how much of the
-amplification is capacity alone". That only works if the step is visible here.
+duplication, measured across 2,047 datasets. The design at the time proposed to
+use the Ridge-to-RandomForest step as the internal calibration for "how much of
+the amplification is capacity alone", and this asked whether the step is visible
+in our data at all.
 
-If it is not, the pre-registered positive control fails, and no statement about
-in-context learning follows from this measurement. Better to know on 27 July
-than on 8 August.
+**Superseded, and kept as the record of how.** Two later measurements moved past
+it. `probe_criterion_power.py` found the step reversing once both models are
+fitted in the hierarchical form the pipeline uses, and Roth's ranking failing to
+order inflation on this panel at all. `probe_leakage_channels.py` found why: the
+aggregate severity measured here adds memorisation to a shift in generalisation,
+and the two order model families oppositely, so the aggregate inverts the
+capacity ordering that the memorisation channel obeys. The internal calibration
+is now a measured absorption rather than a borrowed rank.
+
+What this script still shows is that the apparatus detects an injected effect at
+all with nine folds, which was the question it was written to answer.
 
 Simplifications, stated because they bound what the probe can conclude:
   - plain RidgeCV and RandomForestRegressor on the same design matrix, not the

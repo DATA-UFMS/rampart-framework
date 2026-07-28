@@ -85,8 +85,13 @@ def prepared(df, columns, train_start, train_end, test_start, test_end,
     P5 holds even in a probe. A baseline that imputed from the whole panel would
     inflate both arms and hide the contrast the probe exists to measure.
 
-    Returns None when a window is too thin to fit or to score, so a caller can
-    skip the fold rather than average a meaningless number into its result.
+    Returns seven vectors -- design matrix, target, entity and year for the
+    training window, then design matrix, target, entity and year for the
+    evaluation one -- or None when a window is too thin to fit or to score, so a
+    caller can skip the fold rather than average a meaningless number into it.
+
+    The evaluation year is returned because the injector needs it: a leaked row
+    keeps its own year, which is what lets the disjointness gate see it.
     """
     train = df[(df['year'] >= train_start) & (df['year'] <= train_end)]
     test = df[(df['year'] >= test_start) & (df['year'] <= test_end)]
@@ -102,17 +107,21 @@ def prepared(df, columns, train_start, train_end, test_start, test_end,
             train['year'][keep].reset_index(drop=True),
             X_test[valid].reset_index(drop=True),
             test['target'][valid].reset_index(drop=True),
-            test['entity_id'][valid].reset_index(drop=True))
+            test['entity_id'][valid].reset_index(drop=True),
+            test['year'][valid].reset_index(drop=True))
 
 
 def contaminate(X_train, y_train, entities_train, years_train,
-                X_test, y_test, entities_test, *, dose, rng):
+                X_test, y_test, entities_test, years_test,
+                *, dose, rng):
     """Class III: a fraction of the evaluation rows, with their labels, added.
 
-    The years of the added rows are stamped as the last training year rather
-    than their own. That is what the violation looks like from inside: a row that
-    leaked into the training window is a row the pipeline believes belongs there,
-    and stamping its true year would leave a trail no careless pipeline leaves.
+    The added rows keep their own years, as `core.injection` keeps them. An
+    earlier version stamped them as the last training year, reasoning that a
+    leaked row is one the pipeline believes belongs in the window -- but the
+    pipeline's own injector does not do that, and a probe that differs from the
+    thing it is probing is measuring something else. The true years are also what
+    lets the disjointness gate see the violation at all.
     """
     count = max(1, int(round(dose * len(X_test))))
     picked = np.sort(rng.choice(len(X_test), size=count, replace=False))
@@ -121,9 +130,7 @@ def contaminate(X_train, y_train, entities_train, years_train,
         pd.concat([y_train, y_test.iloc[picked]], ignore_index=True),
         pd.concat([entities_train, entities_test.iloc[picked]],
                   ignore_index=True),
-        pd.concat([years_train,
-                   pd.Series([int(years_train.max())] * count)],
-                  ignore_index=True),
+        pd.concat([years_train, years_test.iloc[picked]], ignore_index=True),
     )
 
 

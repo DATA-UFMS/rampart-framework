@@ -74,7 +74,8 @@ def main():
         made = prepared(df, cols, a, b, test_start, test_end)
         if made is None:
             continue
-        X_train, y_train, e_train, yr_train, X_test, y_test, e_test = made
+        (X_train, y_train, e_train, yr_train,
+         X_test, y_test, e_test, yr_test) = made
 
         clean = {rung.name: fit_rung(X_train, y_train, X_test, y_test,
                                      e_train, e_test, rung=rung,
@@ -86,7 +87,7 @@ def main():
             rng = fold_rng(fold, dose)
             Xc, yc, ec, yrc = contaminate(
                 X_train, y_train, e_train, yr_train,
-                X_test, y_test, e_test, dose=dose, rng=rng)
+                X_test, y_test, e_test, yr_test, dose=dose, rng=rng)
             for rank, rung in enumerate(LADDER, start=1):
                 leaked = fit_rung(Xc, yc, X_test, y_test, ec, e_test,
                                   rung=rung, architecture='probe')['r2']
