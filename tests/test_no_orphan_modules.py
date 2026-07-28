@@ -34,6 +34,13 @@ DECLARED_TOOLS = {
     'scripts/derive_paper_tables.py':
         'spans both datasets, so it runs after both pipelines rather than inside '
         'one',
+    'scripts/validation/measure_dependence_range.py':
+        'reads a completed run to check that the P2 gap still exceeds the '
+        'residual dependence it exists to outrun',
+    'scripts/validation/probe_capacity_ladder.py':
+        'feasibility probe: whether the measurement recovers the capacity '
+        'ladder the literature documents, run once before the study rather '
+        'than as a stage of it',
 }
 
 
