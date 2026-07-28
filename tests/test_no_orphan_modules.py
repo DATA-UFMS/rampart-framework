@@ -45,6 +45,10 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
+    'scripts/validation/probe_label_channel.py':
+        'tests whether leakage severity follows label information or the '
+        'mechanism a statistic was fitted under; three arms in one run, needs '
+        'the optional extra for the in-context rows',
     'scripts/validation/probe_leakage_channels.py':
         'splits injected severity into memorisation and a shift in '
         'generalisation, measures the axis both are read along, and calibrates '

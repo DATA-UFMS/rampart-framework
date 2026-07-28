@@ -245,3 +245,66 @@ class TestAbsorptionIsMeasuredOnlyOnACleanArm:
         ridge = results['ladder_ridge']['absorption']['absorption']
         tree = results['ladder_decision_tree']['absorption']['absorption']
         assert ridge < tree, f'ridge {ridge}, tree {tree}'
+
+
+class TestTheLabelConditionedContamination:
+    """The entity effect is a target encoding, and that makes it a handle.
+
+    It is the mean of the outcome per entity -- the one estimation leakage the
+    literature measures as large, and the one a mechanism-first taxonomy has to
+    carve out because its mechanism is Class I while its magnitude is Class II.
+    Contaminating it moves no row into the training frame; only label information
+    crosses, attenuated by however many training rows each entity has.
+    """
+
+    def test_without_it_nothing_changes(self):
+        from core.models.ladder import entity_effect_frames
+        X, y, entity, _years = panel()
+        plain = entity_effect_frames(X, X, y, entity, entity)
+        assert plain[2] == entity_effect_frames(X, X, y, entity, entity)[2]
+
+    def test_the_statistic_moves_and_the_design_matrix_does_not(self):
+        """The whole point: no row crosses, only the statistic changes."""
+        from core.models.ladder import ENTITY_EFFECT_COLUMN, entity_effect_frames
+        X, y, entity, _years = panel(rows=60, entities=4)
+        outside = pd.Series([y.max() * 10] * 4)
+        outside_entities = pd.Series(list(entity.unique()))
+
+        clean_fit, _ce, clean_means, _cg = entity_effect_frames(
+            X, X, y, entity, entity)
+        dirty_fit, _de, dirty_means, _dg = entity_effect_frames(
+            X, X, y, entity, entity,
+            contaminate_with=(outside, outside_entities))
+
+        assert len(dirty_fit) == len(X), 'the design matrix gained rows'
+        assert dirty_fit.drop(columns=[ENTITY_EFFECT_COLUMN]).equals(
+            clean_fit.drop(columns=[ENTITY_EFFECT_COLUMN])), (
+            'a column other than the entity effect changed')
+        assert dirty_means != clean_means, 'the statistic did not move'
+        for key in clean_means:
+            assert dirty_means[key] > clean_means[key], (
+                'contaminating with larger targets must raise the means')
+
+    def test_the_shift_is_attenuated_by_the_aggregation_width(self):
+        """One outside row against m training rows shifts the mean by 1/(m+1).
+
+        The coefficient the whole label-information axis rests on, checked
+        arithmetically rather than assumed.
+        """
+        from core.models.ladder import entity_effect_frames
+        rows, entities = 40, 4
+        X, y, entity, _years = panel(rows=rows, entities=entities)
+        target = entity.unique()[0]
+        m = int((entity == target).sum())
+
+        _f, _e, clean_means, _g = entity_effect_frames(X, X, y, entity, entity)
+        outside_value = 1000.0
+        _f, _e, dirty_means, _g = entity_effect_frames(
+            X, X, y, entity, entity,
+            contaminate_with=(pd.Series([outside_value]), pd.Series([target])))
+
+        expected = (clean_means[target] * m + outside_value) / (m + 1)
+        assert dirty_means[target] == pytest.approx(expected)
+        weight = ((dirty_means[target] - clean_means[target])
+                  / (outside_value - clean_means[target]))
+        assert weight == pytest.approx(1.0 / (m + 1))

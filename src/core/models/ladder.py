@@ -43,7 +43,7 @@ would leave the reader wondering whether it had ever been checked.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -133,6 +133,7 @@ RUNGS: Dict[str, Rung] = {rung.name: rung for rung in LADDER}
 def entity_effect_frames(
     X_train: pd.DataFrame, X_test: pd.DataFrame,
     y_train: pd.Series, entities_train: pd.Series, entities_test: pd.Series,
+    *, contaminate_with: Optional[Tuple[pd.Series, pd.Series]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float], float]:
     """Join the training-window entity mean as one column, on both frames.
 
@@ -143,7 +144,28 @@ def entity_effect_frames(
     Raw means, not shrunken. The published random forest computed them this way
     and the ladder has to agree with it, or its random-forest rung would not be
     the same model the paper reports.
+
+    `contaminate_with` takes (targets, entities) from outside the training window
+    and folds them into the means. That is a deliberate violation and the reason
+    it exists is that this column is a **target encoding**: the mean of the
+    outcome per category, which is the one estimation leakage Roth measures as
+    large (d_z = +0.46) and the one his mechanism-first taxonomy has to carve out,
+    because its mechanism is Class I while its magnitude is Class II. Contaminating
+    it moves no row into the training frame -- only label information, attenuated
+    by however many training years each entity has. It is the handle for testing
+    whether severity follows label information rather than mechanism.
     """
+    if contaminate_with is not None:
+        extra_targets, extra_entities = contaminate_with
+        y_train = pd.concat([pd.Series(y_train), pd.Series(extra_targets)],
+                            ignore_index=True)
+        entities_train = pd.concat([pd.Series(entities_train),
+                                    pd.Series(extra_entities)],
+                                   ignore_index=True)
+        # entities_train is now longer than X_train, which is correct and is the
+        # whole point: the statistic saw rows the design matrix does not contain.
+        # Only the means below read it.
+
     global_mean = float(y_train.mean())
     means = {entity: float(y_train[entities_train == entity].mean())
              for entity in entities_train.unique()}
@@ -151,7 +173,8 @@ def entity_effect_frames(
     train_augmented = X_train.copy()
     test_augmented = X_test.copy()
     train_augmented[ENTITY_EFFECT_COLUMN] = [
-        means.get(entity, global_mean) for entity in entities_train]
+        means.get(entity, global_mean)
+        for entity in entities_train.iloc[:len(X_train)]]
     test_augmented[ENTITY_EFFECT_COLUMN] = [
         means.get(entity, global_mean) for entity in entities_test]
     return train_augmented, test_augmented, means, global_mean
