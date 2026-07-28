@@ -17,6 +17,19 @@ dynamic = ["dependencies"]
 [project.urls]
 Repository = "https://github.com/DATA-UFMS/rampart-framework"
 
+# In-context models, needed only by the amplification study. Deliberately out of
+# requirements.txt and out of requirements-lock.txt: the published result is the
+# paradigm equivalence and its latencies, and reproducing that must not require
+# downloading torch and a foundation model. With the extra absent, the tests
+# that need it skip and everything else runs.
+#
+# Not pinned to an exact version here, because the thing that has to be pinned
+# is the weights rather than the wrapper, and that pin is applied in code --
+# core/models/icl.py fixes TabPFN to v2, the one release family whose checkpoint
+# downloads without a license acceptance and a personal token.
+[project.optional-dependencies]
+icl = ["tabpfn>=8,<9", "tabicl>=2,<3"]
+
 # Single source of truth for dependencies; requirements-lock.txt pins the
 # transitive closure.
 [tool.setuptools.dynamic]

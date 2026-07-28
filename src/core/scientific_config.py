@@ -209,6 +209,45 @@ SCIENTIFIC_CONFIG = {
         'rf_n_jobs': 1,
     },
 
+    # The capacity ladder, used only when extra models are requested. Fixed
+    # rather than searched: tuning inside a contaminated arm would let the
+    # contamination choose the hyperparameter, and the difference between arms
+    # would then mix inflation with re-selection. See core/models/ladder.py.
+    'capacity_ladder': {
+        'gb_n_estimators': 200,
+        'gb_max_depth': 3,
+        'gb_learning_rate': 0.1,
+        # The midpoints of the grids the published random forest searches, so
+        # the fixed rung sits inside the space the tuned model explores.
+        'rf_max_depth': 6,
+        'rf_min_samples_leaf': 8,
+        'knn_n_neighbors': 5,
+        # One row per leaf: the top of the ladder is defined by nothing stopping
+        # it from reproducing a duplicated row exactly.
+        'dt_min_samples_leaf': 1,
+    },
+
+    # In-context models. Optional dependencies; absent by default.
+    'in_context_models': {
+        # Measured on the folds this study uses: the forward pass is quadratic
+        # in context length, 2,500 rows costing 32s and 10,000 costing 325s on
+        # CPU. The cap is TabPFN's documented pretraining limit, which is also
+        # where the cost stops being affordable -- the two agree, and the
+        # documented limit is the one cited.
+        'context_cap_rows': 10000,
+        # No ensemble. Averaging over preprocessing permutations costs about
+        # 6.5x and the estimand is a difference between arms, not the level of
+        # either. Reported at 8 as a robustness check on the cheap panel.
+        'tabpfn_n_estimators': 1,
+        'tabpfn_n_estimators_robustness': 8,
+        # Batch composition alone moves a prediction by about this much,
+        # relative to the target's standard deviation, with identical weights
+        # and seed. Bitwise equality is not available for these models, so the
+        # equivalence they can be held to is this tolerance.
+        'determinism_tolerance_relative': 1e-4,
+        'device': 'cpu',
+    },
+
     # Cross-paradigm equivalence is verified as bitwise identity of the
     # predicted vectors, not as agreement within a tolerance. Four tolerances
     # once lived here -- 85% feature overlap, 1% on target statistics, MAE

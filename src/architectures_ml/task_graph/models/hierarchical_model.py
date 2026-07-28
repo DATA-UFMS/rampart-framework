@@ -40,6 +40,7 @@ if project_root not in sys.path:
 from core.injection import active as injection_active
 from core.injection import contaminated_fit_frame
 from core.injection import duplicate_evaluation_rows
+from core.models.registry import fit_requested, models_reported
 from core.validation import (assert_splits_disjoint, audit_feature_set,
                              canonical_fold)
 
@@ -418,6 +419,27 @@ class HierarchicalModelTaskGraph:
                     val_rf = tmp
         test_rf = self.random_forest_hierarchical(X_train_scaled, y_train, X_test_scaled, y_test, countries_train, countries_test, max_depth=best_params[0], min_samples_leaf=best_params[1])
         models['random_forest_hierarchical'] = {'val': val_rf, 'test': test_rf}
+
+        # 3. Whatever else the arm asked for: the capacity ladder, the
+        # in-context models, or neither. With RAMPART_MODELS unset this loop
+        # does not execute, nothing optional is imported, and the published
+        # run is bit-for-bit the run that was published.
+        #
+        # Fitted on validation as well as test, and not because anything is
+        # tuned on it -- these models carry fixed hyperparameters on purpose.
+        # The aggregation downstream reads a validation score for every model
+        # it finds, and a rung that reported only a test score would be a
+        # model the fold summary cannot print.
+        _extra_val = fit_requested(
+            X_train_scaled, y_train, X_val_scaled, y_val,
+            countries_train, countries_val, architecture=PARADIGM,
+            years_train=years_train)
+        _extra_test = fit_requested(
+            X_train_scaled, y_train, X_test_scaled, y_test,
+            countries_train, countries_test, architecture=PARADIGM,
+            years_train=years_train)
+        for _name, _test_result in _extra_test.items():
+            models[_name] = {'val': _extra_val[_name], 'test': _test_result}
         
         # Gap analysis
         print(f"\n   Hierarchical results (Val -> Test):")
@@ -519,7 +541,7 @@ class HierarchicalModelTaskGraph:
         # Aggregate performance
         print("Aggregate SCHEMA-ON-READ performance:")
         
-        for model_name in ['simple_hierarchical', 'random_forest_hierarchical']:
+        for model_name in models_reported(all_results['folds']):
             val_r2s = [fold['models'][model_name]['val']['r2'] for fold in all_results['folds'] 
                       if model_name in fold['models']]
             test_r2s = [fold['models'][model_name]['test']['r2'] for fold in all_results['folds']
