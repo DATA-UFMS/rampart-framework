@@ -359,3 +359,74 @@ class TestTheInternalSchemaIsNeutral:
         collector = (_SRC / 'collection' / 'inep_collector.py').read_text()
         assert 'abandono_em' in collector, (
             'the collector no longer says what the INEP target is derived from')
+
+
+class TestTheFeatureListIsNotFeatureColumns:
+    """The exclusions are part of the answer, and reading around them cost a
+    wrong result.
+
+    `feature_columns` for World Bank begins with `target_source_rate`, and the
+    target is `100 - target_source_rate`. A validation script that built its
+    design matrix from `feature_columns` alone handed every model the answer:
+    all of them scored R^2 = 1, nothing could inflate under injected
+    contamination, and the script reported them as immune. The paradigms had
+    always applied `excluded_columns` too; the policy simply lived in more than
+    one place, and the copy outside the paradigms was the one that drifted.
+    """
+
+    def test_the_target_source_never_survives(self):
+        import datasets  # noqa: F401
+        from core.dataset_config import get_dataset, list_datasets, modelling_features
+
+        for name in list_datasets():
+            config = get_dataset(name)
+            features = modelling_features(config, config.feature_columns)
+            assert config.target_source_column not in features, name
+
+    def test_a_config_that_forgot_the_exclusion_is_refused(self):
+        """Not a silent drop -- the run stops and says which column it was."""
+        import datasets  # noqa: F401
+        import pytest
+        from core.dataset_config import get_dataset, modelling_features
+
+        config = get_dataset('worldbank')
+
+        class Leaky:
+            name = 'leaky'
+            feature_columns = list(config.feature_columns)
+            excluded_columns = [c for c in config.excluded_columns
+                                if c != config.target_source_column]
+            target_source_column = config.target_source_column
+
+        with pytest.raises(ValueError, match='target is derived from'):
+            modelling_features(Leaky, Leaky.feature_columns)
+
+    def test_it_keeps_the_declared_order_and_only_what_is_present(self):
+        import datasets  # noqa: F401
+        from core.dataset_config import get_dataset, modelling_features
+
+        config = get_dataset('worldbank')
+        available = list(config.feature_columns)[:6]
+        features = modelling_features(config, available)
+        assert features == [c for c in config.feature_columns
+                            if c in available
+                            and c not in config.excluded_columns]
+
+    def test_validation_scripts_do_not_rebuild_the_policy(self):
+        """One copy. The next script must not re-derive the exclusions.
+
+        Read from the syntax tree rather than by grep, so that a comment saying
+        why not to touch feature_columns is not itself an offence.
+        """
+        import ast
+
+        offending = []
+        for path in sorted((_ROOT / 'scripts').rglob('*.py')):
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Attribute)
+                        and node.attr == 'feature_columns'):
+                    offending.append(f'{path.relative_to(_ROOT)}:{node.lineno}')
+        assert not offending, (
+            f'a script is reading feature_columns directly instead of going '
+            f'through modelling_features: {offending}')

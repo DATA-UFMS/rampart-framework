@@ -37,7 +37,7 @@ from sklearn.linear_model import RidgeCV
 from sklearn.metrics import r2_score
 
 from datasets.worldbank import *  # noqa
-from core.dataset_config import get_dataset
+from core.dataset_config import get_dataset, modelling_features
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
 
 PANEL = ('/home/eos/pesquisa/eos/dw-vs-dl-dropout-prediction-latam/'
@@ -57,7 +57,12 @@ def panel():
         lag['year'] += k
         df = df.merge(lag.rename(columns={'target': f'lag_{k}'}),
                       on=['entity_id', 'year'], how='left')
-    features = [c for c in cfg.feature_columns if c in df.columns]
+    # Via the shared helper, not by reading feature_columns directly. Its first
+    # entry for this panel is target_source_rate, and the target is 100 minus
+    # it: an earlier version of this probe fitted on that column, every model
+    # reached R^2 = 1, and the probe concluded they were all immune to
+    # contamination. They had simply run out of headroom to inflate.
+    features = modelling_features(cfg, df.columns)
     return df, features + [f'lag_{k}' for k in LAGS], cfg
 
 
