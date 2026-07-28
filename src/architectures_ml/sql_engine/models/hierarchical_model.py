@@ -14,7 +14,6 @@ import json
 import os
 import sys
 import warnings
-from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
@@ -31,6 +30,7 @@ if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
 
 from core.injection import active as injection_active
+from core.injection import contaminated_fit_frame
 from core.injection import duplicate_evaluation_rows
 from core.validation import (assert_splits_disjoint, audit_feature_set,
                              canonical_fold)
@@ -51,7 +51,8 @@ from core.models.hierarchical import (
     write_feature_audit as shared_write_feature_audit,
     write_imputation_report as shared_write_imputation_report,
     write_prediction_artifact as shared_write_prediction_artifact)
-from core.validation import impute_from_training_window
+from core.validation import (impute_from_training_window,
+                             scale_from_training_window)
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED, setup_reproducibility
 
 setup_reproducibility()
@@ -96,6 +97,7 @@ class HierarchicalModelSQLFirst:
         self._cleared_by_selection = []
         self._injection_records = []
         self._disjointness_records = []
+        self._scaling_reports = []
 
         print("   Pattern: ML Consumer with views")
         
@@ -405,17 +407,26 @@ class HierarchicalModelSQLFirst:
         # P5: imputation and scaler fitted exclusively on the training data
         # (Kaufman et al. 2012). Imputation comes first because the scaler does
         # not accept missing values, and both statistics come from the same window.
+        # C1, estimation over the full panel: the statistics come from a frame
+        # widened past the split. The function called is the right one; what is
+        # wrong is the window it is handed, which is how the violation happens
+        # in the wild -- a panel normalised once, before splitting.
+        _fit_on = None
+        if _injection is not None and _injection.klass == 'C1':
+            _fit_on, _c1 = contaminated_fit_frame(
+                X_train, X_val, X_test, spec=_injection)
+            self._injection_records.append((fold_id, _c1))
+
         (X_train, X_val, X_test), imputation_report = \
-            impute_from_training_window(X_train, X_val, X_test)
+            impute_from_training_window(X_train, X_val, X_test, fit_on=_fit_on)
         self._imputation_reports.append((fold_id, imputation_report))
         if imputation_report['columns_without_training_observation']:
             print(f"   [WARN] No observation in the training window, left missing: "
                   f"{imputation_report['columns_without_training_observation']}")
 
-        scaler = StandardScaler()
-        X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index)
-        X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
-        X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
+        (X_train_scaled, X_val_scaled, X_test_scaled), scaling_report = \
+            scale_from_training_window(X_train, X_val, X_test, fit_on=_fit_on)
+        self._scaling_reports.append((fold_id, scaling_report))
         
         print(f"   Running hierarchical models:")
 

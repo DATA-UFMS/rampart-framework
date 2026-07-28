@@ -280,9 +280,16 @@ class TestEveryParadigmUsesTheSharedImplementation:
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_imputation_precedes_the_scaler(self, path):
+        """The scaler does not accept missing values, so the order is load-bearing.
+
+        Checked in the paradigm because that is where the two calls sit next to
+        each other. The scaler itself moved to core -- it was written out three
+        times identically -- so the marker is the shared call rather than the
+        sklearn class.
+        """
         source = path.read_text()
         assert source.index('impute_from_training_window') < \
-            source.index('StandardScaler()'), (
+            source.index('scale_from_training_window'), (
             'the scaler does not accept missing values'
         )
 

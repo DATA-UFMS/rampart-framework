@@ -688,26 +688,20 @@ class TestPreprocessingIsolation:
         assert len(self.MODELS) == 3
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
-    def test_scaler_is_fitted_on_training_data_only(self, path):
-        """fit_transform on training; transform on validation and test."""
-        import ast as _ast
-        tree = _ast.parse(path.read_text())
-        fold = next(n for n in _ast.walk(tree)
-                    if isinstance(n, _ast.FunctionDef)
-                    and n.name == 'run_fold_analysis')
-        fitted_on = [n.args[0].id for n in _ast.walk(fold)
-                     if isinstance(n, _ast.Call)
-                     and getattr(n.func, 'attr', None) == 'fit_transform'
-                     and n.args and hasattr(n.args[0], 'id')]
-        assert fitted_on == ['X_train'], (
-            f'{path.parts[-3]}: scaler fitted on {fitted_on}, and not only on '
-            f'the training set'
-        )
-        transformed = [n.args[0].id for n in _ast.walk(fold)
-                       if isinstance(n, _ast.Call)
-                       and getattr(n.func, 'attr', None) == 'transform'
-                       and n.args and hasattr(n.args[0], 'id')]
-        assert 'X_test' in transformed and 'X_val' in transformed
+    def test_the_paradigm_delegates_the_scaler(self, path):
+        """Not its own StandardScaler.
+
+        The block was written out three times, identically, and the property it
+        had to hold -- statistics from the training window -- was asserted by
+        reading each copy. One shared call is checked once, behaviourally, in
+        the test below; what stays here is that no paradigm keeps a copy.
+        """
+        source = path.read_text()
+        assert 'scale_from_training_window(' in source, path.parts[-3]
+        assert 'StandardScaler' not in source, (
+            f'{path.parts[-3]} fits its own scaler again; the shared one is '
+            f'where the training-window property is enforced and tested')
+
 
     @pytest.mark.parametrize('path', MODELS, ids=lambda p: p.parts[-3])
     def test_no_fit_touches_the_test_window(self, path):
@@ -745,6 +739,70 @@ class TestPreprocessingIsolation:
             f'{path.parts[-3]}: chosen parameters not reused'
         )
 
+
+class TestTheScalerUsesTheTrainingWindow:
+    """Behavioural, and it replaces reading three copies of the source.
+
+    The old form parsed each paradigm looking for `fit_transform(X_train)`. It
+    would have passed a scaler fitted correctly and applied wrongly, and it said
+    nothing about the numbers. This feeds known values and checks the arithmetic.
+    """
+
+    @staticmethod
+    def _frames():
+        import pandas as pd
+
+        # Training centred on 0 with unit spread; evaluation far away, so a
+        # scaler that saw it would produce visibly different numbers.
+        train = pd.DataFrame({'f': [-1.0, 0.0, 1.0]})
+        test = pd.DataFrame({'f': [100.0, 200.0]})
+        return train, test
+
+    def test_the_statistics_come_from_the_training_frame(self):
+        from core.validation import scale_from_training_window
+
+        train, test = self._frames()
+        (scaled_train, scaled_test), report = scale_from_training_window(
+            train, test)
+        # Training mean 0, population sd sqrt(2/3): the scaled training column
+        # is the training column over its own spread.
+        assert abs(scaled_train['f'].mean()) < 1e-12
+        # Test is far outside, and stays far outside -- a scaler that had seen
+        # it would have pulled these towards zero.
+        assert scaled_test['f'].min() > 50, scaled_test['f'].tolist()
+        assert report['fitted_on_rows'] == len(train)
+        assert report['fitted_beyond_training_window'] is False
+
+    def test_a_widened_fit_changes_the_numbers_and_says_so(self):
+        """The violation an experiment commits on purpose, and its receipt."""
+        import pandas as pd
+        from core.validation import scale_from_training_window
+
+        train, test = self._frames()
+        (_, honest_test), clean = scale_from_training_window(train, test)
+        (_, leaked_test), contaminated = scale_from_training_window(
+            train, test, fit_on=pd.concat([train, test], ignore_index=True))
+
+        assert leaked_test['f'].max() < honest_test['f'].max(), (
+            'widening the fit frame did not change the transform')
+        assert contaminated['fitted_beyond_training_window'] is True
+        assert clean['fitted_beyond_training_window'] is False
+
+    def test_the_receipt_carries_the_window_it_was_fitted_over(self):
+        """A row count cannot distinguish a clean fit from a contaminated one;
+        the span of years can."""
+        import pandas as pd
+        from core.validation import scale_from_training_window
+
+        train = pd.DataFrame({'f': [1.0, 2.0], 'year': [2000, 2001]})
+        test = pd.DataFrame({'f': [3.0], 'year': [2014]})
+        _, clean = scale_from_training_window(train, test)
+        _, leaked = scale_from_training_window(
+            train, test, fit_on=pd.concat([train, test], ignore_index=True))
+
+        assert clean['fitted_on_year_range'] == [2000, 2001]
+        assert leaked['fitted_on_year_range'] == [2000, 2014], (
+            'the receipt does not show the fit reaching into the evaluation years')
 
 
 class TestTheEmbargoDocstringMatchesTheCode:

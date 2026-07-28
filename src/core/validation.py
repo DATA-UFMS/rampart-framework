@@ -934,8 +934,53 @@ class DataIntegrityValidator:
     
 
 
+def scale_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
+                               fit_on: Optional[pd.DataFrame] = None
+                               ) -> Tuple[List[pd.DataFrame], Dict]:
+    """Standardise on statistics fitted in the training window, and say so.
+
+    The other half of P5, and on these panels the half that does the work.
+    Measured on the World Bank collection: zero missing cells, so the imputation
+    this sits next to has nothing to fill, while the scaler touches every row of
+    every column. The protocol's receipt covered the statistic with no work and
+    left uncovered the one that does all of it.
+
+    Was written out three times, identically, one per paradigm -- the shape this
+    repository keeps finding, where a policy in several places has already
+    diverged or is waiting to. Here it had not diverged yet; consolidating is
+    what stops it from being a matter of luck.
+
+    `fit_on` widens the frame the statistics come from, and exists so that an
+    experiment can commit the violation deliberately. Left at None, which is
+    every production path, the statistics come from `train` and the behaviour is
+    what it was.
+    """
+    from sklearn.preprocessing import StandardScaler
+
+    source = train if fit_on is None else fit_on
+    scaler = StandardScaler()
+    scaler.fit(source)
+
+    def applied(frame):
+        return pd.DataFrame(scaler.transform(frame), columns=frame.columns,
+                            index=frame.index)
+
+    report = {
+        'fitted_on_rows': int(len(source)),
+        # The span the statistics came from. A frame widened past the split
+        # shows here as a range reaching into the evaluation years, which is the
+        # only way the receipt can tell a clean fit from a contaminated one.
+        'fitted_on_year_range': (
+            [int(source['year'].min()), int(source['year'].max())]
+            if 'year' in getattr(source, 'columns', []) else None),
+        'fitted_beyond_training_window': fit_on is not None,
+    }
+    return [applied(train)] + [applied(frame) for frame in apply_to], report
+
+
 def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
-                               strategy: str = 'median'
+                               strategy: str = 'median',
+                               fit_on: Optional[pd.DataFrame] = None
                                ) -> Tuple[List[pd.DataFrame], Dict]:
     """Fill missing feature values with statistics fitted on the training window.
 
@@ -978,10 +1023,15 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
     if strategy not in ('median', 'mean'):
         raise ValueError(f"unsupported strategy: {strategy}")
 
+    # Where the statistics come from. `train` on every production path; a
+    # widened frame only when an arm declares the violation, so that the report
+    # below records a fit window reaching into the evaluation years.
+    source = train if fit_on is None else fit_on
+
     fitted: Dict[str, float] = {}
     unobserved: List[str] = []
     for column in train.columns:
-        observed = train[column].dropna()
+        observed = source[column].dropna() if column in source else train[column].dropna()
         if observed.empty:
             unobserved.append(column)
             continue
@@ -1024,15 +1074,16 @@ def impute_from_training_window(train: pd.DataFrame, *apply_to: pd.DataFrame,
 
     report = {
         'strategy': strategy,
-        'fitted_on_rows': int(len(train)),
+        'fitted_on_rows': int(len(source)),
         # What the statistics were fitted over, and not merely how many rows.
         # The receipt attests that the imputation ran; without the span it
         # cannot attest that it ran on the training window, which is the whole
         # of P5. A frame widened past the split shows up here as a range that
         # reaches into the evaluation years.
         'fitted_on_year_range': (
-            [int(train['year'].min()), int(train['year'].max())]
-            if 'year' in getattr(train, 'columns', []) else None),
+            [int(source['year'].min()), int(source['year'].max())]
+            if 'year' in getattr(source, 'columns', []) else None),
+        'fitted_beyond_training_window': fit_on is not None,
         'filled_cells': filled_cells,
         'values': fitted,
         # Kept, always empty: the condition raises above. The key remains so

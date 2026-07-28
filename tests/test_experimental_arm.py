@@ -292,3 +292,63 @@ class TestTheInjectionIsReproducible:
         record = self._run(42, 0)
         assert len(record['keys_moved']) == record['rows_moved']
         assert all(len(k) == 2 for k in record['keys_moved'])
+
+
+class TestEveryParadigmAppliesBothClasses:
+    """A class one paradigm skips is an arm whose label is wrong.
+
+    Structural, because running a fold needs a live engine, and the level that
+    matters here is whether the wiring exists at all. The arithmetic of each
+    class is tested behaviourally in core; what these assert is that the three
+    paradigms reach it. Caught by mutation: disabling C1 in one paradigm left
+    the whole suite green, so a run labelled C1 would have produced the clean
+    result under an experimental name -- the worst failure this design can have,
+    because nothing downstream would contradict it.
+    """
+
+    PARADIGMS = ('sql_engine', 'task_graph', 'dataframe_lib')
+
+    @staticmethod
+    def _source(paradigm):
+        return (_SRC / 'architectures_ml' / paradigm / 'models'
+                / 'hierarchical_model.py').read_text()
+
+    @pytest.mark.parametrize('paradigm', PARADIGMS)
+    def test_it_reads_the_spec_once(self, paradigm):
+        source = self._source(paradigm)
+        assert 'injection_active()' in source, paradigm
+        assert source.count('injection_active()') == 1, (
+            f'{paradigm} reads the spec more than once; two reads can disagree '
+            f'within a fold')
+
+    @pytest.mark.parametrize('paradigm', PARADIGMS)
+    def test_it_applies_c3(self, paradigm):
+        source = self._source(paradigm)
+        assert "klass == 'C3'" in source, paradigm
+        assert 'duplicate_evaluation_rows(' in source, paradigm
+
+    @pytest.mark.parametrize('paradigm', PARADIGMS)
+    def test_it_applies_c1_to_both_statistics(self, paradigm):
+        """Both, because on these panels only one of them does any work.
+
+        The World Bank collection has zero missing cells, so contaminating the
+        imputer alone injects nothing and C1 would measure zero for a reason
+        that has nothing to do with the hypothesis. The scaler touches every
+        row.
+        """
+        source = self._source(paradigm)
+        assert "klass == 'C1'" in source, paradigm
+        assert 'contaminated_fit_frame(' in source, paradigm
+        assert source.count('fit_on=_fit_on') == 2, (
+            f'{paradigm} passes the contaminated frame to '
+            f'{source.count("fit_on=_fit_on")} statistic(s); C1 has to reach '
+            f'both the imputation and the scaler')
+
+    @pytest.mark.parametrize('paradigm', PARADIGMS)
+    def test_the_contamination_is_recorded(self, paradigm):
+        """An arm has to be readable from its artifacts, not from its label."""
+        source = self._source(paradigm)
+        assert '_injection_records.append(' in source, paradigm
+        assert source.count('_injection_records.append(') == 2, (
+            f'{paradigm} records {source.count("_injection_records.append(")} '
+            f'of the two classes')
