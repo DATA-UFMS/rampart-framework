@@ -45,6 +45,10 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
+    'scripts/validation/probe_regime.py':
+        'runs the channel decomposition on both panels to test whether the '
+        'aggregate measure misleads everywhere or only at small n; the second '
+        'panel is what keeps the result from being one-panel',
     'scripts/validation/probe_label_channel.py':
         'tests whether leakage severity follows label information or the '
         'mechanism a statistic was fitted under; three arms in one run, needs '

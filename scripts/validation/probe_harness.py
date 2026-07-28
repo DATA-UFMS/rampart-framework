@@ -30,6 +30,32 @@ from core.dataset_config import get_dataset, modelling_features  # noqa: E402
 PANEL = ('/home/eos/pesquisa/eos/dw-vs-dl-dropout-prediction-latam/'
          'azure_results_v7_wb/collection/raw_data/complete_data.parquet')
 
+#: Per-dataset loading, because the two raw collections differ in exactly three
+#: ways and nothing else: where they live, what their entity column was called
+#: before the schema was neutralised, and how the target is derived.
+#:
+#: The INEP target comes from an algebraic identity the collector documents --
+#: approval, failure and dropout sum to 100 for each stage -- so dropout in upper
+#: secondary is 100 minus the other two. Those two columns are consequently
+#: absent from the registry's feature list, which `modelling_features` enforces:
+#: they determine the target exactly, the same trap `target_source_rate` is on the
+#: World Bank side.
+PANELS = {
+    'worldbank': {
+        'path': PANEL,
+        'rename': {'country_code': 'entity_id',
+                   'lower_secondary_completion_rate': 'target_source_rate'},
+        'target': lambda df: 100.0 - df['target_source_rate'],
+    },
+    'inep_censo': {
+        'path': ('/home/eos/pesquisa/eos/dw-vs-dl-dropout-prediction-latam/'
+                 'azure_results_v7_inep/collection/inep_raw/complete_data.parquet'),
+        'rename': {'country_code': 'entity_id', 'country_name': 'entity_name',
+                   'country_stratum': 'entity_stratum'},
+        'target': lambda df: 100.0 - df['aprov_em'] - df['reprov_em'],
+    },
+}
+
 #: Roth's own duplication rates, so the doses are not ours to choose.
 DOSES = (0.05, 0.10, 0.30)
 
@@ -38,18 +64,34 @@ DOSES = (0.05, 0.10, 0.30)
 LAGS = (2, 3)
 
 
-def panel():
-    """The World Bank panel with target and lags, plus the columns to fit on.
+def spillover_degree(df, cfg) -> float:
+    """How many *other* evaluation rows share an entity with a contaminated one.
+
+    The moderator the regime prediction rests on, and it is computable from the
+    fold configuration before anything runs. An evaluation window covers
+    `test_len` years and a panel has some number of rows per entity-year, so a
+    contaminated row has that many minus itself to spill onto. World Bank gives
+    exactly one; INEP gives zero, because each municipality contributes a single
+    row to a one-year evaluation window and that row is the contaminated one.
+    """
+    rows_per_entity_year = (len(df)
+                            / (df['entity_id'].nunique() * df['year'].nunique()))
+    return cfg.walk_forward_config['test_len'] * rows_per_entity_year - 1.0
+
+
+def panel(dataset: str = 'worldbank'):
+    """A panel with target and lags, plus the columns a model may fit on.
 
     The feature list comes from `modelling_features`, never from
-    `feature_columns` directly -- the first entry of that list is the column the
+    `feature_columns` directly -- on both panels that list contains columns the
     target is computed from.
     """
-    cfg = get_dataset('worldbank')
-    df = (pd.read_parquet(PANEL)
-          .rename(columns={'country_code': 'entity_id',
-                           'lower_secondary_completion_rate': 'target_source_rate'}))
-    df['target'] = 100.0 - df['target_source_rate']
+    if dataset not in PANELS:
+        raise KeyError(f"unknown panel {dataset!r}; known: {list(PANELS)}")
+    spec = PANELS[dataset]
+    cfg = get_dataset(dataset)
+    df = pd.read_parquet(spec['path']).rename(columns=spec['rename'])
+    df['target'] = spec['target'](df)
     for k in LAGS:
         lag = df[['entity_id', 'year', 'target']].copy()
         lag['year'] += k

@@ -157,3 +157,36 @@ class TestTheDirectionalCheck:
         """Strictly outside, so a boundary case is not read as significance."""
         assert not excludes_zero((0.0, 0.05), direction=+1)
         assert not excludes_zero((-0.05, 0.0), direction=-1)
+
+
+class TestTheTwoPanelsNeedDifferentBlocks:
+    """The reason the block length is derived and not written out.
+
+    The two panels give 2 and 1, and the regime probe runs both in one pass. A
+    constant would widen every INEP interval for a dependence that panel does not
+    have -- an error in the comfortable direction, which is why it would survive.
+    """
+
+    def test_the_probe_harness_reports_the_spillover_of_both(self):
+        import sys
+        scripts = _ROOT / 'scripts' / 'validation'
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        from probe_harness import PANELS
+        assert set(PANELS) == {'worldbank', 'inep_censo'}
+
+    def test_neither_panel_declares_a_block_by_hand(self):
+        """Read from the syntax tree: a literal block length in a probe is the
+        arrangement the derivation replaced."""
+        import ast
+
+        offending = []
+        for path in sorted((_ROOT / 'scripts').rglob('*.py')):
+            for node in ast.walk(ast.parse(path.read_text())):
+                if not isinstance(node, ast.keyword) or node.arg != 'block':
+                    continue
+                if isinstance(node.value, ast.Constant):
+                    offending.append(f'{path.name}:{node.lineno}')
+        assert not offending, (
+            f'a probe passes a literal block length instead of deriving it: '
+            f'{offending}')
