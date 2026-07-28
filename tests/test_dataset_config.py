@@ -320,19 +320,29 @@ class TestTheInternalSchemaIsNeutral:
 
     RETIRED = ('country_code', 'country_name', 'country_stratum',
                'lower_secondary_completion_rate')
+    REPLACEMENTS = ('entity_id', 'entity_name', 'entity_stratum',
+                    'target_source_rate')
 
     @pytest.mark.parametrize('name', RETIRED)
     def test_the_dataset_specific_name_is_gone(self, name):
         import subprocess
         # Code and schema only. Prose may name a retired column -- this test
         # does, in the list above and in the docstring saying why, and the
-        # README does, explaining what the rename was for. What must not come
-        # back is a program reading or writing the name.
-        found = subprocess.run(
-            ['git', 'grep', '-l', '-w', name, '--',
+        # README does, explaining what the rename was for.
+        #
+        # One use in code is legitimate and stays: translating a pre-rename
+        # artifact forward, which reads `'country_code': 'entity_id'`. The v7
+        # runs on disk were written before the rename and a diagnostic that
+        # reads them has to name what it is renaming. Allowed only on a line
+        # that also carries the new name, so the exemption cannot cover a line
+        # that merely uses the old one.
+        hits = subprocess.run(
+            ['git', 'grep', '-n', '-w', name, '--',
              '*.py', '*.sql', ':!tests/test_dataset_config.py'],
-            cwd=_ROOT, capture_output=True, text=True).stdout.split()
-        assert not found, f'{name} came back in: {found}'
+            cwd=_ROOT, capture_output=True, text=True).stdout.splitlines()
+        replacement = dict(zip(self.RETIRED, self.REPLACEMENTS))[name]
+        offending = [h for h in hits if replacement not in h]
+        assert not offending, f'{name} came back in: {offending}'
 
     def test_both_datasets_declare_the_neutral_columns(self):
         import datasets  # noqa: F401

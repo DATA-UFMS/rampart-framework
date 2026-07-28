@@ -100,7 +100,25 @@ def get_outputs_root() -> str:
     code.
     """
     import os
-    return os.path.join(get_project_root(), 'outputs', get_dataset_name())
+
+    # An experimental arm, when one is declared, gets its own root. Without it
+    # every arm of a factorial writes over the previous one under the same
+    # names, and there is nothing left to compare -- which is what this
+    # directory split already exists to prevent between datasets.
+    #
+    # Absent, the path is exactly what it was: production is not asked to know
+    # about experiments.
+    arm = os.environ.get('RAMPART_ARM', '').strip()
+    parts = [get_project_root(), 'outputs', get_dataset_name()]
+    if arm:
+        if os.sep in arm or (os.altsep and os.altsep in arm) or arm.startswith('.'):
+            raise ValueError(
+                f"RAMPART_ARM must be a single directory name, and is {arm!r}. "
+                f"A separator or a leading dot would put the artifacts of an "
+                f"arm somewhere the reader of this dataset's outputs would "
+                f"never look.")
+        parts.append(arm)
+    return os.path.join(*parts)
 
 
 def get_absolute_output_path(relative_path: str) -> str:

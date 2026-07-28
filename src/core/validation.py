@@ -131,7 +131,8 @@ def linear_reconstruction_r2(
 
 
 
-def canonical_fold(X, y, entities, years, *, paradigm: str):
+def canonical_fold(X, y, entities, years, *, paradigm: str,
+                   return_years: bool = False):
     """Check the fold each paradigm materialised, and index it positionally.
 
     Every paradigm applies the same policy -- drop rows with no target, order by
@@ -212,10 +213,70 @@ def canonical_fold(X, y, entities, years, *, paradigm: str):
             f"models are fitted on different matrices."
         )
 
-    return (pd.DataFrame(X).reset_index(drop=True),
-            target,
-            pd.Series(entities).reset_index(drop=True))
+    ordered = (pd.DataFrame(X).reset_index(drop=True),
+               target,
+               pd.Series(entities).reset_index(drop=True))
+    if not return_years:
+        return ordered
+    # Opt-in, and the default is off: fifty-odd call sites unpack three values,
+    # and widening the tuple for all of them to serve one caller would be the
+    # kind of change that breaks a paradigm quietly. The year is needed to key a
+    # row -- an entity alone repeats across splits by design, which is the panel
+    # structure and not a defect.
+    return ordered + (pd.Series(years).reset_index(drop=True),)
 
+
+
+def assert_splits_disjoint(splits, *, paradigm: str) -> None:
+    """No row of an evaluation split may also be a row of the training split.
+
+    P1 and P2 impose discipline on the *windows*: the test period comes after
+    the training period, with a gap. Nothing until now imposed it on the
+    *rows*. Verified before this function existed: pasting rows from the test
+    window into the training frame passes `canonical_fold`, passes the temporal
+    gate, and passes every P1-P5 check, because the duplicate test is per split
+    and the temporal gate reads the fold configuration rather than the data.
+
+    That is memorisation leakage -- Class III in Roth's taxonomy, and the class
+    where severity is known to scale with model capacity. A model that can
+    memorise a row is handed the answer for a row it will be scored on, and no
+    part of this framework noticed.
+
+    The check is on (entity, year), because entity alone recurs across splits by
+    construction: the same country appears in training and in test, and that is
+    the panel structure rather than a defect. It is what K&N call L1.1, an
+    evaluation set that is not independent, enforced at the granularity where
+    the violation actually happens.
+
+    Args:
+        splits: mapping of split name to its (entities, years) pair. The
+            training split must be present under the key 'train'.
+        paradigm: named in the diagnostic, because the three materialise folds
+            independently and a defect in one is not a defect in the others.
+    """
+    if 'train' not in splits:
+        raise ValueError(
+            f"{paradigm}: assert_splits_disjoint needs the training split to "
+            f"compare the others against; got {sorted(splits)}")
+
+    def keys(pair):
+        entities, years = pair
+        return set(zip((str(e) for e in pd.Series(entities)),
+                       (int(y) for y in pd.Series(years))))
+
+    training = keys(splits['train'])
+    for name, pair in splits.items():
+        if name == 'train':
+            continue
+        shared = training & keys(pair)
+        if shared:
+            sample = sorted(shared)[:5]
+            raise AntiLeakageViolation(
+                f"Anti-leakage violation (L1.1 evaluation independence): "
+                f"{paradigm} has {len(shared)} row(s) present in both the "
+                f"training split and '{name}'. The model would be scored on "
+                f"rows it was fitted on. First few (entity, year): {sample}"
+            )
 
 
 def assert_lag_columns(present, paradigm: str, lag_orders, *,

@@ -30,7 +30,8 @@ _actual_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '
 if _actual_project_root not in sys.path:
     sys.path.insert(0, _actual_project_root)
 
-from core.validation import audit_feature_set, canonical_fold
+from core.validation import (assert_splits_disjoint, audit_feature_set,
+                             canonical_fold)
 
 #: Name this module's paradigm answers to, used wherever an artifact or a
 #: diagnostic has to say which of the three produced it.
@@ -222,7 +223,8 @@ class HierarchicalModelSQLFirst:
 
         return available_features
     
-    def _prepare_data(self, data, available_features):
+    def _prepare_data(self, data, available_features, *,
+                      return_years: bool = False):
         """
         Materialise a fold already loaded from the database.
 
@@ -241,7 +243,7 @@ class HierarchicalModelSQLFirst:
         """
         return canonical_fold(data[available_features], data[self.target_col],
                               data['entity_id'], data['year'],
-                              paradigm=PARADIGM)
+                              paradigm=PARADIGM, return_years=return_years)
     
     def simple_hierarchical_model(self, X_train: pd.DataFrame, y_train: pd.Series,
                                  X_test: pd.DataFrame, y_test: pd.Series,
@@ -350,9 +352,21 @@ class HierarchicalModelSQLFirst:
         available_features = self._prepare_features(train_data)
 
 
-        X_train, y_train, countries_train = self._prepare_data(train_data, available_features)
-        X_val, y_val, countries_val = self._prepare_data(val_data, available_features)
-        X_test, y_test, countries_test = self._prepare_data(test_data, available_features)
+        X_train, y_train, countries_train, years_train = self._prepare_data(
+            train_data, available_features, return_years=True)
+        X_val, y_val, countries_val, years_val = self._prepare_data(
+            val_data, available_features, return_years=True)
+        X_test, y_test, countries_test, years_test = self._prepare_data(
+            test_data, available_features, return_years=True)
+
+        # L1.1 at row granularity. P1 and P2 keep the windows apart; nothing
+        # kept a row of the test window out of the training frame, and pasting
+        # one there passed every check this framework had.
+        assert_splits_disjoint(
+            {'train': (countries_train, years_train),
+             'val': (countries_val, years_val),
+             'test': (countries_test, years_test)},
+            paradigm=PARADIGM)
         
         _fold_load_s = time.perf_counter() - _load_t0
 
