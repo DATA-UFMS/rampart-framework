@@ -41,6 +41,13 @@ DECLARED_TOOLS = {
         'feasibility probe: whether the measurement recovers the capacity '
         'ladder the literature documents, run once before the study rather '
         'than as a stage of it',
+    'scripts/validation/probe_criterion_power.py':
+        'compares two candidate primary criteria on the same folds, to settle '
+        'by measurement which one recovers a known effect; run once while the '
+        'design is being fixed, not as a stage',
+    'scripts/validation/measure_absorption.py':
+        'measures the axis the ladder is read along, in-context models '
+        'included; needs the optional extra, so it cannot be a pipeline stage',
 }
 
 
