@@ -23,13 +23,21 @@ counterfactual to one switch, which is the design the whole study rests on. The
 two published models keep the search they had, because the clean run has to
 reproduce the frozen artifact.
 
-**The severity Roth reports is an ordering, not an axis.** He measures class III
-inflation rising with capacity -- naive Bayes 0.37, logistic regression 0.44,
-XGBoost 0.78, random forest 0.90, kNN 1.01, decision tree 1.11 -- over 2,047
-datasets. Those are classification effect sizes on AUC and ours are regression
-effect sizes on R^2, over folds of one panel rather than over datasets. The
-numbers travel as corroboration that the ordering is capacity-driven; they do
-not calibrate our scale, and the trend we fit is fitted in our own measurements.
+**Roth's severities are recorded here and are not the axis. They did not
+transfer.** He measures class III inflation rising with capacity -- naive Bayes
+0.37, logistic regression 0.44, XGBoost 0.78, random forest 0.90, kNN 1.01,
+decision tree 1.11 -- over 2,047 datasets, by AUC, on classifiers. Carried across
+to regression on one panel, that order does not predict inflation: measured, the
+correlation between rung position and inflation is -0.72, -0.55 and +0.04 across
+the three doses, and gradient boosting inflates about five times more than the
+random forest ranked above it. Roth himself warns against carrying his numbers
+across, and this is what it looks like when one does.
+
+The axis that works is measured rather than borrowed: see
+`core.models.absorption`, which asks each rung how much of a single handed
+answer it keeps. The severities below stay in the artifact as the external
+reference that was tried, because a failed transfer is a result and deleting it
+would leave the reader wondering whether it had ever been checked.
 """
 
 from __future__ import annotations
@@ -149,8 +157,15 @@ def entity_effect_frames(
 def fit_rung(X_train: pd.DataFrame, y_train: pd.Series,
              X_test: pd.DataFrame, y_test: pd.Series,
              entities_train: pd.Series, entities_test: pd.Series,
-             *, rung: Rung, architecture: str) -> Dict:
-    """Fit one rung and score it, in the shape the other models return."""
+             *, rung: Rung, architecture: str,
+             measure_absorption: bool = False) -> Dict:
+    """Fit one rung and score it, in the shape the other models return.
+
+    `measure_absorption` costs a handful of extra fits and buys the axis this
+    ladder is read along -- see `core.models.absorption`. The caller decides,
+    because it is only meaningful on an uncontaminated frame and the caller is
+    the one that knows whether this arm is one.
+    """
     X_train_augmented, X_test_augmented, means, global_mean = \
         entity_effect_frames(X_train, X_test, y_train,
                              entities_train, entities_test)
@@ -158,6 +173,13 @@ def fit_rung(X_train: pd.DataFrame, y_train: pd.Series,
     estimator = rung.make()
     estimator.fit(X_train_augmented, y_train)
     predictions = np.asarray(estimator.predict(X_test_augmented), dtype=float)
+
+    absorption = None
+    if measure_absorption:
+        from core.models.absorption import absorption_coefficient
+        absorption = absorption_coefficient(
+            rung.make, X_train_augmented, y_train,
+            X_test_augmented, y_test, baseline=predictions)
 
     return {
         'model_name': rung.name,
@@ -180,4 +202,5 @@ def fit_rung(X_train: pd.DataFrame, y_train: pd.Series,
         'regularization_applied': (
             f"fixed hyperparameters, no validation-set search "
             f"({type(estimator).__name__})"),
+        'absorption': absorption,
     }

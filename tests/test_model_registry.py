@@ -38,6 +38,24 @@ def panel(rows=120, entities=6, seed=0):
     return frame, target, entity, years
 
 
+def split_panel(rows=150, entities=5, seed=4):
+    """Distinct training and evaluation frames, with noise in the target.
+
+    Both matter. Handing the training frame back as the evaluation frame lets a
+    decision tree predict every evaluation row exactly, so every absorption
+    probe divides by a residual of zero and is skipped -- which is the primitive
+    behaving correctly and the test asking the wrong thing.
+    """
+    rng = np.random.default_rng(seed)
+    def make(n, offset):
+        X = pd.DataFrame(rng.normal(size=(n, 3)), columns=['a', 'b', 'c'])
+        y = pd.Series(X['a'] * 2 - X['b'] + rng.normal(scale=1.0, size=n))
+        entity = pd.Series([f'E{i % entities}' for i in range(n)])
+        years = pd.Series([offset + i // entities for i in range(n)])
+        return X, y, entity, years
+    return make(rows, 2000), make(max(20, rows // 4), 2100)
+
+
 class TestSilenceByDefault:
 
     def test_no_variable_means_no_extra_models(self, monkeypatch):
@@ -178,3 +196,46 @@ class TestTheSummaryFollowsWhatWasFitted:
         assert not offending, (
             f'a paradigm lists the models again instead of deriving them: '
             f'{offending}')
+
+
+class TestAbsorptionIsMeasuredOnlyOnACleanArm:
+    """The axis the ladder is read along is a property of the model.
+
+    Read off an injected frame it would answer a different question -- how much
+    of one handed answer a model keeps when it has already been handed several --
+    and nothing reads that. The decision lives in the registry so the two fitters
+    cannot come to disagree about when it applies.
+    """
+
+    def test_a_clean_run_records_it(self, monkeypatch):
+        monkeypatch.setenv(registry.ENV_VAR, 'ladder_ridge,ladder_decision_tree')
+        monkeypatch.delenv('RAMPART_INJECTION', raising=False)
+        (X, y, e, yr), (Xe, ye, ee, _) = split_panel()
+        results = registry.fit_requested(X, y, Xe, ye, e, ee,
+                                         architecture='dataframe_lib',
+                                         years_train=yr)
+        for name, result in results.items():
+            assert result['absorption'] is not None, name
+            assert result['absorption']['probes_used'] > 0, name
+
+    def test_an_injected_run_does_not(self, monkeypatch):
+        monkeypatch.setenv(registry.ENV_VAR, 'ladder_ridge')
+        monkeypatch.setenv('RAMPART_INJECTION',
+                           '{"class": "C3", "dose": 0.1}')
+        (X, y, e, yr), (Xe, ye, ee, _) = split_panel()
+        results = registry.fit_requested(X, y, Xe, ye, e, ee,
+                                         architecture='dataframe_lib',
+                                         years_train=yr)
+        assert results['ladder_ridge']['absorption'] is None
+
+    def test_the_reading_separates_the_two_extreme_rungs(self, monkeypatch):
+        """End to end through the registry, not just through the primitive."""
+        monkeypatch.setenv(registry.ENV_VAR, 'ladder_ridge,ladder_decision_tree')
+        monkeypatch.delenv('RAMPART_INJECTION', raising=False)
+        (X, y, e, yr), (Xe, ye, ee, _) = split_panel(seed=5)
+        results = registry.fit_requested(X, y, Xe, ye, e, ee,
+                                         architecture='dataframe_lib',
+                                         years_train=yr)
+        ridge = results['ladder_ridge']['absorption']['absorption']
+        tree = results['ladder_decision_tree']['absorption']['absorption']
+        assert ridge < tree, f'ridge {ridge}, tree {tree}'

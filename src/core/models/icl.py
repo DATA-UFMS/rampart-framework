@@ -22,6 +22,18 @@ code rather than in the environment matters -- a machine with a different
 TABPFN_MODEL_VERSION would otherwise silently produce numbers from a different
 model, and the receipt would not show it.
 
+The pin is provisional, and the plan is to carry v3 alongside it rather than
+instead of it. What settles it against the three reasons above: v3 is what the
+package hands a practitioner by default, so it is the version a contamination
+audit is actually about. Carrying both makes the version an axis -- whether
+newer weights amplify more is a result, not an inconvenience -- and leaves one
+arm that still reproduces without an account. Note that the version is not a
+constant to swap: the inductive behaviour, the cost curve and the batch
+tolerance recorded here were all measured on v2, and v3 is a different
+architecture (architectures/tabpfn_v3.py). Each has to be re-measured, starting
+with the inductive check, because the mechanism this study argues for rests on
+it.
+
 **Determinism is a tolerance, not an identity.** Predicting the same rows in one
 batch, singly, and in halves moves the answer by about 1e-5 of the target's
 standard deviation, with identical weights and seed. The cross-paradigm claim
@@ -178,7 +190,7 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
                    X_test: pd.DataFrame, y_test: pd.Series,
                    entities_train: pd.Series, entities_test: pd.Series,
                    *, model: ICLModel, architecture: str,
-                   years_train=None) -> Dict:
+                   years_train=None, measure_absorption: bool = False) -> Dict:
     """Predict with an in-context model, in the shape the other models return.
 
     The entity effect is joined here as it is for every ladder rung. Handing the
@@ -194,6 +206,13 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
     estimator = model.make()
     estimator.fit(X_train_augmented, y_train)
     predictions = np.asarray(estimator.predict(X_test_augmented), dtype=float)
+
+    absorption = None
+    if measure_absorption:
+        from core.models.absorption import absorption_coefficient
+        absorption = absorption_coefficient(
+            model.make, X_train_augmented, y_train,
+            X_test_augmented, y_test, baseline=predictions)
 
     return {
         'model_name': model.name,
@@ -215,4 +234,5 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
                         else 'tabicl default checkpoint'),
         },
         'regularization_applied': 'none; in-context, no parameters fitted',
+        'absorption': absorption,
     }

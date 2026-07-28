@@ -99,8 +99,16 @@ def fit_requested(X_train, y_train, X_test, y_test,
     that has to cost nothing: with no request, neither optional package is
     imported and no estimator is built.
     """
+    from core.injection import active as injection_active
     from core.models.icl import fit_in_context
     from core.models.ladder import fit_rung
+
+    # Absorption is a property of the model, read off an uncontaminated frame.
+    # Measuring it on an injected arm would ask how much of a handed answer a
+    # model keeps when it has already been handed several, which is a different
+    # question and not one anything reads. Decided here rather than inside each
+    # fitter, so the two cannot disagree about when it applies.
+    measure_absorption = injection_active() is None
 
     results: Dict[str, Dict] = {}
     for name in requested():
@@ -108,11 +116,13 @@ def fit_requested(X_train, y_train, X_test, y_test,
             results[name] = fit_rung(
                 X_train, y_train, X_test, y_test,
                 entities_train, entities_test,
-                rung=LADDER_RUNGS[name], architecture=architecture)
+                rung=LADDER_RUNGS[name], architecture=architecture,
+                measure_absorption=measure_absorption)
         else:
             results[name] = fit_in_context(
                 X_train, y_train, X_test, y_test,
                 entities_train, entities_test,
                 model=ICL_MODELS[name], architecture=architecture,
-                years_train=years_train)
+                years_train=years_train,
+                measure_absorption=measure_absorption)
     return results

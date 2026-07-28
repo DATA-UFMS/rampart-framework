@@ -246,6 +246,11 @@ SCIENTIFIC_CONFIG = {
         # equivalence they can be held to is this tolerance.
         'determinism_tolerance_relative': 1e-4,
         'device': 'cpu',
+        # Single-row probes per fold for the absorption coefficient. More than
+        # one so the number does not depend on which row was drawn; few, because
+        # each probe is a refit and for an in-context model a refit is a forward
+        # pass over the whole context.
+        'absorption_probes': 5,
     },
 
     # Cross-paradigm equivalence is verified as bitwise identity of the
