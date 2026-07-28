@@ -191,7 +191,20 @@ prediction easy.
 
 Validation uses temporal walk-forward: training always grows forward in time, with a 2-year gap between splits. It produces 9 folds on WB (window train=8yr, val=2yr, test=2yr over 24 years) and 8 folds on INEP (window train=5yr, val=1yr, test=1yr over 18 years).
 
-Temporal ordering (P1) is category L3.1 of Kapoor & Narayanan (2023). The **gap** is not: their taxonomy does not mention gaps anywhere. It mitigates L3.2 — dependence between training and test, here temporal autocorrelation — by way of blocked cross-validation with a buffer (Roberts et al., 2017, which is the reference K&N themselves cite in L3.2), with the embargo variant of López de Prado (2018).
+Temporal ordering (P1) is category L3.1 of Kapoor & Narayanan (2023). The **gap** is not: their taxonomy does not mention gaps anywhere. It mitigates L3.2 — dependence between training and test, here temporal autocorrelation — by way of blocked cross-validation with a buffer (Roberts et al., 2017, which is the reference K&N themselves cite in L3.2).
+
+**Why two years.** The criterion is that the buffer exceed the range of autocorrelation *in the model residual*, not in the raw series — the qualifier is the authors' own, in the `blockCV` package three of them wrote to implement the paper. It decides the answer here, because this model reads lags of the target as features and therefore absorbs most of the temporal structure before any residual exists. `scripts/validation/measure_dependence_range.py` measures both on a completed run:
+
+| | World Bank | INEP |
+|---|---|---|
+| raw target at lag 2, entity mean removed | 0.56 | 0.39 |
+| out-of-sample residual at lag 2, within entity | **0.03** | **0.00** |
+
+The dependence is spent at lag 2 in both panels, which is the configured gap. Measured against the raw series the gap would look far too narrow; measured against what the model fails to explain it is exactly wide enough. A test fails the build if a future change moves the range past the gap.
+
+**What the gap does not reach.** Around two thirds of the residual variance — 66% on the World Bank, 60% on INEP — is a persistent per-entity offset: the model is wrong for the same countries and municipalities every year. That component does not decay with lag and no temporal buffer touches it. It is L3.2 proper, non-independence between rows, which this framework declares as requiring an argument from the author rather than claiming to solve. The measurement turns that declaration into a number.
+
+López de Prado's (2018) embargo is *not* applied, and the parameter that would apply it is zero: the embargo removes training observations whose labels overlap the test period, and with one observation per entity per year there is no overlap to remove. The gap subsumes it. The parameter exists for adaptations of the framework to sub-annual data, where the overlap is real.
 
 ## Structure
 
@@ -229,7 +242,7 @@ scripts/
 ├── derive_paper_tables.py      # Paper tables, spanning both datasets
 ├── derive_model_info_sheet.py  # Kapoor & Narayanan model info sheet
 └── validation/                 # Leakage-injection negative control
-tests/                          # 1568 tests (unit, discovery, anti-leakage)
+tests/                          # 1579 tests (unit, discovery, anti-leakage)
 pipeline.py                     # Orchestrates the full pipeline
 ```
 
@@ -354,7 +367,7 @@ Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON �
 - Seeds centralized in `scientific_config.py`, `n_jobs=1`
 - Environment snapshot: packages, hardware, git commit
 - `requirements-lock.txt` with exact versions
-- 1568 automated tests (`pytest tests/`)
+- 1579 automated tests (`pytest tests/`)
 
 **What the guarantee covers, and what it does not.** Bitwise equivalence is a
 property of the code: on one machine, the three paradigms produce identical
