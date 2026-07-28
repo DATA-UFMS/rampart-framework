@@ -55,9 +55,10 @@ from statistical_validation.leakage_channels import (  # noqa: E402
 #: Swept to give the axis a calibration curve with a closed form.
 KNN_K = (1, 2, 3, 5, 10, 20)
 
-#: Enough probe rows that the per-fold absorption is not one draw, few enough
-#: that it stays a small-dose quantity. Cheap here: one refit either way.
-PROBES = 12
+#: Read from the configuration rather than set here, so the reading the probe
+#: reports and the reading the pipeline records are the same quantity. The count
+#: is part of the definition: it fixes the dose at which absorption is read.
+PROBES = None
 
 
 def knn(k):
@@ -167,18 +168,19 @@ def main():
     print("   (global already has the sample-size control subtracted)")
     for dose in DOSES:
         print(f"\n  dose {dose:.0%}")
-        print(f"{'model':>26} {'absorption':>11} {'local':>9} "
-              f"{'global':>9} {'size':>8} {'aggregate':>10}")
+        print(f"{'model':>26} {'absorp':>8} {'local':>9} {'excess':>9} "
+              f"{'global':>9} {'size':>8} {'aggreg':>9}")
         for name, _make, _kind, _expected in entries:
             folds_here = channels.get((name, dose), [])
             if not folds_here:
                 continue
             got = summarise(folds_here, block=block, iters=4000)
-            print(f"{name:>26} {mean_absorption[name]:>11.4f} "
+            print(f"{name:>26} {mean_absorption[name]:>8.4f} "
                   f"{got['local']['point']:>+9.4f} "
+                  f"{got['local_excess']['point']:>+9.4f} "
                   f"{got['global']['point']:>+9.4f} "
                   f"{got['sample_size_effect']['point']:>+8.4f} "
-                  f"{got['aggregate']['point']:>+10.4f}")
+                  f"{got['aggregate']['point']:>+9.4f}")
 
     print("\n" + "=" * 78)
     print("3. WHICH CHANNEL DOES ABSORPTION EXPLAIN?")

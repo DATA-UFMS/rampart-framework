@@ -77,12 +77,32 @@ class TestTheInstrument:
         assert result['absorption'] == pytest.approx(1.0, abs=1e-12)
         assert result['error_after'] == pytest.approx(0.0, abs=1e-18)
 
-    def test_a_heavily_penalised_ridge_shrinks_it_away(self):
+    def test_a_heavily_penalised_ridge_reads_the_global_floor(self):
+        """It cannot memorise, so what it reads is the other component.
+
+        A penalty of 1e6 drives the coefficients to nothing, so the model predicts
+        its intercept. Appending probe rows moves that intercept, and the
+        improvement on the probe rows is exactly the part of the reading that is
+        not memorisation. So this is not a test that the reading is zero -- an
+        earlier version asserted that and passed only because it used five probe
+        rows instead of twelve. It is a test that the floor is small next to what
+        a memorising model reads.
+        """
         X_fit, y_fit, X_eval, y_eval = frames()
-        result = absorption_coefficient(make_heavy_ridge, X_fit, y_fit,
-                                        X_eval, y_eval)
-        assert abs(result['absorption']) < 0.05, (
-            'a ridge with a 1e6 penalty cannot be moved by one row')
+        floor = absorption_coefficient(make_heavy_ridge, X_fit, y_fit,
+                                       X_eval, y_eval)['absorption']
+        memorising = absorption_coefficient(make_tree, X_fit, y_fit,
+                                            X_eval, y_eval)['absorption']
+        assert abs(floor) < 0.35, f'the global floor is not small: {floor}'
+        assert floor < memorising / 2.0
+
+    def test_the_probe_dose_is_recorded(self):
+        """Absorption read at a 19% dose is not absorption at the single-row
+        margin, and the count alone does not say which it is."""
+        X_fit, y_fit, X_eval, y_eval = frames()
+        result = absorption_coefficient(make_tree, X_fit, y_fit, X_eval, y_eval,
+                                        probes=6)
+        assert result['probe_dose'] == pytest.approx(6 / len(X_eval))
 
     def test_the_two_are_ordered(self):
         """The only property the axis has to have to be an axis."""

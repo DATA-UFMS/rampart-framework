@@ -136,6 +136,19 @@ def decompose_fold(
         'aggregate': aggregate,
         'local_weight': weight,
         'thin_handed_partition': bool(mask.sum() < _THIN_PARTITION),
+        # Improvement on handed rows above improvement on held-out ones.
+        #
+        # `local` is not pure memorisation: a contaminated row shifts the fit, and
+        # the shift reaches the handed rows too. Measured -- a ridge penalised to
+        # a thousandth of its coefficients, which cannot memorise anything, still
+        # improves on rows it was handed, because its intercept moved. Subtracting
+        # the held-out improvement removes a shift that is homogeneous across
+        # rows, which is an assumption and not a fact: a shift concentrated near
+        # the handed rows would survive it. Reported for that reason rather than
+        # substituted for `local`.
+        'local_excess': (local - global_uncontrolled
+                         if np.isfinite(local) and np.isfinite(global_uncontrolled)
+                         else float('nan')),
     }
 
     if control is None:
@@ -194,7 +207,7 @@ def summarise(folds: Sequence[Dict], *, block: int,
         iters = SCIENTIFIC_CONFIG['bootstrap_iters']
 
     out: Dict[str, Dict] = {}
-    for channel in ('local', 'global', 'global_uncontrolled',
+    for channel in ('local', 'local_excess', 'global', 'global_uncontrolled',
                     'sample_size_effect', 'aggregate'):
         values = [fold.get(channel) for fold in folds]
         values = [v for v in values if v is not None and np.isfinite(v)]

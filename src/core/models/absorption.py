@@ -53,6 +53,21 @@ does not predict inflation on this panel -- correlations of -0.72, -0.55 and
 inflation it explains, so no analogy between a classifier's AUC and a regressor's
 R^2 is required.
 
+**It is not pure memorisation, and the impurity is measurable.** The probe rows
+are appended as a batch, so the reading is taken at whatever dose that batch
+represents -- twelve rows into a 64-row window is about 19%. At that dose a model
+that cannot memorise at all still moves: a ridge with a penalty of 1e6 has
+effectively zero coefficients and predicts its intercept, and twelve extra labels
+shift that intercept. The improvement on the probe rows therefore contains a
+global component along with the memorisation.
+
+That component has an empirical floor rather than an argument: read the same way,
+a heavily penalised ridge measures nothing but the global shift, because it has no
+capacity for anything else. Reported alongside, so the reader can subtract it by
+eye. `statistical_validation.leakage_channels` separates the two properly, on the
+partition the dose defines, and also reports `local_excess` -- improvement on
+handed rows above improvement on held-out ones.
+
 **The entity effect is held fixed.** The caller passes frames that already carry
 it. Recomputing it with the probe rows included would let the answer travel
 through a feature rather than through the model, and this is about the model.
@@ -110,7 +125,11 @@ def absorption_coefficient(
     error_before = float(np.sum((truth - before) ** 2))
 
     record = {'probes_used': int(count), 'seed': int(seed),
-              'error_before': error_before}
+              'error_before': error_before,
+              # The count relative to the window, because absorption read at a
+              # 19% dose is not absorption read at the single-row margin and the
+              # number alone does not say which this is.
+              'probe_dose': float(count) / len(X_eval) if len(X_eval) else float('nan')}
 
     if error_before < _ERROR_FLOOR:
         return {**record, 'absorption': float('nan'),

@@ -246,11 +246,19 @@ SCIENTIFIC_CONFIG = {
         # equivalence they can be held to is this tolerance.
         'determinism_tolerance_relative': 1e-4,
         'device': 'cpu',
-        # Single-row probes per fold for the absorption coefficient. More than
-        # one so the number does not depend on which row was drawn; few, because
-        # each probe is a refit and for an in-context model a refit is a forward
-        # pass over the whole context.
-        'absorption_probes': 5,
+        # Evaluation rows appended together to read the absorption coefficient.
+        # They go in as one batch and cost one refit, so the count does not buy
+        # cost -- it buys stability, because the reading is a ratio of summed
+        # squared error and one row makes it one observation.
+        #
+        # The count is part of the definition, not a convenience: appending
+        # twelve rows to a 64-row evaluation window reads absorption at about a
+        # 19% dose rather than at the single-row margin. Every model is read at
+        # the same count on the same window, so comparisons hold; what would not
+        # hold is comparing a reading at 12 against one at 5, which is why this
+        # is one number and the measurements in the pre-specification were taken
+        # at it.
+        'absorption_probes': 12,
     },
 
     # Cross-paradigm equivalence is verified as bitwise identity of the
