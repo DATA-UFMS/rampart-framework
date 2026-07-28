@@ -88,8 +88,14 @@ def scaled(fit_frame, eval_frame, *, widen_with=None):
     return frames[0], frames[1]
 
 
-def main():
-    df, columns, cfg = panel()
+def main(dataset='worldbank', entity_cap=None):
+    df, columns, cfg = panel(dataset)
+    if entity_cap is not None:
+        keep = sorted(df['entity_id'].unique())[:int(entity_cap)]
+        df = df[df['entity_id'].isin(keep)].reset_index(drop=True)
+        print(f"subsampled to {len(keep)} entities, {len(df)} rows -- the full "
+              f"panel does not finish locally; levels differ, the attenuation "
+              f"ratio is what transfers")
     windows = folds(cfg)
     entries = candidates()
     block = fold_dependence_span(cfg.walk_forward_config)
@@ -231,4 +237,4 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(main(*sys.argv[1:]))

@@ -16,6 +16,7 @@ than through `core.injection`. What they can conclude is bounded by that, and
 each script says so for itself.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -27,8 +28,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from datasets.worldbank import *  # noqa: F401,F403,E402  -- registers the dataset
 from core.dataset_config import get_dataset, modelling_features  # noqa: E402
 
-PANEL = ('/home/eos/pesquisa/eos/dw-vs-dl-dropout-prediction-latam/'
-         'azure_results_v7_wb/collection/raw_data/complete_data.parquet')
+#: Where the raw panels live. Absolute paths under a home directory were fine
+#: while everything ran on one laptop and are the first thing that breaks
+#: anywhere else: the Dockerfile copies src, tests and scripts, and the panels
+#: are in neither. `RAMPART_PANEL_DIR` overrides the default, and a missing file
+#: says which file and how to point at it rather than raising a bare
+#: FileNotFoundError from inside pandas.
+#: parents[3] is the workspace holding both the repository and the collections
+#: side by side; parents[2] is the repository itself and is where a first attempt
+#: pointed, which resolved to a directory that has never existed.
+PANEL_ROOT = Path(os.environ.get(
+    'RAMPART_PANEL_DIR',
+    Path(__file__).resolve().parents[3] / 'dw-vs-dl-dropout-prediction-latam'))
+
+PANEL = str(PANEL_ROOT / 'azure_results_v7_wb' / 'collection' / 'raw_data'
+            / 'complete_data.parquet')
 
 #: Per-dataset loading, because the two raw collections differ in exactly three
 #: ways and nothing else: where they live, what their entity column was called
@@ -48,8 +62,8 @@ PANELS = {
         'target': lambda df: 100.0 - df['target_source_rate'],
     },
     'inep_censo': {
-        'path': ('/home/eos/pesquisa/eos/dw-vs-dl-dropout-prediction-latam/'
-                 'azure_results_v7_inep/collection/inep_raw/complete_data.parquet'),
+        'path': str(PANEL_ROOT / 'azure_results_v7_inep' / 'collection'
+                    / 'inep_raw' / 'complete_data.parquet'),
         'rename': {'country_code': 'entity_id', 'country_name': 'entity_name',
                    'country_stratum': 'entity_stratum'},
         'target': lambda df: 100.0 - df['aprov_em'] - df['reprov_em'],
@@ -90,7 +104,16 @@ def panel(dataset: str = 'worldbank'):
         raise KeyError(f"unknown panel {dataset!r}; known: {list(PANELS)}")
     spec = PANELS[dataset]
     cfg = get_dataset(dataset)
-    df = pd.read_parquet(spec['path']).rename(columns=spec['rename'])
+    source = Path(spec['path'])
+    if not source.exists():
+        raise FileNotFoundError(
+            f"panel {dataset!r} is not at {source}.\n"
+            f"The raw collections live outside this repository and the container "
+            f"does not carry them. Point RAMPART_PANEL_DIR at the directory "
+            f"holding azure_results_v7_wb/ and azure_results_v7_inep/, or copy "
+            f"them in. Note that outputs/{dataset}/collection/raw_data/ holds an "
+            f"eight-byte fixture, not the panel.")
+    df = pd.read_parquet(source).rename(columns=spec['rename'])
     df['target'] = spec['target'](df)
     for k in LAGS:
         lag = df[['entity_id', 'year', 'target']].copy()

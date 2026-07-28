@@ -51,6 +51,7 @@ would make.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Callable, Dict, Tuple
 
@@ -96,7 +97,17 @@ def _tabpfn_regressor():
             f"built on them does not reproduce; refusing to continue.")
 
     _ic = SCIENTIFIC_CONFIG['in_context_models']
-    return TabPFNRegressor(n_estimators=_ic['tabpfn_n_estimators'],
+    # The ensemble is off by default: it averages over preprocessing
+    # permutations, costs about 6.5x, and the estimand is a difference between
+    # arms rather than the level of either. `RAMPART_ICL_ROBUSTNESS` turns it on
+    # for the check a reviewer will ask for -- whether averaging shrinks the
+    # absorption the whole mechanism claim rests on. A switch rather than a
+    # config edit, so the two readings can sit in one table with the receipt
+    # saying which is which.
+    ensemble = (_ic['tabpfn_n_estimators_robustness']
+                if os.environ.get('RAMPART_ICL_ROBUSTNESS', '').strip()
+                else _ic['tabpfn_n_estimators'])
+    return TabPFNRegressor(n_estimators=ensemble,
                            random_state=RANDOM_SEED, device=_ic['device'])
 
 
@@ -232,6 +243,8 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
             'package_version': _package_version(model.package),
             'weights': ('tabpfn v2, ungated' if model.package == 'tabpfn'
                         else 'tabicl default checkpoint'),
+            'ensemble_robustness': bool(
+                os.environ.get('RAMPART_ICL_ROBUSTNESS', '').strip()),
         },
         'regularization_applied': 'none; in-context, no parameters fitted',
         'absorption': absorption,

@@ -45,6 +45,10 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
+    'scripts/validation/probe_selection.py':
+        'measures selection leakage, the class the closest prior work ranks '
+        'largest, and shows it needs a third channel the two-channel '
+        'decomposition cannot supply',
     'scripts/validation/probe_global_routes.py':
         'measures how the generalisation channel decays with the temporal '
         'distance of the leaked rows, which is the number a buffer width should '
@@ -163,3 +167,19 @@ def test_module_is_reachable(path):
         f"listed in DECLARED_TOOLS. Either wire it into the pipeline, or "
         f"declare it as a tool with the reason it stands alone, or delete it."
     )
+
+
+def test_no_probe_hardcodes_a_home_directory():
+    """A path under /home is the first thing that breaks off this laptop.
+
+    The Dockerfile copies src, tests and scripts; the raw panels are in none of
+    them. `probe_harness.PANEL_ROOT` resolves them and honours RAMPART_PANEL_DIR,
+    and a missing file names the file and the variable instead of raising from
+    inside pandas.
+    """
+    offending = []
+    for path in sorted((_ROOT / 'scripts').rglob('*.py')):
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if '/home/' in line and not line.lstrip().startswith('#'):
+                offending.append(f'{path.relative_to(_ROOT)}:{number}')
+    assert not offending, f'hardcoded home directory: {offending}'

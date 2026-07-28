@@ -37,7 +37,8 @@ import warnings
 from pathlib import Path
 
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/home/eos/pesquisa/eos/rampart-framework/src')
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np
 import pandas as pd
@@ -49,8 +50,7 @@ from datasets.worldbank import *  # noqa
 from core.dataset_config import get_dataset, modelling_features
 from core.scientific_config import SCIENTIFIC_CONFIG, RANDOM_SEED
 
-PANEL = ('/home/eos/pesquisa/eos/dw-vs-dl-dropout-prediction-latam/'
-         'azure_results_v7_wb/collection/raw_data/complete_data.parquet')
+from probe_harness import PANEL  # noqa: E402  -- one copy of where the panel is
 DOSES = (0.05, 0.10, 0.30)          # Roth's own duplication rates
 LAGS = (2, 3)
 

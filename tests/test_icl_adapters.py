@@ -204,3 +204,36 @@ class TestTabICLRuns:
         assert result['architecture'] == 'task_graph'
         assert result['provenance']['package'] == 'tabicl'
         assert np.isfinite(result['r2'])
+
+
+@pytest.mark.skipif(not _HAS_TABPFN, reason='tabpfn is an optional dependency')
+class TestTheEnsembleSwitch:
+    """One switch for the robustness reading, and the receipt says which is which.
+
+    Averaging is how bagging drops a forest's absorption from 1.00 to 0.39, so
+    "does the ensemble shrink it?" was a fair question to ask three times. It does
+    not -- measured at a ratio of 1.010 -- because TabPFN averages over
+    preprocessing permutations of the same context rather than over resamples, so
+    the contaminated row sits in every member.
+    """
+
+    def test_off_by_default(self, monkeypatch):
+        monkeypatch.delenv('RAMPART_ICL_ROBUSTNESS', raising=False)
+        estimator = icl._tabpfn_regressor()
+        assert estimator.n_estimators == (
+            SCIENTIFIC_CONFIG['in_context_models']['tabpfn_n_estimators'])
+
+    def test_the_switch_selects_the_configured_robustness_size(self, monkeypatch):
+        monkeypatch.setenv('RAMPART_ICL_ROBUSTNESS', '1')
+        estimator = icl._tabpfn_regressor()
+        assert estimator.n_estimators == (
+            SCIENTIFIC_CONFIG['in_context_models']
+            ['tabpfn_n_estimators_robustness'])
+
+    def test_the_receipt_records_which_reading_it_is(self, monkeypatch):
+        X, y, entity, years = frame(rows=40)
+        monkeypatch.setenv('RAMPART_ICL_ROBUSTNESS', '1')
+        result = icl.fit_in_context(
+            X, y, X, y, entity, entity, model=icl.MODELS['icl_tabpfn'],
+            architecture='dataframe_lib', years_train=years)
+        assert result['provenance']['ensemble_robustness'] is True
