@@ -45,6 +45,7 @@ from probe_harness import DOSES, fold_rng, folds, panel, prepared
 
 from core.models.absorption import (  # noqa: E402
     absorption_coefficient, knn_expected_absorption)
+from core.models.icl import matched_context  # noqa: E402
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from core.scientific_config import RANDOM_SEED  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
@@ -67,9 +68,13 @@ def knn(k):
 
 
 def candidates():
-    entries = [(f'knn_k{k}', knn(k), 'sweep', knn_expected_absorption(k))
-               for k in KNN_K]
-    entries += [(rung.name, rung.make, 'named', None) for rung in LADDER]
+    # With RAMPART_CAP_ALL the classical factories are wrapped too, so every model
+    # reads the same context and the absorption column becomes comparable across
+    # families. Off by default: the asymmetry is the deployed configuration.
+    entries = [(f'knn_k{k}', matched_context(knn(k)), 'sweep',
+                knn_expected_absorption(k)) for k in KNN_K]
+    entries += [(rung.name, matched_context(rung.make), 'named', None)
+                for rung in LADDER]
     if find_spec('tabpfn') is not None or find_spec('tabicl') is not None:
         from core.models.icl import FAMILIES
         for family in FAMILIES:

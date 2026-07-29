@@ -212,6 +212,30 @@ def _capped(estimator):
     return ContextCapped(estimator, cap=_ic['context_cap_rows'], rule=rule)
 
 
+def matched_context(make):
+    """Wrap a *classical* factory so it reads the same context an ICL model does.
+
+    The main analysis does not do this, and deliberately: a random forest can read
+    the whole training window and an in-context model cannot, and that asymmetry
+    is the constraint under study rather than a nuisance. But it leaves the
+    absorption column measured at two different n -- ten thousand rows for the
+    in-context arms against thirty-eight thousand for the classical ones -- so the
+    cross-family comparison in that column is confounded, which the pre-spec had
+    to declare as a caveat.
+
+    `RAMPART_CAP_ALL=1` removes the caveat instead of declaring it: every model
+    reads the same ten thousand rows and the absorptions become comparable. An
+    extra arm, not a change to the default, because equal n answers a different
+    question than the deployed configuration does.
+
+    Returns the factory unchanged when the flag is absent, so the ordinary run is
+    untouched.
+    """
+    if not os.environ.get('RAMPART_CAP_ALL', '').strip():
+        return make
+    return lambda: _capped(make())
+
+
 @dataclass(frozen=True)
 class ICLModel:
     """One in-context family: how to build it, and how it is identified."""
