@@ -68,6 +68,42 @@ PANELS = {
                    'country_stratum': 'entity_stratum'},
         'target': lambda df: 100.0 - df['aprov_em'] - df['reprov_em'],
     },
+    # The same source, recollected after the cross-sectional imputation tiers were
+    # removed, and it exists because of what the axis reads on each panel: the kNN
+    # closed form is matched to 0.0108 on the World Bank and to about 0.10 on INEP
+    # at either sample size. The panel that calibrates well is the one whose target
+    # was 33.5% imputed -- 193 of 768 cells from the mean of other countries in the
+    # same year -- and a group mean pulls neighbours' targets together, which is the
+    # condition under which kNN absorption should match (2k-1)/k^2. So the good
+    # calibration may be a property of synthesised targets rather than of the
+    # instrument, and this panel is how that gets decided instead of argued.
+    #
+    # It lives beside the other collections rather than under outputs/, both
+    # because that is what it is and because a parquet under
+    # outputs/worldbank/collection/ is input to the processors: leaving it there
+    # made three exit-status tests pass for the wrong reason, since they assert a
+    # processor fails with no input and were finding this panel instead.
+    #
+    # Already neutralised at the source, so only the entity column is renamed.
+    # 768 rows become 511: every row whose target came from imputation is gone,
+    # which is exactly the 64 temporal plus 193 geographic the old log records.
+    # Verified against the old panel -- the indicators it never imputed agree to
+    # 99.6-100%, so the API is stable and the disagreement elsewhere is the
+    # imputation. One exception to declare: gdp_per_capita_constant_2015 agrees on
+    # 80.2% while never having been imputed, which is the World Bank rebasing a
+    # constant-price series between April and July 2026.
+    'worldbank_clean': {
+        'path': str(PANEL_ROOT / 'worldbank_clean' / 'collection' / 'raw_data'
+                    / 'complete_data.parquet'),
+        'rename': {'country_code': 'entity_id'},
+        'target': lambda df: 100.0 - df['target_source_rate'],
+        # Same indicators, same target identity, same exclusions -- the panel
+        # differs in which cells are observed, not in what the dataset means, so
+        # borrowing the registered config is the accurate thing rather than a
+        # shortcut. Registering a second dataset would also make it appear as a
+        # pipeline target, which it is not.
+        'config': 'worldbank',
+    },
 }
 
 #: Roth's own duplication rates, so the doses are not ours to choose.
@@ -103,7 +139,7 @@ def panel(dataset: str = 'worldbank'):
     if dataset not in PANELS:
         raise KeyError(f"unknown panel {dataset!r}; known: {list(PANELS)}")
     spec = PANELS[dataset]
-    cfg = get_dataset(dataset)
+    cfg = get_dataset(spec.get('config', dataset))
     source = Path(spec['path'])
     if not source.exists():
         raise FileNotFoundError(

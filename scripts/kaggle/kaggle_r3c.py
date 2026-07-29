@@ -57,8 +57,9 @@ if not root.exists():
         shutil.copytree(expanded, root)
 
 panels = sorted(root.glob('panels/*/collection/*/complete_data.parquet'))
-if len(panels) != 2:
-    raise SystemExit(f'expected two panel parquets, found {len(panels)}: {panels}')
+if len(panels) < 2:
+    raise SystemExit(f'expected at least two panel parquets, found {len(panels)}: '
+                     f'{panels}')
 for panel in panels:                     # a truncated upload reads as a clean run
     if panel.stat().st_size < 1024:
         raise SystemExit(f'{panel} is {panel.stat().st_size} bytes, so it is a stub')
@@ -92,6 +93,12 @@ print('cuda:', torch.cuda.is_available(),
 print('\n--- guard ---', flush=True)
 subprocess.run([sys.executable, 'scripts/validation/check_icl_path.py'], check=True)
 
-print(f'\n--- r3c: {ARM} ---', flush=True)
-subprocess.run([sys.executable, 'scripts/validation/probe_leakage_channels.py',
-                'inep_censo'], check=True)
+# Which panels, in one run. Two World Bank variants measured on the same GPU with
+# the same package versions is the only way the calibration difference between them
+# means the imputation and not the platform.
+PANELS = [p for p in os.environ.get('RAMPART_PROBE_PANELS', 'inep_censo').split(',')
+          if p.strip()]
+for panel in PANELS:
+    print(f'\n--- r3c on {panel.strip()}: {ARM} ---', flush=True)
+    subprocess.run([sys.executable, 'scripts/validation/probe_leakage_channels.py',
+                    panel.strip()], check=True)

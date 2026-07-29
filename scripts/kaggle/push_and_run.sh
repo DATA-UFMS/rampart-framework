@@ -21,10 +21,14 @@ METADADOS="${METADADOS:-$AQUI/kernel-metadata.json}"
 KAGGLE="${KAGGLE:-$RAIZ/.venv/bin/kaggle}"
 ESPERAR=1
 CAP_ALL=1
+PAINEIS=""
+SUFIXO=""
 while (( $# )); do
   case "$1" in
     --no-wait) ESPERAR=0; shift ;;
     --cap-all) CAP_ALL="${2:?--cap-all precisa de 0 ou 1}"; shift 2 ;;
+    --panels) PAINEIS="${2:?--panels precisa da lista separada por virgula}"; shift 2 ;;
+    --suffix) SUFIXO="${2:?--suffix precisa de um nome}"; shift 2 ;;
     *) echo "argumento desconhecido: $1"; exit 1 ;;
   esac
 done
@@ -38,15 +42,16 @@ done
 PALCO="$(mktemp -d)"
 trap 'rm -rf "$PALCO"' EXIT
 
-# The uncapped arm is pushed as its own kernel, so both logs survive and the two
+# Each arm is pushed as its own kernel, so the logs survive side by side and the
 # tables can be diffed instead of one overwriting the other.
-python3 - "$METADADOS" "$PALCO/kernel-metadata.json" "$CAP_ALL" <<'PY'
+python3 - "$METADADOS" "$PALCO/kernel-metadata.json" "$CAP_ALL" "$SUFIXO" <<'PY'
 import json, sys
-origem, destino, cap = sys.argv[1], sys.argv[2], sys.argv[3]
+origem, destino, cap, sufixo = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 meta = json.load(open(origem))
-if cap == '0':
-    meta['id'] += '-uncapped'
-    meta['title'] += '-uncapped'
+marca = sufixo or ('uncapped' if cap == '0' else '')
+if marca:
+    meta['id'] += f'-{marca}'
+    meta['title'] += f'-{marca}'
 with open(destino, 'w') as f:
     json.dump(meta, f, indent=2)
 PY
@@ -56,9 +61,9 @@ SLUG="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['id'])" 
 # is generated from it, because the kernel is declared kernel_type notebook and a
 # mismatch there is rejected on push.
 NOTEBOOK="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['code_file'])" "$PALCO/kernel-metadata.json")"
-python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" <<'PY'
+python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" <<'PY'
 import json, sys
-fonte, destino, cap = sys.argv[1], sys.argv[2], sys.argv[3]
+fonte, destino, cap, paineis = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 with open(fonte) as f:
     linhas = f.readlines()
 
@@ -67,10 +72,16 @@ def celula(fonte):
             'outputs': [], 'source': fonte}
 
 # A leading cell rather than surgery on the body: the arm is chosen by setting the
-# variable the body reads with setdefault, so the shipped text is never rewritten.
-celulas = [celula(linhas)]
+# variables the body reads with setdefault/get, so the shipped text is never
+# rewritten and what ran is legible in the notebook itself.
+prologo = ["import os\n"]
 if cap == '0':
-    celulas.insert(0, celula(["import os\n", "os.environ['RAMPART_CAP_ALL'] = '0'\n"]))
+    prologo.append("os.environ['RAMPART_CAP_ALL'] = '0'\n")
+if paineis:
+    prologo.append(f"os.environ['RAMPART_PROBE_PANELS'] = {paineis!r}\n")
+celulas = [celula(linhas)]
+if len(prologo) > 1:
+    celulas.insert(0, celula(prologo))
 
 notebook = {
     'cells': celulas,

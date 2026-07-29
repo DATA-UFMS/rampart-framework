@@ -23,6 +23,17 @@ for pair in "azure_results_v7_wb/collection/raw_data" \
   cp "$src" "$OUT/rampart/panels/$pair/"
 done
 
+# The recollected World Bank panel, the one without the cross-sectional imputation
+# tiers. Optional, so a bundle built before the recollection still packs; the probe
+# that wants it names it and fails loudly if it is absent.
+CLEAN_PAIR="worldbank_clean/collection/raw_data"
+CLEAN="$PANELS/$CLEAN_PAIR/complete_data.parquet"
+if [ -s "$CLEAN" ] && [ "$(stat -c%s "$CLEAN")" -gt 1000 ]; then
+  mkdir -p "$OUT/rampart/panels/$CLEAN_PAIR"
+  cp "$CLEAN" "$OUT/rampart/panels/$CLEAN_PAIR/"
+  echo "packed the recollected World Bank panel as well"
+fi
+
 ( cd "$OUT" && rm -f rampart-bundle.zip && zip -qr rampart-bundle.zip rampart \
   && rm -rf rampart )
 echo "wrote $OUT/rampart-bundle.zip ($(du -h "$OUT/rampart-bundle.zip" | cut -f1))"

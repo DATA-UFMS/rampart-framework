@@ -131,11 +131,25 @@ def test_refuses_a_truncated_panel(tmp_path):
 
 
 def test_refuses_when_a_panel_is_missing(tmp_path):
-    """Both panels travel together; one of them alone is a partial upload."""
+    """The two required panels travel together; one alone is a partial upload."""
     inputs, working = tmp_path / 'input', tmp_path / 'working'
     tree = make_tree(inputs / 'rampart-bundle' / 'rampart')
     shutil.rmtree(tree / 'panels' / 'azure_results_v7_wb')
     working.mkdir()
 
-    with pytest.raises(SystemExit, match='expected two panel parquets'):
+    with pytest.raises(SystemExit, match='at least two panel parquets'):
         run_resolution(inputs, working)
+
+
+def test_accepts_the_optional_recollected_panel(tmp_path):
+    """A third panel is the recollected World Bank arm, not a packing mistake."""
+    inputs, working = tmp_path / 'input', tmp_path / 'working'
+    tree = make_tree(inputs / 'rampart-bundle' / 'rampart')
+    extra = tree / 'panels' / 'worldbank_clean' / 'collection' / 'raw_data'
+    extra.mkdir(parents=True)
+    (extra / 'complete_data.parquet').write_bytes(b'\x00' * 4096)
+    working.mkdir()
+
+    root = run_resolution(inputs, working)
+
+    assert len(list(root.glob('panels/*/collection/*/complete_data.parquet'))) == 3

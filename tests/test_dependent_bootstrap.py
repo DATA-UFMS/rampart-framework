@@ -168,12 +168,25 @@ class TestTheTwoPanelsNeedDifferentBlocks:
     """
 
     def test_the_probe_harness_reports_the_spillover_of_both(self):
+        """Pinned so a new panel cannot arrive without the block length being
+        reconsidered -- which is the whole point of deriving it.
+
+        `worldbank_clean` is the same source recollected without the
+        cross-sectional imputation tiers. It is a variant rather than a third
+        dataset, so it borrows the registered config instead of adding one; a
+        panel that omitted `config` would silently ask the registry for a dataset
+        that does not exist.
+        """
         import sys
         scripts = _ROOT / 'scripts' / 'validation'
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         from probe_harness import PANELS
-        assert set(PANELS) == {'worldbank', 'inep_censo'}
+        assert set(PANELS) == {'worldbank', 'inep_censo', 'worldbank_clean'}
+        assert PANELS['worldbank_clean']['config'] == 'worldbank'
+        for name, spec in PANELS.items():
+            assert spec.get('config', name) in ('worldbank', 'inep_censo'), (
+                f'panel {name} points at an unregistered dataset config')
 
     def test_neither_panel_declares_a_block_by_hand(self):
         """Read from the syntax tree: a literal block length in a probe is the
