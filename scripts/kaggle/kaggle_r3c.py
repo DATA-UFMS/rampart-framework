@@ -98,6 +98,9 @@ subprocess.run([sys.executable, 'scripts/validation/check_icl_path.py'], check=T
 # means the imputation and not the platform.
 PANELS = [p for p in os.environ.get('RAMPART_PROBE_PANELS', 'inep_censo').split(',')
           if p.strip()]
+for _switch in ('RAMPART_PROBES', 'RAMPART_PROBE_FRACTION'):
+    if os.environ.get(_switch, '').strip():
+        print(f'{_switch} = {os.environ[_switch]}')
 for panel in PANELS:
     print(f'\n--- r3c on {panel.strip()}: {ARM} ---', flush=True)
     subprocess.run([sys.executable, 'scripts/validation/probe_leakage_channels.py',

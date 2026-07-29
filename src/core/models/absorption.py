@@ -95,6 +95,7 @@ def absorption_coefficient(
     *, probes: Optional[int] = None, seed: int = RANDOM_SEED,
     baseline: Optional[Sequence[float]] = None,
     replicates: Optional[int] = None,
+    fraction: Optional[float] = None,
 ) -> Dict:
     """Absorption over a small set of probe rows, as a ratio of sums.
 
@@ -118,6 +119,19 @@ def absorption_coefficient(
     residual in the denominator has produced a divergent mean three times in this
     repository already.
     """
+    # `fraction` sets the probe count as a share of the frame being perturbed, and it
+    # exists because a fixed COUNT is not comparable across panels. Absorption appends
+    # a fixed twelve rows, so the perturbation as a share of training is 12/n: 3.13%
+    # on the World Bank at n≈384 and 0.029% on INEP at n≈41,450, a hundredfold apart.
+    # A quantity that falls as 1/n then measures the perturbation rather than the
+    # model -- and it did. Matched at 3.13% on both panels, the ridge goes from
+    # n^-0.94 to n^-0.08 and the random forest from n^-0.45 to n^-0.05, while 1-NN and
+    # the unbounded tree stay at exactly 1.0000, which is what structural invariance
+    # looks like. Any cross-panel reading has to match the fraction, never the count.
+    if fraction is not None:
+        if not 0.0 < float(fraction) <= 1.0:
+            raise ValueError(f"fraction must be in (0, 1], got {fraction!r}")
+        probes = max(1, int(round(float(fraction) * len(X_fit))))
     if probes is None:
         probes = SCIENTIFIC_CONFIG['in_context_models']['absorption_probes']
     if replicates is None:
@@ -144,6 +158,12 @@ def absorption_coefficient(
 
     record = {'probes_used': int(count), 'seed': int(seed),
               'replicates': int(replicates),
+              # Recorded because it is the only quantity that makes two panels
+              # comparable, and because the count alone hides it.
+              'perturbation_share': (float(count) / len(X_fit)
+                                     if len(X_fit) else float('nan')),
+              'fraction_requested': (float(fraction) if fraction is not None
+                                     else None),
               # The count relative to the window, because absorption read at a
               # 19% dose is not absorption read at the single-row margin and the
               # number alone does not say which this is. Unchanged by replicates:

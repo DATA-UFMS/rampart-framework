@@ -23,12 +23,14 @@ ESPERAR=1
 CAP_ALL=1
 PAINEIS=""
 SUFIXO=""
+SONDAS=""
 while (( $# )); do
   case "$1" in
     --no-wait) ESPERAR=0; shift ;;
     --cap-all) CAP_ALL="${2:?--cap-all precisa de 0 ou 1}"; shift 2 ;;
     --panels) PAINEIS="${2:?--panels precisa da lista separada por virgula}"; shift 2 ;;
     --suffix) SUFIXO="${2:?--suffix precisa de um nome}"; shift 2 ;;
+    --probes) SONDAS="${2:?--probes precisa de um inteiro}"; shift 2 ;;
     *) echo "argumento desconhecido: $1"; exit 1 ;;
   esac
 done
@@ -61,9 +63,9 @@ SLUG="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['id'])" 
 # is generated from it, because the kernel is declared kernel_type notebook and a
 # mismatch there is rejected on push.
 NOTEBOOK="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['code_file'])" "$PALCO/kernel-metadata.json")"
-python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" <<'PY'
+python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" "$SONDAS" <<'PY'
 import json, sys
-fonte, destino, cap, paineis = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+fonte, destino, cap, paineis, sondas = sys.argv[1:6]
 with open(fonte) as f:
     linhas = f.readlines()
 
@@ -79,6 +81,8 @@ if cap == '0':
     prologo.append("os.environ['RAMPART_CAP_ALL'] = '0'\n")
 if paineis:
     prologo.append(f"os.environ['RAMPART_PROBE_PANELS'] = {paineis!r}\n")
+if sondas:
+    prologo.append(f"os.environ['RAMPART_PROBES'] = {sondas!r}\n")
 celulas = [celula(linhas)]
 if len(prologo) > 1:
     celulas.insert(0, celula(prologo))

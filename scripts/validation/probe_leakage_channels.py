@@ -29,6 +29,7 @@ Run: python scripts/validation/probe_leakage_channels.py
      .venv/bin/python scripts/validation/probe_leakage_channels.py   (with ICL)
 """
 
+import os
 import sys
 import warnings
 from importlib.util import find_spec
@@ -59,7 +60,22 @@ KNN_K = (1, 2, 3, 5, 10, 20)
 #: Read from the configuration rather than set here, so the reading the probe
 #: reports and the reading the pipeline records are the same quantity. The count
 #: is part of the definition: it fixes the dose at which absorption is read.
-PROBES = None
+#: `RAMPART_PROBES=313` overrides it. Needed for the matched-perturbation arm, and a
+#: count rather than a share because under the context cap the frame handed in is the
+#: full window while the model only reads the most recent ten thousand -- so a share
+#: of what was handed in is not a share of what was read, and the count is the only
+#: way to say 3.13% of the effective context on both panels.
+PROBES = (int(os.environ['RAMPART_PROBES'])
+          if os.environ.get('RAMPART_PROBES', '').strip() else None)
+
+#: `RAMPART_PROBE_FRACTION=0.0313` reads absorption at a matched share of the training
+#: frame instead of a matched count, which is the only way two panels are comparable:
+#: at a fixed twelve the perturbation is 12/n, 3.13% on the World Bank against 0.029%
+#: on INEP, and a quantity falling as 1/n was measuring that rather than the model.
+#: Off by default, because the count is what every recorded number was read at.
+PROBE_FRACTION = (float(os.environ['RAMPART_PROBE_FRACTION'])
+                  if os.environ.get('RAMPART_PROBE_FRACTION', '').strip()
+                  else None)
 
 
 def knn(k):
@@ -116,7 +132,8 @@ def main(dataset='worldbank', entity_cap=None):
                                                  dtype=float)
             absorptions.setdefault(name, []).append(absorption_coefficient(
                 make, fit_frame, y_train, eval_frame, y_test,
-                probes=PROBES, seed=RANDOM_SEED + fold,
+                probes=PROBES, fraction=PROBE_FRACTION,
+                seed=RANDOM_SEED + fold,
                 baseline=clean_predictions[name])['absorption'])
 
         for dose in DOSES:

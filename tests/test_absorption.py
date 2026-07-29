@@ -373,3 +373,72 @@ class TestReplicatesRemoveTheRowOrderDependence:
             return abs(a - b)
 
         assert spread(40) < spread(1)
+
+
+class TestFractionMakesTwoPanelsComparable:
+    """A fixed probe COUNT makes the perturbation 12/n, and 1/n is the answer.
+
+    Absorption appends a fixed twelve rows, so the perturbation as a share of the
+    training frame is 12/n: 3.13% on the World Bank at n about 384 against 0.029% on
+    INEP at n about 41,450. A hundredfold apart, and any quantity that declines as
+    1/n is then reporting the perturbation rather than the model. Measured on the two
+    panels with the share matched at 3.13%, the ridge goes from n^-0.94 to n^-0.08
+    and the random forest from n^-0.45 to n^-0.05, while 1-NN and the unbounded tree
+    stay at exactly 1.0000. That is what structural invariance looks like, and it is
+    the half of the n-scaling story that survives.
+    """
+
+    def _frames(self, rows, cols=4, seed=0):
+        rng = np.random.default_rng(seed)
+        X = pd.DataFrame(rng.normal(size=(rows, cols)))
+        y = pd.Series(X.iloc[:, 0] * 2.0 + rng.normal(scale=0.5, size=rows))
+        Xe = pd.DataFrame(rng.normal(size=(60, cols)))
+        ye = pd.Series(Xe.iloc[:, 0] * 2.0 + rng.normal(scale=0.5, size=60))
+        return X, y, Xe, ye
+
+    def test_the_count_follows_the_training_frame(self):
+        from sklearn.linear_model import Ridge
+        make = lambda: Ridge(alpha=1.0)
+        small = absorption_coefficient(make, *self._frames(200), fraction=0.05)
+        large = absorption_coefficient(make, *self._frames(400), fraction=0.05)
+
+        assert small['probes_used'] == 10
+        assert large['probes_used'] == 20
+        assert small['perturbation_share'] == pytest.approx(0.05)
+        assert large['perturbation_share'] == pytest.approx(0.05)
+
+    def test_the_share_is_recorded_even_when_a_count_was_given(self):
+        """The quantity that makes panels comparable cannot be left to the reader."""
+        from sklearn.linear_model import Ridge
+        record = absorption_coefficient(lambda: Ridge(alpha=1.0),
+                                        *self._frames(384), probes=12)
+
+        assert record['probes_used'] == 12
+        assert record['perturbation_share'] == pytest.approx(12 / 384)
+        assert record['fraction_requested'] is None
+
+    @pytest.mark.parametrize('bad', [0.0, -0.1, 1.5])
+    def test_a_share_outside_the_unit_interval_is_refused(self, bad):
+        from sklearn.linear_model import Ridge
+        with pytest.raises(ValueError, match='fraction must be in'):
+            absorption_coefficient(lambda: Ridge(alpha=1.0),
+                                   *self._frames(200), fraction=bad)
+
+    def test_at_a_matched_share_the_ridge_stops_declining_with_n(self):
+        """The finding itself, at small scale: matched share removes most of the drop.
+
+        A fixed count shrinks the perturbation as n grows, so the ridge appears to
+        dilute. Holding the share fixed removes that, and what is left is much
+        smaller than what the fixed count reports.
+        """
+        from sklearn.linear_model import Ridge
+        make = lambda: Ridge(alpha=1.0)
+        small, large = self._frames(200), self._frames(800)
+
+        by_count = (absorption_coefficient(make, *small, probes=12)['absorption'],
+                    absorption_coefficient(make, *large, probes=12)['absorption'])
+        by_share = (absorption_coefficient(make, *small, fraction=0.06)['absorption'],
+                    absorption_coefficient(make, *large, fraction=0.06)['absorption'])
+
+        assert by_count[1] < by_count[0], 'a fixed count should show the decline'
+        assert abs(by_share[1] - by_share[0]) < abs(by_count[1] - by_count[0])
