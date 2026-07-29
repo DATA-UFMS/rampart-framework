@@ -71,7 +71,14 @@ os.chdir(root)
 sys.path.insert(0, str(root / 'src'))
 sys.path.insert(0, str(root / 'scripts' / 'validation'))
 os.environ['RAMPART_PANEL_DIR'] = str(root / 'panels')
-os.environ['RAMPART_CAP_ALL'] = '1'          # the arm this run exists for
+# The arm. Capped is why this cell exists, so it is the default; a preceding cell
+# set by push_and_run.sh --cap-all 0 asks for the uncapped one instead, which is
+# how the same measurement is obtained at both sample sizes and the difference
+# attributed to the cap rather than to the panel.
+os.environ.setdefault('RAMPART_CAP_ALL', '1')
+ARM = ('every model reads the same 10,000 rows'
+       if os.environ['RAMPART_CAP_ALL'] == '1'
+       else 'in-context capped at 10,000, classical reading all 38,000')
 
 import torch
 print('cuda:', torch.cuda.is_available(),
@@ -85,6 +92,6 @@ print('cuda:', torch.cuda.is_available(),
 print('\n--- guard ---', flush=True)
 subprocess.run([sys.executable, 'scripts/validation/check_icl_path.py'], check=True)
 
-print('\n--- r3c: every model reads the same 10,000 rows ---', flush=True)
+print(f'\n--- r3c: {ARM} ---', flush=True)
 subprocess.run([sys.executable, 'scripts/validation/probe_leakage_channels.py',
                 'inep_censo'], check=True)
