@@ -264,6 +264,18 @@ SCIENTIFIC_CONFIG = {
         # is one number and the measurements in the pre-specification were taken
         # at it.
         'absorption_probes': 12,
+        # How many independent probe draws are pooled, at that same count. One draw
+        # made the reading depend on which twelve rows the generator landed on, and
+        # it depended on it enough to move the headline fivefold: when `prepared`
+        # began sorting the evaluation frame by year, the same panel with the same
+        # count and the same seed went from a largest closed-form gap of 0.0108 to
+        # 0.0577. Measured across the two row orderings, the gap between them is
+        # 0.0469 at one replicate and 0.005-0.015 from five upward, where the
+        # residual is the same size as the non-monotone noise in that gap statistic
+        # itself -- so more replicates buy nothing measurable while costing linearly
+        # on the in-context side, where every replicate is another forward pass.
+        # Five. Pooled as a ratio of sums over all draws, never a mean of ratios.
+        'absorption_replicates': 5,
         # How the context is chosen when the training window exceeds the cap.
         # 'recent' is the pre-registered rule (pre-spec 4.2p): the lags already
         # carry each row's history, so the context needs entity coverage rather

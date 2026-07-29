@@ -33,7 +33,7 @@ if str(_SRC) not in sys.path:
 from core.models.absorption import (  # noqa
     absorption_coefficient, knn_expected_absorption)
 from core.models.ladder import LADDER, RUNGS  # noqa
-from core.scientific_config import SCIENTIFIC_CONFIG  # noqa
+from core.scientific_config import RANDOM_SEED, SCIENTIFIC_CONFIG  # noqa
 
 
 def frames(rows=90, seed=0):
@@ -287,16 +287,55 @@ class TestReplicatesRemoveTheRowOrderDependence:
         ye = pd.Series(Xe.iloc[:, 0] * 2.0 + rng.normal(scale=0.5, size=40))
         return X, y, Xe, ye
 
-    def test_one_replicate_is_the_unreplicated_reading(self):
-        """Bit for bit, so turning the knob to 1 cannot move a published number."""
+    def test_one_replicate_is_the_single_draw_reading(self):
+        """Bit for bit against the pre-replicates path, so every number read before
+        the knob existed can still be reproduced by turning it to 1.
+
+        Compared against a hand-rolled single draw rather than against the configured
+        default, because the default is no longer 1 -- and an assertion pinned to the
+        default would silently stop testing this the moment the default moved, which
+        is exactly what happened to the first version of it.
+        """
         from sklearn.neighbors import KNeighborsRegressor
         X, y, Xe, ye = self._frames()
         make = lambda: KNeighborsRegressor(n_neighbors=3)
+        seed, count = RANDOM_SEED, 12
 
-        one = absorption_coefficient(make, X, y, Xe, ye, probes=12, replicates=1)
+        one = absorption_coefficient(make, X, y, Xe, ye, probes=count, seed=seed,
+                                     replicates=1)
+
+        rng = np.random.default_rng(seed)
+        picked = np.sort(rng.choice(len(Xe), size=count, replace=False))
+        truth = np.asarray(ye.iloc[picked], dtype=float)
+        clean = make().fit(X, y)
+        before = float(np.sum((truth - np.asarray(clean.predict(Xe), dtype=float)[picked]) ** 2))
+        widened = make().fit(pd.concat([X, Xe.iloc[picked]], ignore_index=True),
+                             pd.concat([y, ye.iloc[picked]], ignore_index=True))
+        after = float(np.sum((truth - np.asarray(widened.predict(Xe.iloc[picked]),
+                                                dtype=float)) ** 2))
+
+        assert one['absorption'] == pytest.approx(1.0 - after / before)
+
+    def test_the_configured_default_is_five_and_is_not_one(self):
+        """Pinned because the default is the reading the paper reports.
+
+        Five, from measurement: across the two row orderings of the World Bank panel
+        the gap between the two calibration readings is 0.0469 at one replicate and
+        0.005-0.015 from five upward, where what is left is the size of the noise in
+        that gap statistic itself. More costs linearly on the in-context side for
+        nothing measurable.
+        """
+        from sklearn.neighbors import KNeighborsRegressor
+        assert SCIENTIFIC_CONFIG['in_context_models']['absorption_replicates'] == 5
+
+        X, y, Xe, ye = self._frames()
+        make = lambda: KNeighborsRegressor(n_neighbors=3)
         default = absorption_coefficient(make, X, y, Xe, ye, probes=12)
 
-        assert one['absorption'] == default['absorption']
+        assert default['replicates'] == 5
+        assert default['absorption'] != pytest.approx(
+            absorption_coefficient(make, X, y, Xe, ye, probes=12,
+                                   replicates=1)['absorption'], abs=1e-12)
 
     def test_replicates_do_not_change_the_dose(self):
         """The reason to prefer replicates over more probes: the dose is the estimand."""
