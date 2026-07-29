@@ -54,9 +54,9 @@ import pandas as pd
 from probe_harness import DOSES, fold_rng, folds, panel, prepared
 
 from core.models.absorption import absorption_coefficient  # noqa: E402
-from core.models.icl import cap_for_context  # noqa: E402
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
-from core.scientific_config import RANDOM_SEED  # noqa: E402
+from core.scientific_config import (  # noqa: E402
+    RANDOM_SEED, SCIENTIFIC_CONFIG)
 from core.validation import scale_from_training_window  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
     fold_dependence_span)
@@ -127,18 +127,12 @@ def main(dataset='worldbank', entity_cap=None):
 
         clean_predictions = {}
         for name, make, _kind in entries:
-            # In-context models cannot read the whole window; the classical arms
-            # can, and that asymmetry is the constraint under study. The entity
-            # effect was fitted on the full window above, so this drops rows and
-            # not information.
-            cap_X, cap_y, _e, _rec = cap_for_context(
-                name, clean_fit_s, y_train, e_train, yr_train)
             model = make()
-            model.fit(cap_X, cap_y)
+            model.fit(clean_fit_s, y_train)
             clean_predictions[name] = np.asarray(
                 model.predict(clean_eval_s), dtype=float)
             absorptions.setdefault(name, []).append(absorption_coefficient(
-                make, cap_X, cap_y, clean_eval_s, y_test,
+                make, clean_fit_s, y_train, clean_eval_s, y_test,
                 seed=RANDOM_SEED + fold,
                 baseline=clean_predictions[name])['absorption'])
 
@@ -176,10 +170,8 @@ def main(dataset='worldbank', entity_cap=None):
                                          ignore_index=True)}
             for name, make, _kind in entries:
                 for arm, (Xa, ya, eval_a) in arms.items():
-                    arm_X, arm_y, _e, _rec = cap_for_context(
-                        name, Xa, ya, None, arm_years[arm])
                     model = make()
-                    model.fit(arm_X, arm_y)
+                    model.fit(Xa, ya)
                     predicted = np.asarray(model.predict(eval_a), dtype=float)
                     channels.setdefault((name, arm, dose), []).append(
                         decompose_fold(truth, clean_predictions[name],

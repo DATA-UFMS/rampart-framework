@@ -45,6 +45,9 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
+    'scripts/validation/check_icl_path.py':
+        'exercises the whole in-context path locally at a low cap, so the '
+        'failures that cost seven cloud submissions are found in two minutes',
     'scripts/validation/probe_selection.py':
         'measures selection leakage, the class the closest prior work ranks '
         'largest, and shows it needs a third channel the two-channel '

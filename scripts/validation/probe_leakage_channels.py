@@ -45,7 +45,6 @@ from probe_harness import DOSES, fold_rng, folds, panel, prepared
 
 from core.models.absorption import (  # noqa: E402
     absorption_coefficient, knn_expected_absorption)
-from core.models.icl import cap_for_context  # noqa: E402
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from core.scientific_config import RANDOM_SEED  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
@@ -106,19 +105,12 @@ def main(dataset='worldbank', entity_cap=None):
 
         clean_predictions = {}
         for name, make, _kind, _expected in entries:
-            # In-context models cannot read the whole window: TabPFN refuses more
-            # than ten thousand rows outright. The classical arms do read it, and
-            # that asymmetry is the constraint under study rather than a defect.
-            # The entity effect was already fitted on the full window above, so
-            # capping here removes rows and not information.
-            cap_X, cap_y, _e, _rec = cap_for_context(
-                name, fit_frame, y_train, e_train, yr_train)
             model = make()
-            model.fit(cap_X, cap_y)
+            model.fit(fit_frame, y_train)
             clean_predictions[name] = np.asarray(model.predict(eval_frame),
                                                  dtype=float)
             absorptions.setdefault(name, []).append(absorption_coefficient(
-                make, cap_X, cap_y, eval_frame, y_test,
+                make, fit_frame, y_train, eval_frame, y_test,
                 probes=PROBES, seed=RANDOM_SEED + fold,
                 baseline=clean_predictions[name])['absorption'])
 
@@ -158,10 +150,8 @@ def main(dataset='worldbank', entity_cap=None):
             for name, make, _kind, _expected in entries:
                 fitted = {}
                 for arm, (Xa, ya) in arms.items():
-                    arm_X, arm_y, _e, _rec = cap_for_context(
-                        name, Xa, ya, None, arm_years[arm])
                     model = make()
-                    model.fit(arm_X, arm_y)
+                    model.fit(Xa, ya)
                     fitted[arm] = np.asarray(model.predict(eval_frame),
                                              dtype=float)
                 channels.setdefault((name, dose), []).append(decompose_fold(

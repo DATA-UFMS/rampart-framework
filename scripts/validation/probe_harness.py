@@ -158,8 +158,17 @@ def prepared(df, columns, train_start, train_end, test_start, test_end,
     The evaluation year is returned because the injector needs it: a leaked row
     keeps its own year, which is what lets the disjointness gate see it.
     """
-    train = df[(df['year'] >= train_start) & (df['year'] <= train_end)]
-    test = df[(df['year'] >= test_start) & (df['year'] <= test_end)]
+    # Sorted by year, stably, and this is a contract rather than a convenience.
+    # The in-context estimators cap their context to the most recent rows, and
+    # they do it by taking the tail of whatever frame they are handed -- which is
+    # only the recency rule if the frame is in chronological order. Sorting here,
+    # once, is what lets the cap live in the estimator instead of being an
+    # obligation on every caller. `kind='stable'` keeps rows of the same year in
+    # the panel's own order, so the choice does not depend on the sort.
+    train = (df[(df['year'] >= train_start) & (df['year'] <= train_end)]
+             .sort_values('year', kind='stable'))
+    test = (df[(df['year'] >= test_start) & (df['year'] <= test_end)]
+            .sort_values('year', kind='stable'))
     fill = train[columns].median()
     X_train, X_test = train[columns].fillna(fill), test[columns].fillna(fill)
     keep = X_train.notna().all(axis=1) & train['target'].notna()

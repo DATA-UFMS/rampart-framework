@@ -65,71 +65,6 @@ class TestAbsenceIsHandledAtTheCallSite:
         assert issubclass(icl.ICLUnavailable, ImportError)
 
 
-class TestTheContextCap:
-
-    def test_a_short_window_is_left_alone(self):
-        X, y, entity, years = frame(rows=60)
-        kept_X, kept_y, kept_e, kept_years, record = icl.cap_context(
-            X, y, entity, years)
-        assert record == {'capped': False, 'context_rows': 60,
-                          'cap': SCIENTIFIC_CONFIG['in_context_models']
-                                 ['context_cap_rows']}
-        assert kept_X is X and kept_y is y and kept_e is entity
-        assert kept_years is years
-
-    def test_a_long_window_keeps_the_most_recent_rows(self, monkeypatch):
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 20)
-        X, y, entity, years = frame(rows=60)
-        kept_X, kept_y, _e, kept_years, record = icl.cap_context(
-            X, y, entity, years)
-        assert len(kept_X) == 20 and record['capped'] is True
-        assert record['rows_dropped'] == 40
-        assert kept_years.min() > years.iloc[:40].max(), (
-            'the cap dropped recent rows rather than old ones')
-
-    def test_the_cap_is_recorded_when_it_bites(self, monkeypatch):
-        """A truncated context reads as a full one unless the artifact says so."""
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 20)
-        X, y, entity, years = frame(rows=60)
-        *_, record = icl.cap_context(X, y, entity, years)
-        assert record['training_rows'] == 60
-        assert record['context_rows'] == 20
-        assert 'rule' in record
-
-    def test_capping_without_years_is_refused(self, monkeypatch):
-        """The failure this would have been: canonical_fold sorts by
-        (entity, year), so the tail of the frame is the last entities in
-        alphabetical order. Keeping it would silently narrow the context to a
-        handful of entities and report itself as a recency rule."""
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 20)
-        X, y, entity, _years = frame(rows=60)
-        with pytest.raises(ValueError, match='last entities alphabetically'):
-            icl.cap_context(X, y, entity, None)
-
-    def test_no_years_is_fine_when_the_cap_does_not_bite(self):
-        X, y, entity, _years = frame(rows=10)
-        *_, record = icl.cap_context(X, y, entity, None)
-        assert record['capped'] is False
-
-    def test_the_cap_does_not_depend_on_the_order_the_engine_produced(
-            self, monkeypatch):
-        """Three paradigms materialise the frame; the context must not differ."""
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 20)
-        X, y, entity, years = frame(rows=60)
-        shuffled = np.random.default_rng(7).permutation(len(X))
-        kept_a, *_ = icl.cap_context(X, y, entity, years)
-        kept_b, *_ = icl.cap_context(
-            X.iloc[shuffled].reset_index(drop=True),
-            y.iloc[shuffled].reset_index(drop=True),
-            entity.iloc[shuffled].reset_index(drop=True),
-            years.iloc[shuffled].reset_index(drop=True))
-        assert sorted(kept_a['a'].round(9)) == sorted(kept_b['a'].round(9))
-
-
 @pytest.mark.skipif(not _HAS_TABPFN, reason='tabpfn is an optional dependency')
 class TestTabPFNIsPinned:
 
@@ -239,157 +174,128 @@ class TestTheEnsembleSwitch:
         assert result['provenance']['ensemble_robustness'] is True
 
 
-class TestTheCapDoesNotDegradeTheEntityEffect:
-    """The order of capping and augmenting, which was wrong and only bites on the
-    large panel.
 
-    The entity effect is the mean of the outcome per entity and the strongest
-    column in the design matrix. Capping first computes it from whatever survived:
-    on INEP that is under two observations per entity against twelve for the
-    classical models. The in-context arm would carry a noisier feature and score
-    worse for a reason that is not about in-context learning at all.
+
+class TestTheCapCannotBeBypassed:
+    """The cap lives in the estimator, and that is the whole design.
+
+    It used to live in `fit_in_context`, so every probe that built a model and
+    called `.fit()` itself walked past it. Then it lived in a helper the probes
+    had to remember to call, and the absorption routine -- which appends rows to
+    a frame and refits -- pushed a frame capped at exactly the limit twelve rows
+    over it. Three cloud failures, one shape: a policy that depends on every
+    caller remembering is a policy that will be forgotten.
+
+    Now the factory returns a wrapper and the wrapper truncates whatever it is
+    handed. There is nothing for a caller to remember, and these tests exist to
+    keep it that way.
     """
 
-    def test_the_effect_is_the_same_whether_or_not_the_cap_bites(self, monkeypatch):
-        from core.models.ladder import ENTITY_EFFECT_COLUMN, entity_effect_frames
-        rows = 400
-        rng = np.random.default_rng(3)
-        X = pd.DataFrame(rng.normal(size=(rows, 3)), columns=['a', 'b', 'c'])
-        entity = pd.Series([f'E{i % 20}' for i in range(rows)])
-        y = pd.Series([float(e[1:]) for e in entity] + rng.normal(scale=.1,
-                                                                 size=rows))
-        years = pd.Series([2000 + i // 20 for i in range(rows)])
-        X_eval = X.head(20).reset_index(drop=True)
-        entity_eval = entity.head(20).reset_index(drop=True)
+    class Spy:
+        """Records the largest frame the wrapped model was ever asked to fit."""
 
-        # What the whole training window says each entity's mean is.
-        _f, uncapped_eval, _m, _g = entity_effect_frames(
-            X, X_eval, y, entity, entity_eval)
+        def __init__(self):
+            self.largest = 0
 
-        # Now make the cap bite hard, and take the same route fit_in_context takes.
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 40)
-        augmented, capped_eval, _m, _g = entity_effect_frames(
-            X, X_eval, y, entity, entity_eval)
-        kept, _y, _e, _yr, record = icl.cap_context(augmented, y, entity, years)
+        def fit(self, X, y):
+            self.largest = max(self.largest, len(X))
+            return self
 
-        assert record['capped'] is True and len(kept) == 40
-        assert capped_eval[ENTITY_EFFECT_COLUMN].equals(
-            uncapped_eval[ENTITY_EFFECT_COLUMN]), (
-            'the evaluation entity effect changed when the cap bit, which means '
-            'the statistic was fitted on the capped rows')
-
-    def test_capping_after_augmenting_keeps_the_extra_column(self, monkeypatch):
-        from core.models.ladder import ENTITY_EFFECT_COLUMN, entity_effect_frames
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 15)
-        X, y, entity, years = frame(rows=60)
-        augmented, _eval, _m, _g = entity_effect_frames(X, X, y, entity, entity)
-        kept, *_ = icl.cap_context(augmented, y, entity, years)
-        assert ENTITY_EFFECT_COLUMN in kept.columns
-        assert len(kept) == 15
-
-
-class TestTheRegisteredSensitivityArm:
-    """Recency is the pre-registered rule; a random sample is the arm that shows
-    the conclusion does not depend on it. Both record which they were."""
-
-    def _capped(self, rule, monkeypatch):
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 20)
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_rule', rule)
-        X, y, entity, years = frame(rows=80)
-        return icl.cap_context(X, y, entity, years)
-
-    def test_random_takes_rows_from_across_the_window(self, monkeypatch):
-        _X, _y, _e, years, record = self._capped('random', monkeypatch)
-        assert 'random' in record['rule']
-        assert years.min() < 2000 + 80 // 4 // 2, (
-            'a random sample that only took recent years is not random')
-
-    def test_recency_takes_only_the_end(self, monkeypatch):
-        _X, _y, _e, years, record = self._capped('recent', monkeypatch)
-        assert 'most recent' in record['rule']
-        assert years.min() >= 2000 + (80 - 20) // 4
-
-    def test_the_two_rules_disagree_about_which_rows(self, monkeypatch):
-        recent = self._capped('recent', monkeypatch)[3].tolist()
-        random_ = self._capped('random', monkeypatch)[3].tolist()
-        assert recent != random_, 'the sensitivity arm is not a different arm'
-
-    def test_random_is_reproducible(self, monkeypatch):
-        assert (self._capped('random', monkeypatch)[3].tolist()
-                == self._capped('random', monkeypatch)[3].tolist())
-
-
-    def test_the_environment_overrides_the_configuration(self, monkeypatch):
-        """One flag on a job, not a rewritten config.
-
-        The first attempt at the sensitivity arm exec'd the probe inside
-        `python3 -c`, which leaves __file__ undefined; the job died in two
-        minutes on a GPU node.
-        """
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 20)
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_rule', 'recent')
-        monkeypatch.setenv('RAMPART_CONTEXT_RULE', 'random')
-        X, y, entity, years = frame(rows=80)
-        *_, record = icl.cap_context(X, y, entity, years)
-        assert 'random' in record['rule']
-
-
-class TestTheCapReachesDirectCallers:
-    """The cap used to live only inside fit_in_context, so every probe that built
-    an estimator and called .fit() itself walked past it.
-
-    On World Bank that never mattered -- four hundred training rows never reach ten
-    thousand -- and on INEP the underlying wrapper refused 21,996 rows and killed
-    the job. The guard that caught it was TabPFN's, not ours.
-    """
+        def predict(self, X):
+            return np.zeros(len(X))
 
     def _frames(self, rows=800):
         rng = np.random.default_rng(1)
         X = pd.DataFrame(rng.normal(size=(rows, 3)), columns=['a', 'b', 'c'])
         y = pd.Series(rng.normal(size=rows))
-        entity = pd.Series([f'M{i % 100}' for i in range(rows)])
-        years = pd.Series([2007 + i // 100 for i in range(rows)])
-        return X, y, entity, years
+        return X, y
 
-    def test_it_caps_an_in_context_model(self, monkeypatch):
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 200)
-        X, y, e, yr = self._frames()
-        capped, capped_y, _e, record = icl.cap_for_context(
-            'icl_tabpfn', X, y, e, yr)
-        assert len(capped) == 200 and len(capped_y) == 200
-        assert record['capped'] is True
+    def test_it_truncates_to_the_cap(self):
+        X, y = self._frames()
+        spy = self.Spy()
+        icl.ContextCapped(spy, cap=200).fit(X, y)
+        assert spy.largest == 200
 
-    def test_it_leaves_a_classical_model_alone(self, monkeypatch):
-        """The asymmetry is the constraint under study, not a defect: the
-        classical arms are meant to read the whole window."""
-        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
-                            'context_cap_rows', 200)
-        X, y, e, yr = self._frames()
-        kept, kept_y, _e, record = icl.cap_for_context(
-            'ladder_random_forest', X, y, e, yr)
-        assert len(kept) == len(X) and len(kept_y) == len(y)
-        assert record is None
+    def test_a_frame_under_the_cap_is_untouched(self):
+        X, y = self._frames(rows=50)
+        spy = self.Spy()
+        wrapped = icl.ContextCapped(spy, cap=200)
+        wrapped.fit(X, y)
+        assert spy.largest == 50 and wrapped.context['capped'] is False
 
-    def test_no_probe_fits_an_in_context_model_without_capping(self):
-        """Read from the syntax tree, because the next probe will forget."""
+    def test_appending_to_an_already_capped_frame_still_lands_on_the_cap(self):
+        """The exact failure: capped to 10,000, absorption appended twelve, and
+        the model refused 10,012. Under the wrapper there is nothing to reserve."""
+        X, y = self._frames()
+        spy = self.Spy()
+        wrapped = icl.ContextCapped(spy, cap=200)
+        wrapped.fit(X, y)
+        widened_X = pd.concat([X.head(200), X.head(12)], ignore_index=True)
+        widened_y = pd.concat([y.head(200), y.head(12)], ignore_index=True)
+        icl.ContextCapped(spy, cap=200).fit(widened_X, widened_y)
+        assert spy.largest == 200, (
+            f'the model was handed {spy.largest} rows against a cap of 200')
+
+    def test_recency_keeps_the_tail(self):
+        """Which is the recency rule only because the harness sorts by year, and
+        because rows an arm appends are evaluation-window rows -- newer than
+        anything in training."""
+        X = pd.DataFrame({'a': range(100)})
+        y = pd.Series(range(100))
+        spy = self.Spy()
+
+        class Capture(self.Spy):
+            def fit(self, X, y):
+                self.seen = X['a'].tolist()
+                return super().fit(X, y)
+
+        capture = Capture()
+        icl.ContextCapped(capture, cap=10).fit(X, y)
+        assert capture.seen == list(range(90, 100))
+
+    def test_the_sensitivity_rule_takes_from_across_the_window(self):
+        X = pd.DataFrame({'a': range(100)})
+        y = pd.Series(range(100))
+
+        class Capture(self.Spy):
+            def fit(self, X, y):
+                self.seen = X['a'].tolist()
+                return super().fit(X, y)
+
+        capture = Capture()
+        icl.ContextCapped(capture, cap=10, rule='random').fit(X, y)
+        assert min(capture.seen) < 50, 'a random sample that only took the tail'
+        assert len(capture.seen) == 10
+
+    def test_the_receipt_says_which_rule_and_how_much_was_dropped(self):
+        X, y = self._frames()
+        wrapped = icl.ContextCapped(self.Spy(), cap=200)
+        wrapped.fit(X, y)
+        assert wrapped.context['rows_dropped'] == 600
+        assert wrapped.context['offered_rows'] == 800
+        assert 'most recent' in wrapped.context['rule']
+
+    def test_nothing_outside_the_adapter_builds_a_bare_estimator(self):
+        """The only route to an uncapped model is bypassing the factory.
+
+        Read from the syntax tree so a comment mentioning the class name is not
+        an offence, and so the next probe cannot quietly construct one.
+        """
         import ast
         from pathlib import Path
 
-        scripts = Path(__file__).resolve().parents[1] / 'scripts' / 'validation'
+        root = Path(__file__).resolve().parents[1]
         offending = []
-        for path in sorted(scripts.glob('probe_*.py')):
-            source = path.read_text()
-            if 'core.models.icl' not in source and 'FAMILIES' not in source:
+        for path in list((root / 'scripts').rglob('*.py')) + \
+                    list((root / 'src').rglob('*.py')):
+            if path.name == 'icl.py':
                 continue
-            if 'cap_for_context' not in source and 'fit_in_context' not in source:
-                offending.append(path.name)
+            for node in ast.walk(ast.parse(path.read_text())):
+                if (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id in ('TabPFNRegressor',
+                                             'TabICLRegressor')):
+                    offending.append(f'{path.relative_to(root)}:{node.lineno}')
         assert not offending, (
-            f'a probe reaches the in-context models without routing through the '
-            f'cap: {offending}')
+            f'an in-context estimator is built outside the adapter, which is '
+            f'the one way to get one without a cap: {offending}')

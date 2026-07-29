@@ -67,6 +67,80 @@ class ICLUnavailable(ImportError):
     """Raised when an in-context model is asked for and its package is absent."""
 
 
+class ContextCapped:
+    """An in-context estimator that cannot be handed more rows than it accepts.
+
+    The cap used to be the caller's job. It lived in `fit_in_context`, so every
+    probe that built an estimator and called `.fit()` itself walked past it; then
+    it lived in a helper the probes had to remember to call, and the absorption
+    routine -- which appends rows to a frame and refits -- pushed a frame capped
+    at exactly the limit twelve rows over it. Three cloud failures, one shape:
+    a policy that depends on every caller remembering is a policy that will be
+    forgotten, and this repository has now found that shape in the feature list,
+    in the aggregation list, in the block length, and here.
+
+    So the limit goes where it cannot be bypassed. Anything handed to `fit` is
+    truncated before the wrapped model sees it, whether the frame came from a
+    probe, from an injected arm, or from the absorption measurement widening one.
+    No reserve to compute, no years to thread through, nothing for the next
+    caller to remember.
+
+    **Recency is the tail of the frame.** That is the pre-registered rule
+    (pre-spec 4.2p) and it holds because `probe_harness.prepared` sorts by year
+    and because the rows an arm or a probe appends are evaluation-window rows --
+    newer than anything in training, and so exactly what recency should keep.
+    """
+
+    def __init__(self, estimator, cap: int, rule: str = 'recent'):
+        self.estimator = estimator
+        self.cap = int(cap)
+        self.rule = rule
+        self.context = {'cap': int(cap), 'capped': False}
+
+    def fit(self, X, y):
+        rows = len(X)
+        if rows > self.cap:
+            if self.rule == 'random':
+                keep = np.sort(np.random.default_rng(RANDOM_SEED + rows)
+                               .choice(rows, size=self.cap, replace=False))
+            else:
+                keep = np.arange(rows - self.cap, rows)
+            X = X.iloc[keep].reset_index(drop=True)
+            y = pd.Series(y).iloc[keep].reset_index(drop=True)
+            self.context = {
+                'cap': self.cap, 'capped': True, 'offered_rows': int(rows),
+                'context_rows': int(self.cap),
+                'rows_dropped': int(rows - self.cap),
+                'rule': ('uniform random sample, registered sensitivity arm'
+                         if self.rule == 'random'
+                         else 'most recent rows, frame in chronological order')}
+        else:
+            self.context = {'cap': self.cap, 'capped': False,
+                            'context_rows': int(rows)}
+        self.estimator.fit(X, y)
+        return self
+
+    def predict(self, X):
+        return self.estimator.predict(X)
+
+    def __getattr__(self, name):
+        """Anything else belongs to the model underneath.
+
+        The wrapper exists to enforce one rule, not to hide the estimator, so
+        `n_estimators`, `random_state` and the rest read through. Without this a
+        caller has to know it is holding a wrapper, which is the coupling the
+        wrapper was introduced to remove.
+
+        Only reached for attributes not found normally, so `estimator`, `cap`,
+        `rule` and `context` resolve on the wrapper and cannot recurse.
+        """
+        return getattr(self.estimator, name)
+
+    def __repr__(self):
+        return (f"ContextCapped({self.estimator!r}, cap={self.cap}, "
+                f"rule={self.rule!r})")
+
+
 def _tabpfn_regressor():
     """A TabPFN regressor pinned to the ungated v2 weights.
 
@@ -107,8 +181,9 @@ def _tabpfn_regressor():
     ensemble = (_ic['tabpfn_n_estimators_robustness']
                 if os.environ.get('RAMPART_ICL_ROBUSTNESS', '').strip()
                 else _ic['tabpfn_n_estimators'])
-    return TabPFNRegressor(n_estimators=ensemble,
-                           random_state=RANDOM_SEED, device=resolve_device())
+    return _capped(TabPFNRegressor(n_estimators=ensemble,
+                                   random_state=RANDOM_SEED,
+                                   device=resolve_device()))
 
 
 def _tabicl_regressor():
@@ -120,7 +195,21 @@ def _tabicl_regressor():
             "pip install 'rampart[icl]'") from exc
 
     _ic = SCIENTIFIC_CONFIG['in_context_models']
-    return TabICLRegressor(random_state=RANDOM_SEED, device=resolve_device())
+    return _capped(TabICLRegressor(random_state=RANDOM_SEED,
+                                   device=resolve_device()))
+
+
+def _capped(estimator):
+    """Wrap so no caller can obtain an uncapped in-context estimator.
+
+    The factory returns the wrapper, not the model, and that is the point: a bare
+    estimator handed to something that appends rows is exactly the failure this
+    closes.
+    """
+    _ic = SCIENTIFIC_CONFIG['in_context_models']
+    rule = (os.environ.get('RAMPART_CONTEXT_RULE', '').strip()
+            or _ic.get('context_rule', 'recent'))
+    return ContextCapped(estimator, cap=_ic['context_cap_rows'], rule=rule)
 
 
 @dataclass(frozen=True)
@@ -167,101 +256,6 @@ def _package_version(package: str) -> str:
         return 'absent'
 
 
-def cap_context(X_train: pd.DataFrame, y_train: pd.Series,
-                entities_train: pd.Series, years_train=None) -> Tuple:
-    """Keep the most recent rows when the training window exceeds the cap.
-
-    Recency rather than a random sample: the cap is a constraint a practitioner
-    hits too, and the row they drop is the old one. A random subsample would
-    also break the correspondence between the context and the training window
-    the classical rungs see, in a way that varies with the seed.
-
-    Returns the kept rows and a record of what was dropped, because a silently
-    truncated context reads as a full one in the results table.
-    """
-    cap = SCIENTIFIC_CONFIG['in_context_models']['context_cap_rows']
-    if len(X_train) <= cap:
-        return (X_train, y_train, entities_train, years_train,
-                {'capped': False, 'context_rows': int(len(X_train)),
-                 'cap': int(cap)})
-
-    # The environment wins over the configuration so the registered sensitivity
-    # arm is one flag on a job rather than a rewritten config. A first attempt
-    # set it by exec'ing the probe inside `python3 -c`, which leaves __file__
-    # undefined and killed the job in two minutes.
-    rule = (os.environ.get('RAMPART_CONTEXT_RULE', '').strip()
-            or SCIENTIFIC_CONFIG['in_context_models'].get('context_rule', 'recent'))
-    if rule == 'random':
-        # The registered sensitivity arm. Seeded on the row count so the same
-        # window always yields the same sample, and recorded, because a context
-        # chosen at random reads exactly like one chosen by recency in a results
-        # table unless the table says which.
-        picked = np.sort(np.random.default_rng(RANDOM_SEED + len(X_train))
-                         .choice(len(X_train), size=cap, replace=False))
-        return (X_train.iloc[picked].reset_index(drop=True),
-                pd.Series(y_train).iloc[picked].reset_index(drop=True),
-                pd.Series(entities_train).iloc[picked].reset_index(drop=True),
-                None if years_train is None
-                else pd.Series(years_train).iloc[picked].reset_index(drop=True),
-                {'capped': True, 'context_rows': int(cap), 'cap': int(cap),
-                 'training_rows': int(len(X_train)),
-                 'rows_dropped': int(len(X_train) - cap),
-                 'rule': 'uniform random sample, registered sensitivity arm'})
-
-    if years_train is None:
-        raise ValueError(
-            f"the training window has {len(X_train)} rows against a context cap "
-            f"of {cap}, and no years were passed to choose by. Taking the last "
-            f"rows by position would not take the recent ones: canonical_fold "
-            f"sorts by (entity, year), so the tail of the frame is the last "
-            f"entities alphabetically and not the last years.")
-
-    # Most recent by year, ties broken by original position so the choice does
-    # not depend on how the engine happened to order the frame.
-    order = np.lexsort((np.arange(len(X_train)),
-                        np.asarray(pd.Series(years_train))))
-    keep = np.sort(order[-cap:])
-
-    record = {
-        'capped': True,
-        'context_rows': int(cap),
-        'cap': int(cap),
-        'training_rows': int(len(X_train)),
-        'rows_dropped': int(len(X_train) - cap),
-        'rule': 'most recent rows by year, ties by original position',
-    }
-    return (X_train.iloc[keep].reset_index(drop=True),
-            pd.Series(y_train).iloc[keep].reset_index(drop=True),
-            pd.Series(entities_train).iloc[keep].reset_index(drop=True),
-            None if years_train is None
-            else pd.Series(years_train).iloc[keep].reset_index(drop=True),
-            record)
-
-
-def cap_for_context(name: str, X_fit, y_fit, entities, years):
-    """Cap the frames an in-context model may read, and leave the rest alone.
-
-    Exists because the cap used to live only inside `fit_in_context`, so any
-    caller that built an estimator and called `.fit()` itself walked straight past
-    it. That is every probe. On World Bank it never mattered -- four hundred
-    training rows never reach ten thousand -- and on INEP the model refused
-    21,996 rows and killed the job, which is the underlying wrapper's guard doing
-    the work ours was not.
-
-    Keyed on the model name rather than on a flag, so a caller cannot cap the
-    classical arms by accident: they are meant to see the whole window, and the
-    asymmetry between them and the in-context arms *is* the constraint being
-    studied.
-
-    Returns the frames unchanged for anything that is not an in-context model.
-    """
-    if not name.startswith('icl_'):
-        return X_fit, y_fit, entities, None
-    capped_X, capped_y, capped_e, _years, record = cap_context(
-        X_fit, y_fit, entities, years)
-    return capped_X, capped_y, capped_e, record
-
-
 def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
                    X_test: pd.DataFrame, y_test: pd.Series,
                    entities_train: pd.Series, entities_test: pd.Series,
@@ -293,8 +287,6 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
     X_train_augmented, X_test_augmented, means, _global = entity_effect_frames(
         X_train, X_test, y_train, entities_train, entities_test)
 
-    X_train_augmented, y_train, entities_train, _years, context_record = \
-        cap_context(X_train_augmented, y_train, entities_train, years_train)
 
     estimator = model.make()
     estimator.fit(X_train_augmented, y_train)
@@ -319,7 +311,7 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
         'entities': [str(entity) for entity in entities_test],
         'country_effects': {str(k): v for k, v in means.items()},
         'features_count': X_train_augmented.shape[1],
-        'context': context_record,
+        'context': estimator.context,
         'provenance': {
             'package': model.package,
             'package_version': _package_version(model.package),
