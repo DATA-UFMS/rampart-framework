@@ -338,3 +338,58 @@ class TestTheRegisteredSensitivityArm:
         X, y, entity, years = frame(rows=80)
         *_, record = icl.cap_context(X, y, entity, years)
         assert 'random' in record['rule']
+
+
+class TestTheCapReachesDirectCallers:
+    """The cap used to live only inside fit_in_context, so every probe that built
+    an estimator and called .fit() itself walked past it.
+
+    On World Bank that never mattered -- four hundred training rows never reach ten
+    thousand -- and on INEP the underlying wrapper refused 21,996 rows and killed
+    the job. The guard that caught it was TabPFN's, not ours.
+    """
+
+    def _frames(self, rows=800):
+        rng = np.random.default_rng(1)
+        X = pd.DataFrame(rng.normal(size=(rows, 3)), columns=['a', 'b', 'c'])
+        y = pd.Series(rng.normal(size=rows))
+        entity = pd.Series([f'M{i % 100}' for i in range(rows)])
+        years = pd.Series([2007 + i // 100 for i in range(rows)])
+        return X, y, entity, years
+
+    def test_it_caps_an_in_context_model(self, monkeypatch):
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_cap_rows', 200)
+        X, y, e, yr = self._frames()
+        capped, capped_y, _e, record = icl.cap_for_context(
+            'icl_tabpfn', X, y, e, yr)
+        assert len(capped) == 200 and len(capped_y) == 200
+        assert record['capped'] is True
+
+    def test_it_leaves_a_classical_model_alone(self, monkeypatch):
+        """The asymmetry is the constraint under study, not a defect: the
+        classical arms are meant to read the whole window."""
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_cap_rows', 200)
+        X, y, e, yr = self._frames()
+        kept, kept_y, _e, record = icl.cap_for_context(
+            'ladder_random_forest', X, y, e, yr)
+        assert len(kept) == len(X) and len(kept_y) == len(y)
+        assert record is None
+
+    def test_no_probe_fits_an_in_context_model_without_capping(self):
+        """Read from the syntax tree, because the next probe will forget."""
+        import ast
+        from pathlib import Path
+
+        scripts = Path(__file__).resolve().parents[1] / 'scripts' / 'validation'
+        offending = []
+        for path in sorted(scripts.glob('probe_*.py')):
+            source = path.read_text()
+            if 'core.models.icl' not in source and 'FAMILIES' not in source:
+                continue
+            if 'cap_for_context' not in source and 'fit_in_context' not in source:
+                offending.append(path.name)
+        assert not offending, (
+            f'a probe reaches the in-context models without routing through the '
+            f'cap: {offending}')

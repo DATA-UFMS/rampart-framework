@@ -238,6 +238,30 @@ def cap_context(X_train: pd.DataFrame, y_train: pd.Series,
             record)
 
 
+def cap_for_context(name: str, X_fit, y_fit, entities, years):
+    """Cap the frames an in-context model may read, and leave the rest alone.
+
+    Exists because the cap used to live only inside `fit_in_context`, so any
+    caller that built an estimator and called `.fit()` itself walked straight past
+    it. That is every probe. On World Bank it never mattered -- four hundred
+    training rows never reach ten thousand -- and on INEP the model refused
+    21,996 rows and killed the job, which is the underlying wrapper's guard doing
+    the work ours was not.
+
+    Keyed on the model name rather than on a flag, so a caller cannot cap the
+    classical arms by accident: they are meant to see the whole window, and the
+    asymmetry between them and the in-context arms *is* the constraint being
+    studied.
+
+    Returns the frames unchanged for anything that is not an in-context model.
+    """
+    if not name.startswith('icl_'):
+        return X_fit, y_fit, entities, None
+    capped_X, capped_y, capped_e, _years, record = cap_context(
+        X_fit, y_fit, entities, years)
+    return capped_X, capped_y, capped_e, record
+
+
 def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
                    X_test: pd.DataFrame, y_test: pd.Series,
                    entities_train: pd.Series, entities_test: pd.Series,
