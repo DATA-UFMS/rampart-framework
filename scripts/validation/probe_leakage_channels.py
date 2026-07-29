@@ -48,7 +48,8 @@ from core.models.absorption import (  # noqa: E402
     absorption_coefficient, knn_expected_absorption)
 from core.models.icl import matched_context  # noqa: E402
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
-from core.scientific_config import RANDOM_SEED  # noqa: E402
+from core.scientific_config import (  # noqa: E402
+    RANDOM_SEED, SCIENTIFIC_CONFIG)
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
     fold_dependence_span)
 from statistical_validation.leakage_channels import (  # noqa: E402
@@ -83,6 +84,21 @@ def knn(k):
     return lambda: KNeighborsRegressor(n_neighbors=k)
 
 
+def duplicated_rungs():
+    """Named rungs that are the same estimator as a swept one, by construction.
+
+    `ladder_knn` reads `capacity_ladder.knn_n_neighbors`, which is 5, and the sweep
+    already contains `knn_k5`. They are one model appearing twice, so the thirteen
+    rows in the table are twelve distinct estimators -- and the correlation between
+    absorption and the local channel was giving k=5 double weight. It survives the
+    correction (0.989 / 0.990 / 0.984 against 0.989 / 0.990 / 0.983), which is why
+    this is a reporting fix and not a retraction, but the count and the weighting
+    both have to be right before either goes in a table.
+    """
+    k = SCIENTIFIC_CONFIG['capacity_ladder']['knn_n_neighbors']
+    return {'ladder_knn': f'knn_k{k}'} if k in KNN_K else {}
+
+
 def candidates():
     # With RAMPART_CAP_ALL the classical factories are wrapped too, so every model
     # reads the same context and the absorption column becomes comparable across
@@ -107,9 +123,12 @@ def main(dataset='worldbank', entity_cap=None):
         print(f"subsampled to {len(keep)} entities, {len(df)} rows")
     windows = folds(cfg)
     entries = candidates()
+    duplicates = set(duplicated_rungs())
     block = fold_dependence_span(cfg.walk_forward_config)
-    print(f"{dataset}: {len(windows)} folds, {len(entries)} models, "
-          f"block {block}\n")
+    distinct = len(entries) - len([n for n, *_ in entries if n in duplicates])
+    print(f"{dataset}: {len(windows)} folds, {distinct} distinct models "
+          f"({len(entries)} rows, {len(entries) - distinct} duplicated by "
+          f"construction), block {block}\n")
 
     channels = {}        # (name, dose) -> list of per-fold decompositions
     absorptions = {}     # name -> list of per-fold readings
@@ -204,6 +223,9 @@ def main(dataset='worldbank', entity_cap=None):
         print(f"{'model':>26} {'absorp':>8} {'local':>9} {'excess':>9} "
               f"{'global':>9} {'size':>8} {'aggreg':>9}")
         for name, _make, _kind, _expected in entries:
+            # One model counted twice would weight its k twice in the correlation.
+            if name in duplicates:
+                continue
             folds_here = channels.get((name, dose), [])
             if not folds_here:
                 continue

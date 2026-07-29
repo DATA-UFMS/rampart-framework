@@ -182,8 +182,15 @@ class TestTheTwoPanelsNeedDifferentBlocks:
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         from probe_harness import PANELS
-        assert set(PANELS) == {'worldbank', 'inep_censo', 'worldbank_clean'}
+        assert set(PANELS) == {'worldbank', 'inep_censo', 'worldbank_clean',
+                               'worldbank_imputed_features',
+                               'worldbank_clean_unclipped'}
         assert PANELS['worldbank_clean']['config'] == 'worldbank'
+        # The two derived arms exist to isolate one variable each, so each must
+        # declare a filter -- an arm without one is the whole panel under a new name.
+        for derived in ('worldbank_imputed_features', 'worldbank_clean_unclipped'):
+            assert PANELS[derived].get('filter') is not None, (
+                f'{derived} is a derived arm and must declare its row filter')
         for name, spec in PANELS.items():
             assert spec.get('config', name) in ('worldbank', 'inep_censo'), (
                 f'panel {name} points at an unregistered dataset config')

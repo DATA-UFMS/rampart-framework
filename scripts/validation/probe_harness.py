@@ -104,7 +104,55 @@ PANELS = {
         # pipeline target, which it is not.
         'config': 'worldbank',
     },
+    # The clean test of the imputation hypothesis, and the reason the first one was
+    # not a test. Comparing the original panel against the recollected one changes
+    # three things at once: the recollected panel loses Brazil and Haiti entirely,
+    # stops being balanced (5 to 24 years per entity against 24 for all), and only
+    # then drops the imputation. So the contrast could not be attributed.
+    #
+    # This is the original panel restricted to the rows the recollected one keeps --
+    # the 511 with an observed target, on which the two panels agree on the target
+    # exactly. Same rows, same target, same folds. The one thing that differs is
+    # where the FEATURE values came from: upstream geographic and global means with
+    # calibrated noise here, against missing-and-filled-from-the-training-window in
+    # `worldbank_clean`. One variable.
+    'worldbank_imputed_features': {
+        'path': PANEL,
+        'rename': {'country_code': 'entity_id',
+                   'lower_secondary_completion_rate': 'target_source_rate'},
+        'target': lambda df: 100.0 - df['target_source_rate'],
+        'config': 'worldbank',
+        'filter': lambda df: _rows_shared_with(df, 'worldbank_clean'),
+    },
+    # The 52 clipped targets, removed. Range validation runs after the row drop and
+    # clips observed values as high as 124.80 down to exactly 100.0, so the target --
+    # 100 minus that rate -- carries a 52-row point mass at exactly 0, on the boundary
+    # of the very quantity leakage severity is read against. That is 10.2% of the
+    # panel, it is present in the original panel too, and it is declared nowhere. This
+    # arm asks whether any finding depends on it.
+    'worldbank_clean_unclipped': {
+        'path': str(PANEL_ROOT / 'worldbank_clean' / 'collection' / 'raw_data'
+                    / 'complete_data.parquet'),
+        'rename': {'country_code': 'entity_id'},
+        'target': lambda df: 100.0 - df['target_source_rate'],
+        'config': 'worldbank',
+        'filter': lambda df: df[df['target_source_rate'] != 100.0],
+    },
 }
+
+
+def _rows_shared_with(df, other):
+    """Rows of `df` whose (entity, year) key appears in another registered panel.
+
+    Reads the other panel's parquet directly rather than calling `panel()`, because
+    `panel()` would build its target and lags for a frame that is only being used as
+    a key set, and because a filter that recursed into the loader would recurse
+    through this function again.
+    """
+    spec = PANELS[other]
+    keys = (pd.read_parquet(spec['path'])
+            .rename(columns=spec['rename'])[['entity_id', 'year']])
+    return df.merge(keys, on=['entity_id', 'year'], how='inner')
 
 #: Roth's own duplication rates, so the doses are not ours to choose.
 DOSES = (0.05, 0.10, 0.30)
@@ -151,6 +199,14 @@ def panel(dataset: str = 'worldbank'):
             f"eight-byte fixture, not the panel.")
     df = pd.read_parquet(source).rename(columns=spec['rename'])
     df['target'] = spec['target'](df)
+    # Applied before the lags, so a lag never reaches across a row the filter removed
+    # and quietly reports a two-year lag that spans four. Takes the frame and returns
+    # the frame, because the two filters that exist need different things: one selects
+    # rows by a key set read from another panel, the other drops rows by a value.
+    if spec.get('filter') is not None:
+        before = len(df)
+        df = spec['filter'](df).reset_index(drop=True)
+        print(f"panel {dataset}: {len(df)} of {before} rows after the declared filter")
     for k in LAGS:
         lag = df[['entity_id', 'year', 'target']].copy()
         lag['year'] += k

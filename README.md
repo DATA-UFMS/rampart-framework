@@ -369,6 +369,17 @@ Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON �
 - `requirements-lock.txt` with exact versions
 - 1840 automated tests (`pytest tests/`)
 
+**One declared divergence from the published short paper.** The paper reports
+10,000 bootstrap resamples; this artifact runs **15,000**, the value
+`scientific_config.py` documents against Hesterberg's (2015) criterion for
+percentile endpoints. The direction is conservative — more resamples reduce Monte
+Carlo variability in the interval — and the equivalence claim cannot move either
+way, because the paradigm deltas are exactly zero and no resampling scheme widens
+an interval around a constant. `statistical_validation/bootstrap_sensitivity.py`
+sweeps 1,000 / 3,000 / 10,000 / 15,000 and reports the interval at each, so the
+choice is visible rather than asserted. Recorded here because the mismatch is one
+grep away and a reader is entitled to find it already explained.
+
 **What the guarantee covers, and what it does not.** Bitwise equivalence is a
 property of the code: on one machine, the three paradigms produce identical
 predictions, and the pipeline halts when they do not. The absolute values are a
