@@ -45,6 +45,10 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
+    'scripts/validation/probe_transfer_predictiveness.py':
+        'asks whether predictiveness-alone stands in for the decay slope, so the '
+        'buffer could be chosen from a panel instead of from a leakage '
+        'experiment; it does not, and the negative is the result',
     'scripts/kaggle/bundle.sh':
         'packs code and panels into one zip, because Kaggle cannot reach either '
         'from here and the copies under outputs/ are eight-byte fixtures',
