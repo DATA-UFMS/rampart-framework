@@ -94,15 +94,36 @@ def absorption_coefficient(
     X_eval: pd.DataFrame, y_eval: pd.Series,
     *, probes: Optional[int] = None, seed: int = RANDOM_SEED,
     baseline: Optional[Sequence[float]] = None,
+    replicates: Optional[int] = None,
 ) -> Dict:
     """Absorption over a small set of probe rows, as a ratio of sums.
 
     `baseline` accepts predictions already computed on the clean fit, so a caller
     that has them does not pay for the fit twice. A vector of the wrong length
     would silently redefine the quantity, so its length is checked.
+
+    **Why there are replicates.** Twelve probe rows are drawn by position from the
+    evaluation frame, so the reading depends on which twelve. It depends on it
+    enough to move the headline number fivefold: when `prepared` began sorting the
+    evaluation frame by year -- a change made so the context cap could live in the
+    estimator -- the same panel, the same count and the same seed went from a
+    largest closed-form gap of 0.0108 to 0.0577. Nothing about the panel or the
+    estimator changed; only which rows the generator landed on. Averaging over
+    replicates converges to about 0.043 and both of those are draws around it.
+
+    A replicate is a fresh probe set at the *same* count, so it cuts that variance
+    without touching the dose -- more probes would reduce the variance too, but it
+    would also stop being a reading at the twelve-row margin. The pooling is a
+    ratio of sums over all replicates, never a mean of per-replicate ratios: a
+    residual in the denominator has produced a divergent mean three times in this
+    repository already.
     """
     if probes is None:
         probes = SCIENTIFIC_CONFIG['in_context_models']['absorption_probes']
+    if replicates is None:
+        replicates = SCIENTIFIC_CONFIG['in_context_models'].get(
+            'absorption_replicates', 1)
+    replicates = max(1, int(replicates))
 
     if baseline is None:
         clean = make_estimator()
@@ -116,36 +137,41 @@ def absorption_coefficient(
                 f"{len(X_eval)} evaluation rows; a mismatched vector would "
                 f"redefine what is being measured")
 
+    # One generator for every replicate, so a run with R replicates contains the
+    # R=1 draw as its first and the reading is nested rather than incomparable.
     rng = np.random.default_rng(seed)
     count = min(int(probes), len(X_eval))
-    picked = np.sort(rng.choice(len(X_eval), size=count, replace=False))
-
-    truth = np.asarray(y_eval.iloc[picked], dtype=float)
-    before = before_all[picked]
-    error_before = float(np.sum((truth - before) ** 2))
 
     record = {'probes_used': int(count), 'seed': int(seed),
-              'error_before': error_before,
+              'replicates': int(replicates),
               # The count relative to the window, because absorption read at a
               # 19% dose is not absorption read at the single-row margin and the
-              # number alone does not say which this is.
+              # number alone does not say which this is. Unchanged by replicates:
+              # each one appends the same count, which is the point of them.
               'probe_dose': float(count) / len(X_eval) if len(X_eval) else float('nan')}
 
-    if error_before < _ERROR_FLOOR:
+    total_before = total_after = 0.0
+    for _ in range(replicates):
+        picked = np.sort(rng.choice(len(X_eval), size=count, replace=False))
+        truth = np.asarray(y_eval.iloc[picked], dtype=float)
+        total_before += float(np.sum((truth - before_all[picked]) ** 2))
+
+        widened = make_estimator()
+        widened.fit(
+            pd.concat([X_fit, X_eval.iloc[picked]], ignore_index=True),
+            pd.concat([pd.Series(y_fit), pd.Series(y_eval).iloc[picked]],
+                      ignore_index=True))
+        after = np.asarray(widened.predict(X_eval.iloc[picked]), dtype=float)
+        total_after += float(np.sum((truth - after) ** 2))
+
+    record['error_before'] = total_before
+    if total_before < _ERROR_FLOOR:
         return {**record, 'absorption': float('nan'),
                 'note': 'the model already predicts every probe row exactly, '
                         'so there is no error for the handed answers to remove'}
 
-    widened = make_estimator()
-    widened.fit(
-        pd.concat([X_fit, X_eval.iloc[picked]], ignore_index=True),
-        pd.concat([pd.Series(y_fit), pd.Series(y_eval).iloc[picked]],
-                  ignore_index=True))
-    after = np.asarray(widened.predict(X_eval.iloc[picked]), dtype=float)
-    error_after = float(np.sum((truth - after) ** 2))
-
-    return {**record, 'absorption': 1.0 - error_after / error_before,
-            'error_after': error_after}
+    return {**record, 'absorption': 1.0 - total_after / total_before,
+            'error_after': total_after}
 
 
 def knn_expected_absorption(k: int) -> float:

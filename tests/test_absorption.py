@@ -265,3 +265,111 @@ class TestTheLadderRungsSpread:
         tree = absorption_coefficient(RUNGS['ladder_decision_tree'].make,
                                       X_fit, y_fit, X_eval, y_eval)['absorption']
         assert ridge < tree
+
+
+class TestReplicatesRemoveTheRowOrderDependence:
+    """Twelve probe rows are drawn by position, so the reading depends on which twelve.
+
+    It depended on it enough to move the headline number fivefold. When `prepared`
+    began sorting the evaluation frame by year -- a change made so the context cap
+    could live in the estimator -- the same panel, the same count and the same seed
+    went from a largest closed-form gap of 0.0108 to 0.0577. Nothing about the panel
+    or the estimator changed; only which rows the generator landed on. Replicates
+    average that away at the same dose, and pooling them is a ratio of sums because
+    a residual in the denominator has diverged three times in this repository.
+    """
+
+    def _frames(self, rows=200, cols=4, seed=0):
+        rng = np.random.default_rng(seed)
+        X = pd.DataFrame(rng.normal(size=(rows, cols)))
+        y = pd.Series(X.iloc[:, 0] * 2.0 + rng.normal(scale=0.5, size=rows))
+        Xe = pd.DataFrame(rng.normal(size=(40, cols)))
+        ye = pd.Series(Xe.iloc[:, 0] * 2.0 + rng.normal(scale=0.5, size=40))
+        return X, y, Xe, ye
+
+    def test_one_replicate_is_the_unreplicated_reading(self):
+        """Bit for bit, so turning the knob to 1 cannot move a published number."""
+        from sklearn.neighbors import KNeighborsRegressor
+        X, y, Xe, ye = self._frames()
+        make = lambda: KNeighborsRegressor(n_neighbors=3)
+
+        one = absorption_coefficient(make, X, y, Xe, ye, probes=12, replicates=1)
+        default = absorption_coefficient(make, X, y, Xe, ye, probes=12)
+
+        assert one['absorption'] == default['absorption']
+
+    def test_replicates_do_not_change_the_dose(self):
+        """The reason to prefer replicates over more probes: the dose is the estimand."""
+        from sklearn.neighbors import KNeighborsRegressor
+        X, y, Xe, ye = self._frames()
+        make = lambda: KNeighborsRegressor(n_neighbors=3)
+
+        one = absorption_coefficient(make, X, y, Xe, ye, probes=12, replicates=1)
+        many = absorption_coefficient(make, X, y, Xe, ye, probes=12, replicates=8)
+
+        assert many['probe_dose'] == one['probe_dose'] == 12 / 40
+        assert many['replicates'] == 8
+        assert many['probes_used'] == 12
+
+    def test_pooling_is_a_ratio_of_sums_not_a_mean_of_ratios(self):
+        """The distinction that has bitten this repository three times.
+
+        Reproduced here by pooling by hand: eight replicates drawn from one generator,
+        their squared errors summed, one division at the end. A mean of the eight
+        per-replicate absorptions is a different number, and the test says so rather
+        than trusting that it is close.
+        """
+        from sklearn.neighbors import KNeighborsRegressor
+        X, y, Xe, ye = self._frames()
+        make = lambda: KNeighborsRegressor(n_neighbors=3)
+        seed, count, reps = 12345, 12, 8
+
+        pooled = absorption_coefficient(make, X, y, Xe, ye, probes=count,
+                                        seed=seed, replicates=reps)
+
+        rng = np.random.default_rng(seed)
+        before_sum = after_sum = 0.0
+        per_replicate = []
+        clean = make().fit(X, y)
+        base = np.asarray(clean.predict(Xe), dtype=float)
+        for _ in range(reps):
+            picked = np.sort(rng.choice(len(Xe), size=count, replace=False))
+            truth = np.asarray(ye.iloc[picked], dtype=float)
+            b = float(np.sum((truth - base[picked]) ** 2))
+            widened = make().fit(
+                pd.concat([X, Xe.iloc[picked]], ignore_index=True),
+                pd.concat([y, ye.iloc[picked]], ignore_index=True))
+            a = float(np.sum((truth - np.asarray(widened.predict(Xe.iloc[picked]),
+                                                 dtype=float)) ** 2))
+            before_sum += b
+            after_sum += a
+            per_replicate.append(1.0 - a / b)
+
+        assert pooled['absorption'] == pytest.approx(1.0 - after_sum / before_sum)
+        assert pooled['error_before'] == pytest.approx(before_sum)
+        # Stated, not assumed: the two aggregations are genuinely different numbers.
+        assert pooled['absorption'] != pytest.approx(float(np.mean(per_replicate)),
+                                                     abs=1e-9)
+
+    def test_replicates_shrink_the_spread_across_row_orderings(self):
+        """The property the fix exists for, measured rather than argued.
+
+        Two orderings of the same evaluation frame are two different probe draws.
+        With one replicate the readings differ; averaging over replicates brings them
+        together, because each ordering then samples much more of the window.
+        """
+        from sklearn.neighbors import KNeighborsRegressor
+        X, y, Xe, ye = self._frames()
+        make = lambda: KNeighborsRegressor(n_neighbors=3)
+        order = np.random.default_rng(7).permutation(len(Xe))
+        Xs = Xe.iloc[order].reset_index(drop=True)
+        ys = ye.iloc[order].reset_index(drop=True)
+
+        def spread(reps):
+            a = absorption_coefficient(make, X, y, Xe, ye, probes=12,
+                                       replicates=reps)['absorption']
+            b = absorption_coefficient(make, X, y, Xs, ys, probes=12,
+                                       replicates=reps)['absorption']
+            return abs(a - b)
+
+        assert spread(40) < spread(1)

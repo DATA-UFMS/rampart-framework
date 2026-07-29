@@ -242,7 +242,7 @@ scripts/
 ├── derive_paper_tables.py      # Paper tables, spanning both datasets
 ├── derive_model_info_sheet.py  # Kapoor & Narayanan model info sheet
 └── validation/                 # Leakage-injection negative control
-tests/                          # 1829 tests (unit, discovery, anti-leakage)
+tests/                          # 1833 tests (unit, discovery, anti-leakage)
 pipeline.py                     # Orchestrates the full pipeline
 ```
 
@@ -367,7 +367,7 @@ Extend `src/benchmarking/` or `src/statistical_validation/` following the JSON �
 - Seeds centralized in `scientific_config.py`, `n_jobs=1`
 - Environment snapshot: packages, hardware, git commit
 - `requirements-lock.txt` with exact versions
-- 1829 automated tests (`pytest tests/`)
+- 1833 automated tests (`pytest tests/`)
 
 **What the guarantee covers, and what it does not.** Bitwise equivalence is a
 property of the code: on one machine, the three paradigms produce identical

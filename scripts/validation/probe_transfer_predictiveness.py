@@ -16,11 +16,27 @@ on its own, then predictiveness-alone is the diagnostic and the buffer becomes
 computable from a panel rather than from an experiment.
 
 It also covers two arms raw distance cannot. ECHO is copies of rows already
-present: distance undefined, channel zero. RESERVE sits 12.8 years out but is
-surrounded by years the model keeps: distance large, channel near zero. Both should
-land low on predictiveness-alone for the same reason their channels are low.
+present: distance undefined, channel zero. RESERVE sits far out but is surrounded by
+years the model keeps: distance large, channel near zero. Both should land low on
+predictiveness-alone for the same reason their channels are low.
 
 Classical models only, deliberately. A diagnostic that needs a GPU is not one.
+
+**Three defects, all found by audit rather than by the author, and all fixed here.**
+They are recorded because each one moved the answer and none announced itself.
+
+1. The arms were subsampled with `X.iloc[-budget:]`, commented as "the most recent
+   rows". The World Bank parquet is entity-major -- AG 2000..2023, then AR -- so on
+   that panel the tail took the last *entities alphabetically*: 16 of 32 on a 64-row
+   block. The recency rule is borrowed from the context cap and does not belong
+   here anyway, because an arm's identity IS its temporal position and a tail
+   changes it. Subsampling is now random with a fixed seed, which holds year and
+   entity composition in expectation.
+2. The common row budget was computed per fold, so it varied across folds (2,672 on
+   some INEP folds against 5,527 on others). It is now one budget for the panel.
+3. RESERVE has zero rows on INEP folds 0 and 1 -- the reserved interior year falls
+   where the panel starts -- so it was measured on six folds while every other arm
+   used eight. Folds now enter only when every arm clears the floor.
 """
 
 from __future__ import annotations
@@ -36,6 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from core.models.ladder import LADDER                                  # noqa: E402
+from core.scientific_config import RANDOM_SEED                         # noqa: E402
 from probe_global_routes import ARMS, block_of                         # noqa: E402
 from probe_harness import folds, panel                                 # noqa: E402
 
@@ -45,13 +62,38 @@ from probe_harness import folds, panel                                 # noqa: E
 #: negative. Averaging it in would swamp the curve being measured.
 STABLE = tuple(rung for rung in LADDER if rung.name != 'ladder_decision_tree')
 
+#: An arm below this cannot be fitted at all, and a fold missing one arm cannot
+#: contribute to a curve that compares arms.
+MIN_ARM_ROWS = 8
+
+
+def arms_of(window, gap, val_len):
+    """The source periods and their temporal distances, as probe_global_routes builds them."""
+    train_start, train_end, test_start, _test_end = window
+    reserved = (train_start + train_end) // 2
+    periods = {
+        'GAP1': list(range(train_end + 1, train_end + 1 + gap)),
+        'VAL': list(range(train_end + 1 + gap, train_end + 1 + gap + val_len)),
+        'GAP2': list(range(train_end + 1 + gap + val_len,
+                           train_end + 1 + 2 * gap + val_len)),
+        'RESERVE': [reserved],
+        'LEAK': list(range(test_start, window[3] + 1)),
+    }
+    distances = {arm: test_start - max(years) for arm, years in periods.items()}
+    distances['LEAK'] = 0
+    # ECHO is copies of training rows, so as a standalone training set it is a
+    # sample of the interior. It anchors "carries nothing new about the window".
+    periods['ECHO'] = [y for y in range(train_start, train_end + 1) if y != reserved]
+    distances['ECHO'] = test_start - train_end
+    return periods, distances
+
 
 def predictiveness(dataset: str = 'worldbank'):
     """Per arm, how well its rows alone predict the evaluation window.
 
-    Returns a frame of one row per (fold, arm, model) with the arm's temporal
-    distance and the R^2 its rows alone achieve, so the curve can be summarised
-    without the summary choosing the shape.
+    One row per (fold, arm, model), with the arm's temporal distance and the R^2 its
+    rows alone achieve, so the curve can be summarised without the summary choosing
+    the shape.
     """
     df, columns, cfg = panel(dataset)
     windows = folds(cfg)
@@ -59,44 +101,31 @@ def predictiveness(dataset: str = 'worldbank'):
     val_len = int(cfg.walk_forward_config['val_len'])
     print(f"{dataset}: {len(df)} rows, {len(windows)} folds, gap {gap} years")
 
+    plans = []
+    for fold, window in enumerate(windows):
+        periods, distances = arms_of(window, gap, val_len)
+        sizes = {arm: len(block_of(df, columns, periods[arm])[0]) for arm in ARMS}
+        if min(sizes.values()) >= MIN_ARM_ROWS:
+            plans.append((fold, window, periods, distances, min(sizes.values())))
+    if not plans:
+        print('  no fold has every arm above the floor')
+        return pd.DataFrame()
+    budget = min(p[4] for p in plans)
+    dropped = len(windows) - len(plans)
+    print(f"  {len(plans)} of {len(windows)} folds usable, {budget} rows per arm"
+          + (f"  ({dropped} dropped: an arm under {MIN_ARM_ROWS} rows)" if dropped else ''))
+
     records = []
-    for fold, (train_start, train_end, test_start, test_end) in enumerate(windows):
-        reserved = (train_start + train_end) // 2
-        periods = {
-            'GAP1': list(range(train_end + 1, train_end + 1 + gap)),
-            'VAL': list(range(train_end + 1 + gap, train_end + 1 + gap + val_len)),
-            'GAP2': list(range(train_end + 1 + gap + val_len,
-                               train_end + 1 + 2 * gap + val_len)),
-            'RESERVE': [reserved],
-            'LEAK': list(range(test_start, test_end + 1)),
-        }
-        distances = {arm: test_start - max(years) for arm, years in periods.items()}
-        distances['LEAK'] = 0
-        # ECHO is copies of training rows, so as a standalone training set it is a
-        # sample of the interior. Its distance is the interior's, and it is here to
-        # anchor "carries nothing new about the window".
-        periods['ECHO'] = [y for y in range(train_start, train_end + 1)
-                           if y != reserved]
-        distances['ECHO'] = test_start - train_end
-
+    for fold, window, periods, distances, _ in plans:
+        test_start, test_end = window[2], window[3]
         evaluation = df[(df['year'] >= test_start) & (df['year'] <= test_end)]
-
-        # Every arm trains on the same number of rows. As standalone training sets
-        # the arms are not the same size -- RESERVE is one year, the distance arms
-        # are two, ECHO is the whole interior -- so without this the curve reads
-        # sample size as distance, which is the confound that has already had to be
-        # resolved twice on these panels. Subsampled from the most recent rows, the
-        # same rule the context cap uses, so the choice is not a new one.
-        blocks = {arm: block_of(df, columns, periods[arm]) for arm in ARMS}
-        usable = {arm: b for arm, b in blocks.items() if len(b[0]) >= 8}
-        if not usable:
-            continue
-        budget = min(len(b[0]) for b in usable.values())
-
-        for arm, (X, y, _) in usable.items():
+        rng = np.random.default_rng(RANDOM_SEED + fold)
+        for arm in ARMS:
+            X, y, _entities = block_of(df, columns, periods[arm])
             if len(X) > budget:
-                X = X.iloc[-budget:].reset_index(drop=True)
-                y = y.iloc[-budget:].reset_index(drop=True)
+                keep = np.sort(rng.choice(len(X), size=budget, replace=False))
+                X = X.iloc[keep].reset_index(drop=True)
+                y = y.iloc[keep].reset_index(drop=True)
             # The evaluation frame is filled from the arm, never from itself: the
             # arm is the training set here, so P5 puts the statistic there.
             fill = X.median()
@@ -116,45 +145,57 @@ def predictiveness(dataset: str = 'worldbank'):
     return pd.DataFrame(records)
 
 
-def slope(frame):
-    """Decay of predictiveness per year of distance, over the distance arms.
+def curve_of(frame):
+    """Arm means of distance and median R^2, ECHO excluded.
 
-    ECHO is excluded: its distance is the interior's but it carries nothing new, so
-    it is an anchor rather than a point on a distance curve. Fitted on arm means so
-    that arms with more folds do not weigh more.
+    ECHO's distance is the interior's but it carries nothing new, so it anchors
+    rather than sitting on a distance curve. Median because an arm reduced to the
+    common budget can put a model in the p-approaches-n regime and return an R^2 of
+    several negative units, which one fold is then enough to carry the mean.
     """
-    curve = (frame[frame['arm'] != 'ECHO']
-             .groupby('arm')
-             .agg(distance=('distance', 'mean'), r2=('r2', 'median')))
+    return (frame[frame['arm'] != 'ECHO']
+            .groupby('arm')
+            .agg(distance=('distance', 'mean'), r2=('r2', 'median'))
+            .sort_values('distance'))
+
+
+def slopes(curve):
+    """Decay per year, raw and normalised by the curve's own LEAK value.
+
+    Both are reported because the pre-registration fixed a 30% tolerance without
+    fixing the estimator, and the verdict depends on the choice: the channel table
+    it is compared against is already expressed as a fraction of LEAK, so
+    normalising matches its treatment, while leaving the curve raw is what the
+    instrument prints. An undeclared degree of freedom large enough to decide the
+    outcome has to be shown, not resolved silently.
+    """
     if len(curve) < 3:
-        return float('nan'), curve
-    fit = np.polyfit(curve['distance'], curve['r2'], 1)
-    return float(fit[0]), curve.sort_values('distance')
+        return {'raw': float('nan'), 'normalised': float('nan')}
+    ordered = curve.sort_values('distance')
+    raw = float(np.polyfit(ordered['distance'], ordered['r2'], 1)[0])
+    base = float(ordered['r2'].iloc[0])          # the LEAK arm, at distance zero
+    norm = (float(np.polyfit(ordered['distance'], ordered['r2'] / base, 1)[0])
+            if base else float('nan'))
+    return {'raw': raw, 'normalised': norm}
 
 
 def report(dataset: str):
     frame = predictiveness(dataset)
     if frame.empty:
-        print('  no arm produced a usable fit')
         return None
-    # Median alongside mean, because an arm reduced to the smallest arm's row count
-    # can put a model in the p-approaches-n regime and produce an R^2 of several
-    # negative units, which one fold is then enough to carry the mean. On the World
-    # Bank one year is 32 rows against 24 columns and this is not hypothetical. The
-    # summary the curve is fitted on is the median, and the mean stays visible so
-    # the instability is legible rather than smoothed away.
     print(f"\n{'arm':<9} {'dist':>5} {'rows':>6} {'R^2 med':>9} {'mean':>9} "
           f"{'sd':>8} {'folds':>6}")
     grouped = frame.groupby('arm')
-    order = grouped['distance'].mean().sort_values()
-    for arm in order.index:
+    for arm in grouped['distance'].mean().sort_values().index:
         g = grouped.get_group(arm)
         print(f"{arm:<9} {g['distance'].mean():>5.1f} {g['rows'].mean():>6.0f} "
               f"{g['r2'].median():>9.4f} {g['r2'].mean():>9.4f} "
               f"{g['r2'].std():>8.4f} {g['fold'].nunique():>6}")
-    per_year, curve = slope(frame)
-    print(f"\n  predictiveness decays {per_year:+.5f} of median R^2 per year")
-    return {'dataset': dataset, 'slope': per_year, 'frame': frame, 'curve': curve}
+    curve = curve_of(frame)
+    s = slopes(curve)
+    print(f"\n  slope per year of distance: raw {s['raw']:+.5f}, "
+          f"normalised by LEAK {s['normalised']:+.5f}")
+    return {'dataset': dataset, 'frame': frame, 'curve': curve, 'slopes': s}
 
 
 def main():
@@ -167,16 +208,19 @@ def main():
             results[dataset] = out
 
     if len(results) >= 2:
+        names = list(results)
         print('\n' + '=' * 78)
         print('SLOPE RATIO BETWEEN PANELS -- the quantity 4.2s predicts')
-        names = list(results)
         for i, a in enumerate(names):
             for b in names[i + 1:]:
-                sa, sb = results[a]['slope'], results[b]['slope']
-                print(f"  {a} {sa:+.5f}  vs  {b} {sb:+.5f}   "
-                      f"ratio {sa / sb:.3f}" if sb else f"  {b} slope is zero")
-        print('\n  Compare against the channel slopes recorded in 4.2j and 4.2k.')
-        print('  Prediction 2 holds if this ratio is within 30% of that one.')
+                for kind in ('raw', 'normalised'):
+                    sa, sb = results[a]['slopes'][kind], results[b]['slopes'][kind]
+                    ratio = sa / sb if sb else float('nan')
+                    print(f"  {kind:<11} {a} {sa:+.5f}  vs  {b} {sb:+.5f}   "
+                          f"ratio {ratio:.3f}")
+        print('\n  Compare against the channel slope ratio recorded in 4.2o.')
+        print('  The two estimators disagree, and the pre-registration did not')
+        print('  fix which one, so the verdict is reported under both.')
 
 
 if __name__ == '__main__':

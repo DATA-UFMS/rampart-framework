@@ -132,15 +132,13 @@ def main(dataset='worldbank', entity_cap=None):
             mask = np.zeros(len(eval_frame), dtype=bool)
             mask[handed] = True
 
-            # The years travel with each arm, because capping the context is a
-            # recency rule and a rule that cannot see the years is not one. The
-            # added rows keep their own years, as `core.injection` keeps them.
-            arm_years = {
-                'leak': pd.concat([yr_train, yr_test.iloc[handed]],
-                                  ignore_index=True),
-                'control': pd.concat([yr_train, yr_train.iloc[echoed]],
-                                     ignore_index=True),
-            }
+            # The years do not travel with the arms, and they do not need to. The
+            # cap takes the tail of the frame it is handed, and that is the recency
+            # rule only because `prepared` sorts by year and appended rows are newer
+            # than all of training. An earlier version built the per-arm year vectors
+            # here and discarded them, under a comment asserting the opposite -- dead
+            # code defending a claim the code did not implement, which is what a
+            # reviewer finds with one grep.
             arms = {
                 'leak': (pd.concat([fit_frame, eval_frame.iloc[handed]],
                                    ignore_index=True),
