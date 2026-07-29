@@ -35,6 +35,18 @@ where the frame grows by the same number of rows with nothing crossing the split
 
     global = (held-out improvement, leak arm) - (held-out improvement, control arm)
 
+**Two channels, and that is not all of them.** This is complete for leakage that
+hands over *data* and incomplete for leakage that hands over a *decision*.
+Selection leakage -- peeking at the evaluation set to choose a configuration --
+moves no rows, so the memorisation channel is zero by construction and everything
+lands in the generalisation bucket, where it does not belong: nothing generalised,
+a winner was picked on noise. It needs a third arm rather than a finer partition,
+and `scripts/validation/probe_selection.py` supplies one, by choosing on one half
+of the evaluation window and reporting on the other. Measured that way, the
+genuine share is 1.000 for a twenty-candidate ridge grid and 0.554 for a
+nine-candidate forest grid -- which is also an independent confirmation that the
+bias does not come from the number of candidates.
+
 **Ratios of sums throughout.** Every quantity here is one total squared error
 divided by another. A mean of per-row ratios has a residual in each denominator,
 and that construction has already produced a reading of 6.87 for a bounded
