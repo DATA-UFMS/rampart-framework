@@ -78,12 +78,16 @@ def candidates():
     return entries
 
 
-def main():
-    df, columns, cfg = panel()
+def main(dataset='worldbank', entity_cap=None):
+    df, columns, cfg = panel(dataset)
+    if entity_cap is not None:
+        keep = sorted(df['entity_id'].unique())[:int(entity_cap)]
+        df = df[df['entity_id'].isin(keep)].reset_index(drop=True)
+        print(f"subsampled to {len(keep)} entities, {len(df)} rows")
     windows = folds(cfg)
     entries = candidates()
     block = fold_dependence_span(cfg.walk_forward_config)
-    print(f"World Bank: {len(windows)} folds, {len(entries)} models, "
+    print(f"{dataset}: {len(windows)} folds, {len(entries)} models, "
           f"block {block}\n")
 
     channels = {}        # (name, dose) -> list of per-fold decompositions
@@ -224,4 +228,4 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(main(*sys.argv[1:]))

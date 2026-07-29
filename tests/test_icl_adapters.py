@@ -321,3 +321,20 @@ class TestTheRegisteredSensitivityArm:
     def test_random_is_reproducible(self, monkeypatch):
         assert (self._capped('random', monkeypatch)[3].tolist()
                 == self._capped('random', monkeypatch)[3].tolist())
+
+
+    def test_the_environment_overrides_the_configuration(self, monkeypatch):
+        """One flag on a job, not a rewritten config.
+
+        The first attempt at the sensitivity arm exec'd the probe inside
+        `python3 -c`, which leaves __file__ undefined; the job died in two
+        minutes on a GPU node.
+        """
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_cap_rows', 20)
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_rule', 'recent')
+        monkeypatch.setenv('RAMPART_CONTEXT_RULE', 'random')
+        X, y, entity, years = frame(rows=80)
+        *_, record = icl.cap_context(X, y, entity, years)
+        assert 'random' in record['rule']

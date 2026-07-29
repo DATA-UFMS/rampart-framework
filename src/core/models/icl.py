@@ -185,7 +185,12 @@ def cap_context(X_train: pd.DataFrame, y_train: pd.Series,
                 {'capped': False, 'context_rows': int(len(X_train)),
                  'cap': int(cap)})
 
-    rule = SCIENTIFIC_CONFIG['in_context_models'].get('context_rule', 'recent')
+    # The environment wins over the configuration so the registered sensitivity
+    # arm is one flag on a job rather than a rewritten config. A first attempt
+    # set it by exec'ing the probe inside `python3 -c`, which leaves __file__
+    # undefined and killed the job in two minutes.
+    rule = (os.environ.get('RAMPART_CONTEXT_RULE', '').strip()
+            or SCIENTIFIC_CONFIG['in_context_models'].get('context_rule', 'recent'))
     if rule == 'random':
         # The registered sensitivity arm. Seeded on the row count so the same
         # window always yields the same sample, and recorded, because a context
