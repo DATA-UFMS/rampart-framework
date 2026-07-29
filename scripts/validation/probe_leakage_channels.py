@@ -126,9 +126,18 @@ def main(dataset='worldbank', entity_cap=None):
     duplicates = set(duplicated_rungs())
     block = fold_dependence_span(cfg.walk_forward_config)
     distinct = len(entries) - len([n for n, *_ in entries if n in duplicates])
+    # The reading settings go in the header, because absorption at one replicate and
+    # absorption at five are different numbers on the same panel -- worldbank_clean
+    # read 0.0514 at one and 0.0270 at five -- and a log that does not say which will
+    # be compared against one that does not either.
+    reps = SCIENTIFIC_CONFIG['in_context_models']['absorption_replicates']
+    probes = PROBES or SCIENTIFIC_CONFIG['in_context_models']['absorption_probes']
     print(f"{dataset}: {len(windows)} folds, {distinct} distinct models "
           f"({len(entries)} rows, {len(entries) - distinct} duplicated by "
-          f"construction), block {block}\n")
+          f"construction), block {block}")
+    print(f"  absorption read at {probes} probes"
+          + (f" x {reps} replicates" if reps > 1 else " x 1 replicate")
+          + (f", fraction {PROBE_FRACTION}" if PROBE_FRACTION else "") + "\n")
 
     channels = {}        # (name, dose) -> list of per-fold decompositions
     absorptions = {}     # name -> list of per-fold readings
