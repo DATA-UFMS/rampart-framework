@@ -185,6 +185,24 @@ def cap_context(X_train: pd.DataFrame, y_train: pd.Series,
                 {'capped': False, 'context_rows': int(len(X_train)),
                  'cap': int(cap)})
 
+    rule = SCIENTIFIC_CONFIG['in_context_models'].get('context_rule', 'recent')
+    if rule == 'random':
+        # The registered sensitivity arm. Seeded on the row count so the same
+        # window always yields the same sample, and recorded, because a context
+        # chosen at random reads exactly like one chosen by recency in a results
+        # table unless the table says which.
+        picked = np.sort(np.random.default_rng(RANDOM_SEED + len(X_train))
+                         .choice(len(X_train), size=cap, replace=False))
+        return (X_train.iloc[picked].reset_index(drop=True),
+                pd.Series(y_train).iloc[picked].reset_index(drop=True),
+                pd.Series(entities_train).iloc[picked].reset_index(drop=True),
+                None if years_train is None
+                else pd.Series(years_train).iloc[picked].reset_index(drop=True),
+                {'capped': True, 'context_rows': int(cap), 'cap': int(cap),
+                 'training_rows': int(len(X_train)),
+                 'rows_dropped': int(len(X_train) - cap),
+                 'rule': 'uniform random sample, registered sensitivity arm'})
+
     if years_train is None:
         raise ValueError(
             f"the training window has {len(X_train)} rows against a context cap "
@@ -226,11 +244,28 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
     in-context model a different design matrix would make the comparison a
     comparison of feature sets.
     """
-    X_train, y_train, entities_train, _years, context_record = cap_context(
-        X_train, y_train, entities_train, years_train)
-
+    # The entity effect is fitted first, on the *whole* training window, and the
+    # context is capped after. The order matters and the other one is wrong.
+    #
+    # Capping first would compute the entity mean from whatever survived the cap.
+    # On INEP that is 10,000 rows over 5,564 entities -- under two observations
+    # each, against twelve for the classical models, which are handed the full
+    # window. The in-context models would then carry a far noisier version of the
+    # strongest feature in the design matrix, and would score worse for a reason
+    # that has nothing to do with in-context learning. The comparison would be of
+    # feature quality wearing the label of a comparison of model families.
+    #
+    # It never showed up on World Bank because 400 training rows never reach the
+    # cap, so this only ever mattered on the panel it was written for.
+    #
+    # P5 is untouched: the statistic still comes from the training window alone.
+    # The cap is a constraint on what the model may read, not on where a
+    # statistic may be fitted, and conflating the two is what produced the bug.
     X_train_augmented, X_test_augmented, means, _global = entity_effect_frames(
         X_train, X_test, y_train, entities_train, entities_test)
+
+    X_train_augmented, y_train, entities_train, _years, context_record = \
+        cap_context(X_train_augmented, y_train, entities_train, years_train)
 
     estimator = model.make()
     estimator.fit(X_train_augmented, y_train)

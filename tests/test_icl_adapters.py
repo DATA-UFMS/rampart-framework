@@ -237,3 +237,87 @@ class TestTheEnsembleSwitch:
             X, y, X, y, entity, entity, model=icl.MODELS['icl_tabpfn'],
             architecture='dataframe_lib', years_train=years)
         assert result['provenance']['ensemble_robustness'] is True
+
+
+class TestTheCapDoesNotDegradeTheEntityEffect:
+    """The order of capping and augmenting, which was wrong and only bites on the
+    large panel.
+
+    The entity effect is the mean of the outcome per entity and the strongest
+    column in the design matrix. Capping first computes it from whatever survived:
+    on INEP that is under two observations per entity against twelve for the
+    classical models. The in-context arm would carry a noisier feature and score
+    worse for a reason that is not about in-context learning at all.
+    """
+
+    def test_the_effect_is_the_same_whether_or_not_the_cap_bites(self, monkeypatch):
+        from core.models.ladder import ENTITY_EFFECT_COLUMN, entity_effect_frames
+        rows = 400
+        rng = np.random.default_rng(3)
+        X = pd.DataFrame(rng.normal(size=(rows, 3)), columns=['a', 'b', 'c'])
+        entity = pd.Series([f'E{i % 20}' for i in range(rows)])
+        y = pd.Series([float(e[1:]) for e in entity] + rng.normal(scale=.1,
+                                                                 size=rows))
+        years = pd.Series([2000 + i // 20 for i in range(rows)])
+        X_eval = X.head(20).reset_index(drop=True)
+        entity_eval = entity.head(20).reset_index(drop=True)
+
+        # What the whole training window says each entity's mean is.
+        _f, uncapped_eval, _m, _g = entity_effect_frames(
+            X, X_eval, y, entity, entity_eval)
+
+        # Now make the cap bite hard, and take the same route fit_in_context takes.
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_cap_rows', 40)
+        augmented, capped_eval, _m, _g = entity_effect_frames(
+            X, X_eval, y, entity, entity_eval)
+        kept, _y, _e, _yr, record = icl.cap_context(augmented, y, entity, years)
+
+        assert record['capped'] is True and len(kept) == 40
+        assert capped_eval[ENTITY_EFFECT_COLUMN].equals(
+            uncapped_eval[ENTITY_EFFECT_COLUMN]), (
+            'the evaluation entity effect changed when the cap bit, which means '
+            'the statistic was fitted on the capped rows')
+
+    def test_capping_after_augmenting_keeps_the_extra_column(self, monkeypatch):
+        from core.models.ladder import ENTITY_EFFECT_COLUMN, entity_effect_frames
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_cap_rows', 15)
+        X, y, entity, years = frame(rows=60)
+        augmented, _eval, _m, _g = entity_effect_frames(X, X, y, entity, entity)
+        kept, *_ = icl.cap_context(augmented, y, entity, years)
+        assert ENTITY_EFFECT_COLUMN in kept.columns
+        assert len(kept) == 15
+
+
+class TestTheRegisteredSensitivityArm:
+    """Recency is the pre-registered rule; a random sample is the arm that shows
+    the conclusion does not depend on it. Both record which they were."""
+
+    def _capped(self, rule, monkeypatch):
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_cap_rows', 20)
+        monkeypatch.setitem(SCIENTIFIC_CONFIG['in_context_models'],
+                            'context_rule', rule)
+        X, y, entity, years = frame(rows=80)
+        return icl.cap_context(X, y, entity, years)
+
+    def test_random_takes_rows_from_across_the_window(self, monkeypatch):
+        _X, _y, _e, years, record = self._capped('random', monkeypatch)
+        assert 'random' in record['rule']
+        assert years.min() < 2000 + 80 // 4 // 2, (
+            'a random sample that only took recent years is not random')
+
+    def test_recency_takes_only_the_end(self, monkeypatch):
+        _X, _y, _e, years, record = self._capped('recent', monkeypatch)
+        assert 'most recent' in record['rule']
+        assert years.min() >= 2000 + (80 - 20) // 4
+
+    def test_the_two_rules_disagree_about_which_rows(self, monkeypatch):
+        recent = self._capped('recent', monkeypatch)[3].tolist()
+        random_ = self._capped('random', monkeypatch)[3].tolist()
+        assert recent != random_, 'the sensitivity arm is not a different arm'
+
+    def test_random_is_reproducible(self, monkeypatch):
+        assert (self._capped('random', monkeypatch)[3].tolist()
+                == self._capped('random', monkeypatch)[3].tolist())

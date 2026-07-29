@@ -264,6 +264,14 @@ SCIENTIFIC_CONFIG = {
         # is one number and the measurements in the pre-specification were taken
         # at it.
         'absorption_probes': 12,
+        # How the context is chosen when the training window exceeds the cap.
+        # 'recent' is the pre-registered rule (pre-spec 4.2p): the lags already
+        # carry each row's history, so the context needs entity coverage rather
+        # than temporal depth, and dropping the old rows is what a practitioner
+        # who hits the limit does. 'random' exists as the registered sensitivity
+        # arm -- if the conclusion moves between the two, the rule is a result and
+        # is reported as one instead of buried as an implementation detail.
+        'context_rule': 'recent',
     },
 
     # Cross-paradigm equivalence is verified as bitwise identity of the
