@@ -52,6 +52,10 @@ DECLARED_TOOLS = {
     'scripts/kaggle/bundle.sh':
         'packs code and panels into one zip, because Kaggle cannot reach either '
         'from here and the copies under outputs/ are eight-byte fixtures',
+    'scripts/kaggle/verify_dataset.sh':
+        'checks working tree -> bundle -> Dataset by manifest, because verifying one '
+        'file and shipping another cost two runs and a verifier that only checked '
+        'the last hop passed on exactly that state',
     'scripts/kaggle/kaggle_r3c.py':
         'the matched-context arm as a Kaggle notebook cell; the Camber student '
         'plan ran out of CPU hours before it could be submitted there',
