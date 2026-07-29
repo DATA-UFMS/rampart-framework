@@ -45,6 +45,12 @@ DECLARED_TOOLS = {
         'compares two candidate primary criteria on the same folds, to settle '
         'by measurement which one recovers a known effect; run once while the '
         'design is being fixed, not as a stage',
+    'scripts/kaggle/bundle.sh':
+        'packs code and panels into one zip, because Kaggle cannot reach either '
+        'from here and the copies under outputs/ are eight-byte fixtures',
+    'scripts/kaggle/kaggle_r3c.py':
+        'the matched-context arm as a Kaggle notebook cell; the Camber student '
+        'plan ran out of CPU hours before it could be submitted there',
     'scripts/validation/check_icl_path.py':
         'exercises the whole in-context path locally at a low cap, so the '
         'failures that cost seven cloud submissions are found in two minutes',
