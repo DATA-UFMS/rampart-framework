@@ -63,6 +63,26 @@ from core.models.ladder import entity_effect_frames
 from core.scientific_config import RANDOM_SEED, SCIENTIFIC_CONFIG
 
 
+#: Values that mean "off" when a switch is set explicitly. Needed because the
+#: switches here used to be read as "is the variable non-empty", under which
+#: `RAMPART_CAP_ALL=0` turned the arm **on** -- the reading a person types to
+#: disable it. It cost a cloud run: the control arm for the matched-context
+#: measurement capped exactly like the treatment arm, and the two logs came back
+#: identical in all thirteen models, which is the only reason it was noticed.
+_OFF = frozenset({'', '0', 'false', 'no', 'off'})
+
+
+def switched_on(name: str) -> bool:
+    """Whether an arm-selecting environment switch is set to something meaning yes.
+
+    Absent, empty, `0`, `false`, `no` and `off` are all off; anything else is on.
+    One reader for every switch, because the alternative is each caller inventing
+    its own and the ones that disagree are found by a run that silently measures
+    the wrong arm.
+    """
+    return os.environ.get(name, '').strip().lower() not in _OFF
+
+
 class ICLUnavailable(ImportError):
     """Raised when an in-context model is asked for and its package is absent."""
 
@@ -179,7 +199,7 @@ def _tabpfn_regressor():
     # config edit, so the two readings can sit in one table with the receipt
     # saying which is which.
     ensemble = (_ic['tabpfn_n_estimators_robustness']
-                if os.environ.get('RAMPART_ICL_ROBUSTNESS', '').strip()
+                if switched_on('RAMPART_ICL_ROBUSTNESS')
                 else _ic['tabpfn_n_estimators'])
     return _capped(TabPFNRegressor(n_estimators=ensemble,
                                    random_state=RANDOM_SEED,
@@ -228,10 +248,11 @@ def matched_context(make):
     extra arm, not a change to the default, because equal n answers a different
     question than the deployed configuration does.
 
-    Returns the factory unchanged when the flag is absent, so the ordinary run is
-    untouched.
+    Returns the factory unchanged when the switch is off -- absent, or set to a
+    value meaning no -- so the ordinary run is untouched and so a control arm can
+    be asked for explicitly rather than by unsetting a variable.
     """
-    if not os.environ.get('RAMPART_CAP_ALL', '').strip():
+    if not switched_on('RAMPART_CAP_ALL'):
         return make
     return lambda: _capped(make())
 
@@ -341,8 +362,7 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
             'package_version': _package_version(model.package),
             'weights': ('tabpfn v2, ungated' if model.package == 'tabpfn'
                         else 'tabicl default checkpoint'),
-            'ensemble_robustness': bool(
-                os.environ.get('RAMPART_ICL_ROBUSTNESS', '').strip()),
+            'ensemble_robustness': switched_on('RAMPART_ICL_ROBUSTNESS'),
             'device': resolve_device(),
         },
         'regularization_applied': 'none; in-context, no parameters fitted',

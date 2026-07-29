@@ -319,3 +319,62 @@ class TestTheCapCannotBeBypassed:
         wrapped = icl.ContextCapped(Ridge(alpha=1.0), cap=10_000)
         assert np.array_equal(bare, wrapped.fit(X, y).predict(query))
         assert wrapped.context['capped'] is False
+
+
+class TestArmSwitchesAreReadAsBooleans:
+    """`RAMPART_CAP_ALL=0` used to cap, which is the opposite of what it says.
+
+    The switches were read as "is the variable non-empty", so every value a person
+    types to turn an arm off -- `0`, `false`, `no` -- turned it on. It cost a cloud
+    run: the control arm for the matched-context measurement capped exactly like
+    the treatment arm, and only comparing the two logs and finding all thirteen
+    models identical to four decimals gave it away. A silent wrong arm is worse
+    than a crash, so the reading is pinned here.
+    """
+
+    @pytest.mark.parametrize('value', ['0', 'false', 'FALSE', 'no', 'off', '', '  '])
+    def test_values_meaning_no_are_off(self, value, monkeypatch):
+        monkeypatch.setenv('RAMPART_CAP_ALL', value)
+        assert icl.switched_on('RAMPART_CAP_ALL') is False
+
+    @pytest.mark.parametrize('value', ['1', 'true', 'yes', 'on', 'anything'])
+    def test_values_meaning_yes_are_on(self, value, monkeypatch):
+        monkeypatch.setenv('RAMPART_CAP_ALL', value)
+        assert icl.switched_on('RAMPART_CAP_ALL') is True
+
+    def test_absent_is_off(self, monkeypatch):
+        monkeypatch.delenv('RAMPART_CAP_ALL', raising=False)
+        assert icl.switched_on('RAMPART_CAP_ALL') is False
+
+    def test_matched_context_returns_the_factory_untouched_when_off(self, monkeypatch):
+        """The control arm has to be the ordinary run, not a capped one."""
+        from sklearn.linear_model import Ridge
+        monkeypatch.setenv('RAMPART_CAP_ALL', '0')
+        make = lambda: Ridge(alpha=1.0)
+        assert icl.matched_context(make) is make
+
+    def test_matched_context_wraps_when_on(self, monkeypatch):
+        from sklearn.linear_model import Ridge
+        monkeypatch.setenv('RAMPART_CAP_ALL', '1')
+        wrapped = icl.matched_context(lambda: Ridge(alpha=1.0))()
+        assert isinstance(wrapped, icl.ContextCapped)
+
+    def test_every_arm_switch_uses_the_one_reader(self):
+        """Policy in one place: the rule this repository has broken four times."""
+        import ast
+        from pathlib import Path
+        source = Path(icl.__file__).read_text()
+        offending = [
+            node.lineno for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'get'
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == 'environ'
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value in ('RAMPART_CAP_ALL', 'RAMPART_ICL_ROBUSTNESS')
+        ]
+        assert not offending, (
+            f'an arm switch is read directly instead of through switched_on(), '
+            f'which is how the truthiness bug got in: lines {offending}')
