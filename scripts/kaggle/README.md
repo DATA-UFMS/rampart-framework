@@ -12,17 +12,24 @@ code and data travel together:
 
     scripts/kaggle/bundle.sh          # writes kaggle-rampart/rampart-bundle.zip
 
-Under three megabytes. Upload it as a Kaggle Dataset once; notebooks attach it.
+Under three megabytes. Upload it as a Kaggle Dataset once; kernels attach it.
 
-## The notebook
+Kaggle expands a zip on upload, so the dataset holds the tree rather than the
+archive. `kaggle_r3c.py` accepts both arrivals, and both are covered by the
+resolution test, because finding out on Kaggle costs a run.
 
-Paste `kaggle_r3c.py` as a single cell, and in the notebook settings:
+## Running it
 
-| setting | value | why |
-|---|---|---|
-| Accelerator | GPU T4 x1 | TabPFN on CPU is about ten times slower |
-| Internet | On | pip, and TabPFN fetches its weights |
-| Add Input | the dataset with the bundle | code and panels |
+    export KAGGLE_API_TOKEN=KGAT_...        # Settings -> API -> Create New Token
+    scripts/kaggle/push_and_run.sh          # push, wait, print the log
+
+The `KGAT_` token goes in that variable. It is not the older `kaggle.json` key and
+the CLI will not read it from that file.
+
+The kernel settings are declared in `kernel-metadata.json`, not clicked in the web
+UI: `enable_gpu` with `machine_shape` T4, `enable_internet` for pip and TabPFN's
+weights, and `dataset_sources` for the bundle. The cell stays a plain `.py` so it
+is greppable and diffable; the runner generates the notebook from it on push.
 
 It runs the two-minute guard first and the thirty-minute arm second. The guard
 exercises the whole path -- panel loader, the chronological-order contract the

@@ -51,6 +51,9 @@ DECLARED_TOOLS = {
     'scripts/kaggle/kaggle_r3c.py':
         'the matched-context arm as a Kaggle notebook cell; the Camber student '
         'plan ran out of CPU hours before it could be submitted there',
+    'scripts/kaggle/push_and_run.sh':
+        'pushes that cell as a kernel and waits for it over the API, so a GPU '
+        'run is a command here rather than a browser session',
     'scripts/validation/check_icl_path.py':
         'exercises the whole in-context path locally at a low cap, so the '
         'failures that cost seven cloud submissions are found in two minutes',

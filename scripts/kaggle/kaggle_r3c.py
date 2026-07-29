@@ -1,9 +1,10 @@
 # r3c on Kaggle: absorption at matched context size.
 #
-# Paste as one notebook cell. Requires, in the notebook settings:
-#   Accelerator = GPU T4 x1      (TabPFN on CPU is roughly ten times slower)
-#   Internet    = On             (pip, and TabPFN fetches its weights)
-#   Add Input   -> the dataset holding rampart-bundle.zip
+# One notebook cell, pushed and run by scripts/kaggle/push_and_run.sh. The settings
+# it needs live in scripts/kaggle/kernel-metadata.json, not in the web UI:
+#   enable_gpu / machine_shape  (TabPFN on CPU is roughly ten times slower)
+#   enable_internet             (pip, and TabPFN fetches its weights)
+#   dataset_sources             (the bundle built by scripts/kaggle/bundle.sh)
 #
 # What it answers. On the INEP panel the in-context models read a context capped
 # at ten thousand rows while the classical models read all thirty-eight thousand,
@@ -16,6 +17,7 @@
 # 400 rows to 10,000, and needs no matching.
 
 import os
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -29,13 +31,41 @@ subprocess.run([sys.executable, '-m', 'pip', 'install', '-q',
                 'scipy==1.14.1', 'pyarrow==18.1.0',
                 'tabpfn>=8,<9', 'tabicl>=2,<3'], check=True)
 
-# Kaggle mounts inputs read-only, so the bundle is unpacked to the writable disk.
-bundle = next(Path('/kaggle/input').rglob('rampart-bundle.zip'))
-root = Path('/kaggle/working/rampart')
+# Kaggle expands an uploaded zip into the dataset, so the bundle arrives either as
+# the archive or as the tree already expanded, depending on how it was created.
+# Accept both. Either way it lands on the writable disk, because inputs are mounted
+# read-only and TabPFN caches its weights next to the code it is asked to run from.
+# The two roots are overridable so this resolution can be exercised off Kaggle,
+# against a simulated input tree, before a run is spent finding out. It cannot be
+# imported from src/ instead: this block is what puts src/ on the path.
+# BUNDLE RESOLUTION BEGIN -- sliced by tests/test_kaggle_bundle_resolution.py
+INPUTS = Path(os.environ.get('KAGGLE_INPUT_DIR', '/kaggle/input'))
+WORK = Path(os.environ.get('KAGGLE_WORKING_DIR', '/kaggle/working'))
+root = WORK / 'rampart'
 if not root.exists():
-    with zipfile.ZipFile(bundle) as archive:
-        archive.extractall('/kaggle/working')
-print('unpacked to', root)
+    archive = next(INPUTS.rglob('rampart-bundle.zip'), None)
+    if archive is not None:
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(WORK)
+    else:
+        expanded = next((p for p in INPUTS.rglob('rampart')
+                         if (p / 'src').is_dir() and (p / 'panels').is_dir()), None)
+        if expanded is None:
+            raise SystemExit(
+                f'no bundle under {INPUTS}: attach the dataset built by '
+                'scripts/kaggle/bundle.sh as an input to this notebook')
+        shutil.copytree(expanded, root)
+
+panels = sorted(root.glob('panels/*/collection/*/complete_data.parquet'))
+if len(panels) != 2:
+    raise SystemExit(f'expected two panel parquets, found {len(panels)}: {panels}')
+for panel in panels:                     # a truncated upload reads as a clean run
+    if panel.stat().st_size < 1024:
+        raise SystemExit(f'{panel} is {panel.stat().st_size} bytes, so it is a stub')
+print('bundle at', root, '--',
+      sum(1 for p in root.rglob('*') if p.is_file()), 'files,',
+      len(panels), 'panels')
+# BUNDLE RESOLUTION END
 
 os.chdir(root)
 sys.path.insert(0, str(root / 'src'))
