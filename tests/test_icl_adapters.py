@@ -299,3 +299,23 @@ class TestTheCapCannotBeBypassed:
         assert not offending, (
             f'an in-context estimator is built outside the adapter, which is '
             f'the one way to get one without a cap: {offending}')
+
+    def test_below_the_cap_the_wrapper_is_the_identity(self):
+        """Bit for bit, and this is what makes the refactor safe to land.
+
+        On World Bank four hundred training rows never approach ten thousand, so
+        the wrapper is a pass-through there and cannot have moved any published
+        number. Worth an assertion rather than a forty-minute rerun on CPU to
+        check something true by construction -- which is what a first attempt
+        launched.
+        """
+        from sklearn.linear_model import Ridge
+        rng = np.random.default_rng(0)
+        X = pd.DataFrame(rng.normal(size=(400, 5)))
+        y = pd.Series(rng.normal(size=400))
+        query = pd.DataFrame(rng.normal(size=(64, 5)))
+
+        bare = Ridge(alpha=1.0).fit(X, y).predict(query)
+        wrapped = icl.ContextCapped(Ridge(alpha=1.0), cap=10_000)
+        assert np.array_equal(bare, wrapped.fit(X, y).predict(query))
+        assert wrapped.context['capped'] is False
