@@ -153,3 +153,45 @@ def test_accepts_the_optional_recollected_panel(tmp_path):
     root = run_resolution(inputs, working)
 
     assert len(list(root.glob('panels/*/collection/*/complete_data.parquet'))) == 3
+
+
+def test_no_credential_is_committed_anywhere_in_the_repository():
+    """A token in git history outlives the revocation that was meant to end it.
+
+    The TabPFN v3 weights are gated and Kaggle's Secrets do not reach a run pushed
+    through the API, so `push_and_run.sh` writes the token into the notebook it
+    generates. That directory is temporary. The obvious shortcut -- putting the
+    token in the shipped cell instead -- would place it in a repository that is an
+    academic artifact meant to be published, where deleting it later does not
+    remove it from history and does not stop a scanner from finding it.
+
+    So the shipped tree is checked for the token shapes this project has handled:
+    the Prior Labs secret key and the Kaggle API token.
+    """
+    import re
+    root = Path(__file__).resolve().parents[1]
+    shapes = re.compile(r'tabpfn_sk_[A-Za-z0-9_\-]{8,}|KGAT_[A-Za-z0-9]{16,}')
+    offending = []
+    for path in sorted(root.rglob('*')):
+        if not path.is_file() or '.git' in path.parts or '.venv' in path.parts:
+            continue
+        if path.suffix not in ('.py', '.sh', '.json', '.md', '.txt', '.yml', '.yaml'):
+            continue
+        try:
+            text = path.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue
+        if shapes.search(text):
+            offending.append(str(path.relative_to(root)))
+    assert not offending, (
+        f'a credential is committed in the tree, where revoking it later does not '
+        f'remove it from history: {offending}')
+
+
+def test_the_runner_takes_the_token_from_the_environment():
+    """Not from a literal, which is the thing the test above forbids."""
+    runner = (Path(__file__).resolve().parents[1] / 'scripts' / 'kaggle'
+              / 'push_and_run.sh').read_text()
+    assert '"${TABPFN_TOKEN:-}"' in runner, (
+        'the runner must read the token from the environment')
+    assert 'tabpfn_sk_' not in runner

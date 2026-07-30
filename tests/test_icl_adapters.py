@@ -469,7 +469,7 @@ class TestAnArmThatCannotRunIsNotOffered:
         assert not icl.MODELS['icl_tabpfn_v3'].available()
 
     def test_the_v3_arm_is_offered_with_one(self, monkeypatch):
-        monkeypatch.setenv('TABPFN_TOKEN', 'tabpfn_sk_whatever')
+        monkeypatch.setenv('TABPFN_TOKEN', 'not-a-real-token')
         assert icl.MODELS['icl_tabpfn_v3'].available()
 
     def test_only_the_gated_arm_declares_the_requirement(self):
@@ -486,7 +486,7 @@ class TestAnArmThatCannotRunIsNotOffered:
 
         monkeypatch.delenv('TABPFN_TOKEN', raising=False)
         without = {n for n, *_ in probe.candidates() if n.startswith('icl_')}
-        monkeypatch.setenv('TABPFN_TOKEN', 'tabpfn_sk_whatever')
+        monkeypatch.setenv('TABPFN_TOKEN', 'not-a-real-token')
         with_token = {n for n, *_ in probe.candidates() if n.startswith('icl_')}
 
         assert 'icl_tabpfn_v3' not in without

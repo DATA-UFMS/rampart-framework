@@ -63,9 +63,10 @@ SLUG="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['id'])" 
 # is generated from it, because the kernel is declared kernel_type notebook and a
 # mismatch there is rejected on push.
 NOTEBOOK="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['code_file'])" "$PALCO/kernel-metadata.json")"
-python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" "$SONDAS" <<'PY'
+python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" "$SONDAS" \
+        "${TABPFN_TOKEN:-}" <<'PY'
 import json, sys
-fonte, destino, cap, paineis, sondas = sys.argv[1:6]
+fonte, destino, cap, paineis, sondas, tabpfn = sys.argv[1:7]
 with open(fonte) as f:
     linhas = f.readlines()
 
@@ -83,6 +84,15 @@ if paineis:
     prologo.append(f"os.environ['RAMPART_PROBE_PANELS'] = {paineis!r}\n")
 if sondas:
     prologo.append(f"os.environ['RAMPART_PROBES'] = {sondas!r}\n")
+# The v3 weights are gated and Kaggle's Secrets do not reach a run pushed through
+# the API -- measured, the proxy is not provisioned and UserSecretsClient raises
+# ConnectionError. So the token travels in the generated prologue instead. It is
+# written HERE and not into the shipped cell: the staging directory is temporary,
+# while scripts/kaggle/kaggle_r3c.py is committed, and a credential in git history
+# outlives the revocation in a way a private notebook does not. The notebook is
+# is_private; rotate the token at ux.priorlabs.ai when the runs are done.
+if tabpfn:
+    prologo.append(f"os.environ['TABPFN_TOKEN'] = {tabpfn!r}\n")
 celulas = [celula(linhas)]
 if len(prologo) > 1:
     celulas.insert(0, celula(prologo))
