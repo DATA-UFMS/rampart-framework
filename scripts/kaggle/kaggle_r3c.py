@@ -91,13 +91,25 @@ print('cuda:', torch.cuda.is_available(),
 # detail in a module that knows nothing about Kaggle. Absence is reported and not
 # fatal: the v2 arm needs no account, and a run that only wanted v2 should not fail
 # because the secret is missing.
-try:
-    from kaggle_secrets import UserSecretsClient
-    os.environ['TABPFN_TOKEN'] = UserSecretsClient().get_secret('TABPFN_TOKEN')
-    print('TABPFN_TOKEN: read from Kaggle Secrets, v3 arm available')
-except Exception as exc:                      # not attached, or not on Kaggle
-    print(f'TABPFN_TOKEN: unavailable ({type(exc).__name__}); the v3 arm will be '
-          f'skipped and the v2 arm runs as usual')
+if os.environ.get('TABPFN_TOKEN', '').strip():
+    # Already injected by the prologue push_and_run.sh writes. Measured: Kaggle's
+    # Secrets do NOT reach a run pushed through the API -- the proxy is not
+    # provisioned in commit mode and UserSecretsClient raises ConnectionError -- so
+    # this is the path that actually carries the token, and the Secrets read below
+    # is the fallback for a run started from the browser.
+    print('TABPFN_TOKEN: set in the environment, v3 arm available')
+else:
+    try:
+        from kaggle_secrets import UserSecretsClient
+        os.environ['TABPFN_TOKEN'] = UserSecretsClient().get_secret('TABPFN_TOKEN')
+        print('TABPFN_TOKEN: read from Kaggle Secrets, v3 arm available')
+    except Exception as exc:                  # not attached, or not on Kaggle
+        # Said only when it is true. The first version printed "the v3 arm will be
+        # skipped" from inside this except while the prologue had already set the
+        # variable, so the log denied a thirteenth model that the same log then
+        # reported and measured.
+        print(f'TABPFN_TOKEN: unavailable ({type(exc).__name__}); the v3 arm is '
+              f'skipped and the v2 arm runs as usual')
 
 # The two-minute guard before the thirty-minute run. It exercises the panel
 # loader, the chronological-order contract the cap depends on, the factory, a
@@ -115,7 +127,15 @@ PANELS = [p for p in os.environ.get('RAMPART_PROBE_PANELS', 'inep_censo').split(
 for _switch in ('RAMPART_PROBES', 'RAMPART_PROBE_FRACTION'):
     if os.environ.get(_switch, '').strip():
         print(f'{_switch} = {os.environ[_switch]}')
+# Which probe. The channels probe carries the axis and the calibration; the routes
+# probe carries the decay curve and the buffer prescription, is classical-only, and
+# takes over an hour on INEP -- which is why it belongs here rather than on a laptop.
+PROBE = os.environ.get('RAMPART_PROBE', 'channels').strip()
+SCRIPTS = {'channels': 'scripts/validation/probe_leakage_channels.py',
+           'routes': 'scripts/validation/probe_global_routes.py'}
+if PROBE not in SCRIPTS:
+    raise SystemExit(f'unknown probe {PROBE!r}; known: {sorted(SCRIPTS)}')
+
 for panel in PANELS:
-    print(f'\n--- r3c on {panel.strip()}: {ARM} ---', flush=True)
-    subprocess.run([sys.executable, 'scripts/validation/probe_leakage_channels.py',
-                    panel.strip()], check=True)
+    print(f'\n--- {PROBE} on {panel.strip()}: {ARM} ---', flush=True)
+    subprocess.run([sys.executable, SCRIPTS[PROBE], panel.strip()], check=True)

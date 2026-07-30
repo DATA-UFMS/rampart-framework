@@ -24,6 +24,8 @@ CAP_ALL=1
 PAINEIS=""
 SUFIXO=""
 SONDAS=""
+PROBE=""
+SEM_GPU=0
 while (( $# )); do
   case "$1" in
     --no-wait) ESPERAR=0; shift ;;
@@ -31,6 +33,8 @@ while (( $# )); do
     --panels) PAINEIS="${2:?--panels precisa da lista separada por virgula}"; shift 2 ;;
     --suffix) SUFIXO="${2:?--suffix precisa de um nome}"; shift 2 ;;
     --probes) SONDAS="${2:?--probes precisa de um inteiro}"; shift 2 ;;
+    --probe) PROBE="${2:?--probe precisa de channels ou routes}"; shift 2 ;;
+    --no-gpu) SEM_GPU=1; shift ;;
     *) echo "argumento desconhecido: $1"; exit 1 ;;
   esac
 done
@@ -46,14 +50,21 @@ trap 'rm -rf "$PALCO"' EXIT
 
 # Each arm is pushed as its own kernel, so the logs survive side by side and the
 # tables can be diffed instead of one overwriting the other.
-python3 - "$METADADOS" "$PALCO/kernel-metadata.json" "$CAP_ALL" "$SUFIXO" <<'PY'
+python3 - "$METADADOS" "$PALCO/kernel-metadata.json" "$CAP_ALL" "$SUFIXO" "$SEM_GPU" <<'PY'
 import json, sys
-origem, destino, cap, sufixo = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+origem, destino, cap, sufixo, sem_gpu = sys.argv[1:6]
 meta = json.load(open(origem))
 marca = sufixo or ('uncapped' if cap == '0' else '')
 if marca:
     meta['id'] += f'-{marca}'
     meta['title'] += f'-{marca}'
+# Kaggle allows two concurrent GPU sessions, and the routes probe is classical-only:
+# asking for an accelerator it never touches would queue behind the runs that need
+# one. Declared here rather than in a second metadata file, so the two arms differ in
+# the one field that differs.
+if sem_gpu == '1':
+    meta['enable_gpu'] = False
+    meta.pop('machine_shape', None)
 with open(destino, 'w') as f:
     json.dump(meta, f, indent=2)
 PY
@@ -63,10 +74,10 @@ SLUG="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['id'])" 
 # is generated from it, because the kernel is declared kernel_type notebook and a
 # mismatch there is rejected on push.
 NOTEBOOK="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['code_file'])" "$PALCO/kernel-metadata.json")"
-python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" "$SONDAS" \
+python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" "$SONDAS" "$PROBE" \
         "${TABPFN_TOKEN:-}" <<'PY'
 import json, sys
-fonte, destino, cap, paineis, sondas, tabpfn = sys.argv[1:7]
+fonte, destino, cap, paineis, sondas, probe, tabpfn = sys.argv[1:8]
 with open(fonte) as f:
     linhas = f.readlines()
 
@@ -91,6 +102,8 @@ if sondas:
 # while scripts/kaggle/kaggle_r3c.py is committed, and a credential in git history
 # outlives the revocation in a way a private notebook does not. The notebook is
 # is_private; rotate the token at ux.priorlabs.ai when the runs are done.
+if probe:
+    prologo.append(f"os.environ['RAMPART_PROBE'] = {probe!r}\n")
 if tabpfn:
     prologo.append(f"os.environ['TABPFN_TOKEN'] = {tabpfn!r}\n")
 celulas = [celula(linhas)]
@@ -109,7 +122,15 @@ with open(destino, 'w') as f:
 PY
 
 echo "== empurrando $SLUG =="
-"$KAGGLE" kernels push -p "$PALCO"
+# `kaggle kernels push` exits 0 even when it refuses -- the concurrent-GPU-session
+# limit prints "Kernel push error" and returns success -- so the output is what says
+# whether anything was submitted.
+SAIDA="$("$KAGGLE" kernels push -p "$PALCO" 2>&1)"
+echo "$SAIDA"
+if ! grep -q "successfully pushed" <<<"$SAIDA"; then
+  echo "== NAO submetido =="
+  exit 1
+fi
 
 if (( ! ESPERAR )); then
   echo "== rodando; acompanhe com: kaggle kernels status $SLUG =="
