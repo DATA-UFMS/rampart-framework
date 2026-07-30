@@ -276,3 +276,53 @@ class TestContrastsGetTheirOwnInterval:
                           self._folds([0.0, 0.1, 0.1, 0.2]), 'local', block=2)
         assert (paired['inference']['iters']
                 == SCIENTIFIC_CONFIG['bootstrap_iters'])
+
+
+class TestResampleLedger:
+    """What ran, as opposed to what the configuration declares.
+
+    Every record already carried its own `iters` and it was still not possible to
+    answer "how many resamples produced this published interval" from a run log:
+    the records feed the tables and the count does not. Answering it once meant
+    dating a `scientific_config` commit against the run, which establishes the
+    default rather than what executed -- and two call sites override the default.
+    """
+
+    def test_the_count_that_ran_is_recorded(self):
+        from statistical_validation.dependent_bootstrap import (
+            moving_block_ci, observed_resample_counts, reset_resample_ledger)
+        reset_resample_ledger()
+
+        moving_block_ci([0.1, 0.4, 0.2, 0.5], block=2, iters=321)
+
+        assert observed_resample_counts() == {321: 1}
+
+    def test_an_overriding_call_site_is_visible_next_to_the_configured_one(self):
+        """The failure this exists for: one probe at 4,000 among runs at 15,000."""
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from statistical_validation.dependent_bootstrap import (
+            moving_block_ci, observed_resample_counts, reset_resample_ledger)
+        reset_resample_ledger()
+        configured = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
+
+        moving_block_ci([0.1, 0.4, 0.2, 0.5], block=2)
+        moving_block_ci([0.2, 0.3, 0.1, 0.6], block=2, iters=4000)
+
+        observed = observed_resample_counts()
+        assert set(observed) == {configured, 4000}, (
+            'a run that mixes counts must say so; a single declared count would '
+            'describe only part of the tables')
+
+    def test_paths_that_never_resample_are_not_counted(self):
+        """A degenerate fold set returns without drawing anything."""
+        from statistical_validation.dependent_bootstrap import (
+            moving_block_ci, observed_resample_counts, reset_resample_ledger)
+        reset_resample_ledger()
+
+        moving_block_ci([], block=2)
+        moving_block_ci([0.3], block=2)
+        moving_block_ci([0.5, 0.5, 0.5], block=2)
+
+        assert observed_resample_counts() == {}, (
+            'reporting resamples for an interval that was never resampled is the '
+            'same class of untruth this ledger exists to catch')

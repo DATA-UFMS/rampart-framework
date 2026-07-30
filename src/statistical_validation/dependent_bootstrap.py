@@ -27,11 +27,42 @@ reviewer, which is exactly why it would survive.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
 from core.scientific_config import RANDOM_SEED, SCIENTIFIC_CONFIG
+
+#: How many intervals were produced at each resample count, for the run so far.
+#:
+#: Every record already carries its own `iters`, and that was not enough: the
+#: records go into the tables and the count does not, so a log could be read for
+#: months without revealing which count produced it. Proving that a published
+#: interval came from the configured count meant reading the git history of
+#: `scientific_config` and dating it against the run -- and that reading is only
+#: as good as the assumption that no call site overrode the default, which two
+#: of them do.
+#:
+#: A module-level tally is deliberate. Threading a collector through every caller
+#: would make the audit opt-in at each site, and the sites that forget are
+#: precisely the ones worth auditing.
+_RESAMPLE_LEDGER: Counter = Counter()
+
+
+def observed_resample_counts() -> Dict[int, int]:
+    """Resample counts actually used so far, mapped to how many intervals used them.
+
+    Empty until an interval is produced. More than one key means the run mixed
+    counts, which is reportable on its own: a paper that states a single
+    resample count is then stating something false about part of its own tables.
+    """
+    return dict(_RESAMPLE_LEDGER)
+
+
+def reset_resample_ledger() -> None:
+    """Forget what has been observed. For tests, and for probes that loop panels."""
+    _RESAMPLE_LEDGER.clear()
 
 
 def fold_dependence_span(walk_forward_config: Dict) -> int:
@@ -103,6 +134,10 @@ def moving_block_ci(
 
     if iters is None:
         iters = SCIENTIFIC_CONFIG['bootstrap_iters']
+
+    # Tallied here rather than at the top: the paths above return without
+    # resampling at all, and counting them would report resamples that never ran.
+    _RESAMPLE_LEDGER[int(iters)] += 1
 
     rng = np.random.default_rng(seed)
     starts = max(1, n - block + 1)

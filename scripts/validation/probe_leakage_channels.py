@@ -43,6 +43,7 @@ import pandas as pd
 
 # The harness first: importing it puts src/ on the path.
 from probe_harness import DOSES, entity_subsample, fold_rng, folds, panel, prepared
+from probe_harness import audit_resamples, declare_provenance
 
 from core.models.absorption import (  # noqa: E402
     absorption_coefficient, knn_expected_absorption)
@@ -122,7 +123,9 @@ def main(dataset='worldbank', entity_cap=None):
     df, columns, cfg = panel(dataset)
     if entity_cap is not None:
         df = entity_subsample(df, entity_cap)
-        print(f"subsampled to {len(keep)} entities, {len(df)} rows")
+        # `keep` lives inside entity_subsample; naming it here raised NameError on
+        # every capped run, so the subsample path had never actually printed.
+        print(f"subsampled to {df['entity_id'].nunique()} entities, {len(df)} rows")
     windows = folds(cfg)
     entries = candidates()
     duplicates = set(duplicated_rungs())
@@ -137,9 +140,12 @@ def main(dataset='worldbank', entity_cap=None):
     print(f"{dataset}: {len(windows)} folds, {distinct} distinct models "
           f"({len(entries)} rows, {len(entries) - distinct} duplicated by "
           f"construction), block {block}")
-    print(f"  absorption read at {probes} probes"
-          + (f" x {reps} replicates" if reps > 1 else " x 1 replicate")
-          + (f", fraction {PROBE_FRACTION}" if PROBE_FRACTION else "") + "\n")
+    declare_provenance(**{
+        'absorption_probes (in use)': probes,
+        'probe_fraction': PROBE_FRACTION if PROBE_FRACTION else 'not set',
+        'fold_block': block,
+    })
+    print()
 
     channels = {}        # (name, dose) -> list of per-fold decompositions
     absorptions = {}     # name -> list of per-fold readings
@@ -310,6 +316,7 @@ def main(dataset='worldbank', entity_cap=None):
                for fold in value if fold['thin_handed_partition'])
     print(f"\n  folds with fewer than five handed rows: {thin} "
           f"(a 5% dose on a 64-row window hands over three)")
+    audit_resamples()
     return 0
 
 

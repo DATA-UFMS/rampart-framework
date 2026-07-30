@@ -332,3 +332,50 @@ def fold_rng(*parts):
     from core.scientific_config import RANDOM_SEED
     return np.random.default_rng(
         abs(hash((RANDOM_SEED, *parts))) % (2 ** 32))
+
+
+def declare_provenance(**extra) -> None:
+    """Print the settings that govern the numbers this run is about to print.
+
+    A log that carries the readings but not the settings that produced them can
+    only be audited from outside itself. Proving that a published interval used
+    the configured resample count once meant reading the git history of
+    `scientific_config` and dating the commit against the run -- which answers
+    what the default was, not what ran.
+    """
+    from core.scientific_config import RANDOM_SEED, SCIENTIFIC_CONFIG
+    icl = SCIENTIFIC_CONFIG['in_context_models']
+    print("\n--- provenance: the settings these numbers were produced under ---")
+    print(f"  bootstrap_iters (configured)  {SCIENTIFIC_CONFIG['bootstrap_iters']}")
+    print(f"  absorption_probes             {icl['absorption_probes']}")
+    print(f"  absorption_replicates         {icl['absorption_replicates']}")
+    print(f"  random_seed                   {RANDOM_SEED}")
+    for key, value in extra.items():
+        print(f"  {key:<29} {value}")
+
+
+def audit_resamples() -> int:
+    """Print the resample counts that actually ran, against the configured one.
+
+    Returns the number of distinct counts observed. The configured value is what
+    the protocol declares; this is what executed, and the two part company as
+    soon as one call site passes `iters=` of its own. Printed at the end of a
+    probe so that the log answers "how many resamples produced this interval"
+    without leaving the log.
+    """
+    from core.scientific_config import SCIENTIFIC_CONFIG
+    from statistical_validation.dependent_bootstrap import observed_resample_counts
+
+    configured = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
+    observed = observed_resample_counts()
+    print("\n--- resample audit ---")
+    if not observed:
+        print("  no intervals were produced in this run")
+        return 0
+    for count in sorted(observed):
+        mark = '' if count == configured else '   <-- NOT the configured count'
+        print(f"  {observed[count]:>5} intervals at {count:>6} resamples{mark}")
+    if set(observed) != {configured}:
+        print(f"  the configured count is {configured}; this run did not use it "
+              f"everywhere, so no single resample count describes these tables")
+    return len(observed)

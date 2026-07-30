@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 
 from probe_harness import DOSES, entity_subsample, fold_rng, folds, panel, prepared
+from probe_harness import audit_resamples, declare_provenance
 
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
@@ -98,19 +99,27 @@ def main(dataset='worldbank', entity_cap=None):
     changes the levels, since absorption depends on n, so the transferable
     quantity is the normalised shape rather than the raw channel.
 
+    The settings block and the closing resample audit are printed by every run:
+    the decay curve is read off interpolated levels, and a reader cannot check an
+    interpolation without knowing what produced the points.
+
     Declared rather than hidden: a subsampled replication is weaker than a full
     one, and the full one is cloud work.
     """
     df, columns, cfg = panel(dataset)
     if entity_cap is not None:
         df = entity_subsample(df, entity_cap)
-        print(f"subsampled to {len(keep)} entities, {len(df)} rows -- "
-              f"levels will differ, the normalised shape is what transfers")
+        # `keep` lives inside entity_subsample; naming it here raised NameError on
+        # every capped run, so the subsample path had never actually printed.
+        print(f"subsampled to {df['entity_id'].nunique()} entities, {len(df)} "
+              f"rows -- levels will differ, the normalised shape is what transfers")
     windows = folds(cfg)
     gap = int(cfg.walk_forward_config['gap'])
     block = fold_dependence_span(cfg.walk_forward_config)
     print(f"{dataset}: {len(df)} rows, {len(windows)} folds, gap {gap} years, "
-          f"block {block}\n")
+          f"block {block}")
+    declare_provenance(fold_block=block, gap_years=gap)
+    print()
 
     channels = {}
     sizes = {arm: [] for arm in ARMS}
@@ -368,6 +377,7 @@ def main(dataset='worldbank', entity_cap=None):
     print(f"\n  The protocol currently uses {gap} years. A width chosen against")
     print("  residual dependence and a width chosen against this channel are")
     print("  different numbers, and a paper should say which one it used.")
+    audit_resamples()
     return 0
 
 
