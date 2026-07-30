@@ -85,6 +85,20 @@ import torch
 print('cuda:', torch.cuda.is_available(),
       torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')
 
+# The TabPFN v3 weights are gated, and the code reads TABPFN_TOKEN from the
+# environment. Kaggle does not put its Secrets there -- they come through an API of
+# its own -- so the bridge is here rather than in src/, where it would be a Kaggle
+# detail in a module that knows nothing about Kaggle. Absence is reported and not
+# fatal: the v2 arm needs no account, and a run that only wanted v2 should not fail
+# because the secret is missing.
+try:
+    from kaggle_secrets import UserSecretsClient
+    os.environ['TABPFN_TOKEN'] = UserSecretsClient().get_secret('TABPFN_TOKEN')
+    print('TABPFN_TOKEN: read from Kaggle Secrets, v3 arm available')
+except Exception as exc:                      # not attached, or not on Kaggle
+    print(f'TABPFN_TOKEN: unavailable ({type(exc).__name__}); the v3 arm will be '
+          f'skipped and the v2 arm runs as usual')
+
 # The two-minute guard before the thirty-minute run. It exercises the panel
 # loader, the chronological-order contract the cap depends on, the factory, a
 # clean fit, the absorption measurement appending rows to an already-capped

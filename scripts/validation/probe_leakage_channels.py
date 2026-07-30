@@ -110,7 +110,10 @@ def candidates():
     if find_spec('tabpfn') is not None or find_spec('tabicl') is not None:
         from core.models.icl import FAMILIES
         for family in FAMILIES:
-            if find_spec(family.package) is not None:
+            # `available()` and not `find_spec`: the v3 arm's package is present
+            # whenever the v2 arm's is, so a presence check builds it without the
+            # credential its weights need and the run dies mid-fold.
+            if family.available():
                 entries.append((family.name, family.make, 'in-context', None))
     return entries
 

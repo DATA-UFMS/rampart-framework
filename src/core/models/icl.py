@@ -313,6 +313,21 @@ class ICLModel:
     make: Callable[[], object]
     #: What the receipt has to carry for the run to be identifiable later.
     package: str
+    #: Whether this arm can run here, beyond its package being importable. The v3
+    #: weights need a credential the v2 weights do not, and without this the probe
+    #: builds the arm anyway -- the package is present, after all -- and dies in the
+    #: middle of a cloud run that had already paid for its queue and its boot. The
+    #: knowledge belongs with the family rather than in every caller that iterates
+    #: over families, which is the same policy-in-one-place rule that has been
+    #: broken five times in this repository.
+    needs_token: bool = False
+
+    def available(self) -> bool:
+        from importlib.util import find_spec
+        if find_spec(self.package) is None:
+            return False
+        return not self.needs_token or bool(
+            os.environ.get('TABPFN_TOKEN', '').strip())
 
 
 FAMILIES: Tuple[ICLModel, ...] = (
@@ -323,7 +338,8 @@ FAMILIES: Tuple[ICLModel, ...] = (
     # version? -- is answered before it is asked, because it is not the old one,
     # it is both.
     ICLModel('icl_tabpfn', _tabpfn_regressor, 'tabpfn'),
-    ICLModel('icl_tabpfn_v3', lambda: _tabpfn_regressor('V3'), 'tabpfn'),
+    ICLModel('icl_tabpfn_v3', lambda: _tabpfn_regressor('V3'), 'tabpfn',
+             needs_token=True),
     ICLModel('icl_tabicl', _tabicl_regressor, 'tabicl'),
 )
 

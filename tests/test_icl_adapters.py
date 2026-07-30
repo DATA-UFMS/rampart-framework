@@ -449,3 +449,46 @@ class TestTheGateIsReportedNotDiscovered:
     def test_an_unknown_version_lists_the_real_ones(self):
         with pytest.raises(ValueError, match='unknown TabPFN version'):
             icl._tabpfn_regressor('V9')
+
+
+@pytest.mark.skipif(not _HAS_TABPFN, reason='tabpfn is an optional dependency')
+class TestAnArmThatCannotRunIsNotOffered:
+    """The v3 package is the v2 package, so presence does not mean availability.
+
+    `candidates()` used to include a family whenever `find_spec(package)` found it.
+    tabpfn is one package carrying both versions, so the v3 arm was offered on any
+    machine with tabpfn installed -- and then raised inside the first fold of a
+    cloud run that had already paid for its queue and its boot. The credential
+    requirement belongs with the family, not with each caller that iterates over
+    families.
+    """
+
+    def test_the_v3_arm_is_withheld_without_a_token(self, monkeypatch):
+        monkeypatch.delenv('TABPFN_TOKEN', raising=False)
+        assert icl.MODELS['icl_tabpfn'].available()
+        assert not icl.MODELS['icl_tabpfn_v3'].available()
+
+    def test_the_v3_arm_is_offered_with_one(self, monkeypatch):
+        monkeypatch.setenv('TABPFN_TOKEN', 'tabpfn_sk_whatever')
+        assert icl.MODELS['icl_tabpfn_v3'].available()
+
+    def test_only_the_gated_arm_declares_the_requirement(self):
+        gated = [f.name for f in icl.FAMILIES if f.needs_token]
+        assert gated == ['icl_tabpfn_v3']
+
+    def test_the_probe_offers_what_is_available(self, monkeypatch):
+        """Read through the probe, because that is where the failure happened."""
+        import sys
+        scripts = Path(__file__).resolve().parents[1] / 'scripts' / 'validation'
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import probe_leakage_channels as probe
+
+        monkeypatch.delenv('TABPFN_TOKEN', raising=False)
+        without = {n for n, *_ in probe.candidates() if n.startswith('icl_')}
+        monkeypatch.setenv('TABPFN_TOKEN', 'tabpfn_sk_whatever')
+        with_token = {n for n, *_ in probe.candidates() if n.startswith('icl_')}
+
+        assert 'icl_tabpfn_v3' not in without
+        assert 'icl_tabpfn_v3' in with_token
+        assert 'icl_tabpfn' in without, 'the ungated arm must not depend on a token'
