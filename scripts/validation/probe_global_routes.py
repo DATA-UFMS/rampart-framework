@@ -44,7 +44,7 @@ from probe_harness import DOSES, entity_subsample, fold_rng, folds, panel, prepa
 
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
-    fold_dependence_span)
+    excludes_zero, fold_dependence_span)
 from statistical_validation.leakage_channels import (  # noqa: E402
     contrast, decompose_fold, summarise)
 
@@ -316,7 +316,7 @@ def main(dataset='worldbank', entity_cap=None):
     print("\n" + "=" * 78)
     print("DOES THE ADJACENT BUFFER REALLY COST MORE THAN THE TEST WINDOW?")
     print("  per-fold difference GAP2 minus LEAK, on the generalisation channel")
-    print(f"{'model':>26} {'dose':>6} {'difference':>12} {'ci95':>22} {'above 0?':>9}")
+    print(f"{'model':>26} {'dose':>6} {'difference':>12} {'ci95':>22} {'verdict':>12}")
     for rung in STABLE:
         for dose in DOSES:
             a = channels.get((rung.name, 'GAP2', dose))
@@ -325,11 +325,26 @@ def main(dataset='worldbank', entity_cap=None):
                 continue
             got = contrast(a, b, 'global_uncontrolled', block=block, direction=+1)
             lo, hi = got['ci95']
+            # Both directions, because a column that only asks "above zero?" answers
+            # "no" for an interval that sits entirely BELOW zero, and that is a
+            # different finding: on INEP the adjacent buffer costs reliably LESS than
+            # the evaluation window for several models. This repository already fixed
+            # exactly this blindness once, in excludes_zero, and it came back in the
+            # presentation rather than in the test.
+            if excludes_zero(got['ci95'], direction=+1):
+                verdict = 'GAP2 > LEAK'
+            elif excludes_zero(got['ci95'], direction=-1):
+                verdict = 'GAP2 < LEAK'
+            else:
+                verdict = 'no difference'
             print(f"{rung.name:>26} {dose:>6.0%} {got['point']:>+12.4f} "
-                  f"[{lo:>+8.4f},{hi:>+8.4f}] {'yes' if got['detected'] else 'no':>9}")
-    print("\n  A 'no' everywhere means the two are indistinguishable on these folds,")
-    print("  which is the honest form of the finding: leaking the adjacent buffer")
-    print("  costs about what leaking the evaluation window costs, not more.")
+                  f"[{lo:>+8.4f},{hi:>+8.4f}] {verdict:>12}")
+    print("\n  'no difference' everywhere is the World Bank reading: the adjacent")
+    print("  buffer costs about what the evaluation window costs, not more, and the")
+    print("  published 105% was a ratio of two bare means over nine folds. On INEP")
+    print("  several cells read 'GAP2 < LEAK' instead, so the direction reverses")
+    print("  between panels and only the prescription -- 5 to 8 years against the")
+    print("  protocol's 2 -- is common to both.")
 
     print("\n" + "=" * 78)
     print("WHAT BUFFER WOULD IT TAKE? interpolating the normalised curve")
