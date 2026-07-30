@@ -46,7 +46,7 @@ from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
     fold_dependence_span)
 from statistical_validation.leakage_channels import (  # noqa: E402
-    decompose_fold, summarise)
+    contrast, decompose_fold, summarise)
 
 #: Source periods for the added rows, ordered by how far they sit from the
 #: evaluation window. The fold layout is
@@ -61,7 +61,7 @@ from statistical_validation.leakage_channels import (  # noqa: E402
 #: tested nothing of the kind. The fix is not a better single contrast but the
 #: whole curve: how does the channel decay with the temporal distance of the
 #: leaked rows? That is the quantity a buffer has to be chosen against.
-ARMS = ('ECHO', 'RESERVE', 'GAP1', 'VAL', 'GAP2', 'LEAK')
+ARMS = ('ECHO', 'RESERVE', 'RESERVE_NEAR', 'GAP1', 'VAL', 'GAP2', 'LEAK')
 
 #: The unbounded decision tree is excluded from the generalisation summaries. It
 #: is the instrument's absorption anchor -- it reads exactly 1.0000 -- and it is
@@ -117,9 +117,21 @@ def main(dataset='worldbank', entity_cap=None):
     distance_log = []
 
     for fold, (train_start, train_end, test_start, test_end) in enumerate(windows):
-        # The withheld year: the middle of the training window, so it is
-        # surrounded on both sides by years the clean arm keeps.
+        # Two withheld years, not one, and the second is the point of this probe's
+        # last revision. The prescription reads a buffer width off this curve by
+        # interpolation, and until now there was no arm between GAP1 and RESERVE --
+        # five and 12.8 years apart on the World Bank, four and ten on INEP -- so
+        # the widths quoted for a channel under 25% and under 10% were
+        # EXTRAPOLATIONS anchored on RESERVE, whose channel is low because its year
+        # is surrounded by years the model keeps rather than because it is distant.
+        # Redundancy read as distance is exactly the confusion the curve exists to
+        # avoid.
+        #
+        # RESERVE sits at the middle of the training window and RESERVE_NEAR at
+        # three quarters of it, which lands between GAP1 and RESERVE on both panels
+        # and turns the quoted widths into interpolation.
         reserved = (train_start + train_end) // 2
+        reserved_near = train_start + (3 * (train_end - train_start)) // 4
         val_len = int(cfg.walk_forward_config['val_len'])
         periods = {
             'GAP1': list(range(train_end + 1, train_end + 1 + gap)),
@@ -128,14 +140,19 @@ def main(dataset='worldbank', entity_cap=None):
             'GAP2': list(range(train_end + 1 + gap + val_len,
                                train_end + 1 + 2 * gap + val_len)),
             'RESERVE': [reserved],
+            'RESERVE_NEAR': [reserved_near],
         }
         distances = {arm: test_start - max(years)
                      for arm, years in periods.items()}
         distances['LEAK'] = 0
         distances['ECHO'] = test_start - train_end
 
+        # Both withheld years leave the clean arm, so every arm is compared against
+        # the same baseline. Coinciding years collapse to one, which happens on a
+        # short training window and would otherwise withhold a year twice.
+        withheld = {reserved, reserved_near}
         clean_years = [y for y in range(train_start, train_end + 1)
-                       if y != reserved]
+                       if y not in withheld]
         held = df[df['year'].isin(clean_years)]
         evaluation = df[(df['year'] >= test_start) & (df['year'] <= test_end)]
 
@@ -288,6 +305,31 @@ def main(dataset='worldbank', entity_cap=None):
           ' '.join(f"{np.ptp(normalised[a]):>9.3f}" for a in curve_arms))
     print("  spread is max minus min across models; small means the shape "
           "transfers")
+
+    # The headline this probe produced was "leaking the buffer immediately before the
+    # evaluation window costs MORE than leaking the window itself" -- GAP2 at 105% of
+    # LEAK on the World Bank. It was a ratio of two bare means over nine folds, and it
+    # does not survive its own interval. The contrast is taken fold by fold because
+    # both arms are measured on the same folds, which is what cancels the shared
+    # noise; two arms whose marginal intervals overlap can still differ reliably, and
+    # two whose points differ can fail to.
+    print("\n" + "=" * 78)
+    print("DOES THE ADJACENT BUFFER REALLY COST MORE THAN THE TEST WINDOW?")
+    print("  per-fold difference GAP2 minus LEAK, on the generalisation channel")
+    print(f"{'model':>26} {'dose':>6} {'difference':>12} {'ci95':>22} {'above 0?':>9}")
+    for rung in STABLE:
+        for dose in DOSES:
+            a = channels.get((rung.name, 'GAP2', dose))
+            b = channels.get((rung.name, 'LEAK', dose))
+            if not a or not b or len(a) != len(b):
+                continue
+            got = contrast(a, b, 'global_uncontrolled', block=block, direction=+1)
+            lo, hi = got['ci95']
+            print(f"{rung.name:>26} {dose:>6.0%} {got['point']:>+12.4f} "
+                  f"[{lo:>+8.4f},{hi:>+8.4f}] {'yes' if got['detected'] else 'no':>9}")
+    print("\n  A 'no' everywhere means the two are indistinguishable on these folds,")
+    print("  which is the honest form of the finding: leaking the adjacent buffer")
+    print("  costs about what leaking the evaluation window costs, not more.")
 
     print("\n" + "=" * 78)
     print("WHAT BUFFER WOULD IT TAKE? interpolating the normalised curve")
