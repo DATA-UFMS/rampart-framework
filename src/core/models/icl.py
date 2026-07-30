@@ -22,17 +22,26 @@ code rather than in the environment matters -- a machine with a different
 TABPFN_MODEL_VERSION would otherwise silently produce numbers from a different
 model, and the receipt would not show it.
 
-The pin is provisional, and the plan is to carry v3 alongside it rather than
-instead of it. What settles it against the three reasons above: v3 is what the
-package hands a practitioner by default, so it is the version a contamination
-audit is actually about. Carrying both makes the version an axis -- whether
-newer weights amplify more is a result, not an inconvenience -- and leaves one
-arm that still reproduces without an account. Note that the version is not a
-constant to swap: the inductive behaviour, the cost curve and the batch
-tolerance recorded here were all measured on v2, and v3 is a different
-architecture (architectures/tabpfn_v3.py). Each has to be re-measured, starting
-with the inductive check, because the mechanism this study argues for rests on
-it.
+**And v3 is now carried beside it, as `icl_tabpfn_v3`.** Not instead of it: the
+default arm keeps its name and its v2 weights, so every recorded number still
+refers to the same estimator, and the artifact still reproduces without a
+credential. What the second arm buys is that the version becomes an axis --
+whether newer weights absorb contamination differently is a result nobody has --
+and that the reviewer question, why the old version, is answered before it is
+asked, because it is not the old one, it is both.
+
+The version was never a constant to swap. The inductive behaviour, the cost curve
+and the batch tolerance were all measured on v2, and v3 is a different
+architecture (architectures/tabpfn_v3.py), so none of them transfer. The one the
+whole study rests on has been re-measured: **v3 is inductive**, batch-composition
+residual 5.5e-06 against a tolerance of 2.1e-04, the same order as v2's 3.6e-06.
+Had it come out transductive, the evaluation rows would inform each other and the
+decomposition would not mean what it says -- so this was measured before anything
+else, and it is a test rather than a note. The cost curve and the ensemble
+tolerance still have not been re-measured for v3, and are not claimed for it.
+
+v2_5 and v2_6 stay unavailable: measured, the licence acceptance that unlocks v3
+does not cover them. So the axis has two points, not four.
 
 **Determinism is a tolerance, not an identity.** Predicting the same rows in one
 batch, singly, and in halves moves the answer by about 1e-5 of the target's
@@ -161,15 +170,28 @@ class ContextCapped:
                 f"rule={self.rule!r})")
 
 
-def _tabpfn_regressor():
-    """A TabPFN regressor pinned to the ungated v2 weights.
+def _tabpfn_regressor(version: str = 'V2'):
+    """A TabPFN regressor pinned to one named weight version.
+
+    Both versions are carried rather than one being swapped for the other, and
+    that is the point: v2 is what reproduces without an account, v3 is what the
+    package hands a practitioner by default, and the difference between them is a
+    *result* rather than an upgrade. If contamination is absorbed differently by a
+    newer architecture, nobody has measured that.
 
     The pin is applied to the settings object rather than to the environment
     because that object is built once at import, so exporting the variable
     afterwards has no effect -- which is exactly the silent-wrong-model failure
     this guards against. The assertion below is the guard: if a future release
-    resolves the version some other way, the run stops instead of proceeding
-    with weights nobody chose.
+    resolves the version some other way, the run stops instead of proceeding with
+    weights nobody chose.
+
+    v3 needs a one-time licence acceptance at ux.priorlabs.ai and `TABPFN_TOKEN`
+    in the environment; the licence is permissive for research and internal
+    evaluation, which is this. Without the token the download raises
+    `TabPFNLicenseError`, and that is reported here rather than left to surface
+    from inside a fit. v2_5 and v2_6 exist in the package and stay unavailable:
+    the acceptance that unlocks v3 does not cover them.
     """
     try:
         from tabpfn import TabPFNRegressor
@@ -182,13 +204,24 @@ def _tabpfn_regressor():
             "of the lockfile so the published artifact reproduces without it: "
             "pip install 'rampart[icl]'") from exc
 
-    settings.tabpfn.model_version = ModelVersion.V2
+    wanted = getattr(ModelVersion, version, None)
+    if wanted is None:
+        raise ValueError(
+            f"unknown TabPFN version {version!r}; the package offers "
+            f"{[v.name for v in ModelVersion]}")
+    if version != 'V2' and not os.environ.get('TABPFN_TOKEN', '').strip():
+        raise ICLUnavailable(
+            f"TabPFN {version} weights are gated. Accept the licence once at "
+            f"https://ux.priorlabs.ai (License tab) and export TABPFN_TOKEN. "
+            f"The v2 arm needs no account and is the one the published artifact "
+            f"reproduces from.")
+
+    settings.tabpfn.model_version = wanted
     resolved = resolve_model_version(None)
-    if resolved != ModelVersion.V2:
+    if resolved != wanted:
         raise RuntimeError(
-            f"TabPFN resolved to {resolved} rather than v2. The other versions "
-            f"require a license acceptance and a personal token, so an artifact "
-            f"built on them does not reproduce; refusing to continue.")
+            f"TabPFN resolved to {resolved} rather than {version}. Proceeding "
+            f"would measure weights nobody chose; refusing to continue.")
 
     _ic = SCIENTIFIC_CONFIG['in_context_models']
     # The ensemble is off by default: it averages over preprocessing
@@ -204,6 +237,21 @@ def _tabpfn_regressor():
     return _capped(TabPFNRegressor(n_estimators=ensemble,
                                    random_state=RANDOM_SEED,
                                    device=resolve_device()))
+
+
+def _tabpfn_weight_label() -> str:
+    """Which TabPFN weights the settings object currently resolves to.
+
+    Read at receipt time, after the factory has pinned the version, so the receipt
+    reports what ran instead of what the code was written expecting.
+    """
+    try:
+        from tabpfn.model_loading import resolve_model_version
+    except ImportError:
+        return 'tabpfn, version unavailable'
+    resolved = resolve_model_version(None)
+    name = getattr(resolved, 'name', str(resolved)).lower()
+    return f"tabpfn {name}" + (', ungated' if name == 'v2' else ', gated')
 
 
 def _tabicl_regressor():
@@ -268,7 +316,14 @@ class ICLModel:
 
 
 FAMILIES: Tuple[ICLModel, ...] = (
+    # `icl_tabpfn` keeps its name and its v2 weights, so every recorded number
+    # still refers to the same estimator. The v3 arm is added beside it rather
+    # than replacing it: the version becomes an axis, the v2 arm keeps
+    # reproducing without an account, and the reviewer question -- why the old
+    # version? -- is answered before it is asked, because it is not the old one,
+    # it is both.
     ICLModel('icl_tabpfn', _tabpfn_regressor, 'tabpfn'),
+    ICLModel('icl_tabpfn_v3', lambda: _tabpfn_regressor('V3'), 'tabpfn'),
     ICLModel('icl_tabicl', _tabicl_regressor, 'tabicl'),
 )
 
@@ -360,7 +415,12 @@ def fit_in_context(X_train: pd.DataFrame, y_train: pd.Series,
         'provenance': {
             'package': model.package,
             'package_version': _package_version(model.package),
-            'weights': ('tabpfn v2, ungated' if model.package == 'tabpfn'
+            # Asked of the package rather than written here. The literal used to
+            # say "tabpfn v2, ungated" for every tabpfn model, so the moment a
+            # second version was added the v3 arm would have reported v2 in its
+            # own receipt -- the exact silent-wrong-weights failure the version
+            # pin exists to prevent, reintroduced one layer up.
+            'weights': (_tabpfn_weight_label() if model.package == 'tabpfn'
                         else 'tabicl default checkpoint'),
             'ensemble_robustness': switched_on('RAMPART_ICL_ROBUSTNESS'),
             'device': resolve_device(),

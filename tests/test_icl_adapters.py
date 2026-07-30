@@ -11,6 +11,7 @@ a reviewer would ask about -- which weights, and how much context -- so they are
 tested rather than asserted in prose.
 """
 
+import os
 import sys
 from importlib.util import find_spec
 from pathlib import Path
@@ -42,8 +43,16 @@ def frame(rows=60, seed=0):
 
 class TestAbsenceIsHandledAtTheCallSite:
 
-    def test_both_families_are_declared(self):
-        assert set(icl.MODELS) == {'icl_tabpfn', 'icl_tabicl'}
+    def test_every_arm_is_declared(self):
+        """Three arms, two packages: the TabPFN version is an axis, not an upgrade.
+
+        `icl_tabpfn` keeps its name and its v2 weights so every recorded number
+        still refers to the same estimator, and `icl_tabpfn_v3` sits beside it.
+        Pinned here because adding a version by editing a factory in place -- the
+        obvious move -- would silently redefine what the published rows mean.
+        """
+        assert set(icl.MODELS) == {'icl_tabpfn', 'icl_tabpfn_v3', 'icl_tabicl'}
+        assert icl.MODELS['icl_tabpfn_v3'].package == 'tabpfn' 
 
     def test_a_missing_package_names_what_to_install(self, monkeypatch):
         """The error a user without the extra actually sees."""
@@ -68,11 +77,13 @@ class TestAbsenceIsHandledAtTheCallSite:
 @pytest.mark.skipif(not _HAS_TABPFN, reason='tabpfn is an optional dependency')
 class TestTabPFNIsPinned:
 
-    def test_the_weights_are_the_ungated_v2(self):
-        """v2.5, v2.6 and v3 need a browser license and a personal token.
+    def test_the_default_arm_is_the_ungated_v2(self):
+        """The default arm stays v2, so the artifact reproduces with no account.
 
-        An artifact built on those does not reproduce for a reviewer who has
-        neither, so the pin is part of the result and is checked, not assumed.
+        v3 is now carried beside it as its own model rather than replacing it, and
+        v2_5 and v2_6 remain unreachable -- the licence acceptance that unlocks v3
+        does not cover them, measured. The pin is part of the result and is
+        checked, not assumed.
         """
         from tabpfn.constants import ModelVersion
         from tabpfn.model_loading import resolve_model_version
@@ -378,3 +389,63 @@ class TestArmSwitchesAreReadAsBooleans:
         assert not offending, (
             f'an arm switch is read directly instead of through switched_on(), '
             f'which is how the truthiness bug got in: lines {offending}')
+
+
+@pytest.mark.skipif(not _HAS_TABPFN, reason='tabpfn is an optional dependency')
+@pytest.mark.skipif(not os.environ.get('TABPFN_TOKEN', '').strip(),
+                    reason='v3 weights are gated; needs TABPFN_TOKEN')
+class TestTheV3ArmIsUsableAndInductive:
+    """The version is an axis only if the new architecture keeps the premise.
+
+    Everything this study measures rests on the model being inductive: if the
+    evaluation rows informed each other, contamination would have a route the
+    classical comparators do not have, and the decomposition would not mean what it
+    says. That was verified on v2. v3 is a different architecture
+    (`architectures/tabpfn_v3.py`, not `tabpfn_v2.py`), so it does not transfer and
+    is measured here rather than assumed -- residual 5.5e-06 against a tolerance of
+    2.1e-04, the same order as v2's 3.6e-06.
+    """
+
+    def test_the_v3_arm_resolves_v3(self):
+        from tabpfn.constants import ModelVersion
+        from tabpfn.model_loading import resolve_model_version
+        icl.MODELS['icl_tabpfn_v3'].make()
+        assert resolve_model_version(None) == ModelVersion.V3
+
+    def test_the_receipt_names_the_version_that_ran(self):
+        """The literal used to say v2 for every tabpfn model."""
+        icl.MODELS['icl_tabpfn_v3'].make()
+        assert icl._tabpfn_weight_label() == 'tabpfn v3, gated'
+        icl.MODELS['icl_tabpfn'].make()
+        assert icl._tabpfn_weight_label() == 'tabpfn v2, ungated'
+
+    def test_v3_predictions_do_not_depend_on_the_rest_of_the_batch(self):
+        X, y, entity, years = frame(rows=80)
+        query = X.iloc[:12].reset_index(drop=True)
+        query_entities = entity.iloc[:12].reset_index(drop=True)
+        model = icl._tabpfn_regressor('V3')
+        from core.models.ladder import entity_effect_frames
+        train_augmented, query_augmented, _m, _g = entity_effect_frames(
+            X, query, y, entity, query_entities)
+        model.fit(train_augmented, y)
+
+        together = np.asarray(model.predict(query_augmented), dtype=float)
+        singly = np.array([float(model.predict(query_augmented.iloc[[i]])[0])
+                           for i in range(len(query_augmented))])
+        tolerance = (SCIENTIFIC_CONFIG['in_context_models']
+                     ['determinism_tolerance_relative'] * float(np.std(y)))
+        assert np.abs(together - singly).max() < tolerance
+
+
+@pytest.mark.skipif(not _HAS_TABPFN, reason='tabpfn is an optional dependency')
+class TestTheGateIsReportedNotDiscovered:
+
+    def test_a_gated_version_without_a_token_says_what_to_do(self, monkeypatch):
+        """Better than a TabPFNLicenseError surfacing from inside a fit."""
+        monkeypatch.delenv('TABPFN_TOKEN', raising=False)
+        with pytest.raises(icl.ICLUnavailable, match='ux.priorlabs.ai'):
+            icl._tabpfn_regressor('V3')
+
+    def test_an_unknown_version_lists_the_real_ones(self):
+        with pytest.raises(ValueError, match='unknown TabPFN version'):
+            icl._tabpfn_regressor('V9')
