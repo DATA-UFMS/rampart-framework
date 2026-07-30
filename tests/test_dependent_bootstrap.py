@@ -210,3 +210,69 @@ class TestTheTwoPanelsNeedDifferentBlocks:
         assert not offending, (
             f'a probe passes a literal block length instead of deriving it: '
             f'{offending}')
+
+
+class TestContrastsGetTheirOwnInterval:
+    """Every headline this project produced is a contrast, and none had an interval.
+
+    `summarise` computed ci95 for each channel and all four probes indexed ['point'],
+    so the bootstrap ran and was discarded. Shown, one headline died: "leaking the
+    buffer immediately before the evaluation window costs more than leaking the window
+    itself" is a ratio of 1.049 whose interval covers one. Marginal intervals would not
+    have caught it either -- a contrast between two arms measured on the SAME folds has
+    to be taken fold by fold, because that is what cancels the shared fold noise.
+    """
+
+    def _folds(self, values):
+        return [{'local': v} for v in values]
+
+    def test_a_shared_shift_is_detected_that_marginals_would_hide(self):
+        """The case the helper exists for: wide arms, narrow difference."""
+        import numpy as np
+        from statistical_validation.leakage_channels import contrast, summarise
+        noise = np.linspace(-0.4, 0.4, 9)
+        a = self._folds(0.50 + noise)
+        b = self._folds(0.44 + noise)          # same folds, constant 0.06 apart
+
+        marginal_a = summarise(a, block=2, iters=2000)['local']['ci95']
+        marginal_b = summarise(b, block=2, iters=2000)['local']['ci95']
+        paired = contrast(a, b, 'local', block=2, iters=2000, direction=+1)
+
+        assert marginal_a[0] < marginal_b[1], 'the marginals should overlap here'
+        assert paired['point'] == pytest.approx(0.06)
+        assert paired['detected'], 'the paired difference is constant and positive'
+
+    def test_a_difference_that_is_noise_is_not_detected(self):
+        from statistical_validation.leakage_channels import contrast
+        a = self._folds([0.30, 0.55, 0.20, 0.61, 0.28, 0.49, 0.33, 0.58, 0.25])
+        b = self._folds([0.52, 0.24, 0.58, 0.22, 0.55, 0.27, 0.60, 0.26, 0.54])
+
+        paired = contrast(a, b, 'local', block=2, iters=4000, direction=+1)
+
+        assert not paired['detected']
+
+    def test_unpaired_arms_are_refused(self):
+        """Positional pairing is the whole method; silently truncating would lie."""
+        from statistical_validation.leakage_channels import contrast
+        with pytest.raises(ValueError, match='same folds on both sides'):
+            contrast(self._folds([0.1, 0.2, 0.3]), self._folds([0.1, 0.2]),
+                     'local', block=2)
+
+    def test_folds_missing_the_channel_are_dropped_in_pairs(self):
+        """Dropping one side of a pair would break the positional correspondence."""
+        from statistical_validation.leakage_channels import contrast
+        a = [{'local': 0.5}, {'local': None}, {'local': 0.7}, {'local': 0.6}]
+        b = [{'local': 0.4}, {'local': 0.3}, {'local': float('nan')}, {'local': 0.5}]
+
+        paired = contrast(a, b, 'local', block=2, iters=500)
+
+        assert paired['n_pairs'] == 2, 'only the two complete pairs survive'
+
+    def test_the_resample_count_comes_from_the_configuration(self):
+        """Not from another module's default, which is what the sentinel invited."""
+        from core.scientific_config import SCIENTIFIC_CONFIG
+        from statistical_validation.leakage_channels import contrast
+        paired = contrast(self._folds([0.1, 0.3, 0.2, 0.4]),
+                          self._folds([0.0, 0.1, 0.1, 0.2]), 'local', block=2)
+        assert (paired['inference']['iters']
+                == SCIENTIFIC_CONFIG['bootstrap_iters'])

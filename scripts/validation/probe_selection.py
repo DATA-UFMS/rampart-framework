@@ -49,7 +49,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error
 
-from probe_harness import folds, panel, prepared
+from probe_harness import entity_subsample, folds, panel, prepared
 
 from core.models.ladder import entity_effect_frames  # noqa: E402
 from core.scientific_config import RANDOM_SEED, SCIENTIFIC_CONFIG  # noqa: E402
@@ -90,8 +90,7 @@ def score(truth, predicted, mask=None):
 def main(dataset='worldbank', entity_cap=None):
     df, columns, cfg = panel(dataset)
     if entity_cap is not None:
-        keep = sorted(df['entity_id'].unique())[:int(entity_cap)]
-        df = df[df['entity_id'].isin(keep)].reset_index(drop=True)
+        df = entity_subsample(df, entity_cap)
         print(f"subsampled to {len(keep)} entities, {len(df)} rows")
     windows = folds(cfg)
     block = fold_dependence_span(cfg.walk_forward_config)

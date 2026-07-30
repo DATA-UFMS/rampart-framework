@@ -27,12 +27,11 @@ SCIENTIFIC_CONFIG['in_context_models']['context_cap_rows'] = 300
 import numpy as np, pandas as pd
 from core.models.icl import MODELS, ContextCapped
 from core.models.absorption import absorption_coefficient
-from probe_harness import panel, folds, prepared
+from probe_harness import entity_subsample, folds, panel, prepared
 from core.models.ladder import entity_effect_frames
 
 df, cols, cfg = panel('inep_censo')
-keep = sorted(df['entity_id'].unique())[:120]
-df = df[df['entity_id'].isin(keep)].reset_index(drop=True)
+df = entity_subsample(df, 120)
 a, b, ts, te = folds(cfg)[3]
 X, y, e, yr, Xt, yt, et, yrt = prepared(df, cols, a, b, ts, te)
 print(f"fold: treino {len(X)} linhas (teto 300), avaliacao {len(Xt)}")

@@ -26,7 +26,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 
 from datasets.worldbank import *  # noqa: F401,F403,E402  -- registers the dataset
-from core.dataset_config import get_dataset, modelling_features  # noqa: E402
+from core.dataset_config import get_dataset, modelling_features
+from core.scientific_config import RANDOM_SEED  # noqa: E402
 
 #: Where the raw panels live. Absolute paths under a home directory were fine
 #: while everything ran on one laptop and are the first thing that breaks
@@ -160,6 +161,28 @@ DOSES = (0.05, 0.10, 0.30)
 #: Lags of the target, which the pipeline also builds. Two and three years
 #: because the gap is two: a one-year lag would be inside it.
 LAGS = (2, 3)
+
+
+def entity_subsample(df, cap, *, seed=RANDOM_SEED):
+    """A subsample of entities that is a subsample, not a region.
+
+    `sorted(df['entity_id'].unique())[:cap]` was written in five probes, and on INEP
+    it does not do what its callers believed. The entity id there is the IBGE
+    municipality code, whose leading digits are the federative unit, so the first 400
+    sorted are prefixes 11 to 17 -- the whole North region, seven of twenty-seven
+    states, target mean 11.26 against 8.29 for the full panel. Section 4.2o then
+    attributed the difference between that subsample and the full run to sample size,
+    which is why this function exists: n and region had moved together and only one of
+    them was named.
+
+    Seeded, so a subsampled replication is still reproducible, and in one place, which
+    is the rule this repository has now broken six times.
+    """
+    entities = np.sort(df['entity_id'].unique())
+    if cap is None or int(cap) >= len(entities):
+        return df
+    keep = np.random.default_rng(seed).choice(entities, size=int(cap), replace=False)
+    return df[df['entity_id'].isin(set(keep))].reset_index(drop=True)
 
 
 def spillover_degree(df, cfg) -> float:

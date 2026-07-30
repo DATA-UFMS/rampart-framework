@@ -199,6 +199,43 @@ def check_identity(fold: Dict, tolerance: float = 1e-9) -> bool:
     return abs(rebuilt - aggregate) < tolerance
 
 
+def contrast(folds_a, folds_b, channel, *, block, iters=None, direction=0):
+    """Interval on the per-fold DIFFERENCE between two arms, not on each separately.
+
+    Every headline this project has produced is a contrast -- GAP2 against LEAK, the
+    ridge against the forest, one arm against another -- and marginal intervals do not
+    test one. Two arms whose own intervals overlap can still differ reliably when the
+    difference is taken fold by fold, because the folds are shared and the fold-level
+    noise cancels; and two arms whose points differ can fail to differ at all, which is
+    what happened to "leaking the adjacent buffer costs more than leaking the test
+    window": ratio 1.049, and the interval on the difference covers zero.
+
+    The pairing is positional, so both arms must come from the same fold sequence.
+    """
+    from core.scientific_config import SCIENTIFIC_CONFIG
+    from statistical_validation.dependent_bootstrap import (
+        excludes_zero, moving_block_ci)
+
+    # Read here rather than passed down as None, for the reason `summarise` gives:
+    # a sentinel that reaches another module's default makes the resample count the
+    # protocol declares and the one that ran two different numbers.
+    if iters is None:
+        iters = SCIENTIFIC_CONFIG['bootstrap_iters']
+
+    if len(folds_a) != len(folds_b):
+        raise ValueError(
+            f"contrast needs the same folds on both sides, got {len(folds_a)} "
+            f"and {len(folds_b)}; an unpaired difference is not what this measures")
+    pairs = [(a.get(channel), b.get(channel)) for a, b in zip(folds_a, folds_b)]
+    values = [x - y for x, y in pairs
+              if x is not None and y is not None
+              and np.isfinite(x) and np.isfinite(y)]
+    point, interval, record = moving_block_ci(values, block=block, iters=iters)
+    return {'point': point, 'ci95': interval, 'inference': record,
+            'n_pairs': len(values),
+            'detected': excludes_zero(interval, direction=direction)}
+
+
 def summarise(folds: Sequence[Dict], *, block: int,
               iters: Optional[int] = None) -> Dict[str, Dict]:
     """Per-channel point estimates and intervals over folds.

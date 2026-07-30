@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 
 # The harness first: importing it puts src/ on the path.
-from probe_harness import DOSES, fold_rng, folds, panel, prepared
+from probe_harness import DOSES, entity_subsample, fold_rng, folds, panel, prepared
 
 from core.models.absorption import (  # noqa: E402
     absorption_coefficient, knn_expected_absorption)
@@ -51,7 +51,7 @@ from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from core.scientific_config import (  # noqa: E402
     RANDOM_SEED, SCIENTIFIC_CONFIG)
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
-    fold_dependence_span)
+    fold_dependence_span, moving_block_ci)
 from statistical_validation.leakage_channels import (  # noqa: E402
     decompose_fold, summarise)
 
@@ -121,8 +121,7 @@ def candidates():
 def main(dataset='worldbank', entity_cap=None):
     df, columns, cfg = panel(dataset)
     if entity_cap is not None:
-        keep = sorted(df['entity_id'].unique())[:int(entity_cap)]
-        df = df[df['entity_id'].isin(keep)].reset_index(drop=True)
+        df = entity_subsample(df, entity_cap)
         print(f"subsampled to {len(keep)} entities, {len(df)} rows")
     windows = folds(cfg)
     entries = candidates()
@@ -210,22 +209,39 @@ def main(dataset='worldbank', entity_cap=None):
                     mask=mask, control=fitted['control']))
         print(f"  fold {fold}: done", flush=True)
 
+    # Absorption never passed through summarise -- it was a bare np.nanmean over the
+    # per-fold list -- so the axis column and every ratio built from it had no interval
+    # even in discarded form. The drop ratios promoted to a finding and then withdrawn
+    # had none, and could not have had one. Same block bootstrap as every other channel.
+    absorption_ci = {}
+    for name, values in absorptions.items():
+        clean = [v for v in values if v is not None and np.isfinite(v)]
+        point, interval, _rec = moving_block_ci(clean, block=block, iters=4000)
+        absorption_ci[name] = interval
     mean_absorption = {name: float(np.nanmean(values))
                        for name, values in absorptions.items()}
 
     print("\n" + "=" * 78)
     print("1. IS THE AXIS CALIBRATED? kNN absorption against (2k-1)/k^2")
-    print(f"{'config':>12} {'analytic':>10} {'measured':>10} {'gap':>8}")
+    print(f"{'config':>12} {'analytic':>10} {'measured':>10} {'gap':>8} "
+          f"{'ci95 on measured':>22} {'covers?':>8}")
     worst = 0.0
     for name, _make, kind, expected in entries:
         if kind != 'sweep':
             continue
         measured = mean_absorption[name]
+        low, high = absorption_ci[name]
         worst = max(worst, abs(measured - expected))
+        # Whether the closed form is inside the interval is the question the gap
+        # column was being read as answering, and it is not the same question: a
+        # gap of 0.03 with an interval of width 0.30 is agreement, and a gap of
+        # 0.03 with an interval of width 0.01 is not.
+        covers = 'yes' if low <= expected <= high else 'NO'
         print(f"{name:>12} {expected:>10.4f} {measured:>10.4f} "
-              f"{measured - expected:>+8.4f}")
-    print(f"\n  largest gap {worst:.4f}. The instrument reproduces a value it "
-          f"was not fitted to.")
+              f"{measured - expected:>+8.4f} "
+              f"[{low:>+8.4f},{high:>+8.4f}] {covers:>8}")
+    print(f"\n  largest gap {worst:.4f}, and the column that matters is the last "
+          f"one: the gap alone never said whether the fold set can resolve it.")
 
     print("\n2. THE TWO CHANNELS, by dose. local = memorisation, "
           "global = generalisation shift")
@@ -242,12 +258,19 @@ def main(dataset='worldbank', entity_cap=None):
             if not folds_here:
                 continue
             got = summarise(folds_here, block=block, iters=4000)
+            # The intervals were computed here all along and thrown away: summarise
+            # returns ci95 for every channel and four probes indexed ['point'] and
+            # nothing else. What that hid is not academic -- the adjacent-buffer
+            # headline, "leaking the buffer costs more than leaking the test window",
+            # is a ratio of 1.049 whose interval is [0.908, 1.238] and covers one.
+            def band(channel, width=9):
+                lo, hi = got[channel]['ci95']
+                return (f"{got[channel]['point']:>+{width}.4f}"
+                        f"[{lo:+.3f},{hi:+.3f}]")
             print(f"{name:>26} {mean_absorption[name]:>8.4f} "
-                  f"{got['local']['point']:>+9.4f} "
-                  f"{got['local_excess']['point']:>+9.4f} "
-                  f"{got['global']['point']:>+9.4f} "
-                  f"{got['sample_size_effect']['point']:>+8.4f} "
-                  f"{got['aggregate']['point']:>+9.4f}")
+                  f"{band('local')} {band('local_excess')} "
+                  f"{band('global')} {band('sample_size_effect', 8)} "
+                  f"{band('aggregate')}")
 
     print("\n" + "=" * 78)
     print("3. WHICH CHANNEL DOES ABSORPTION EXPLAIN?")

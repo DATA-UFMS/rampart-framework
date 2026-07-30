@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numpy as np
 import pandas as pd
 
-from probe_harness import DOSES, fold_rng, folds, panel, prepared
+from probe_harness import DOSES, entity_subsample, fold_rng, folds, panel, prepared
 
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
@@ -103,8 +103,7 @@ def main(dataset='worldbank', entity_cap=None):
     """
     df, columns, cfg = panel(dataset)
     if entity_cap is not None:
-        keep = sorted(df['entity_id'].unique())[:int(entity_cap)]
-        df = df[df['entity_id'].isin(keep)].reset_index(drop=True)
+        df = entity_subsample(df, entity_cap)
         print(f"subsampled to {len(keep)} entities, {len(df)} rows -- "
               f"levels will differ, the normalised shape is what transfers")
     windows = folds(cfg)
