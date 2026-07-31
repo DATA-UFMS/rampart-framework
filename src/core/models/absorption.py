@@ -122,12 +122,15 @@ def absorption_coefficient(
     # `fraction` sets the probe count as a share of the frame being perturbed, and it
     # exists because a fixed COUNT is not comparable across panels. Absorption appends
     # a fixed twelve rows, so the perturbation as a share of training is 12/n: 3.13%
-    # on the World Bank at n≈384 and 0.029% on INEP at n≈41,450, a hundredfold apart.
-    # A quantity that falls as 1/n then measures the perturbation rather than the
-    # model -- and it did. Matched at 3.13% on both panels, the ridge goes from
-    # n^-0.94 to n^-0.08 and the random forest from n^-0.45 to n^-0.05, while 1-NN and
-    # the unbounded tree stay at exactly 1.0000, which is what structural invariance
-    # looks like. Any cross-panel reading has to match the fraction, never the count.
+    # on the World Bank at n≈384 and 0.12% on the larger panel, whose models read
+    # 10,000 rows under the context cap -- twenty-six times apart. A quantity that
+    # falls with n then measures the perturbation rather than the model, and it did.
+    # Matched at 3.13% on both panels, the ridge goes from n^-0.75 to n^-0.20 and the
+    # random forest from n^-0.43 to n^-0.15, while 1-NN and the unbounded tree stay at
+    # exactly 1.0000, which is what structural invariance looks like. Any cross-panel
+    # reading has to match the fraction, never the count -- and both ends of the
+    # comparison have to share a cap setting, or the row charges a configuration
+    # difference to n.
     if fraction is not None:
         if not 0.0 < float(fraction) <= 1.0:
             raise ValueError(f"fraction must be in (0, 1], got {fraction!r}")

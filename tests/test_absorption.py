@@ -418,13 +418,14 @@ class TestFractionMakesTwoPanelsComparable:
     """A fixed probe COUNT makes the perturbation 12/n, and 1/n is the answer.
 
     Absorption appends a fixed twelve rows, so the perturbation as a share of the
-    training frame is 12/n: 3.13% on the World Bank at n about 384 against 0.029% on
-    INEP at n about 41,450. A hundredfold apart, and any quantity that declines as
-    1/n is then reporting the perturbation rather than the model. Measured on the two
-    panels with the share matched at 3.13%, the ridge goes from n^-0.94 to n^-0.08
-    and the random forest from n^-0.45 to n^-0.05, while 1-NN and the unbounded tree
-    stay at exactly 1.0000. That is what structural invariance looks like, and it is
-    the half of the n-scaling story that survives.
+    training frame is 12/n: 3.13% on the World Bank at n about 384 against 0.12% on
+    the larger panel, whose models read 10,000 rows under the context cap. Twenty-six
+    times apart, and any quantity that declines with n is then reporting the
+    perturbation rather than the model. Measured on the two panels with the share
+    matched at 3.13%, the ridge goes from n^-0.75 to n^-0.20 and the random forest
+    from n^-0.43 to n^-0.15, while 1-NN and the unbounded tree stay at exactly 1.0000.
+    That is what structural invariance looks like, and it is the half of the n-scaling
+    story that survives.
     """
 
     def _frames(self, rows, cols=4, seed=0):
