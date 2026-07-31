@@ -236,6 +236,32 @@ def contrast(folds_a, folds_b, channel, *, block, iters=None, direction=0):
             'detected': excludes_zero(interval, direction=direction)}
 
 
+#: The channels every summary reports, in the order they are printed.
+_CHANNELS = ('local', 'local_excess', 'global', 'global_uncontrolled',
+             'sample_size_effect', 'aggregate')
+
+
+def channel_points(folds: Sequence[Dict]) -> Dict[str, float]:
+    """Per-channel point estimates, with no resampling at all.
+
+    A point estimate is the mean of the finite fold values and does not depend on
+    the resample count. Three call sites used to reach it through `summarise`,
+    paying for a full bootstrap and then reading only `['point']`: one probe run
+    produced 1,321 intervals that were computed and discarded. Worse than the
+    waste, those calls passed resample counts of their own, so a run mixed 2,000
+    with the configured 15,000 and no single count described its own output.
+
+    Use this wherever the interval is not wanted. `summarise` remains the entry
+    point when it is.
+    """
+    out: Dict[str, float] = {}
+    for channel in _CHANNELS:
+        values = [fold.get(channel) for fold in folds]
+        values = [v for v in values if v is not None and np.isfinite(v)]
+        out[channel] = float(np.mean(values)) if values else float('nan')
+    return out
+
+
 def summarise(folds: Sequence[Dict], *, block: int,
               iters: Optional[int] = None) -> Dict[str, Dict]:
     """Per-channel point estimates and intervals over folds.
@@ -256,8 +282,7 @@ def summarise(folds: Sequence[Dict], *, block: int,
         iters = SCIENTIFIC_CONFIG['bootstrap_iters']
 
     out: Dict[str, Dict] = {}
-    for channel in ('local', 'local_excess', 'global', 'global_uncontrolled',
-                    'sample_size_effect', 'aggregate'):
+    for channel in _CHANNELS:
         values = [fold.get(channel) for fold in folds]
         values = [v for v in values if v is not None and np.isfinite(v)]
         point, interval, record = moving_block_ci(values, block=block,

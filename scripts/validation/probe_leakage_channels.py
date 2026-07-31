@@ -53,7 +53,8 @@ from core.scientific_config import (  # noqa: E402
     RANDOM_SEED, SCIENTIFIC_CONFIG)
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
     fold_dependence_span, moving_block_ci)
-from statistical_validation.leakage_channels import (  # noqa: E402
+from statistical_validation.leakage_channels import (
+    channel_points,  # noqa: E402
     decompose_fold, summarise)
 
 #: Swept to give the axis a calibration curve with a closed form.
@@ -222,7 +223,10 @@ def main(dataset='worldbank', entity_cap=None):
     absorption_ci = {}
     for name, values in absorptions.items():
         clean = [v for v in values if v is not None and np.isfinite(v)]
-        point, interval, _rec = moving_block_ci(clean, block=block, iters=4000)
+        # Configured count, not a local one: this interval is reported in the
+        # calibration table, and an interval whose resample count differs from the
+        # one the paper states is the defect the resample audit exists to surface.
+        point, interval, _rec = moving_block_ci(clean, block=block)
         absorption_ci[name] = interval
     mean_absorption = {name: float(np.nanmean(values))
                        for name, values in absorptions.items()}
@@ -263,7 +267,10 @@ def main(dataset='worldbank', entity_cap=None):
             folds_here = channels.get((name, dose), [])
             if not folds_here:
                 continue
-            got = summarise(folds_here, block=block, iters=4000)
+            # No iters= here. This is the one place that reads ci95, and passing a
+            # count of its own is how Table 3's intervals came from 4,000 while the
+            # protocol declared 15,000.
+            got = summarise(folds_here, block=block)
             # The intervals were computed here all along and thrown away: summarise
             # returns ci95 for every channel and four probes indexed ['point'] and
             # nothing else. What that hid is not academic -- the adjacent-buffer
@@ -285,13 +292,22 @@ def main(dataset='worldbank', entity_cap=None):
     for dose in DOSES:
         columns_ = {'local': [], 'global': [], 'aggregate': [], 'axis': []}
         for name, _make, _kind, _expected in entries:
+            # The duplicate rung is dropped here for the same reason section 2 drops
+            # it: `ladder_knn` IS `knn_k5`, and leaving it in gives one estimator two
+            # points in a thirteen-point correlation. Section 2 was fixed and this one
+            # was not, so every published r was computed with k=5 double-weighted
+            # while the paper stated the duplicate had been excluded. The effect is
+            # small -- the floor moves from 0.973 to 0.972 -- and the disagreement
+            # between what was claimed and what ran is the defect, not the digit.
+            if name in duplicates:
+                continue
             folds_here = channels.get((name, dose), [])
             if not folds_here:
                 continue
-            got = summarise(folds_here, block=block, iters=1000)
+            got = channel_points(folds_here)
             columns_['axis'].append(mean_absorption[name])
             for channel in ('local', 'global', 'aggregate'):
-                columns_[channel].append(got[channel]['point'])
+                columns_[channel].append(got[channel])
         frame = pd.DataFrame(columns_).replace([np.inf, -np.inf],
                                               np.nan).dropna()
         print(f"{dose:>6.2f} "
@@ -306,8 +322,8 @@ def main(dataset='worldbank', entity_cap=None):
         cells = []
         for channel in ('local', 'global', 'aggregate'):
             for name in ('ladder_ridge', 'ladder_random_forest'):
-                got = summarise(channels[(name, dose)], block=block, iters=2000)
-                cells.append(got[channel]['point'])
+                got = channel_points(channels[(name, dose)])
+                cells.append(got[channel])
         print(f"{dose:>6.2f} " + ' '.join(f"{c:>+9.4f}" for c in cells))
     print("\n  If the forest leads on local and the ridge on global, the capacity")
     print("  ordering holds and the aggregate measure is what inverted it.")

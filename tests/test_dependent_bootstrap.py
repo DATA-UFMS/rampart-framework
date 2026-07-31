@@ -326,3 +326,44 @@ class TestResampleLedger:
         assert observed_resample_counts() == {}, (
             'reporting resamples for an interval that was never resampled is the '
             'same class of untruth this ledger exists to catch')
+
+
+class TestChannelPoints:
+    """The point estimate, reached without paying for an interval.
+
+    Three call sites used to read `summarise(...)[channel]['point']`, which runs a
+    full bootstrap and discards it -- 1,321 intervals in one probe run. They also
+    passed resample counts of their own, so a single run mixed 2,000 with the
+    configured 15,000 and no one count described its output.
+    """
+
+    @staticmethod
+    def _folds(values, channel='local'):
+        return [{channel: v} for v in values]
+
+    def test_it_matches_the_point_summarise_reports(self):
+        from statistical_validation.leakage_channels import (
+            channel_points, summarise)
+        folds = self._folds([0.1, 0.4, 0.2, 0.5, 0.3])
+
+        assert (channel_points(folds)['local']
+                == summarise(folds, block=2)['local']['point'])
+
+    def test_it_resamples_nothing(self):
+        from statistical_validation.dependent_bootstrap import (
+            observed_resample_counts, reset_resample_ledger)
+        from statistical_validation.leakage_channels import channel_points
+        reset_resample_ledger()
+
+        channel_points(self._folds([0.1, 0.4, 0.2, 0.5]))
+
+        assert observed_resample_counts() == {}, (
+            'the point does not depend on the resample count, so computing one '
+            'would be both wasted and misreported by the audit')
+
+    def test_absent_channels_are_nan_rather_than_an_error(self):
+        from statistical_validation.leakage_channels import channel_points
+        import math
+        got = channel_points([{'local': 0.2}, {'local': None}])
+        assert got['local'] == 0.2
+        assert math.isnan(got['aggregate']), 'a channel no fold carries is nan'

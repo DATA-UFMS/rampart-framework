@@ -46,7 +46,8 @@ from probe_harness import audit_resamples, declare_provenance
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from statistical_validation.dependent_bootstrap import (  # noqa: E402
     excludes_zero, fold_dependence_span)
-from statistical_validation.leakage_channels import (  # noqa: E402
+from statistical_validation.leakage_channels import (
+    channel_points,  # noqa: E402
     contrast, decompose_fold, summarise)
 
 #: Source periods for the added rows, ordered by how far they sit from the
@@ -238,8 +239,10 @@ def main(dataset='worldbank', entity_cap=None):
         key = (rung, arm, dose)
         if key not in channels:
             return float('nan')
-        return summarise(channels[key], block=block,
-                         iters=2000)[channel]['point']
+        # channel_points, not summarise: this reads only the point, and routing it
+        # through the bootstrap cost 1,321 discarded intervals per run at a
+        # resample count that was not the configured one.
+        return channel_points(channels[key])[channel]
 
     for dose in DOSES:
         print("\n" + "=" * 78)
@@ -296,7 +299,18 @@ def main(dataset='worldbank', entity_cap=None):
     print("  each model's channel divided by its own leak value, at 30% dose.")
     print("  If the shape is model-invariant, a buffer width can be recommended")
     print("  without knowing which model will be fitted.")
-    curve_arms = [a for a in ('RESERVE', 'GAP1', 'VAL', 'GAP2')
+    # RESERVE_NEAR belongs here and its absence was a real defect. It is a withheld
+    # interior year at an intermediate distance, added precisely so the quoted buffer
+    # widths would be interpolated rather than read across the empty stretch between
+    # GAP1 (5 years) and RESERVE (nearly 13). Leaving it out of the curve meant the
+    # 25% width was still being taken from a 7.8-year span containing no measurement,
+    # which is the thing the arm was introduced to fix.
+    #
+    # ECHO and LEAK stay out, for reasons that are about meaning rather than oversight:
+    # ECHO's channel is low because the rows are already present, that is redundancy
+    # and not distance, so it does not belong on a distance axis; LEAK is the
+    # denominator of the normalisation and its own ratio is 1 by construction.
+    curve_arms = [a for a in ('RESERVE', 'RESERVE_NEAR', 'GAP1', 'VAL', 'GAP2')
                   if a in distances]
     print(f"\n{'model':>26} " + ' '.join(f"{a:>9}" for a in curve_arms))
     normalised = {a: [] for a in curve_arms}
