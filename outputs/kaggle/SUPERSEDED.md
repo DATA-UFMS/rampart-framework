@@ -13,11 +13,11 @@ Do not skip this file.
 
 | run | supplies |
 |---|---|
-| `rerun-rampart-r3c-fix2-wb-all` | channels, absorption and correlations for the four World Bank configurations |
-| `rerun-rampart-r3c-fix2-inep` | the same for the INEP panel |
+| `rerun-rampart-r3c-fix3-wb-all` | channels, absorption, correlations, the paired ridge-forest contrasts and the mixture weight w, four World Bank configurations |
+| `rerun-rampart-r3c-fix3-inep` | the same for the INEP panel |
 | `rerun-rampart-r3c-fix-routes-wb` | the decay curve and buffer widths, World Bank |
 | `rerun-rampart-r3c-fix-routes-inep` | the same for INEP |
-| `rampart-r3c-pertwb`, `rampart-r3c-pertinep`, `rampart-r3c-uncapped` | the perturbation-matching arms (Table 2). Not affected by the defects below: they report point estimates, which do not depend on the resample count. |
+| `rerun-rampart-r3c-fix2-pertinep` | the matched-share absorption arm (313 probes on INEP), under the same protocol vintage as everything above |
 
 Every table and figure in the paper is regenerated from these by `paper_tkdd/make_tables.py`
 and `paper_tkdd/make_figures.py`. Nothing is transcribed by hand.
@@ -32,6 +32,8 @@ and `paper_tkdd/make_figures.py`. Nothing is transcribed by hand.
 | `rerun-rampart-r3c` | same two defects, INEP panel | same |
 | `rerun-rampart-r3c-fix-wb-all` | resample count fixed, duplicate rung still double-counted | r floor **0.973** |
 | `rerun-rampart-r3c-fix-inep` | same | same |
+| `rerun-rampart-r3c-fix2-wb-all`, `rerun-rampart-r3c-fix2-inep` | every channel value identical to fix3 (verified cell by cell for the ridge); superseded only because fix3 additionally prints the paired ridge-forest contrasts, the mixture weight w, and the identity receipt | none -- values live on in fix3 |
+| `rampart-r3c-pertwb`, `rampart-r3c-pertinep`, `rampart-r3c-uncapped` | earlier protocol vintage (one replicate draw, pre-reordering frame): the same ridge at the same twelve probes reads 0.2894 there against 0.3287 under the current protocol. The vintage difference was once misread as a cap effect | absorption **0.2894 / 0.4055 / 0.1699 / 0.2598 / 0.0035 / 0.0484** |
 
 ## The trap that produced two of the study's own errors
 
