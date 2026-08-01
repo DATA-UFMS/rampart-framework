@@ -322,6 +322,34 @@ def main(dataset='worldbank', entity_cap=None):
               f"{frame['axis'].corr(frame['global']):>23.3f} "
               f"{frame['axis'].corr(frame['aggregate']):>26.3f}")
 
+    # The r above is a point over thirteen fold-means; its sampling unit is the
+    # fold, so the interval resamples folds and recomputes the thirteen means and
+    # the statistic per draw. Lin's concordance is printed beside it because the
+    # scatter is drawn against the identity line, and r rewards any line at all.
+    from statistical_validation.dependent_bootstrap import (
+        moving_block_correlation_ci)
+    print("\n   r and Lin's concordance vs the local channel, fold-resampled CIs")
+    print(f"{'dose':>6} {'set':>6} {'r':>22} {'Lin':>22}")
+    for dose in DOSES:
+        names = [n for n, *_ in entries
+                 if n not in duplicates and channels.get((n, dose))]
+        folds_n = min(len(channels[(n, dose)]) for n in names)
+        import numpy as _np
+        L = _np.array([[channels[(n, dose)][f].get('local', _np.nan)
+                        for f in range(folds_n)] for n in names])
+        A = _np.array([[absorptions[n][f] if f < len(absorptions[n]) else _np.nan
+                        for f in range(folds_n)] for n in names])
+        for label, keep in (('all', [True] * len(names)),
+                            ('free', [n not in ('knn_k1', 'ladder_decision_tree')
+                                      for n in names])):
+            idx = [i for i, k in enumerate(keep) if k]
+            got = moving_block_correlation_ci(A[idx], L[idx], block=block)
+            (r, (rl, rh)) = got['pearson']
+            (c, (cl, ch)) = got['concordance']
+            print(f"{dose:>6.2f} {label:>6} "
+                  f"{r:>8.3f} [{rl:+.3f},{rh:+.3f}] "
+                  f"{c:>8.3f} [{cl:+.3f},{ch:+.3f}]")
+
     print("\n4. THE ANOMALY: ridge against random forest, by channel")
     print(f"{'dose':>6} {'ridge loc':>10} {'RF loc':>9} {'ridge glo':>10} "
           f"{'RF glo':>9} {'ridge agg':>10} {'RF agg':>9}")

@@ -156,6 +156,63 @@ def moving_block_ci(
                                              'ci': ci}
 
 
+def moving_block_correlation_ci(
+    per_fold_a, per_fold_b, *, block: int,
+    iters: Optional[int] = None, seed: int = RANDOM_SEED, ci: float = 0.95,
+) -> Dict[str, Tuple[float, Tuple[float, float]]]:
+    """Fold-resampled intervals for cross-model agreement statistics.
+
+    The paper's correlations are computed over model-level points, each of which
+    is a mean over folds -- so the sampling unit is the fold, not the model, and
+    an interval that resamples anything else answers a different question. Both
+    inputs are (models, folds) arrays; each resample draws contiguous fold blocks
+    with the same scheme as `moving_block_ci`, recomputes every model's mean, and
+    recomputes the statistic over models.
+
+    Two statistics come back, because they answer different questions and the
+    paper needs both. Pearson r rewards any linear relationship, including one
+    with the wrong slope or offset; Lin's concordance rewards agreement with the
+    identity line specifically, which is the claim an instrument makes when its
+    scatter is drawn against y = x.
+    """
+    a = np.asarray(per_fold_a, dtype=float)
+    b = np.asarray(per_fold_b, dtype=float)
+    if a.shape != b.shape or a.ndim != 2:
+        raise ValueError(
+            f"expected two (models, folds) arrays of one shape, got {a.shape} "
+            f"and {b.shape}")
+    models, n = a.shape
+    block = max(1, min(int(block), n))
+    if iters is None:
+        iters = int(SCIENTIFIC_CONFIG['bootstrap_iters'])
+    _RESAMPLE_LEDGER[int(iters)] += 2  # one interval per statistic
+
+    def stats(idx):
+        ma = np.nanmean(a[:, idx], axis=1)
+        mb = np.nanmean(b[:, idx], axis=1)
+        va, vb = ma.var(), mb.var()
+        if va < 1e-18 or vb < 1e-18:
+            return float('nan'), float('nan')
+        cov = ((ma - ma.mean()) * (mb - mb.mean())).mean()
+        r = cov / np.sqrt(va * vb)
+        ccc = 2 * cov / (va + vb + (ma.mean() - mb.mean()) ** 2)
+        return float(r), float(ccc)
+
+    point_r, point_c = stats(np.arange(n))
+    rng = np.random.default_rng(seed)
+    starts = max(1, n - block + 1)
+    per_draw = math.ceil(n / block)
+    picks = rng.integers(0, starts, size=(iters, per_draw))
+    offsets = np.arange(block)
+    indices = (picks[:, :, None] + offsets[None, None, :]).reshape(iters, -1)[:, :n]
+    draws = np.array([stats(indices[i]) for i in range(iters)])
+    lo = (1.0 - ci) / 2.0
+    r_lo, r_hi = np.nanpercentile(draws[:, 0], [100 * lo, 100 * (1 - lo)])
+    c_lo, c_hi = np.nanpercentile(draws[:, 1], [100 * lo, 100 * (1 - lo)])
+    return {'pearson': (point_r, (float(r_lo), float(r_hi))),
+            'concordance': (point_c, (float(c_lo), float(c_hi)))}
+
+
 def excludes_zero(interval: Tuple[float, float], *, direction: int = 0) -> bool:
     """Whether an interval lies entirely on one side of zero.
 

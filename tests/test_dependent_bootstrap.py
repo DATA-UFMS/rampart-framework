@@ -367,3 +367,66 @@ class TestChannelPoints:
         got = channel_points([{'local': 0.2}, {'local': None}])
         assert got['local'] == 0.2
         assert math.isnan(got['aggregate']), 'a channel no fold carries is nan'
+
+
+class TestCorrelationCI:
+    """The correlation's sampling unit is the fold, and the interval must say so.
+
+    Each point in the paper's cross-model correlations is a mean over folds, so
+    resampling models would answer "how sensitive is r to which estimators we
+    chose" while the claim is about these thirteen. Resampling folds answers the
+    question actually asked.
+    """
+
+    @staticmethod
+    def _panels(models=6, folds=9, noise=0.0, seed=7):
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        base = np.linspace(0.1, 0.9, models)[:, None] + rng.normal(0, 0.02,
+                                                                   (models, folds))
+        other = base + rng.normal(0, noise, (models, folds))
+        return base, other
+
+    def test_identical_inputs_read_perfect_agreement(self):
+        from statistical_validation.dependent_bootstrap import (
+            moving_block_correlation_ci)
+        a, _ = self._panels()
+        got = moving_block_correlation_ci(a, a.copy(), block=2, iters=400)
+        assert got['pearson'][0] == 1.0
+        assert abs(got['concordance'][0] - 1.0) < 1e-12
+
+    def test_an_offset_hurts_concordance_but_not_pearson(self):
+        """The reason both statistics are reported: r forgives what Lin does not."""
+        from statistical_validation.dependent_bootstrap import (
+            moving_block_correlation_ci)
+        a, _ = self._panels()
+        got = moving_block_correlation_ci(a, a + 0.5, block=2, iters=400)
+        assert got['pearson'][0] == 1.0
+        # closed form for a pure offset d: ccc = 2v / (2v + d^2)
+        import numpy as np
+        v = np.nanmean(a, axis=1).var()
+        expected = 2 * v / (2 * v + 0.25)
+        assert abs(got['concordance'][0] - expected) < 1e-9
+        assert got['concordance'][0] < 0.6, (
+            'a constant offset leaves r at one while Lin pays for the distance '
+            'to the identity line; if it does not, the statistic is mislabeled')
+
+    def test_the_resamples_are_tallied_in_the_audit(self):
+        from statistical_validation.dependent_bootstrap import (
+            moving_block_correlation_ci, observed_resample_counts,
+            reset_resample_ledger)
+        reset_resample_ledger()
+        a, b = self._panels(noise=0.05)
+        moving_block_correlation_ci(a, b, block=2, iters=250)
+        assert observed_resample_counts() == {250: 2}, (
+            'two intervals came out of one call; the audit must count both')
+
+    def test_noise_widens_the_interval(self):
+        from statistical_validation.dependent_bootstrap import (
+            moving_block_correlation_ci)
+        a, b_tight = self._panels(noise=0.01, seed=3)
+        _, b_loose = self._panels(noise=0.20, seed=3)
+        tight = moving_block_correlation_ci(a, b_tight, block=2, iters=600)
+        loose = moving_block_correlation_ci(a, b_loose, block=2, iters=600)
+        w = lambda g: g['pearson'][1][1] - g['pearson'][1][0]  # noqa: E731
+        assert w(loose) > w(tight)

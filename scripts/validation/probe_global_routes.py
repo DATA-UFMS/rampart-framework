@@ -293,6 +293,11 @@ def main(dataset='worldbank', entity_cap=None):
         share = values[-1] / leak30 if abs(leak30) > 1e-9 else float('nan')
         print(f"{arm:>9} {distances.get(arm, float('nan')):>9.1f} " +
               ' '.join(f"{v:>+10.4f}" for v in values) + f"{share:>9.3f}")
+    # Printed after the table so the parsers that read it stay unbroken: a tag on
+    # the ECHO row itself would stop the row regex mid-table.
+    print("  note: ECHO's distance is nominal. Its rows are copies already in the")
+    print("  frame, so its reading is redundancy, not distance, and it does not")
+    print("  belong on the decay axis; the curve arms exclude it.")
 
     print("\n" + "=" * 78)
     print("IS THE DECAY SHAPE THE SAME FOR EVERY MODEL?")
