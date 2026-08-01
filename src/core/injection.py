@@ -140,7 +140,22 @@ def _fold_rng(spec: InjectionSpec, fold_id) -> np.random.Generator:
     One generator for the whole run would make the sample drawn for fold 3
     depend on how many folds ran before it, and a rerun of one fold would not
     reproduce. Seeding per fold costs nothing and removes that.
+
+    The seed passes through the built-in hash of a tuple containing strings,
+    which changes per process unless PYTHONHASHSEED is pinned. Every published
+    draw was made under the pipeline's pin of 42, so the derivation cannot be
+    swapped for a stable hash without changing which rows every recorded run
+    drew. Instead the precondition is enforced: without the pin, the guarantee
+    that a control run reproduces the leak run's draw -- and hence that both
+    arms partition the evaluation window identically -- is silently void, so
+    the injector refuses rather than sampling unreproducibly.
     """
+    if os.environ.get('PYTHONHASHSEED', '') != '42':
+        raise RuntimeError(
+            "injection requires PYTHONHASHSEED=42: the per-fold seed passes "
+            "through hash() of a tuple with strings, and without the pin a "
+            "leak/control pair run as separate processes would draw different "
+            "rows and silently decompose different partitions")
     return np.random.default_rng(abs(hash((spec.seed, spec.klass,
                                            spec.dose, str(fold_id)))) % (2 ** 32))
 

@@ -9,7 +9,7 @@ control rules out one route -- duplicating rows already in the training frame do
 essentially nothing -- but it does not identify what is left, because the
 duplicated rows carry no new information at all.
 
-Six arms, one switch each, all adding the same number of rows to a clean arm that
+Seven arms, one switch each, all adding the same number of rows to a clean arm that
 has had one interior year withheld. What varies is only where the added rows come
 from, and therefore how far that period sits from the evaluation window:
 

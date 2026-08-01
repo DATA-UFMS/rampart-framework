@@ -77,9 +77,21 @@ os.environ['RAMPART_PANEL_DIR'] = str(root / 'panels')
 # how the same measurement is obtained at both sample sizes and the difference
 # attributed to the cap rather than to the panel.
 os.environ.setdefault('RAMPART_CAP_ALL', '1')
-ARM = ('every model reads the same 10,000 rows'
-       if os.environ['RAMPART_CAP_ALL'] == '1'
-       else 'in-context capped at 10,000, classical reading all 38,000')
+
+def arm_for(probe):
+    """What the header may truthfully claim about the context regime.
+
+    The env switch describes only the channels probe: the routes probe builds its
+    models directly and never wraps them in matched_context, so the cap has no
+    effect there and a header keyed on the switch alone printed a false
+    configuration into the authoritative logs -- the INEP decay curve ran uncapped
+    while its header said every model read 10,000 rows.
+    """
+    if probe == 'routes':
+        return 'uncapped: the routes probe does not wrap models in matched_context'
+    return ('every model reads the same 10,000 rows'
+            if os.environ['RAMPART_CAP_ALL'] == '1'
+            else 'in-context capped at 10,000, classical reading all 38,000')
 
 import torch
 print('cuda:', torch.cuda.is_available(),
@@ -137,5 +149,5 @@ if PROBE not in SCRIPTS:
     raise SystemExit(f'unknown probe {PROBE!r}; known: {sorted(SCRIPTS)}')
 
 for panel in PANELS:
-    print(f'\n--- {PROBE} on {panel.strip()}: {ARM} ---', flush=True)
+    print(f'\n--- {PROBE} on {panel.strip()}: {arm_for(PROBE)} ---', flush=True)
     subprocess.run([sys.executable, SCRIPTS[PROBE], panel.strip()], check=True)

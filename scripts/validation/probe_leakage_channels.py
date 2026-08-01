@@ -271,6 +271,12 @@ def main(dataset='worldbank', entity_cap=None):
             # count of its own is how Table 3's intervals came from 4,000 while the
             # protocol declared 15,000.
             got = summarise(folds_here, block=block)
+            # The identity check is computed per fold inside decompose_fold; printing
+            # its coverage here puts the confirmation in the log itself, so the paper
+            # can point at the artifact rather than at the test suite alone.
+            cov = got.get('coverage', {})
+            if cov.get('identity_holds') is False:
+                print(f"        IDENTITY FAILED for {name} at dose {dose}")
             # The intervals were computed here all along and thrown away: summarise
             # returns ci95 for every channel and four probes indexed ['point'] and
             # nothing else. What that hid is not academic -- the adjacent-buffer
@@ -280,10 +286,11 @@ def main(dataset='worldbank', entity_cap=None):
                 lo, hi = got[channel]['ci95']
                 return (f"{got[channel]['point']:>+{width}.4f}"
                         f"[{lo:+.3f},{hi:+.3f}]")
+            wbar = got['local_weight']['point']
             print(f"{name:>26} {mean_absorption[name]:>8.4f} "
                   f"{band('local')} {band('local_excess')} "
                   f"{band('global')} {band('sample_size_effect', 8)} "
-                  f"{band('aggregate')}")
+                  f"{band('aggregate')} w={wbar:.3f}")
 
     print("\n" + "=" * 78)
     print("3. WHICH CHANNEL DOES ABSORPTION EXPLAIN?")
@@ -327,6 +334,22 @@ def main(dataset='worldbank', entity_cap=None):
         print(f"{dose:>6.2f} " + ' '.join(f"{c:>+9.4f}" for c in cells))
     print("\n  If the forest leads on local and the ridge on global, the capacity")
     print("  ordering holds and the aggregate measure is what inverted it.")
+
+    # The docstring of contrast() names this exact comparison as the standard --
+    # "the ridge against the forest" -- and until now it was never run: the paper
+    # read marginal interval overlap instead, which does not test a difference.
+    from statistical_validation.leakage_channels import contrast
+    print("\n  paired ridge minus forest, per fold, moving-block bootstrap:")
+    for dose in DOSES:
+        a = channels.get(('ladder_ridge', dose))
+        c = channels.get(('ladder_random_forest', dose))
+        if not a or not c:
+            continue
+        for ch in ('local', 'aggregate'):
+            got = contrast(a, c, ch, block=block)
+            lo, hi = got['ci95']
+            print(f"    dose {dose:>4.2f} {ch:>9}: {got['point']:+.4f} "
+                  f"[{lo:+.3f},{hi:+.3f}]  n_pairs={got['n_pairs']}")
 
     thin = sum(1 for key, value in channels.items()
                for fold in value if fold['thin_handed_partition'])

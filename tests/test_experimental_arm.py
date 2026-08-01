@@ -25,6 +25,18 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _hash_pin(monkeypatch):
+    """The injector refuses to draw without the hash pin (see _fold_rng).
+
+    Within one process the built-in hash is stable regardless, so satisfying the
+    guard here keeps these tests deterministic while the guard still protects the
+    case it exists for: a leak/control pair run as separate unpinned processes.
+    """
+    monkeypatch.setenv('PYTHONHASHSEED', '42')
+
+
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / 'src'
 if str(_SRC) not in sys.path:

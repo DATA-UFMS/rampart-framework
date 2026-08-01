@@ -39,7 +39,7 @@ Measured on the same panel, the two agree.
     gradient boosting  0.99   sequential residual fitting drives it to zero
     decision tree      1.00   an unbounded leaf holds the row alone
 
-**It is calibrated against a closed form.** For k-nearest neighbours the
+**It is checked against a closed form, and the check has structure.** For k-nearest neighbours the
 duplicate sits at distance zero from its own query, so it is always among the k
 neighbours and pulls the prediction about 1/k of the way to the truth. The
 squared error should therefore fall by (2k - 1) / k^2. Measured across k in

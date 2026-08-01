@@ -237,8 +237,13 @@ def contrast(folds_a, folds_b, channel, *, block, iters=None, direction=0):
 
 
 #: The channels every summary reports, in the order they are printed.
+#: `local_weight` is the mixture weight w of the identity -- it was computed at
+#: every fold from the start and never surfaced, which let the paper assert
+#: "about a third of the clean error" for a quantity the logs could have stated:
+#: back-solved from the published means it is nearer a quarter for the two
+#: models that sentence was about.
 _CHANNELS = ('local', 'local_excess', 'global', 'global_uncontrolled',
-             'sample_size_effect', 'aggregate')
+             'sample_size_effect', 'aggregate', 'local_weight')
 
 
 def channel_points(folds: Sequence[Dict]) -> Dict[str, float]:
