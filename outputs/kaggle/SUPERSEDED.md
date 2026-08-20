@@ -13,11 +13,12 @@ Do not skip this file.
 
 | run | supplies |
 |---|---|
-| `rerun-rampart-r3c-fix4-wb-all` | channels, absorption, correlations, the paired ridge-forest contrasts, the mixture weight w, and fold-resampled intervals for r and Lin's concordance -- four World Bank configurations |
-| `rerun-rampart-r3c-fix4-inep` | the same for the INEP panel |
-| `rerun-rampart-r3c-fix-routes-wb` | the decay curve and buffer widths, World Bank |
-| `rerun-rampart-r3c-fix-routes-inep` | the same for INEP |
-| `rerun-rampart-r3c-fix2-pertinep` | the matched-share absorption arm (313 probes on INEP), under the same protocol vintage as everything above |
+| `rerun-rampart-r3c-fix5-wb-all` | channels, absorption, correlations, paired contrasts with the Nadeau-Bengio dual, the weight w, and fold-resampled r/Lin intervals -- four World Bank configurations |
+| `rerun-rampart-r3c-fix5-inep` | the same for the INEP panel (capped regime) |
+| `rerun-rampart-r3c-fix5-inep-uncapped` | the classical ladder on INEP with the cap off: the panel's valid sample-size control, and absorption at the 0.029% share -- the third point of the share staircase |
+| `rerun-rampart-r3c-fix5-singly-wb`, `-inep` | the single-probe kNN sweep: batch column reproduces tab_calibration digit for digit; batch-single is the measured batch term, single-closed the panel term |
+| `rerun-rampart-r3c-fix5-routes-wb`, `-inep` | the decay curve and buffer widths, now with the NB dual on the GAP2-LEAK contrast |
+| `rerun-rampart-r3c-fix2-pertinep` | the matched-share absorption arm (313 probes on INEP), same protocol vintage |
 
 Every table and figure in the paper is regenerated from these by `paper_tkdd/make_tables.py`
 and `paper_tkdd/make_figures.py`. Nothing is transcribed by hand.
@@ -32,7 +33,7 @@ and `paper_tkdd/make_figures.py`. Nothing is transcribed by hand.
 | `rerun-rampart-r3c` | same two defects, INEP panel | same |
 | `rerun-rampart-r3c-fix-wb-all` | resample count fixed, duplicate rung still double-counted | r floor **0.973** |
 | `rerun-rampart-r3c-fix-inep` | same | same |
-| `rerun-rampart-r3c-fix2-*`, `rerun-rampart-r3c-fix3-*` | every channel value identical to fix4 (verified for the ridge at both hops of the chain); each generation only adds printed receipts -- fix3 the paired contrasts and the weight w, fix4 the fold-resampled intervals on r and Lin's concordance | none -- values live on in fix4 |
+| `rerun-rampart-r3c-fix2-*`, `fix3-*`, `fix4-*`, `fix-routes-*` | every measured value identical to its fix5 counterpart (verified: tab_channels regenerates byte-identical across fix3/fix4/fix5; the decay tables match line for line); each generation only adds printed receipts -- fix3 paired contrasts and w, fix4 r/Lin fold intervals, fix5 the Nadeau-Bengio dual | none -- values live on in fix5 |
 | `rampart-r3c-pertwb`, `rampart-r3c-pertinep`, `rampart-r3c-uncapped` | earlier protocol vintage (one replicate draw, pre-reordering frame): the same ridge at the same twelve probes reads 0.2894 there against 0.3287 under the current protocol. The vintage difference was once misread as a cap effect | absorption **0.2894 / 0.4055 / 0.1699 / 0.2598 / 0.0035 / 0.0484** |
 
 ## The trap that produced two of the study's own errors
