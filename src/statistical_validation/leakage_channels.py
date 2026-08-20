@@ -199,7 +199,8 @@ def check_identity(fold: Dict, tolerance: float = 1e-9) -> bool:
     return abs(rebuilt - aggregate) < tolerance
 
 
-def contrast(folds_a, folds_b, channel, *, block, iters=None, direction=0):
+def contrast(folds_a, folds_b, channel, *, block, iters=None, direction=0,
+             nb_ratio=None):
     """Interval on the per-fold DIFFERENCE between two arms, not on each separately.
 
     Every headline this project has produced is a contrast -- GAP2 against LEAK, the
@@ -231,9 +232,20 @@ def contrast(folds_a, folds_b, channel, *, block, iters=None, direction=0):
               if x is not None and y is not None
               and np.isfinite(x) and np.isfinite(y)]
     point, interval, record = moving_block_ci(values, block=block, iters=iters)
-    return {'point': point, 'ci95': interval, 'inference': record,
-            'n_pairs': len(values),
-            'detected': excludes_zero(interval, direction=direction)}
+    out = {'point': point, 'ci95': interval, 'inference': record,
+           'n_pairs': len(values),
+           'detected': excludes_zero(interval, direction=direction)}
+    # The dual construction, when the caller supplies the panel's test/train
+    # ratio: same per-fold differences, variance inflated for training-set
+    # overlap instead of blocked for ordering. See nadeau_bengio_ci for why the
+    # paper reports both rather than choosing.
+    if nb_ratio is not None:
+        from statistical_validation.dependent_bootstrap import nadeau_bengio_ci
+        _, nb_interval, nb_record = nadeau_bengio_ci(
+            values, test_train_ratio=nb_ratio)
+        out['nb_ci95'] = nb_interval
+        out['nb_inference'] = nb_record
+    return out
 
 
 #: The channels every summary reports, in the order they are printed.

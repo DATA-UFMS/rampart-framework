@@ -156,6 +156,38 @@ def moving_block_ci(
                                              'ci': ci}
 
 
+def nadeau_bengio_ci(
+    values: Sequence[float], *, test_train_ratio: float, ci: float = 0.95,
+) -> Tuple[float, Tuple[float, float], Dict]:
+    """Corrected-resampled t interval for a mean over folds that share training data.
+
+    Nadeau and Bengio's correction inflates the naive variance of a J-fold mean by
+    (1/J + n_test/n_train), because folds trained on overlapping samples cannot be
+    treated as J independent observations. It is derived for random subsampling,
+    not for nested walk-forward windows, so this paper reports it as a DUAL to the
+    moving-block interval rather than a replacement: the block bootstrap carries
+    the ordering of folds and none of the training overlap, this carries the
+    training overlap and none of the ordering. A conclusion that survives both is
+    resting on neither construction's blind spot.
+
+    No resampling happens here, so nothing is added to the resample ledger.
+    """
+    from scipy import stats as _stats
+    observed = np.asarray([v for v in values if v is not None], dtype=float)
+    observed = observed[np.isfinite(observed)]
+    n = len(observed)
+    record = {'method': 'nadeau_bengio_t', 'n_folds': n,
+              'test_train_ratio': float(test_train_ratio)}
+    if n < 2:
+        return (float(observed.mean()) if n else float('nan'),
+                (float('nan'), float('nan')), {**record, 'method': 'insufficient_data'})
+    point = float(observed.mean())
+    sd = float(observed.std(ddof=1))
+    half = (_stats.t.ppf(1 - (1 - ci) / 2, n - 1)
+            * sd * math.sqrt(1.0 / n + float(test_train_ratio)))
+    return point, (point - half, point + half), {**record, 'dof': n - 1}
+
+
 def moving_block_correlation_ci(
     per_fold_a, per_fold_b, *, block: int,
     iters: Optional[int] = None, seed: int = RANDOM_SEED, ci: float = 0.95,

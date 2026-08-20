@@ -430,3 +430,42 @@ class TestCorrelationCI:
         loose = moving_block_correlation_ci(a, b_loose, block=2, iters=600)
         w = lambda g: g['pearson'][1][1] - g['pearson'][1][0]  # noqa: E731
         assert w(loose) > w(tight)
+
+
+class TestNadeauBengio:
+    """The dual interval: variance inflated for training overlap, not blocked.
+
+    Cited in the paper since the review that caught the correction being cited
+    and never applied; implemented as a DUAL to the moving-block interval, so a
+    conclusion can be checked against both constructions' blind spots.
+    """
+
+    def test_reduces_to_the_plain_t_interval_at_ratio_zero(self):
+        import numpy as np
+        from scipy import stats
+        from statistical_validation.dependent_bootstrap import nadeau_bengio_ci
+        vals = [0.1, 0.4, 0.2, 0.5, 0.3]
+        pt, (lo, hi), rec = nadeau_bengio_ci(vals, test_train_ratio=0.0)
+        n = len(vals)
+        half = stats.t.ppf(0.975, n - 1) * np.std(vals, ddof=1) / np.sqrt(n)
+        assert abs(pt - np.mean(vals)) < 1e-12
+        assert abs((hi - lo) / 2 - half) < 1e-12
+        assert rec['dof'] == n - 1
+
+    def test_the_inflation_matches_the_closed_form(self):
+        import numpy as np
+        from statistical_validation.dependent_bootstrap import nadeau_bengio_ci
+        vals = [0.1, 0.4, 0.2, 0.5, 0.3]
+        _, (l0, h0), _ = nadeau_bengio_ci(vals, test_train_ratio=0.0)
+        _, (l1, h1), _ = nadeau_bengio_ci(vals, test_train_ratio=0.5)
+        n = len(vals)
+        expected = np.sqrt((1 / n + 0.5) / (1 / n))
+        assert abs((h1 - l1) / (h0 - l0) - expected) < 1e-12
+
+    def test_it_never_touches_the_resample_ledger(self):
+        from statistical_validation.dependent_bootstrap import (
+            nadeau_bengio_ci, observed_resample_counts, reset_resample_ledger)
+        reset_resample_ledger()
+        nadeau_bengio_ci([0.1, 0.2, 0.3], test_train_ratio=0.2)
+        assert observed_resample_counts() == {}, (
+            'nothing is resampled here; a ledger entry would claim otherwise')

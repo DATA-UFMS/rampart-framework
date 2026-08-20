@@ -482,3 +482,60 @@ class TestFractionMakesTwoPanelsComparable:
 
         assert by_count[1] < by_count[0], 'a fixed count should show the decline'
         assert abs(by_share[1] - by_share[0]) < abs(by_count[1] - by_count[0])
+
+
+class TestSingleProbeMode:
+    """Batch and single modes must differ in the appending and in nothing else.
+
+    The kNN closed form is derived for one appended copy; the instrument appends
+    twelve. The single mode exists to measure that difference, which only works
+    if both modes read the same probe rows -- so they share the generator draw
+    -- and agree exactly wherever the batch cannot matter.
+    """
+
+    @staticmethod
+    def _panel(rows=60, seed=5):
+        import numpy as np
+        import pandas as pd
+        rng = np.random.default_rng(seed)
+        X = pd.DataFrame(rng.normal(size=(rows, 3)), columns=list('abc'))
+        y = pd.Series(X['a'] * 2 + rng.normal(0, 0.1, rows))
+        return X.iloc[:40], y.iloc[:40], X.iloc[40:].reset_index(drop=True), \
+            y.iloc[40:].reset_index(drop=True)
+
+    def test_shared_draw_means_identical_denominators(self):
+        from sklearn.linear_model import Ridge
+        from core.models.absorption import absorption_coefficient
+        Xf, yf, Xe, ye = self._panel()
+        kw = dict(probes=6, seed=11, replicates=3)
+        b = absorption_coefficient(lambda: Ridge(alpha=1.0), Xf, yf, Xe, ye, **kw)
+        s = absorption_coefficient(lambda: Ridge(alpha=1.0), Xf, yf, Xe, ye,
+                                   batch=False, **kw)
+        assert b['error_before'] == s['error_before'], (
+            'different denominators mean different probe rows were drawn, and '
+            'then batch minus single measures the draw, not the appending')
+
+    def test_one_nearest_neighbour_reads_one_in_both_modes(self):
+        from sklearn.neighbors import KNeighborsRegressor
+        from core.models.absorption import absorption_coefficient
+        Xf, yf, Xe, ye = self._panel()
+        kw = dict(probes=6, seed=11, replicates=2)
+        for batch in (True, False):
+            got = absorption_coefficient(
+                lambda: KNeighborsRegressor(n_neighbors=1), Xf, yf, Xe, ye,
+                batch=batch, **kw)
+            assert got['absorption'] == 1.0, (
+                'a duplicated query is its own nearest neighbour regardless of '
+                'how many other probes rode along; anything else is a bug in '
+                'the appending, not a finding')
+
+    def test_a_single_probe_count_makes_the_modes_coincide(self):
+        from sklearn.linear_model import Ridge
+        from core.models.absorption import absorption_coefficient
+        Xf, yf, Xe, ye = self._panel()
+        kw = dict(probes=1, seed=7, replicates=4)
+        b = absorption_coefficient(lambda: Ridge(alpha=1.0), Xf, yf, Xe, ye, **kw)
+        s = absorption_coefficient(lambda: Ridge(alpha=1.0), Xf, yf, Xe, ye,
+                                   batch=False, **kw)
+        assert abs(b['absorption'] - s['absorption']) < 1e-12, (
+            'with one probe per replicate there is no batch to differ by')

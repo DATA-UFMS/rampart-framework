@@ -96,6 +96,7 @@ def absorption_coefficient(
     baseline: Optional[Sequence[float]] = None,
     replicates: Optional[int] = None,
     fraction: Optional[float] = None,
+    batch: bool = True,
 ) -> Dict:
     """Absorption over a small set of probe rows, as a ratio of sums.
 
@@ -160,6 +161,7 @@ def absorption_coefficient(
     count = min(int(probes), len(X_eval))
 
     record = {'probes_used': int(count), 'seed': int(seed),
+              'batch': bool(batch),
               'replicates': int(replicates),
               # Recorded because it is the only quantity that makes two panels
               # comparable, and because the count alone hides it.
@@ -174,18 +176,39 @@ def absorption_coefficient(
               'probe_dose': float(count) / len(X_eval) if len(X_eval) else float('nan')}
 
     total_before = total_after = 0.0
+    # `batch=False` appends the probes one at a time -- one refit per probe, the
+    # numerators and denominators still pooled as one ratio of sums. It exists
+    # because the kNN closed form is derived for a SINGLE appended copy while the
+    # instrument appends twelve at once, so copies of other probes can enter a
+    # query's neighbour set and carry a term the derivation does not model. The
+    # single-probe reading is the derivation's regime; batch minus single is the
+    # batch term, measured rather than argued. The draw is shared: both modes
+    # consume the generator identically, so they read the same probe rows and
+    # their difference is the appending mode and nothing else.
     for _ in range(replicates):
         picked = np.sort(rng.choice(len(X_eval), size=count, replace=False))
         truth = np.asarray(y_eval.iloc[picked], dtype=float)
         total_before += float(np.sum((truth - before_all[picked]) ** 2))
 
-        widened = make_estimator()
-        widened.fit(
-            pd.concat([X_fit, X_eval.iloc[picked]], ignore_index=True),
-            pd.concat([pd.Series(y_fit), pd.Series(y_eval).iloc[picked]],
-                      ignore_index=True))
-        after = np.asarray(widened.predict(X_eval.iloc[picked]), dtype=float)
-        total_after += float(np.sum((truth - after) ** 2))
+        if batch:
+            widened = make_estimator()
+            widened.fit(
+                pd.concat([X_fit, X_eval.iloc[picked]], ignore_index=True),
+                pd.concat([pd.Series(y_fit), pd.Series(y_eval).iloc[picked]],
+                          ignore_index=True))
+            after = np.asarray(widened.predict(X_eval.iloc[picked]), dtype=float)
+            total_after += float(np.sum((truth - after) ** 2))
+        else:
+            for j, row in enumerate(picked):
+                one = picked[j:j + 1]
+                widened = make_estimator()
+                widened.fit(
+                    pd.concat([X_fit, X_eval.iloc[one]], ignore_index=True),
+                    pd.concat([pd.Series(y_fit), pd.Series(y_eval).iloc[one]],
+                              ignore_index=True))
+                after = np.asarray(widened.predict(X_eval.iloc[one]),
+                                   dtype=float)
+                total_after += float((truth[j] - after[0]) ** 2)
 
     record['error_before'] = total_before
     if total_before < _ERROR_FLOOR:

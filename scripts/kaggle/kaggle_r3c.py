@@ -144,7 +144,8 @@ for _switch in ('RAMPART_PROBES', 'RAMPART_PROBE_FRACTION'):
 # takes over an hour on INEP -- which is why it belongs here rather than on a laptop.
 PROBE = os.environ.get('RAMPART_PROBE', 'channels').strip()
 SCRIPTS = {'channels': 'scripts/validation/probe_leakage_channels.py',
-           'routes': 'scripts/validation/probe_global_routes.py'}
+           'routes': 'scripts/validation/probe_global_routes.py',
+           'knn_singly': 'scripts/validation/probe_knn_singly.py'}
 if PROBE not in SCRIPTS:
     raise SystemExit(f'unknown probe {PROBE!r}; known: {sorted(SCRIPTS)}')
 

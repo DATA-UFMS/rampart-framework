@@ -125,6 +125,7 @@ def main(dataset='worldbank', entity_cap=None):
     channels = {}
     sizes = {arm: [] for arm in ARMS}
     distance_log = []
+    nb_fold_ratios = []
 
     for fold, (train_start, train_end, test_start, test_end) in enumerate(windows):
         # Two withheld years, not one, and the second is the point of this probe's
@@ -168,6 +169,7 @@ def main(dataset='worldbank', entity_cap=None):
 
         fill = held[columns].median()
         X_train = held[columns].fillna(fill)
+        nb_fold_ratios.append(len(evaluation) / max(1, len(held)))
         keep = X_train.notna().all(axis=1) & held['target'].notna()
         X_test = evaluation[columns].fillna(fill)
         valid = X_test.notna().all(axis=1) & evaluation['target'].notna()
@@ -299,6 +301,8 @@ def main(dataset='worldbank', entity_cap=None):
     print("  frame, so its reading is redundancy, not distance, and it does not")
     print("  belong on the decay axis; the curve arms exclude it.")
 
+    nb_ratio = float(np.mean(nb_fold_ratios))
+
     print("\n" + "=" * 78)
     print("IS THE DECAY SHAPE THE SAME FOR EVERY MODEL?")
     print("  each model's channel divided by its own leak value, at 30% dose.")
@@ -351,7 +355,8 @@ def main(dataset='worldbank', entity_cap=None):
             b = channels.get((rung.name, 'LEAK', dose))
             if not a or not b or len(a) != len(b):
                 continue
-            got = contrast(a, b, 'global_uncontrolled', block=block, direction=+1)
+            got = contrast(a, b, 'global_uncontrolled', block=block, direction=+1,
+                           nb_ratio=nb_ratio)
             lo, hi = got['ci95']
             # Both directions, because a column that only asks "above zero?" answers
             # "no" for an interval that sits entirely BELOW zero, and that is a
@@ -365,8 +370,10 @@ def main(dataset='worldbank', entity_cap=None):
                 verdict = 'GAP2 < LEAK'
             else:
                 verdict = 'no difference'
+            nlo, nhi = got['nb_ci95']
             print(f"{rung.name:>26} {dose:>6.0%} {got['point']:>+12.4f} "
-                  f"[{lo:>+8.4f},{hi:>+8.4f}] {verdict:>12}")
+                  f"[{lo:>+8.4f},{hi:>+8.4f}] NB[{nlo:>+7.3f},{nhi:>+7.3f}] "
+                  f"{verdict:>12}")
     print("\n  'no difference' everywhere is the World Bank reading: the adjacent")
     print("  buffer costs about what the evaluation window costs, not more, and the")
     print("  published 105% was a ratio of two bare means over nine folds. On INEP")

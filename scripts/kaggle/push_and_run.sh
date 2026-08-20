@@ -33,7 +33,7 @@ while (( $# )); do
     --panels) PAINEIS="${2:?--panels precisa da lista separada por virgula}"; shift 2 ;;
     --suffix) SUFIXO="${2:?--suffix precisa de um nome}"; shift 2 ;;
     --probes) SONDAS="${2:?--probes precisa de um inteiro}"; shift 2 ;;
-    --probe) PROBE="${2:?--probe precisa de channels ou routes}"; shift 2 ;;
+    --probe) PROBE="${2:?--probe precisa de channels, routes ou knn_singly}"; shift 2 ;;
     --no-gpu) SEM_GPU=1; shift ;;
     *) echo "argumento desconhecido: $1"; exit 1 ;;
   esac

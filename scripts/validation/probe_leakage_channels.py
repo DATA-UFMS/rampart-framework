@@ -47,7 +47,7 @@ from probe_harness import audit_resamples, declare_provenance
 
 from core.models.absorption import (  # noqa: E402
     absorption_coefficient, knn_expected_absorption)
-from core.models.icl import matched_context  # noqa: E402
+from core.models.icl import matched_context, switched_on  # noqa: E402
 from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
 from core.scientific_config import (  # noqa: E402
     RANDOM_SEED, SCIENTIFIC_CONFIG)
@@ -150,6 +150,7 @@ def main(dataset='worldbank', entity_cap=None):
 
     channels = {}        # (name, dose) -> list of per-fold decompositions
     absorptions = {}     # name -> list of per-fold readings
+    nb_ratios = []       # per-fold n_test / effective n_train, for the NB dual
 
     for fold, (a, b, test_start, test_end) in enumerate(windows):
         made = prepared(df, columns, a, b, test_start, test_end)
@@ -159,6 +160,10 @@ def main(dataset='worldbank', entity_cap=None):
          X_test, y_test, e_test, yr_test) = made
         fit_frame, eval_frame, _m, _g = entity_effect_frames(
             X_train, X_test, y_train, e_train, e_test)
+        cap_rows = SCIENTIFIC_CONFIG['in_context_models']['context_cap_rows']
+        effective_train = (min(len(fit_frame), cap_rows)
+                           if switched_on('RAMPART_CAP_ALL') else len(fit_frame))
+        nb_ratios.append(len(eval_frame) / effective_train)
         truth = np.asarray(y_test, dtype=float)
 
         clean_predictions = {}
@@ -374,10 +379,30 @@ def main(dataset='worldbank', entity_cap=None):
         if not a or not c:
             continue
         for ch in ('local', 'aggregate'):
-            got = contrast(a, c, ch, block=block)
+            got = contrast(a, c, ch, block=block,
+                           nb_ratio=float(np.mean(nb_ratios)))
             lo, hi = got['ci95']
+            nlo, nhi = got['nb_ci95']
             print(f"    dose {dose:>4.2f} {ch:>9}: {got['point']:+.4f} "
-                  f"[{lo:+.3f},{hi:+.3f}]  n_pairs={got['n_pairs']}")
+                  f"[{lo:+.3f},{hi:+.3f}]  NB[{nlo:+.3f},{nhi:+.3f}]  "
+                  f"n_pairs={got['n_pairs']}")
+
+    # The size effects the paper quotes get the dual too: same fold values,
+    # variance inflated for training overlap instead of blocked for ordering.
+    from statistical_validation.dependent_bootstrap import nadeau_bengio_ci
+    ratio = float(np.mean(nb_ratios))
+    print(f"\n   Nadeau-Bengio dual for the sample-size control "
+          f"(ratio n_test/n_train = {ratio:.3f})")
+    for name in ('ladder_decision_tree', 'ladder_ridge'):
+        for dose in DOSES:
+            folds_here = channels.get((name, dose), [])
+            vals = [f.get('sample_size_effect') for f in folds_here]
+            vals = [v for v in vals if v is not None and np.isfinite(v)]
+            if len(vals) < 2:
+                continue
+            pt, (lo, hi), _rec = nadeau_bengio_ci(vals, test_train_ratio=ratio)
+            print(f"    {name:>24} dose {dose:>4.2f}: {pt:+.4f} "
+                  f"NB[{lo:+.3f},{hi:+.3f}]")
 
     thin = sum(1 for key, value in channels.items()
                for fold in value if fold['thin_handed_partition'])
