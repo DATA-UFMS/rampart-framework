@@ -19,6 +19,7 @@ Do not skip this file.
 | `rerun-rampart-r3c-fix5-singly-wb`, `-inep` | the single-probe kNN sweep: batch column reproduces tab_calibration digit for digit; batch-single is the measured batch term, single-closed the panel term |
 | `rerun-rampart-r3c-fix5-routes-wb`, `-inep` | the decay curve and buffer widths, now with the NB dual on the GAP2-LEAK contrast |
 | `rerun-rampart-r3c-fix2-pertinep` | the matched-share absorption arm (313 probes on INEP), same protocol vintage |
+| `rerun-rampart-r3c-rs-wb`, `-inep-f01/-f23/-f45/-f67` | the randomized-saturation audit (interference reframe): 5 classical models, saturations 0.05-0.30 plus the s=0 clean arm, 40 fixed-size SRS replicates per cell, per-row losses in `rampart/replicated_saturation_*.parquet` (gitignored, ~150 MB; re-download with `kaggle kernels output`). Reduced by `scripts/validation/analyze_replicated_saturation.py` to S(s), D(s), B(s) with design-based t intervals over replicates |
 
 Every table and figure in the paper is regenerated from these by `paper_tkdd/make_tables.py`
 and `paper_tkdd/make_figures.py`. Nothing is transcribed by hand.
