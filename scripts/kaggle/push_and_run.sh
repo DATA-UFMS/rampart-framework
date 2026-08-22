@@ -25,6 +25,7 @@ PAINEIS=""
 SUFIXO=""
 SONDAS=""
 PROBE=""
+FOLDS=""
 SEM_GPU=0
 while (( $# )); do
   case "$1" in
@@ -33,7 +34,8 @@ while (( $# )); do
     --panels) PAINEIS="${2:?--panels precisa da lista separada por virgula}"; shift 2 ;;
     --suffix) SUFIXO="${2:?--suffix precisa de um nome}"; shift 2 ;;
     --probes) SONDAS="${2:?--probes precisa de um inteiro}"; shift 2 ;;
-    --probe) PROBE="${2:?--probe precisa de channels, routes ou knn_singly}"; shift 2 ;;
+    --probe) PROBE="${2:?--probe precisa de um nome registrado em kaggle_r3c.SCRIPTS}"; shift 2 ;;
+    --folds) FOLDS="${2:?--folds precisa da lista de indices separada por virgula}"; shift 2 ;;
     --no-gpu) SEM_GPU=1; shift ;;
     *) echo "argumento desconhecido: $1"; exit 1 ;;
   esac
@@ -75,9 +77,9 @@ SLUG="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['id'])" 
 # mismatch there is rejected on push.
 NOTEBOOK="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['code_file'])" "$PALCO/kernel-metadata.json")"
 python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" "$SONDAS" "$PROBE" \
-        "${TABPFN_TOKEN:-}" <<'PY'
+        "${TABPFN_TOKEN:-}" "$FOLDS" <<'PY'
 import json, sys
-fonte, destino, cap, paineis, sondas, probe, tabpfn = sys.argv[1:8]
+fonte, destino, cap, paineis, sondas, probe, tabpfn, folds = sys.argv[1:9]
 with open(fonte) as f:
     linhas = f.readlines()
 
@@ -104,6 +106,8 @@ if sondas:
 # is_private; rotate the token at ux.priorlabs.ai when the runs are done.
 if probe:
     prologo.append(f"os.environ['RAMPART_PROBE'] = {probe!r}\n")
+if folds:
+    prologo.append(f"os.environ['RAMPART_FOLDS'] = {folds!r}\n")
 if tabpfn:
     prologo.append(f"os.environ['TABPFN_TOKEN'] = {tabpfn!r}\n")
 celulas = [celula(linhas)]
