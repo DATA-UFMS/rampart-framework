@@ -27,11 +27,13 @@ the violation being studied happens, and it costs a single extra fit. For an
 in-context model a refit is a forward pass over the whole context, so the
 difference is between one pass and several.
 
-**What it is, mechanically.** It is the memorisation channel, isolated. Under
-class III the evaluation window splits in two: rows the model was handed and rows
-it was not. Improvement on the handed rows is memorisation and nothing else, and
-that is what this measures on a small number of rows instead of on a dose.
-Measured on the same panel, the two agree.
+**What it is, mechanically.** It reads the handed-row channel on a small number
+of rows instead of on a dose. Under class III the evaluation window splits in
+two: rows the model was handed and rows it was not. Improvement on the handed
+rows is the direct effect of being handed them PLUS whatever global shift the
+insertion causes -- the impurity block below measures that second part, and
+`leakage_channels.local_excess` subtracts it. Measured on the same panel, probe
+reading and dose reading agree.
 
     ridge              0.20   the fit shifts a little toward the handed rows
     k-nearest (k=5)    0.36   the duplicate is one of five neighbours

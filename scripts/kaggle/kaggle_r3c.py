@@ -87,8 +87,9 @@ def arm_for(probe):
     configuration into the authoritative logs -- the INEP decay curve ran uncapped
     while its header said every model read 10,000 rows.
     """
-    if probe == 'routes':
-        return 'uncapped: the routes probe does not wrap models in matched_context'
+    if probe in ('routes', 'replicated_saturation'):
+        return ('uncapped: this probe builds classical models directly and '
+                'never wraps them in matched_context')
     return ('every model reads the same 10,000 rows'
             if os.environ['RAMPART_CAP_ALL'] == '1'
             else 'in-context capped at 10,000, classical reading all 38,000')
@@ -145,7 +146,11 @@ for _switch in ('RAMPART_PROBES', 'RAMPART_PROBE_FRACTION'):
 PROBE = os.environ.get('RAMPART_PROBE', 'channels').strip()
 SCRIPTS = {'channels': 'scripts/validation/probe_leakage_channels.py',
            'routes': 'scripts/validation/probe_global_routes.py',
-           'knn_singly': 'scripts/validation/probe_knn_singly.py'}
+           'knn_singly': 'scripts/validation/probe_knn_singly.py',
+           # Classical-only, CPU-bound, and parquet-heavy: shard by fold with
+           # RAMPART_FOLDS and run on CPU kernels, not the GPU queue.
+           'replicated_saturation':
+               'scripts/validation/probe_replicated_saturation.py'}
 if PROBE not in SCRIPTS:
     raise SystemExit(f'unknown probe {PROBE!r}; known: {sorted(SCRIPTS)}')
 
