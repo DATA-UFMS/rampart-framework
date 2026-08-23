@@ -98,14 +98,27 @@ def t_ci(values, level=0.95):
     return float(v.mean()), (float(v.mean() - half), float(v.mean() + half))
 
 
+def write_canonical(df, name):
+    """One canonical output under outputs/kaggle, guarded against a partial
+    run silently clobbering the consolidated file (it happened in review)."""
+    out = REPO / 'outputs' / 'kaggle' / name
+    if out.exists():
+        old = len(pd.read_parquet(out, columns=[df.columns[0]]))
+        if old > len(df):
+            out = out.with_name(out.stem + '.partial.parquet')
+            print(f'NOTE: existing {name} has {old} rows > {len(df)} new;'
+                  f' writing {out.name} to protect the fuller file')
+    df.to_parquet(out, index=False)
+    return out
+
+
 def main(*args):
     files = discover(list(args))
     if not files:
         raise SystemExit(f'no parquet found (looked for {DEFAULT_GLOB})')
     cells = pd.concat([reduce_file(f) for f in files], ignore_index=True)
 
-    out = files[0].parent / 'rs_cell_estimates.parquet'
-    cells.to_parquet(out, index=False)
+    out = write_canonical(cells, 'rs_cell_estimates.parquet')
     print(f'{len(files)} files -> {len(cells)} cell-replicate estimates -> {out}\n')
 
     check = (cells['B_hat']
