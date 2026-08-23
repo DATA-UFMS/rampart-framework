@@ -87,7 +87,7 @@ def arm_for(probe):
     configuration into the authoritative logs -- the INEP decay curve ran uncapped
     while its header said every model read 10,000 rows.
     """
-    if probe in ('routes', 'replicated_saturation'):
+    if probe in ('routes', 'replicated_saturation', 'exposure_mapping'):
         return ('uncapped: this probe builds classical models directly and '
                 'never wraps them in matched_context')
     return ('every model reads the same 10,000 rows'
@@ -150,7 +150,11 @@ SCRIPTS = {'channels': 'scripts/validation/probe_leakage_channels.py',
            # Classical-only, CPU-bound, and parquet-heavy: shard by fold with
            # RAMPART_FOLDS and run on CPU kernels, not the GPU queue.
            'replicated_saturation':
-               'scripts/validation/probe_replicated_saturation.py'}
+               'scripts/validation/probe_replicated_saturation.py',
+           # Sharded by replicate blocks (RAMPART_REP_OFFSET), not by fold:
+           # the heaviest INEP fold alone would blow the kernel cap.
+           'exposure_mapping':
+               'scripts/validation/probe_exposure_mapping.py'}
 if PROBE not in SCRIPTS:
     raise SystemExit(f'unknown probe {PROBE!r}; known: {sorted(SCRIPTS)}')
 

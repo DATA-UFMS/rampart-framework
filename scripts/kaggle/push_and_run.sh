@@ -26,6 +26,7 @@ SUFIXO=""
 SONDAS=""
 PROBE=""
 FOLDS=""
+ENVS=()
 SEM_GPU=0
 while (( $# )); do
   case "$1" in
@@ -36,6 +37,7 @@ while (( $# )); do
     --probes) SONDAS="${2:?--probes precisa de um inteiro}"; shift 2 ;;
     --probe) PROBE="${2:?--probe precisa de um nome registrado em kaggle_r3c.SCRIPTS}"; shift 2 ;;
     --folds) FOLDS="${2:?--folds precisa da lista de indices separada por virgula}"; shift 2 ;;
+    --env) ENVS+=("${2:?--env precisa de CHAVE=VALOR}"); shift 2 ;;
     --no-gpu) SEM_GPU=1; shift ;;
     *) echo "argumento desconhecido: $1"; exit 1 ;;
   esac
@@ -77,9 +79,10 @@ SLUG="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['id'])" 
 # mismatch there is rejected on push.
 NOTEBOOK="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['code_file'])" "$PALCO/kernel-metadata.json")"
 python3 - "$CELULA" "$PALCO/$NOTEBOOK" "$CAP_ALL" "$PAINEIS" "$SONDAS" "$PROBE" \
-        "${TABPFN_TOKEN:-}" "$FOLDS" <<'PY'
+        "${TABPFN_TOKEN:-}" "$FOLDS" "${ENVS[*]:-}" <<'PY'
 import json, sys
-fonte, destino, cap, paineis, sondas, probe, tabpfn, folds = sys.argv[1:9]
+(fonte, destino, cap, paineis, sondas, probe, tabpfn, folds,
+ extra_envs) = sys.argv[1:10]
 with open(fonte) as f:
     linhas = f.readlines()
 
@@ -108,6 +111,9 @@ if probe:
     prologo.append(f"os.environ['RAMPART_PROBE'] = {probe!r}\n")
 if folds:
     prologo.append(f"os.environ['RAMPART_FOLDS'] = {folds!r}\n")
+for par in extra_envs.split():
+    chave, _, valor = par.partition('=')
+    prologo.append(f"os.environ[{chave!r}] = {valor!r}\n")
 if tabpfn:
     prologo.append(f"os.environ['TABPFN_TOKEN'] = {tabpfn!r}\n")
 celulas = [celula(linhas)]
