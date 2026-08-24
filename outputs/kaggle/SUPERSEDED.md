@@ -20,6 +20,7 @@ Do not skip this file.
 | `rerun-rampart-r3c-fix5-routes-wb`, `-inep` | the decay curve and buffer widths, now with the NB dual on the GAP2-LEAK contrast |
 | `rerun-rampart-r3c-fix2-pertinep` | the matched-share absorption arm (313 probes on INEP), same protocol vintage |
 | `rerun-rampart-r3c-rs-wb`, `-inep-f01/-f23/-f45/-f67` | the randomized-saturation audit (interference reframe): 5 classical models, saturations 0.05-0.30 plus the s=0 clean arm, 40 fixed-size SRS replicates per cell, per-row losses in `rampart/replicated_saturation_*.parquet` (gitignored, ~150 MB; re-download with `kaggle kernels output`). Reduced by `scripts/validation/analyze_replicated_saturation.py` to S(s), D(s), B(s) with design-based t intervals over replicates |
+| `rerun-rampart-r3c-em-wb`, `-inep-r0/r5/.../r35` | the exposure mapping S(s,d): distances 0-6, 8, 10 (interior arms withhold their year and rebuild lags; bit-identity invariance selftest), saturations 0.10/0.30, 40 replicates sharded by blocks of 5. Per-row losses in `rampart/exposure_mapping_*.parquet` (gitignored). Reduced by `analyze_exposure_mapping.py` to the S(s,d) curves and the interference radius at 1/2/5% equivalence margins; canonical cells in `em_cell_estimates.parquet` (61,200 rows) |
 
 Every table and figure in the paper is regenerated from these by `paper_tkdd/make_tables.py`
 and `paper_tkdd/make_figures.py`. Nothing is transcribed by hand.
