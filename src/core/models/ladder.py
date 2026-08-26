@@ -130,6 +130,32 @@ LADDER: Tuple[Rung, ...] = (
 RUNGS: Dict[str, Rung] = {rung.name: rung for rung in LADDER}
 
 
+def neural_rung() -> Rung:
+    """A neural rung, deliberately OUTSIDE the LADDER tuple.
+
+    The five classical rungs are the roster of the published record and of
+    every golden test; the interference audit adds this one behind an
+    explicit request (RAMPART_MODELS) so no existing run or test changes.
+    Multilayer perceptron with standardised inputs (the panels' features
+    span orders of magnitude), fixed seed, no early stopping (its internal
+    validation split would add a second RNG consumer). Its clean fit on the
+    large panel is poor under the temporal shift, like every other rung's
+    there; the audit measures bias against each model's own clean fit, so a
+    weak baseline is a property being measured, not a defect of the probe.
+    """
+    def _mlp():
+        from sklearn.neural_network import MLPRegressor
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        return make_pipeline(
+            StandardScaler(),
+            MLPRegressor(hidden_layer_sizes=(32,), max_iter=300,
+                         batch_size=1024, random_state=RANDOM_SEED,
+                         early_stopping=False))
+    return Rung('ladder_mlp', _mlp, float('nan'),
+                'not in Roth: added for the interference audit')
+
+
 def entity_effect_frames(
     X_train: pd.DataFrame, X_test: pd.DataFrame,
     y_train: pd.Series, entities_train: pd.Series, entities_test: pd.Series,

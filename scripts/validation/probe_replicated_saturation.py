@@ -51,10 +51,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numpy as np
 import pandas as pd
 
-from probe_harness import declare_provenance, fold_rng, folds, panel, prepared
+from probe_harness import (declare_provenance, fold_rng, folds,
+                           ladder_roster, panel, prepared)
 
-from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
+from core.models.ladder import entity_effect_frames  # noqa: E402
 
+MODELS = ladder_roster()
 REPS = int(os.environ.get('RAMPART_REPS', '40'))
 SATURATIONS = tuple(
     float(x) for x in
@@ -84,7 +86,7 @@ def per_row_frame(fold, name, saturation, rep, arm, yr, ent, handed_mask,
 def main(dataset='worldbank'):
     df, columns, cfg = panel(dataset)
     windows = folds(cfg)
-    print(f"{dataset}: {len(windows)} folds, {len(LADDER)} classical models, "
+    print(f"{dataset}: {len(windows)} folds, {len(MODELS)} models, "
           f"saturations {list(SATURATIONS)}, {REPS} replicates per cell, "
           f"fixed-size SRS draws, per-row losses to parquet")
     declare_provenance(reps=REPS, saturations=SATURATIONS,
@@ -108,7 +110,7 @@ def main(dataset='worldbank'):
         records = []
 
         clean_losses = {}
-        for rung in LADDER:
+        for rung in MODELS:
             model = rung.make()
             model.fit(fit_frame, y_train)
             preds = np.asarray(model.predict(eval_frame), dtype=float)
@@ -119,8 +121,8 @@ def main(dataset='worldbank'):
 
         for saturation in SATURATIONS:
             count = max(1, int(round(saturation * len(eval_frame))))
-            s_hat = {rung.name: [] for rung in LADDER}
-            d_hat = {rung.name: [] for rung in LADDER}
+            s_hat = {rung.name: [] for rung in MODELS}
+            d_hat = {rung.name: [] for rung in MODELS}
             for rep in range(REPS):
                 # Numeric key parts only: hash() of numbers is stable across
                 # processes, and the draw must be reproducible per cell.
@@ -133,7 +135,7 @@ def main(dataset='worldbank'):
                                    ignore_index=True)
                 y_leak = pd.concat([y_train, y_test.iloc[handed]],
                                    ignore_index=True)
-                for rung in LADDER:
+                for rung in MODELS:
                     model = rung.make()
                     model.fit(X_leak, y_leak)
                     preds = np.asarray(model.predict(eval_frame), dtype=float)
@@ -145,7 +147,7 @@ def main(dataset='worldbank'):
                     s_hat[rung.name].append(float(gain[~mask].mean()))
                     d_hat[rung.name].append(
                         float(gain[mask].mean() - gain[~mask].mean()))
-            for rung in LADDER:
+            for rung in MODELS:
                 s, d = np.array(s_hat[rung.name]), np.array(d_hat[rung.name])
                 print(f"  fold {fold} s={saturation:.2f} {rung.name:>26}: "
                       f"S_hat {s.mean():+.4f} (rep sd {s.std(ddof=1):.4f})  "

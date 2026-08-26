@@ -158,6 +158,24 @@ def _rows_shared_with(df, other):
 #: Roth's own duplication rates, so the doses are not ours to choose.
 DOSES = (0.05, 0.10, 0.30)
 
+def ladder_roster():
+    """The models a probe runs: the LADDER, unless RAMPART_MODELS names a
+    subset (comma list of rung names; 'ladder_mlp' adds the neural rung).
+    Default unchanged, so every existing run and test keeps its roster."""
+    import os
+    from core.models.ladder import LADDER, neural_rung
+    wanted = os.environ.get('RAMPART_MODELS', '').strip()
+    rungs = list(LADDER) + [neural_rung()]
+    if not wanted:
+        return list(LADDER)
+    names = {w.strip() for w in wanted.split(',')}
+    picked = [r for r in rungs if r.name in names]
+    missing = names - {r.name for r in picked}
+    if missing:
+        raise SystemExit(f'RAMPART_MODELS names unknown rungs: {sorted(missing)}')
+    return picked
+
+
 #: Lags of the target, which the pipeline also builds. Two and three years
 #: because the gap is two: a one-year lag would be inside it.
 LAGS = (2, 3)

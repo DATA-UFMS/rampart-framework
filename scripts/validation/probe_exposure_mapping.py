@@ -80,15 +80,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numpy as np
 import pandas as pd
 
-from probe_harness import LAGS, declare_provenance, fold_rng, folds, panel
+from probe_harness import (LAGS, declare_provenance, fold_rng, folds,
+                           ladder_roster, panel)
 
-from core.models.ladder import LADDER, entity_effect_frames  # noqa: E402
+from core.models.ladder import entity_effect_frames  # noqa: E402
 
 DISTANCES = tuple(int(x) for x in
                   os.environ.get('RAMPART_DISTANCES',
                                  '0,1,2,3,4,5,6,8,10').split(','))
 SATURATIONS = tuple(float(x) for x in
                     os.environ.get('RAMPART_SATURATIONS', '0.10,0.30').split(','))
+MODELS = ladder_roster()
 REPS = int(os.environ.get('RAMPART_REPS', '40'))
 REP_OFFSET = int(os.environ.get('RAMPART_REP_OFFSET', '0'))
 FOLD_FILTER = (tuple(int(x) for x in os.environ['RAMPART_FOLDS'].split(','))
@@ -225,7 +227,7 @@ def selftest(dataset='worldbank_clean'):
         fit_frame, eval_frame, _m, _g = entity_effect_frames(
             X_tr, X_te, y_tr, e_tr, e_te)
         preds = []
-        for rung in LADDER:
+        for rung in MODELS:
             if rung.name not in ('ladder_ridge', 'ladder_decision_tree'):
                 continue
             model = rung.make()
@@ -244,7 +246,7 @@ def main(dataset='worldbank_clean'):
         return selftest(dataset)
     df, columns, cfg = panel(dataset)
     windows = folds(cfg)
-    print(f'{dataset}: {len(windows)} folds, {len(LADDER)} classical models, '
+    print(f'{dataset}: {len(windows)} folds, {len(MODELS)} models, '
           f'distances {list(DISTANCES)}, saturations {list(SATURATIONS)}, '
           f'replicates [{REP_OFFSET}, {REP_OFFSET + REPS})')
     declare_provenance(distances=DISTANCES, saturations=SATURATIONS,
@@ -270,7 +272,7 @@ def main(dataset='worldbank_clean'):
             fit_frame, eval_frame, _m, _g = entity_effect_frames(
                 X_tr, X_te, y_tr, e_tr, e_te)
             clean_losses = {}
-            for rung in LADDER:
+            for rung in MODELS:
                 model = rung.make()
                 model.fit(fit_frame, y_tr)
                 preds = np.asarray(model.predict(eval_frame), dtype=float)
@@ -281,7 +283,7 @@ def main(dataset='worldbank_clean'):
 
             for sat in SATURATIONS:
                 count = max(1, int(round(sat * len(X_te))))
-                s_reads = {rung.name: [] for rung in LADDER}
+                s_reads = {rung.name: [] for rung in MODELS}
                 for rep in range(REP_OFFSET, REP_OFFSET + REPS):
                     rng = fold_rng(fold, distance, sat, rep)
                     if distance == 0:
@@ -306,7 +308,7 @@ def main(dataset='worldbank_clean'):
                         pd.concat([y_tr, ya], ignore_index=True),
                         pd.concat([e_tr, ea], ignore_index=True), e_te)
                     wide_y = pd.concat([y_tr, ya], ignore_index=True)
-                    for rung in LADDER:
+                    for rung in MODELS:
                         model = rung.make()
                         model.fit(wide_X, wide_y)
                         preds = np.asarray(model.predict(wide_eval),
@@ -317,7 +319,7 @@ def main(dataset='worldbank_clean'):
                         gain = clean_losses[rung.name] - (truth - preds) ** 2
                         s_reads[rung.name].append(
                             float(gain[~mask].mean()))
-                for rung in LADDER:
+                for rung in MODELS:
                     v = np.array(s_reads[rung.name])
                     if not len(v):
                         continue
