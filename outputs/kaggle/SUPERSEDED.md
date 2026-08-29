@@ -23,8 +23,9 @@ Do not skip this file.
 | `rerun-rampart-r3c-em-wb`, `-inep-r0/r5/.../r35` | the exposure mapping S(s,d): distances 0-6, 8, 10 (interior arms withhold their year and rebuild lags; bit-identity invariance selftest), saturations 0.10/0.30, 40 replicates sharded by blocks of 5. Per-row losses in `rampart/exposure_mapping_*.parquet` (gitignored). Reduced by `analyze_exposure_mapping.py` to the S(s,d) curves and the interference radius at 1/2/5% equivalence margins; canonical cells in `em_cell_estimates.parquet` (61,200 rows) |
 | `rerun-rampart-r3c-rs-mlp-wb`, `-rs-mlp-inep`, `-em-mlp-wb`, `-em-mlp-inep-d0..d10` | the neural rung (`ladder_mlp`, opt-in via `RAMPART_MODELS`; see `neural_rung()` in ladder.py) run through the identical rs and em designs after the classical audit; the INEP exposure mapping is sharded by distance (`RAMPART_DISTANCES`) because a 12h Kaggle session holds one distance of 40 replicates. Consolidated into the same canonical parquets (`rs_cell_estimates.parquet` now 24,960 rows, `em_cell_estimates.parquet` 73,440), with the classical rows verified bit-identical before and after |
 
-Every table and figure in the paper is regenerated from these by `paper_tkdd/make_tables.py`
-and `paper_tkdd/make_figures.py`. Nothing is transcribed by hand.
+Every table and figure in the paper is regenerated from these by
+`paper_tkdd/make_tables_interference.py`, `make_figures_interference.py` and `make_drivers.py`
+(`make_tables.py` only emits the legacy calibration table). Nothing is transcribed by hand.
 
 ## Superseded — do not cite these numbers
 
