@@ -12,18 +12,18 @@ additive improvement scale:
     itemwise*     bias = (1-share)*S(s)       ORACLE itemwise correction --
                                               every contaminated row's loss
                                               restored to its exact clean
-                                              value. The BEST CASE of the
-                                              itemwise class (Spiking-style
-                                              calibration included): its bias
-                                              LOWER-bounds the residual bias
-                                              of any correction that only
+                                              value. Any correction that only
                                               edits contaminated items'
-                                              scores, because no such edit
-                                              touches the spillover term
-                                              (1-share)*S on the others.
-                                              Imperfect itemwise methods add
-                                              per-item restoration error on
-                                              top of it.
+                                              scores has bias (1-share)*S
+                                              plus share*(mean restoration
+                                              error on the inserted rows); the
+                                              first term is shared by the
+                                              whole class and exact
+                                              restoration is the member with
+                                              zero restoration error. Not a
+                                              lower bound: a restoration error
+                                              of the opposite sign (the WB
+                                              MLP cell) can offset it.
     cross-audit   residual ~ 0 (SE)           drop score corrected with S
                                               estimated from an INDEPENDENT
                                               half of the replicates
@@ -49,6 +49,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from analyze_replicated_saturation import t_ci_stratified  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 CANONICAL = 'outputs/kaggle/rs_cell_estimates.parquet'
@@ -84,7 +87,7 @@ def main(*paths):
               f"{'drop/clean%':>12}")
         for (model, sat), g in dg.groupby(['model', 'saturation']):
             b = g['B_hat'].mean()
-            s_mean, s_half = t_ci(g['S_hat'])
+            s_mean, s_half = t_ci_stratified(g['S_hat'], g['fold'])
             oracle = ((1 - g['share']) * g['S_hat']).mean()
             # One independent-audit residual per fold: first-half reps price
             # the audit being corrected, second-half reps price the audit

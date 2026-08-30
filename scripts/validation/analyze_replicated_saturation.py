@@ -87,8 +87,36 @@ def reduce_file(path):
     return pd.DataFrame(rows)
 
 
+def t_ci_stratified(values, folds, level=0.95):
+    """Interval for the mean of the fold-level estimands, conditional on the
+    observed folds: the target is Sbar = F^-1 sum_f S_f, each fold's mean is
+    an average of R iid replicate draws, so Var(Sbar_hat) = F^-2 sum_f s_f^2/R_f
+    and the only randomness priced is the assignment within folds. Degrees of
+    freedom by Welch--Satterthwaite. Between-fold heterogeneity is part of
+    the estimand here, not of its uncertainty; it is reported separately as
+    the spread of the fold means. (An earlier version pooled all F*R draws
+    into one t, which mixed the two and matched no estimand.)
+    Returns (mean of fold means, half-width)."""
+    from scipy import stats
+    df = pd.DataFrame({'v': np.asarray(values, dtype=float),
+                       'f': np.asarray(folds)})
+    g = df.groupby('f')['v']
+    means, var, n = g.mean(), g.var(ddof=1), g.count()
+    if len(means) == 0 or (n < 2).any():
+        return float(df['v'].mean()), float('nan')
+    comps = var / n                       # variance of each fold mean
+    F = len(means)
+    se = float(np.sqrt(comps.sum()) / F)
+    dfree = float(comps.sum() ** 2 / (comps ** 2 / (n - 1)).sum())
+    half = stats.t.ppf(0.5 + level / 2, dfree) * se
+    return float(means.mean()), float(half)
+
+
 def t_ci(values, level=0.95):
-    """t interval over iid replicate estimates: design-based by construction."""
+    """t interval over iid replicate estimates: design-based by construction.
+    Valid when the values are draws around ONE estimand (e.g. within a fold,
+    or the per-fold residuals of the split-half check). For cells that pool
+    folds use t_ci_stratified."""
     from scipy import stats
     v = np.asarray(values, dtype=float)
     if len(v) < 2:
@@ -133,12 +161,14 @@ def main(*args):
         print(f"{'model':>26} {'s':>5} {'S(s)':>22} {'D(s)':>22} "
               f"{'B(s)':>9} {'S/clean%':>9} {'fold sd(S)':>11}")
         for (model, sat), g in dgroup.groupby(['model', 'saturation']):
-            # Design-based interval: pool replicates across folds after
-            # centring nothing -- each fold contributes R iid draws around its
-            # own estimand, so the pooled t prices assignment noise around the
-            # mean of fold-level estimands. Fold spread is shown beside it.
-            s_mean, (s_lo, s_hi) = t_ci(g['S_hat'])
-            d_mean, (d_lo, d_hi) = t_ci(g['D_hat'])
+            # Conditional-on-folds interval: each fold contributes R iid draws
+            # around its own estimand; the interval prices only that
+            # assignment noise for the mean of the fold estimands. Fold spread
+            # (heterogeneity of the estimand) is shown beside it.
+            s_mean, s_half = t_ci_stratified(g['S_hat'], g['fold'])
+            s_lo, s_hi = s_mean - s_half, s_mean + s_half
+            d_mean, d_half = t_ci_stratified(g['D_hat'], g['fold'])
+            d_lo, d_hi = d_mean - d_half, d_mean + d_half
             b_mean = g['B_hat'].mean()
             fold_means = g.groupby('fold')['S_hat'].mean()
             rel = 100 * s_mean / g['mean_clean_loss'].mean()
@@ -148,7 +178,8 @@ def main(*args):
                   f'{b_mean:>+9.4f} {rel:>8.1f}% '
                   f'{fold_means.std(ddof=1) if len(fold_means) > 1 else float("nan"):>11.4f}')
         print()
-        print('  intervals: t over replicate draws (assignment noise only);')
+        print('  intervals: conditional on the observed folds (assignment noise,')
+        print('  variance F^-2 sum_f s_f^2/R, Welch-Satterthwaite df);')
         print('  fold sd(S): spread of per-fold means -- cross-fold inference')
         print('  is NOT claimed here and goes through the dependent-fold tools.')
         print()

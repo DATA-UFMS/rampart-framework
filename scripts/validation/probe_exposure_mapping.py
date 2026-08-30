@@ -11,8 +11,17 @@ as the replicated-saturation audit.
 Three regimes of d, decided per panel from the walk-forward geometry:
 
     d = 0        rows from the evaluation window itself: rows split
-                 handed/unhanded, S = gain on unhanded. Same draw as the
-                 replicated-saturation audit but NOT the same treatment:
+                 handed/unhanded, S = gain on unhanded. Shares the
+                 replicated-saturation audit's marginal fixed-size design
+                 (count = round(s * n_eval) evaluation rows, drawn without
+                 replacement) but NOT its inserted rows: the rs audit seeds
+                 fold_rng(fold, saturation, rep) and this probe seeds
+                 fold_rng(fold, distance, saturation, rep), so the two draw
+                 different sets (WB fold 0, s = 0.30: 0 of 40 masks
+                 identical, mean overlap 3.8 of 13 rows). The d = 0 contrast
+                 with rs is therefore UNPAIRED -- two independent samples of
+                 the same design, never compared replicate by replicate.
+                 Nor is it the same treatment:
                  here the entity-effect column (a target encoding) is
                  recomputed on the widened training set at every d -- the
                  encoding seeing the leak is part of the treatment, and one
@@ -33,11 +42,24 @@ Three regimes of d, decided per panel from the walk-forward geometry:
                  never truly withheld the year.
 
 Registered checks, written before the first run:
-  P1  RAMPART_SELFTEST=1: multiplying every value of the withheld year by ten
-      in the raw panel leaves the interior arm's clean predictions
-      BIT-IDENTICAL (ridge and unbounded tree). If any channel from the
-      withheld year survives -- rows, lags, imputation medians, entity
-      means -- this fails loudly.
+  P1  RAMPART_SELFTEST=1, on every interior arm of every fold (RAMPART_FOLDS
+      filters): mutating the withheld year in the raw panel (target*10+7,
+      features*3+1, propagated into the precomputed lag columns) leaves
+      every object the arm derives BIT-IDENTICAL -- the sliced X_tr, y_tr,
+      X_te, y_te, the fill (training-window medians), the rebuilt lag
+      columns, the entity-effect frames and means -- and, with them, the
+      clean predictions of the ridge and the unbounded tree. The comparison
+      names the object that differs. Predictions alone are a lossy
+      projection (a surviving channel the two fits ignore would pass), so
+      each arm also runs a SENTINEL: one feature column of every row of
+      every year set to the withheld year's mean target, a channel that
+      survives row filtering and that the fits barely read -- the tree not
+      at all, the centred ridge only through the rounding residue of the
+      centring (measured on WB: predictions bit-identical on 52 of 108 arms,
+      moved by ~5e-12 on the other 56). The prediction check is therefore
+      unreliable on this channel; the frame comparison must FAIL on the
+      sentinel and PASS on the honest rebuild, and the selftest exits
+      non-zero unless both hold on every arm.
   P2  At d = 0 the S readings of encoding-INSENSITIVE models (random
       forest, gradient boosting) land in the range the replicated-
       saturation audit measured on the same panels. No agreement is
@@ -64,13 +86,15 @@ Environment knobs:
     RAMPART_REPS         replicates in this shard, default 40
     RAMPART_REP_OFFSET   absolute index of the first replicate, default 0
     RAMPART_FOLDS        optional fold filter
-    RAMPART_SELFTEST     run P1 and exit
+    RAMPART_SELFTEST     run P1 on every interior arm (RAMPART_FOLDS filters)
+                         and exit
 
 Run: .venv/bin/python scripts/validation/probe_exposure_mapping.py [dataset]
 """
 
 import os
 import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -83,7 +107,7 @@ import pandas as pd
 from probe_harness import (LAGS, declare_provenance, fold_rng, folds,
                            ladder_roster, panel)
 
-from core.models.ladder import entity_effect_frames  # noqa: E402
+from core.models.ladder import RUNGS, entity_effect_frames  # noqa: E402
 
 DISTANCES = tuple(int(x) for x in
                   os.environ.get('RAMPART_DISTANCES',
@@ -195,50 +219,174 @@ def arm_frames(df, columns, a, b, test_start, test_end, distance):
             pool_at(df, columns, year_d, fill))
 
 
-def selftest(dataset='worldbank_clean'):
-    """P1: the interior arm must be blind to the withheld year, bit for bit."""
-    df, columns, cfg = panel(dataset)
-    a, b, ts, te = folds(cfg)[0]
-    distance = ts - ((a + b) // 2)             # a mid-training interior year
-    year_d = ts - distance
-    mutated = df.copy()
-    hit = mutated['year'] == year_d
-    mutated.loc[hit, 'target'] = mutated.loc[hit, 'target'] * 10 + 7
+#: The two witnesses of the prediction check, fixed by design rather than read
+#: from the roster: a RAMPART_MODELS subset without them would otherwise make
+#: the check vacuous (no fits, `all([])` is True).
+SELFTEST_RUNGS = ('ladder_ridge', 'ladder_decision_tree')
+
+
+def mutate_withheld(df, columns, year_d):
+    """The P1 mutation: every value of the withheld year moved, including the
+    copies the precomputed lag columns hold at year_d + k.
+
+    An affine map rather than a pure scale, so a zero moves too. The lag
+    propagation is there because today rebuild_lags drops and rebuilds those
+    columns, but a future edit that reused the stale ones would be invisible
+    to a mutation that skips them -- the verification pass named this
+    blindness, so the mutation closes it.
+    """
+    out = df.copy()
+    hit = out['year'] == year_d
+    out.loc[hit, 'target'] = out.loc[hit, 'target'] * 10 + 7
     for c in columns:
-        if c in mutated.columns and not c.startswith('lag_'):
-            mutated.loc[hit, c] = mutated.loc[hit, c] * 3 + 1
-    # Propagate the mutation into the panel's precomputed lag columns too:
-    # rows at year_d + k hold target(year_d) in lag_k. Today rebuild_lags
-    # drops and rebuilds them, but a future edit that reused the stale
-    # columns would be invisible to a mutation that skips them -- the
-    # verification pass named this blindness, so the mutation closes it.
-    from probe_harness import LAGS as _lags
-    for k in _lags:
-        src = mutated.loc[mutated['year'] == year_d,
-                          ['entity_id', 'target']].set_index('entity_id')['target']
-        at = mutated['year'] == year_d + k
-        mutated.loc[at, f'lag_{k}'] = (
-            mutated.loc[at, 'entity_id'].map(src)
-            .fillna(mutated.loc[at, f'lag_{k}']))
-    outputs = []
-    for frame in (df, mutated):
-        X_tr, y_tr, e_tr, X_te, _y, e_te, _yr, _pool = arm_frames(
-            frame, columns, a, b, ts, te, distance)
-        fit_frame, eval_frame, _m, _g = entity_effect_frames(
-            X_tr, X_te, y_tr, e_tr, e_te)
-        preds = []
-        for rung in MODELS:
-            if rung.name not in ('ladder_ridge', 'ladder_decision_tree'):
+        if c in out.columns and not c.startswith('lag_'):
+            out.loc[hit, c] = out.loc[hit, c] * 3 + 1
+    src = (out.loc[hit, ['entity_id', 'target']]
+           .set_index('entity_id')['target'])
+    for k in LAGS:
+        at = out['year'] == year_d + k
+        out.loc[at, f'lag_{k}'] = (out.loc[at, 'entity_id'].map(src)
+                                   .fillna(out.loc[at, f'lag_{k}']))
+    return out
+
+
+def sentinel_channel(df, columns, year_d):
+    """A leak that survives row filtering: one feature column of EVERY row of
+    every year replaced by the withheld year's mean target.
+
+    Dropping the year's rows does not remove it and rebuilding the lags does
+    not touch it. A constant column is also what the fits barely read: the
+    tree has nothing to split on, and the centred ridge sees only the
+    rounding residue of the centring (~1e-15), which moves its predictions
+    by ~1e-12 on some arms and not at all on others. So it is the channel
+    the prediction check cannot be relied on to see -- the frame comparison
+    has to.
+    """
+    col = next(c for c in columns if not c.startswith('lag_'))
+    out = df.copy()
+    out[col] = float(df.loc[df['year'] == year_d, 'target'].mean())
+    return out, col
+
+
+def interior_objects(frame, columns, a, b, ts, te, distance):
+    """Every object the interior arm derives from the panel, by name, so a
+    comparison can say which one leaked.
+
+    The insertion pool is left out on purpose: it is the withheld year's own
+    rows and is meant to carry the mutation. Nothing else may.
+    """
+    year_d = ts - distance
+    made = arm_frames(frame, columns, a, b, ts, te, distance)
+    if made is None:
+        return None
+    X_tr, y_tr, e_tr, X_te, y_te, e_te, yr_te, _pool = made
+    arm_df = rebuild_lags(frame, year_d)         # what arm_frames sliced
+    fill = sliced(arm_df, columns, a, b, ts, te)[-1]
+    fit_frame, eval_frame, means, global_mean = entity_effect_frames(
+        X_tr, X_te, y_tr, e_tr, e_te)
+    return {
+        'X_tr': X_tr, 'y_tr': y_tr, 'e_tr': e_tr,
+        'X_te': X_te, 'y_te': y_te, 'e_te': e_te, 'yr_te': yr_te,
+        'fill': fill,
+        'rebuilt_lags': arm_df[['entity_id', 'year']
+                               + [f'lag_{k}' for k in LAGS]],
+        'fit_frame': fit_frame, 'eval_frame': eval_frame,
+        'entity_means': pd.Series(means, dtype=float).sort_index(),
+        'global_mean': np.float64(global_mean),
+    }
+
+
+def differing(lhs, rhs):
+    """Names of the objects that are not equal value for value. pandas
+    `equals`: same shape, dtypes, index and values, NaN matching NaN."""
+    out = []
+    for name, x in lhs.items():
+        y = rhs[name]
+        same = (x.equals(y) if isinstance(x, (pd.DataFrame, pd.Series))
+                else np.array_equal(x, y))
+        if not same:
+            out.append(name)
+    return out
+
+
+def clean_predictions(objects):
+    """The original P1 check, kept: ridge and unbounded tree fit on the arm."""
+    preds = []
+    for name in SELFTEST_RUNGS:
+        model = RUNGS[name].make()
+        model.fit(objects['fit_frame'], objects['y_tr'])
+        preds.append(np.asarray(model.predict(objects['eval_frame']),
+                                dtype=float))
+    return preds
+
+
+def compare_arms(frames, columns, a, b, ts, te, distance):
+    """Frame-level and prediction-level agreement of the interior arm built
+    from two panels. Returns (names of differing objects, predictions equal),
+    or None when the arm is unrealisable on either panel."""
+    objects = [interior_objects(f, columns, a, b, ts, te, distance)
+               for f in frames]
+    if any(o is None for o in objects):
+        return None
+    preds = [clean_predictions(o) for o in objects]
+    return (differing(*objects),
+            all(np.array_equal(x, y) for x, y in zip(*preds)))
+
+
+def selftest(dataset='worldbank_clean'):
+    """P1, per interior arm: the arm must be blind to the withheld year, bit
+    for bit.
+
+    Two panels per arm, the raw one and one with the withheld year mutated
+    (`mutate_withheld`). Every object the arm derives must be equal, and so
+    must the ridge's and the tree's clean predictions -- the original check,
+    kept, but no longer the only one, because predictions are a lossy
+    projection of the frames. The sentinel run is the demonstration: the
+    same comparison with `sentinel_channel` applied to both panels must
+    FAIL on the frames, whether or not the predictions notice. Exits
+    non-zero unless every arm fails on the sentinel and passes honestly.
+    """
+    df, columns, cfg = panel(dataset)
+    arms = failures = 0
+    started = time.perf_counter()
+    for fold, (a, b, ts, te) in enumerate(folds(cfg)):
+        if FOLD_FILTER is not None and fold not in FOLD_FILTER:
+            continue
+        for distance in range(ts - b, ts - a + 1):      # a <= year_d <= b
+            year_d = ts - distance
+            t0 = time.perf_counter()
+            mutated = mutate_withheld(df, columns, year_d)
+            honest = compare_arms((df, mutated), columns, a, b, ts, te,
+                                  distance)
+            if honest is None:
+                print(f'  fold {fold} d={distance} (year {year_d}): '
+                      f'unrealisable, skipped', flush=True)
                 continue
-            model = rung.make()
-            model.fit(fit_frame, y_tr)
-            preds.append(np.asarray(model.predict(eval_frame), dtype=float))
-        outputs.append(preds)
-    identical = all(np.array_equal(x, y) for x, y in zip(*outputs))
-    print(f'P1 selftest on {dataset}: withheld year {year_d} mutated '
-          f'(target*10+7, features*3+1); interior-arm clean predictions '
-          f'bit-identical: {"PASS" if identical else "FAIL"}')
-    return 0 if identical else 1
+            leaked, col = zip(*(sentinel_channel(f, columns, year_d)
+                                for f in (df, mutated)))
+            sentinel = compare_arms(leaked, columns, a, b, ts, te, distance)
+            arms += 1
+            head = f'P1 fold {fold} d={distance:>2} (withheld {year_d})'
+            s_diff, s_preds = sentinel
+            verdict = ('FAIL, as required (leak detected)' if s_diff
+                       else 'PASS: LEAK NOT DETECTED')
+            print(f'  {head} sentinel[{col[0]}]: frames '
+                  f'{"differ " + str(s_diff) if s_diff else "identical"}, '
+                  f'preds {"identical" if s_preds else "differ"} -> '
+                  f'{verdict}', flush=True)
+            h_diff, h_preds = honest
+            ok = not h_diff and h_preds
+            print(f'  {head} honest rebuild: frames '
+                  f'{"differ " + str(h_diff) if h_diff else "identical"}, '
+                  f'preds {"identical" if h_preds else "differ"} -> '
+                  f'{"PASS" if ok else "FAIL"}   '
+                  f'[{time.perf_counter() - t0:.1f}s]', flush=True)
+            failures += not (ok and s_diff)
+    print(f'P1 selftest on {dataset}: {arms} interior arms, '
+          f'{arms - failures} with sentinel FAIL and honest PASS, '
+          f'{failures} failing, {time.perf_counter() - started:.1f}s -> '
+          f'{"PASS" if arms and not failures else "FAIL"}')
+    return 0 if arms and not failures else 1
 
 
 def main(dataset='worldbank_clean'):

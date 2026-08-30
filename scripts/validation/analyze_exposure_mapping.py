@@ -104,6 +104,8 @@ def reduce_file(path):
 
 
 def t_ci(values, level=0.95):
+    """t over iid draws around one estimand (a single fold, or per-fold
+    residuals). Cells that pool folds use t_ci_stratified."""
     from scipy import stats
     v = np.asarray(values, dtype=float)
     m = float(v.mean())
@@ -112,6 +114,13 @@ def t_ci(values, level=0.95):
     half = (stats.t.ppf(0.5 + level / 2, len(v) - 1)
             * v.std(ddof=1) / np.sqrt(len(v)))
     return m, float(half)
+
+
+def t_ci_stratified(values, folds, level=0.95):
+    """Conditional-on-folds interval for the mean of fold estimands; see
+    analyze_replicated_saturation.t_ci_stratified (same definition)."""
+    from analyze_replicated_saturation import t_ci_stratified as _tcs
+    return _tcs(values, folds, level)
 
 
 def verdict(lo, hi, eps):
@@ -159,9 +168,9 @@ def main(*args):
         norm_ci = {}
         for (model, sat, dist), g in dg.groupby(['model', 'saturation',
                                                  'distance']):
-            s_mean, s_half = t_ci(g['S_hat'])
+            s_mean, s_half = t_ci_stratified(g['S_hat'], g['fold'])
             rel = g['S_hat'] / g['mean_clean_loss']
-            r_mean, r_half = t_ci(rel)
+            r_mean, r_half = t_ci_stratified(rel, g['fold'])
             v = verdict(r_mean - r_half, r_mean + r_half, MARGINS[0])
             norm_ci[(model, sat, dist)] = (r_mean - r_half, r_mean + r_half)
             print(f'{model:>26} {sat:>5.2f} {dist:>3} '
@@ -196,14 +205,14 @@ def main(*args):
                                 & (both['saturation'] == sat)]
                     if not len(twin):
                         continue
-                    a, ah = t_ci(g['S_hat'])
-                    b, bh = t_ci(twin['S_hat'])
+                    a, ah = t_ci_stratified(g['S_hat'], g['fold'])
+                    b, bh = t_ci_stratified(twin['S_hat'], twin['fold'])
                     print(f'{model:>26} {sat:>5.2f}  em {a:>+8.3f}±{ah:<7.3f}'
                           f'  rs {b:>+8.3f}±{bh:<7.3f}')
                 print()
 
-    print('reading: intervals are t over replicate draws (assignment noise');
-    print('only; fold spread not separately shown here -- the cell parquet')
+    print('reading: intervals are conditional on the observed folds (assignment');
+    print('noise only, F^-2 sum_f s_f^2/R); fold spread is not shown here -- the cell parquet')
     print('carries fold for any cross-fold treatment). Each distance is')
     print('measured against its own honest baseline: interior arms withhold')
     print('their year and rebuild lags, so their clean loss differs by design.')
