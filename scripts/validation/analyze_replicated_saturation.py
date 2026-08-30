@@ -12,11 +12,12 @@ reduces them to the interference estimands:
         B_hat(r) = mean gain over all rows             (= S + s*D, exactly)
 
 Inference is design-based: replicates are iid draws from the design the audit
-itself randomised, so a t interval over R replicates prices the assignment
-noise with no assumption about dependence between folds. Cross-fold statements
-are NOT made here -- the fold column is reported as spread, and whatever
-generalisation claim the paper makes across folds goes through the dependent-
-fold machinery it already carries.
+itself randomised, so within a fold a t interval over R replicates prices the
+assignment noise with no assumption about dependence between folds. Across
+folds the headline interval is t_ci_stratified: the mean of fold means with
+variance F^-2 * sum_f sigma_f^2 / R and Welch-Satterthwaite df, a target
+conditional on the folds observed -- no statement about unseen folds is made;
+the per-fold means are reported as spread.
 
 The B = S + s*D line per cell is arithmetic, not a finding; it is printed as a
 pipeline self-check and must hold to float precision.

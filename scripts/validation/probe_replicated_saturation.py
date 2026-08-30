@@ -14,7 +14,8 @@ with the aggregate evaluation bias B(s) = S(s) + s * D(s). Under a fixed-size
 simple random draw of the inserted set and an ADDITIVE per-row loss, the
 handed-row mean improvement estimates S + D, the unseen-row mean improvement
 estimates S, and their difference estimates D -- exactly, not asymptotically.
-Both conditions are load-bearing: Bernoulli draws add O(1/n) ratio bias, and
+Both conditions are load-bearing: Bernoulli draws add ratio bias (of order 1/n
+under smoothness, with the denominator bounded away from zero), and
 group-relative improvements (ratio of sums per group) break the algebra
 entirely, so this probe records raw per-row losses and leaves aggregation to
 the analysis.

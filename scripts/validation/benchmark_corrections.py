@@ -9,7 +9,7 @@ additive improvement scale:
     uncorrected   bias = B(s) = S + share*D   what the leaderboard prints
     drop          bias = S(s)                 remove contaminated rows: the
                                               spillover stays (Lemma 3)
-    itemwise*     bias = (1-share)*S(s)       ORACLE itemwise correction --
+    exact rest.*  bias = (1-share)*S(s)       exact restoration --
                                               every contaminated row's loss
                                               restored to its exact clean
                                               value. Any correction that only
@@ -24,17 +24,17 @@ additive improvement scale:
                                               lower bound: a restoration error
                                               of the opposite sign (the WB
                                               MLP cell) can offset it.
-    cross-audit   residual ~ 0 (SE)           drop score corrected with S
+    split-half    residual ~ 0 (SE)           drop score corrected with S
                                               estimated from an INDEPENDENT
                                               half of the replicates
                                               (reps 0-19 vs 20-39, disjoint
                                               by construction): the audit
                                               protocol this paper proposes.
 
-The drop column carries a t interval over the pooled replicate estimates (the
-same design-based construction the analyzer prints; uncorrected and itemwise*
-are point summaries of the same replicates); the cross-audit residual is
-tested over folds (each fold contributes one A-half minus B-half difference,
+The drop column carries the stratified interval conditional on the observed
+folds (mean of fold means, the same construction the analyzer prints;
+uncorrected and exact rest.* are point summaries of the same replicates); the
+split-half residual is tested over folds (each fold contributes one A-half minus B-half difference,
 expectation zero regardless of fold heterogeneity). Percentages are of the
 fold-mean clean loss, a constant scaling that preserves the algebra.
 
@@ -83,7 +83,7 @@ def main(*paths):
         half = reps // 2
         print(f'=== {dataset}: {dg["fold"].nunique()} folds, {reps} replicates ===')
         print(f"{'model':>26} {'s':>5} {'uncorr':>8} "
-              f"{'drop=S':>17} {'itemwise*':>10} {'cross-audit':>17} "
+              f"{'drop=S':>17} {'exact rest.*':>12} {'split-half':>17} "
               f"{'drop/clean%':>12}")
         for (model, sat), g in dg.groupby(['model', 'saturation']):
             b = g['B_hat'].mean()
@@ -105,10 +105,11 @@ def main(*paths):
                   f'{r_mean:>+8.4f}±{r_half:<7.4f} {rel:>11.1f}%')
         print()
 
-    print('reading: every itemwise column (oracle included) retains essentially')
-    print('the full drop bias, because share is small and the bias is spillover;')
-    print('the cross-audit residual is the only column compatible with zero, and')
-    print('its interval is a fold-level t test of the correction protocol itself.')
+    print('reading: exact restoration retains most of the drop bias, because')
+    print('share is small and the bias is spillover; the split-half residual sits')
+    print('near zero (zero in expectation for any data, so it reads precision,')
+    print('not bias; 2 of the 48 audited cells exclude zero) and its interval is')
+    print('a fold-level t check of the replicate machinery.')
     return 0
 
 
