@@ -62,10 +62,11 @@ What is validated, per (regime, mechanism, saturation):
              calibration of the intervals the real audit reports, scored
              out of sample.
   5. CORRECT the three corrections against the clean score, in improvement
-             scale: drop-the-contaminated misses by S(s); perfect itemwise
-             correction (each inserted row's loss restored to its clean
-             value -- an oracle no real method beats) still misses by
-             (1-s)*S(s); the spillover-aware correction -- one audit's drop
+             scale: drop-the-contaminated misses by S(s); exact restoration
+             (each inserted row's loss restored to its clean value) still
+             misses by (1-s)*S(s), the residual shared by every correction
+             that edits only inserted rows (a partial restoration can land
+             closer by chance, so this is not a bound); the spillover-aware correction -- one audit's drop
              score corrected with S estimated from an INDEPENDENT audit's
              replicates (disjoint group pairs of the EVAL stream) -- centres
              on zero with a reported SE. Lemma 3 of the formal section,
@@ -320,9 +321,9 @@ def main():
     print(f"lookup exactness: S_hat == 0.0 in every single draw: "
           f"{'YES' if tally['lookup_exact'] else 'NO -- BUG'}")
     print('\ncolumns: drop = bias of dropping contaminated rows (= S, Lemma 3);')
-    print('itemw = bias of PERFECT itemwise correction (= (1-s)S -- an oracle')
-    print('no calibration-based method beats); sp-aware = mean(SE) of the')
-    print('cross-audit corrected residual over disjoint replicate-group pairs')
+    print('itemw = bias of exact restoration (= (1-s)S, the residual shared by')
+    print('every correction that edits only inserted rows); sp-aware = mean(SE)')
+    print('of the split-half corrected residual over disjoint replicate-group pairs')
     print('(stochastically ~0 when the correction works -- a real test, unlike')
     print('a within-group LOO average, which is 0 for any data by identity);')
     print('relFlip% = draws where the ratio-of-sums direct reading disagrees')
