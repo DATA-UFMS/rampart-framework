@@ -39,6 +39,21 @@ Environment knobs (all optional):
     RAMPART_FOLDS        comma list of fold indices to run (kernel sharding)
 
 Run: .venv/bin/python scripts/validation/probe_replicated_saturation.py [dataset]
+
+REGISTERED PREDICTIONS (F1 fleets, 30 Aug 2026):
+  P-F1.1 (multi-seed MLP): if the World Bank negative spillover is
+      optimizer-seed noise, the sign of S_hat varies across RAMPART_NEURAL_SEED
+      values and the across-seed mean falls inside the conditional interval
+      half-width; if it is real, S_hat is negative in at least 9 of 10 seeds.
+      Integration decision, pre-committed: either outcome changes only ~3
+      sentences in Section 9.1 of the paper (conjecture -> verdict); no new
+      section.
+  P-F1.3 (second-generation boosting): ladder_xgboost and ladder_lightgbm
+      replicate the global-learner pattern on both panels (moved share ~100%,
+      spillover of the same sign and order as ladder_gradient_boosting, same
+      correction regime). Integration decision, pre-committed: one robustness
+      paragraph in Section 9.1 plus one compact appendix table; never in the
+      main figures or main tables.
 """
 
 import os

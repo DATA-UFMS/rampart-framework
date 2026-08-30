@@ -160,12 +160,14 @@ DOSES = (0.05, 0.10, 0.30)
 
 def ladder_roster():
     """The models a probe runs: the LADDER, unless RAMPART_MODELS names a
-    subset (comma list of rung names; 'ladder_mlp' adds the neural rung).
+    subset (comma list of rung names; 'ladder_mlp' adds the neural rung,
+    'ladder_xgboost'/'ladder_lightgbm' the F1.3 boosting rungs).
     Default unchanged, so every existing run and test keeps its roster."""
     import os
-    from core.models.ladder import LADDER, neural_rung
+    from core.models.ladder import (LADDER, lightgbm_rung, neural_rung,
+                                    xgboost_rung)
     wanted = os.environ.get('RAMPART_MODELS', '').strip()
-    rungs = list(LADDER) + [neural_rung()]
+    rungs = list(LADDER) + [neural_rung(), xgboost_rung(), lightgbm_rung()]
     if not wanted:
         return list(LADDER)
     names = {w.strip() for w in wanted.split(',')}

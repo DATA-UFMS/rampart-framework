@@ -142,18 +142,95 @@ def neural_rung() -> Rung:
     large panel is poor under the temporal shift, like every other rung's
     there; the audit measures bias against each model's own clean fit, so a
     weak baseline is a property being measured, not a defect of the probe.
+    RAMPART_NEURAL_SEED (integer, default RANDOM_SEED) overrides the MLP's
+    random_state; it exists for the F1.1 multi-seed fleet.
     """
     def _mlp():
+        import os
         from sklearn.neural_network import MLPRegressor
         from sklearn.pipeline import make_pipeline
         from sklearn.preprocessing import StandardScaler
+        raw = os.environ.get('RAMPART_NEURAL_SEED')
+        if raw is None:
+            seed = RANDOM_SEED
+        else:
+            # Set-but-blank (a shell export bug) must stop the shard, not
+            # quietly run the default seed: a multi-seed fleet that silently
+            # collapses onto seed 42 burns the whole fleet's compute.
+            try:
+                seed = int(raw)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"RAMPART_NEURAL_SEED is set but is not an integer: "
+                    f"{raw!r}") from exc
         return make_pipeline(
             StandardScaler(),
             MLPRegressor(hidden_layer_sizes=(32,), max_iter=300,
-                         batch_size=1024, random_state=RANDOM_SEED,
+                         batch_size=1024, random_state=seed,
                          early_stopping=False))
     return Rung('ladder_mlp', _mlp, float('nan'),
                 'not in Roth: added for the interference audit')
+
+
+def xgboost_rung() -> Rung:
+    """An XGBoost rung, deliberately OUTSIDE the LADDER tuple.
+
+    Like the neural rung, it exists only behind an explicit RAMPART_MODELS
+    request (F1.3 fleet: does the global-learner pattern survive a change of
+    boosting implementation?), so no existing run or test changes. The import
+    is inside `make`, so a machine without the package fails only when the
+    rung is actually requested.
+    """
+    def _xgb():
+        try:
+            from xgboost import XGBRegressor
+        except ImportError as exc:
+            raise RuntimeError(
+                "ladder_xgboost was requested via RAMPART_MODELS but the "
+                "'xgboost' package is not installed in this environment"
+            ) from exc
+        # Modest fixed hyperparameters, no search (module docstring says why):
+        # 300 trees at depth 3 with learning rate 0.05, squared-error
+        # objective to match the ladder's loss, fixed seed, one thread,
+        # verbosity off.
+        # tree_method pinned: the auto default changed at xgboost 2.0 and
+        # the fleet must be reproducible across image versions.
+        return XGBRegressor(
+            n_estimators=300, max_depth=3, learning_rate=0.05,
+            objective='reg:squarederror', random_state=RANDOM_SEED,
+            tree_method='hist', n_jobs=1, verbosity=0)
+    return Rung('ladder_xgboost', _xgb, 0.78,
+                'XGBoost: the one system Roth measured directly')
+
+
+def lightgbm_rung() -> Rung:
+    """A LightGBM rung, deliberately OUTSIDE the LADDER tuple.
+
+    Same contract as `xgboost_rung`: opt-in only via RAMPART_MODELS (F1.3
+    fleet), import inside `make` so a missing package fails only when the
+    rung is actually requested.
+    """
+    def _lgbm():
+        try:
+            from lightgbm import LGBMRegressor
+        except ImportError as exc:
+            raise RuntimeError(
+                "ladder_lightgbm was requested via RAMPART_MODELS but the "
+                "'lightgbm' package is not installed in this environment"
+            ) from exc
+        # Modest fixed hyperparameters, no search: 300 trees, learning rate
+        # 0.05, the library's default leaf-wise growth (num_leaves=31),
+        # squared-error objective ('regression') to match the ladder's loss,
+        # fixed seed, one thread, verbosity off.
+        # deterministic + force_row_wise pinned: the row/col-wise auto choice
+        # is timing-based and the two paths differ in FP summation order.
+        return LGBMRegressor(
+            n_estimators=300, learning_rate=0.05, num_leaves=31,
+            objective='regression', random_state=RANDOM_SEED,
+            deterministic=True, force_row_wise=True,
+            n_jobs=1, verbose=-1)
+    return Rung('ladder_lightgbm', _lgbm, float('nan'),
+                'not in Roth: added for the F1.3 boosting fleet')
 
 
 def entity_effect_frames(
