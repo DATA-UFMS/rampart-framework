@@ -13,6 +13,14 @@ Four mechanisms whose spillover behaviour is known before running anything:
     tree     unbounded decision tree -- spillover is ADAPTIVE: splits move,
              some regions change and others do not.
 
+A fifth mechanism is opt-in via RAMPART_SIM_MECHS (see knobs below):
+
+    mlp      one-hidden-layer network (16 units), lbfgs truncated at a
+             fixed iteration budget -- a non-convex GLOBAL learner. The
+             truncation is deliberate: the fit is a deterministic map of
+             (data, SEED), never a converged optimum, which is exactly
+             the regime P-F1.2 below registers a prediction about.
+
 Two data regimes, because the size of the spillover is a property of what
 the inserted rows can TEACH, not of the mechanism alone:
 
@@ -102,11 +110,27 @@ What is validated, per (regime, mechanism, saturation):
              first-order formula omits.
 
 Environment knobs: SIM_DRAWS (default 6000, per stream), SIM_R (default 40),
-SIM_SATURATIONS (default 0.05,0.10,0.30), SIM_SEED (default 42).
+SIM_SATURATIONS (default 0.05,0.10,0.30), SIM_SEED (default 42),
+RAMPART_SIM_MECHS (default lookup,knn1,ridge,tree -- the four-mechanism
+receipt is byte-identical to the pre-mlp script; add mlp for the neural
+mechanism, whose seed tuples use the canonical code 4 so the other four
+cells' streams do not move).
 
 Run: .venv/bin/python scripts/validation/sim_interference_groundtruth.py
 CPU-only, a few minutes (two streams, so 2*NDRAWS fits per cell); no
-network, no panels.
+network, no panels. With mlp active the run adds ~45 minutes single-process
+(measured 36 ms per lbfgs fit at the worst-case cell, 72,000 fits total).
+
+REGISTERED PREDICTION (F1.2, 30 Aug 2026): P-F1.2: the neural mechanism
+behaves as a global learner (moved share near 100%); under drift S > 0 and
+under iid S near 0; the open question is the sign and dispersion of S on
+small frames, where a non-convex fit at a fixed seed may move without
+carrying signal. Integration decision, pre-committed: if the real-data
+multi-seed fleet (P-F1.1) reads the World Bank negative spillover as seed
+noise, the simulated mechanism gets one sentence in Section 7 and its rows
+go to the appendix table only; if it reads it as real, the mechanism gets
+two to four sentences in Section 7 explaining the pattern. The sim tables
+gain two rows (iid/drift); nothing else changes.
 """
 
 import os
@@ -127,6 +151,17 @@ NOISE = 1.0
 #: S_true/D_true; EVAL is split into the replicate groups scored against
 #: them. Distinct tags make the two streams independent by construction.
 TRUTH_STREAM, EVAL_STREAM = 0, 1
+
+#: Canonical mechanism codes: a mechanism's position HERE (not in the
+#: active set) feeds the seed tuple, so activating mlp -- or any future
+#: mechanism appended at the end -- never moves the other cells' streams.
+MECH_ORDER = ('lookup', 'knn1', 'ridge', 'tree', 'mlp')
+MECHS = tuple(m.strip() for m in os.environ.get(
+    'RAMPART_SIM_MECHS', 'lookup,knn1,ridge,tree').split(','))
+_unknown = [m for m in MECHS if m not in MECH_ORDER]
+if _unknown:
+    raise SystemExit(f"RAMPART_SIM_MECHS: unknown mechanism(s) {_unknown}; "
+                     f"known: {','.join(MECH_ORDER)}")
 
 HEADER = (f"{'mech':>7} {'s':>5} {'S_true(MC se)':>18} {'D_true(MC se)':>18} "
           f"{'moved%':>7} {'covS%':>6} {'covD%':>6} "
@@ -149,13 +184,22 @@ class Lookup:
 def make_models():
     from sklearn.linear_model import Ridge
     from sklearn.neighbors import KNeighborsRegressor
+    from sklearn.neural_network import MLPRegressor
     from sklearn.tree import DecisionTreeRegressor
-    return {
+    registry = {
         'lookup': Lookup,
         'knn1': lambda: KNeighborsRegressor(n_neighbors=1),
         'ridge': lambda: Ridge(alpha=10.0),
         'tree': lambda: DecisionTreeRegressor(random_state=SEED),
+        # The non-convex global learner (P-F1.2). lbfgs with a fixed
+        # iteration budget: rarely converged, always the same deterministic
+        # map of (data, SEED). random_state is the numeric SEED, the same
+        # derivation the tree uses -- never hash() of a string, which is
+        # per-process salted. ~36 ms per fit at n_train=240, k=36.
+        'mlp': lambda: MLPRegressor(hidden_layer_sizes=(16,), solver='lbfgs',
+                                    max_iter=200, random_state=SEED),
     }
+    return {name: registry[name] for name in MECHS}
 
 
 def t_half(n, level=0.95):
@@ -216,7 +260,10 @@ def run_regime(shift, regime_code, tally):
     print(f"--- regime: {'iid' if shift == 0 else f'drift (+{shift:g} shift)'} ---")
     print(HEADER)
     th = t_half(R)
-    for code, (name, make) in enumerate(make_models().items()):
+    for name, make in make_models().items():
+        # Seed code from the canonical order, not the active set's index:
+        # the four original cells keep their streams when mlp is added.
+        code = MECH_ORDER.index(name)
         clean = make().fit(X_train, y_train)
         clean_pred = np.asarray(clean.predict(X_eval), dtype=float)
         clean_loss = (y_eval - clean_pred) ** 2
@@ -300,7 +347,7 @@ def run_regime(shift, regime_code, tally):
 def main():
     print(f'ground-truth simulation: n_train={N_TRAIN}, n_eval={N_EVAL}, '
           f'{NDRAWS} draws per cell, replicate groups of {R}, seed {SEED}')
-    print(f'saturations {list(SATURATIONS)}; mechanisms lookup/knn1/ridge/tree')
+    print(f"saturations {list(SATURATIONS)}; mechanisms {'/'.join(MECHS)}")
     print(f'truth and evaluation draw streams are independent: seeds '
           f'(seed, regime, mech, round(100*s), {TRUTH_STREAM}, d) define '
           f'S_true/D_true; (seed, regime, mech, round(100*s), {EVAL_STREAM}, d) '
@@ -311,6 +358,15 @@ def main():
           f'shift*k/({N_TRAIN}+k) and rbar the mean clean residual on the '
           'evaluation rows; gap% = 100*(S_pred - S_true)/S_true, n/a when '
           'S_pred = 0 (iid: shift = 0)\n')
+
+    if 'mlp' in MECHS:
+        # The fixed lbfgs budget rarely satisfies gtol on a non-convex
+        # surface; the truncation is deliberate and deterministic, and the
+        # warning would otherwise fire once per fit (~72k times per full
+        # run). stderr only -- the stdout receipt is unaffected either way.
+        import warnings
+        from sklearn.exceptions import ConvergenceWarning
+        warnings.filterwarnings('ignore', category=ConvergenceWarning)
 
     tally = {'identity': 0.0, 'lookup_exact': True}
     for regime_code, shift in enumerate((0.0, 1.5)):
