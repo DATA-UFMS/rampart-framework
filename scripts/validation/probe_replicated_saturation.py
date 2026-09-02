@@ -54,6 +54,50 @@ REGISTERED PREDICTIONS (F1 fleets, 30 Aug 2026):
       correction regime). Integration decision, pre-committed: one robustness
       paragraph in Section 9.1 plus one compact appendix table; never in the
       main figures or main tables.
+
+REGISTERED PREDICTION (F2.1 fleet, 1 Sep 2026, written before the fleet; a
+  2-replicate, single-saturation smoke of fold 0 with the classical rungs had
+  started about a minute earlier and its numbers were not read before saving):
+  P-F2.1 (SINASC replication): the audit on the SINASC panel (5,564
+      municipalities x 2001-2024, target = cesarean share of deliveries, 12
+      composition features, 14 folds with INEP's walk-forward geometry) with
+      the six-rung roster (five classical rungs + ladder_mlp), saturations
+      0.05/0.10/0.20/0.30, 40 replicates per cell.
+      (a) S(s) > 0 in every (rung, saturation) cell: the design-based
+          interval for S, pooled over the 14 folds, excludes zero from below
+          in all 24 cells. For the global learners (ridge, gradient
+          boosting, random forest, mlp) S is monotone non-decreasing in s:
+          pooled S(0.05) <= S(0.10) <= S(0.20) <= S(0.30), each step within
+          its interval half-width of a non-decrease.
+      (b) The correction ordering of Lemma 3 reproduces: dropping the
+          inserted rows from the evaluation removes only the direct term and
+          leaves a residual bias of S(s); exact restoration leaves
+          (1 - s) S(s). Computed from the per-row records at s = 0.30 for
+          every rung, each residual falls inside the design interval of the
+          quantity it is predicted to equal.
+      (c) On the neural rung D is small relative to S, as on INEP: the
+          direct share D/B stays under 10% at every saturation, with
+          B = S + s D. So at s = 0.30 the aggregate bias is
+          spillover-dominated -- S/B above 0.9 -- because the panel is large
+          (~5.5k evaluation rows per fold) and temporally persistent (the
+          target lags carry most of the signal), so an inserted row moves
+          the shared fit far more than it moves its own loss.
+      (d) Heterogeneity across UF strata stays within a factor of two of the
+          panel-wide value: for each global learner, S(0.30) estimated
+          within every stratum with at least 50 evaluation rows per fold
+          (23 of 27 UFs; DF, RR, AP and AC fall below) lies in [S/2, 2S] of
+          the panel-wide S(0.30).
+      Falsified by: a cell whose interval covers zero or is negative (a); a
+      residual after drop outside the interval of S, or after exact
+      restoration outside that of (1 - s) S (b); D/B >= 10% at any
+      saturation for ladder_mlp (c); any qualifying stratum outside
+      [S/2, 2S] (d).
+      Integration decision, pre-committed: one replication subsection in
+      the Discussion with ONE compact table (S, D, S/B at s = 0.30 per rung)
+      and one paragraph stating that the pattern replicates (or does not);
+      never in the main figures or main tables. The paper states that the
+      universe is INEP's 5,564 municipalities and reports an n >= 20-births
+      sensitivity.
 """
 
 import os

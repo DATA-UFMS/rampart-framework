@@ -139,6 +139,20 @@ PANELS = {
         'config': 'worldbank',
         'filter': lambda df: df[df['target_source_rate'] != 100.0],
     },
+    # The third panel (F2.1): SINASC live births, municipality x year, 2001-2024,
+    # target = cesarean share = 100 - vaginal share. Same 5,564 municipalities as
+    # INEP (mapped at collection onto the INEP-derived table), so strata and the
+    # fold geometry carry over and a replication of the INEP audit is like for
+    # like. Written in the neutral schema at the source, so nothing is renamed.
+    # `births_total` travels in the parquet as provenance and a candidate weight;
+    # the registered config excludes it, so `modelling_features` never hands it
+    # to a model.
+    'sinasc': {
+        'path': str(PANEL_ROOT / 'sinasc' / 'collection' / 'raw_data'
+                    / 'complete_data.parquet'),
+        'rename': {},
+        'target': lambda df: 100.0 - df['target_source_rate'],
+    },
 }
 
 
@@ -237,8 +251,9 @@ def panel(dataset: str = 'worldbank'):
             f"panel {dataset!r} is not at {source}.\n"
             f"The raw collections live outside this repository and the container "
             f"does not carry them. Point RAMPART_PANEL_DIR at the directory "
-            f"holding azure_results_v7_wb/ and azure_results_v7_inep/, or copy "
-            f"them in. Note that outputs/{dataset}/collection/raw_data/ holds an "
+            f"holding azure_results_v7_wb/, azure_results_v7_inep/ (and, for the "
+            f"optional panels, worldbank_clean/ and sinasc/), or copy them in. "
+            f"Note that outputs/{dataset}/collection/raw_data/ may hold an "
             f"eight-byte fixture, not the panel.")
     df = pd.read_parquet(source).rename(columns=spec['rename'])
     df['target'] = spec['target'](df)

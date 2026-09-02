@@ -304,7 +304,7 @@ class TestTheRegistryIsTheDispatch:
         source = (_ROOT / 'pipeline.py').read_text()
         assert '_registered_datasets()' in source
         assert "choices=['worldbank', 'inep_censo']" not in source
-        assert set(list_datasets()) == {'worldbank', 'inep_censo'}
+        assert set(list_datasets()) == {'worldbank', 'inep_censo', 'sinasc'}
 
 
 class TestTheInternalSchemaIsNeutral:

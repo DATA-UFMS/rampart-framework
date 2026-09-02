@@ -34,6 +34,17 @@ if [ -s "$CLEAN" ] && [ "$(stat -c%s "$CLEAN")" -gt 1000 ]; then
   echo "packed the recollected World Bank panel as well"
 fi
 
+# The SINASC panel (F2.1), optional for the same reason: a bundle built without
+# it still packs, and the replication probe fails loudly if it names it and it
+# is absent.
+SINASC_PAIR="sinasc/collection/raw_data"
+SINASC="$PANELS/$SINASC_PAIR/complete_data.parquet"
+if [ -s "$SINASC" ] && [ "$(stat -c%s "$SINASC")" -gt 1000 ]; then
+  mkdir -p "$OUT/rampart/panels/$SINASC_PAIR"
+  cp "$SINASC" "$OUT/rampart/panels/$SINASC_PAIR/"
+  echo "packed the SINASC panel as well"
+fi
+
 ( cd "$OUT" && rm -f rampart-bundle.zip && zip -qr rampart-bundle.zip rampart \
   && rm -rf rampart )
 echo "wrote $OUT/rampart-bundle.zip ($(du -h "$OUT/rampart-bundle.zip" | cut -f1))"

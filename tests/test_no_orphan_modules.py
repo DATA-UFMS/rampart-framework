@@ -140,6 +140,15 @@ def _entry_points():
         rel = str(path.relative_to(_ROOT))
         if rel in source:
             entries.add(path)
+    # Collectors are Stage 1 of the pipeline, but pipeline.py reaches them
+    # through the dataset config's `collector_module` string, which neither the
+    # import graph nor the literal-path scan above can see. Seed them from the
+    # dataset registry, as the processors are seeded from the paradigm registry.
+    import datasets  # noqa: F401 -- the import is what registers them
+    from core.dataset_config import get_dataset, list_datasets
+    for name in list_datasets():
+        module = get_dataset(name).collector_module
+        entries.add(_SRC.joinpath(*module.split('.')).with_suffix('.py'))
     for rel in DECLARED_TOOLS:
         entries.add(_ROOT / rel)
     return entries

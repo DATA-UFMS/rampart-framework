@@ -182,9 +182,11 @@ class TestTheTwoPanelsNeedDifferentBlocks:
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         from probe_harness import PANELS
+        # `sinasc` is the third dataset (F2.1): one row per municipality-year,
+        # like INEP, so its spillover degree is zero and it takes INEP's block.
         assert set(PANELS) == {'worldbank', 'inep_censo', 'worldbank_clean',
                                'worldbank_imputed_features',
-                               'worldbank_clean_unclipped'}
+                               'worldbank_clean_unclipped', 'sinasc'}
         assert PANELS['worldbank_clean']['config'] == 'worldbank'
         # The two derived arms exist to isolate one variable each, so each must
         # declare a filter -- an arm without one is the whole panel under a new name.
@@ -192,7 +194,8 @@ class TestTheTwoPanelsNeedDifferentBlocks:
             assert PANELS[derived].get('filter') is not None, (
                 f'{derived} is a derived arm and must declare its row filter')
         for name, spec in PANELS.items():
-            assert spec.get('config', name) in ('worldbank', 'inep_censo'), (
+            assert spec.get('config', name) in ('worldbank', 'inep_censo',
+                                                'sinasc'), (
                 f'panel {name} points at an unregistered dataset config')
 
     def test_neither_panel_declares_a_block_by_hand(self):
