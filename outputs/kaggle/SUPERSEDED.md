@@ -27,6 +27,90 @@ Every table and figure in the paper is regenerated from these by
 `paper_tkdd/make_tables_interference.py`, `make_figures_interference.py` and `make_drivers.py`
 (`make_tables.py` only emits the legacy calibration table). Nothing is transcribed by hand.
 
+## Fleet generations F1 and F2 (30 Aug - 2 Sep 2026): which panel each one is authoritative for
+
+Two fleets ran after the generations above. **Neither is consolidated into
+`rs_cell_estimates.parquet` or `em_cell_estimates.parquet`**, and that is a
+decision, not an omission: merging them would silently change cells that the
+paper's main tables and figures read. Each fleet is read only by its own
+receipt emitter, named below. A reader who greps a number from the paper's
+main tables will never land in an F1 or F2 shard, and a reader who greps a
+number from a robustness paragraph will never land in the canonical parquets.
+
+| generation | authoritative for | read by | NOT used for |
+|---|---|---|---|
+| `rerun-rampart-r3c-rs-*` + `-rs-mlp-*` (consolidated in `rs_cell_estimates.parquet`, 24,960 rows) | the randomized-saturation audit on World Bank and INEP, six rungs, at the registered seed | `make_tables_interference.py`, `make_figures_interference.py`, `make_drivers.py` | anything about the SINASC panel or about second-generation boosting |
+| `rerun-rampart-r3c-em-*` + `-em-mlp-*` (consolidated in `em_cell_estimates.parquet`, 73,440 rows) | the exposure mapping S(s,d) and the interference radius | `make_tables_interference.py` (radius tables) | the same |
+| **F1 `rerun-rampart-f1-rs-mlp-{wbclean,inep}-s101..s110`** | the multi-seed sensitivity of the neural rung (P-F1.1): 10 optimizer seeds on World Bank, 3 on INEP | `make_multiseed_receipt.py` -> `multiseed_receipt.txt` | replacing the registered seed anywhere in the paper |
+| **F1 `rerun-rampart-f1-rs-boost-{wbclean,inep-fa,inep-fb}`** | the second-generation boosting rungs (P-F1.3): `ladder_xgboost`, `ladder_lightgbm` | `make_boosting_receipt.py` -> `boosting_receipt.txt` | the six-rung ladder of the main tables, which does not include them |
+| **F2 `rerun-rampart-f2-rs-*-sinasc-*`** | the whole third panel (SINASC), 14 folds x 6 rungs | `make_sinasc_receipt.py` -> `sinasc_receipt.txt`, `tab_sinasc.tex` | the audit's main tables, figures and fit inventory, which report the two panels above |
+
+### The registered seed is not superseded by the fleet seeds
+
+`rerun-rampart-r3c-rs-mlp-wb` ran the neural rung at the registered seed (42)
+and its cells are the ones in `rs_cell_estimates.parquet`. The F1 seeds
+101-110 do **not** supersede it and must not be substituted for it: the
+prediction P-F1.1 was registered against the seed-42 value, so replacing that
+value with a fleet seed, or with the across-seed mean, would be reading the
+prediction after the fact. What the fleet establishes is that seed 42 is the
+most negative of eleven seeds on World Bank (S(0.30) = -6.26 against a median
+of +0.7 and a mean of about +1.5, with across-seed sd about 4.5 against a
+conditional half-width of about 1). The paper keeps the registered number and
+qualifies every negative sign with that fact.
+
+### Inside F2: the contingency split, and which shard owns which fold
+
+The SINASC fleet is sharded by fold and by rung group. The calibration kernel
+`f0-3` measured the classical roster about 1.6x slower than the conservative
+budget, which triggered the pre-written contingency: folds 11, 12 and 13 were
+split into `cls4` (the four classical rungs without gradient boosting) and
+`gb` (gradient boosting alone). Two shards stopped at the 11 h guard with one
+fold outstanding and were closed by follow-up kernels:
+
+- fold 3: `rerun-rampart-f2-rs-classical-sinasc-f0-3` reports `skipped=3`.
+  The authoritative shard for fold 3 is
+  `rerun-rampart-f2-rs-classical-sinasc-f3`.
+- fold 7: `rerun-rampart-f2-rs-classical-sinasc-f6-7` reports `skipped=7`.
+  The authoritative shard for fold 7 is
+  `rerun-rampart-f2-rs-classical-sinasc-f7`.
+
+Every (fold, rung) of the SINASC panel is therefore produced exactly once
+across the 17 shards. There are no duplicate folds to choose between, and no
+`.superseded-<UTC>` directory was created by any landing in either fleet.
+`make_sinasc_receipt.py` prints the provenance of each shard it reads, and
+refuses to emit the table unless all 14 folds are present.
+
+### Runs whose numbers exist but were never read, and non-landings
+
+- Kernels that returned `Status.ERROR` within about 11 minutes (F1
+  `s103-fb` v1; F2 classical `f9` v1 and `f7` v1) were retried at identical
+  configuration and completed. The failed attempt produces no landing and no
+  parquet; its log is not retrievable after the retry. It is a Kaggle
+  transient, not a defect in a measured value: `f9` v2 at identical
+  configuration completed in 5.48 h.
+- A provisional SINASC receipt (`sinasc_receipt.provisional.txt`) existed
+  while the classical rungs covered only 7-8 of 14 folds, with **different
+  fold sets per rung**, which makes any comparison between rungs invalid.
+  It was deleted when the definitive receipt was emitted at 14/14. Do not
+  reconstruct it: fold heterogeneity on this panel is enormous (ridge
+  S(0.30) reads 127/145/123 on folds 0-2 against 4.6/3.8/2.7 on folds 8-10),
+  so a partial fold set is not a noisy version of the answer, it is a
+  different quantity.
+- The simulated neural mechanism (commit `742eb14`, prediction P-F1.2) was
+  built and committed, and its full 6,000-draw run was **never executed**.
+  `sim_groundtruth_receipt.txt` declares on its first line the mechanisms it
+  covers (`lookup/knn1/ridge/tree`) and does not include it. No number from
+  a simulated neural mechanism appears anywhere.
+
+### What the F1 and F2 shards contain, and what is deposited
+
+Per-row, per-replicate parquets: 131 files and about 298 MB for F1, 31 files
+and about 650 MB for F2. They are not archived (the pipeline is deterministic
+by construction; code plus logs plus seeds regenerate them). The kernel log of
+every shard is deposited, with the clone URL anonymised for double-anonymous
+review, together with an `INVENTORY.md` listing every landed shard, its folds,
+its rung set and its parquet sizes.
+
 ## Superseded — do not cite these numbers
 
 | run | superseded because | numbers in it that the paper no longer uses |
