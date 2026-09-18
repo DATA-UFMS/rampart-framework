@@ -8,7 +8,8 @@ Aronow--Samii 2017; randomized saturation: Baird et al. 2018), the estimands at
 saturation s are
 
     S(s) = E[Y(0,0) - Y(0,s)]   spillover on rows NOT inserted, and
-    D(s) = E[Y(0,s) - Y(1,s)]   direct effect of a row's own insertion,
+    D(s) = E[Y(0,s) - Y(1,s)]   direct effect on the inserted rows, an
+                                own-status contrast under this allocation,
 
 with the aggregate evaluation bias B(s) = S(s) + s * D(s). Under a fixed-size
 simple random draw of the inserted set and an ADDITIVE per-row loss, the
